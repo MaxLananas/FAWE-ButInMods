@@ -13,11 +13,15 @@ historique (`//undo`/`//redo`), schematics, régénération de chunks, super-pic
 |---|---|
 | Moteur (core) | `core/` — aucune dépendance, testable hors Minecraft (`./gradlew :core:selfTest`) |
 | Tests du moteur | **188 tests, 0 échec** (`SelfTestMain`) |
-| Commandes enregistrées | **714** (chaque nom de WorldEdit/FAWE est présent : voir `docs/COMMANDS.md`) |
-| Implémentées | 134 |
+| Commandes enregistrées | **716** (chaque nom de WorldEdit/FAWE est présent : voir `docs/COMMANDS.md`) |
+| Implémentées | 136 |
 | Alias d'une commande implémentée | 36 |
 | Restant à porter | 544 (liste exacte et par section : `docs/STATUS.md`) |
-| Noms de l'inventaire WorldEdit+FAWE qui se résolvent | 441 / 441 |
+| Noms de l'inventaire WorldEdit+FAWE qui se résolvent | 257 / 259 |
+
+Il reste 544 commandes qui répondent « pas encore porté » en attendant leur implémentation ; la
+seule fonctionnalité volontairement absente de la surface est `.s` (ré-exécution du dernier
+CraftScript), qui a besoin d'un moteur JavaScript non embarqué.
 
 Les documents générés sont produits par le registre lui-même :
 

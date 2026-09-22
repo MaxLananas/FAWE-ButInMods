@@ -56,7 +56,7 @@ public final class CommandDocGenerator {
                 + " implemented=" + countStatus(entries, "implemented")
                 + " alias=" + countStatus(entries, "alias")
                 + " stub=" + countStatus(entries, "stub")
-                + " inventory=" + coverage.inventoryNames + " unresolved=" + coverage.unresolved.size());
+                + " inventory=" + coverage.inventoryNames() + " unresolved=" + coverage.unresolved.size());
         if (!coverage.unresolved.isEmpty()) {
             System.out.println("unresolved: " + coverage.unresolved);
         }
@@ -75,9 +75,14 @@ public final class CommandDocGenerator {
     // ------------------------------------------------------------------ coverage
 
     private static final class Coverage {
-        private int inventoryNames;
+        private final Set<String> seen = new TreeSet<>();
         private final Set<String> unresolved = new TreeSet<>();
         private final Set<String> resolved = new TreeSet<>();
+
+        /** Distinct command names declared by WorldEdit + FAWE. */
+        private int inventoryNames() {
+            return seen.size();
+        }
     }
 
     /** Cross-checks the registry against the WorldEdit/FAWE command inventory. */
@@ -104,7 +109,7 @@ public final class CommandDocGenerator {
             if (name.equals("*")) {
                 continue;
             }
-            coverage.inventoryNames++;
+            coverage.seen.add(name);
             if (registry.resolve(name) != null || registry.resolve(plain(name)) != null) {
                 coverage.resolved.add(name);
             } else {
@@ -140,7 +145,7 @@ public final class CommandDocGenerator {
         out.append("| Not wired yet (see docs/STATUS.md) | ")
                 .append(countStatus(entries, "stub")).append(" |\n");
         out.append("| Inventory cross-check | ").append(coverage.resolved.size()).append(" / ")
-                .append(coverage.inventoryNames).append(" WorldEdit + FAWE names resolve |\n\n");
+                .append(coverage.inventoryNames()).append(" WorldEdit + FAWE names resolve |\n\n");
 
         out.append("Both spellings work: WorldEdit's `//set` and Minecraft's `/set` "
                 + "(Minecraft strips one slash from what you type, so `/set` and `//set` both reach the "
@@ -219,7 +224,7 @@ public final class CommandDocGenerator {
         out.append("| Alias of an implemented command | ").append(countStatus(entries, "alias")).append(" |\n");
         out.append("| Registered, behaviour still to port | ").append(countStatus(entries, "stub")).append(" |\n");
         out.append("| WorldEdit + FAWE names that resolve | ").append(coverage.resolved.size())
-                .append(" / ").append(coverage.inventoryNames).append(" |\n\n");
+                .append(" / ").append(coverage.inventoryNames()).append(" |\n\n");
         out.append("Every WorldEdit and FAWE command name is registered, so nothing is missing from the "
                 + "surface: this table tracks how many of them already run the ported engine code instead of "
                 + "answering with 'not ported yet'.\n\n");

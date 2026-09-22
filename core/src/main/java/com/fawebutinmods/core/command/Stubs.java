@@ -735,7 +735,29 @@ final class Stubs {
             entry.handler = ctx -> ctx.actor().message(Msg.warn("'" + name
                     + "' is registered but its port is not finished in this build. See docs/COMMANDS.md."));
         }
+        registerPickaxeToggle(registry);
         linkAliases(registry);
+    }
+
+    /**
+     * WorldEdit registers {@code /} (which the player types as {@code //}) as the
+     * super-pickaxe toggle, so it gets a real implementation instead of a stub.
+     */
+    private static void registerPickaxeToggle(CommandRegistry registry) {
+        for (String name : new String[]{"/", "//"}) {
+            if (registry.get(name) != null) {
+                continue;
+            }
+            CommandRegistry.Entry entry = registry.register(name);
+            entry.description = "Toggle the super pickaxe function";
+            entry.group = "tool";
+            entry.status = "implemented";
+            entry.handler = ctx -> {
+                boolean enabled = !ctx.session().isSuperPickaxeEnabled();
+                ctx.session().setSuperPickaxeEnabled(enabled);
+                ctx.actor().message(Msg.success("Super pickaxe " + (enabled ? "enabled" : "disabled")));
+            };
+        }
     }
 
     /**

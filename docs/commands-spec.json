@@ -1,17 +1,45 @@
 {
   "version": "1.0.0",
   "minecraft": "1.21.10",
-  "count": 714,
-  "implemented": 134,
+  "count": 716,
+  "implemented": 136,
   "stub": 544,
-  "inventoryResolved": 257,
+  "inventoryResolved": 258,
   "inventoryUnresolved": [
     "FAWE .s",
-    "FAWE /",
-    "WE .s",
-    "WE /"
+    "WE .s"
   ],
   "commands": [
+    {
+      "name": "/",
+      "registration": "/",
+      "usage": "/",
+      "description": "Toggle the super pickaxe function",
+      "group": "tool",
+      "status": "implemented",
+      "aliases": [],
+      "arguments": [],
+      "booleanFlags": [],
+      "valueFlags": [],
+      "requiresSelection": false,
+      "requiresPlayer": false,
+      "requiresWorld": true
+    },
+    {
+      "name": "//",
+      "registration": "/",
+      "usage": "//",
+      "description": "Toggle the super pickaxe function",
+      "group": "tool",
+      "status": "implemented",
+      "aliases": [],
+      "arguments": [],
+      "booleanFlags": [],
+      "valueFlags": [],
+      "requiresSelection": false,
+      "requiresPlayer": false,
+      "requiresWorld": true
+    },
     {
       "name": "//after",
       "registration": "/after",
