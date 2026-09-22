@@ -1,0 +1,34 @@
+FAWE-ButInMods
+==============
+
+This project is a clean-room *port* of the feature set and command surface of
+FastAsyncWorldEdit (FAWE) and WorldEdit to the Fabric mod loader for
+Minecraft 1.21.10, with no plugin/platform dependencies.
+
+It reproduces:
+  * the complete command surface of FastAsyncWorldEdit 2.x for Minecraft
+    1.21.10 (WorldEdit 7.3.17 core commands + FAWE's additional commands),
+  * FAWE's selection/mask/pattern/transform/brush/tool model,
+  * FAWE's block/chunk data model (palette-packed chunk sections, bulk chunk
+    queue, deferred "side effects" such as lighting updates, history recorded
+    at chunk level),
+  * the schematic formats (Sponge Schematic v1/v2/v3, legacy MCEdit .schematic,
+    structure .nbt) with FAWE's clipboard semantics.
+
+Reference upstream projects (both GPL-3.0):
+  * FastAsyncWorldEdit — https://github.com/IntellectualSites/FastAsyncWorldEdit
+      Copyright (C) IntellectualSites and contributors
+  * WorldEdit          — https://github.com/EngineHub/WorldEdit
+      Copyright (C) sk89q and contributors
+
+The upstream sources were used as the behavioural specification: command names,
+aliases, flags, argument lists, parser ids (masks/patterns/transforms), brush
+and tool semantics and default configuration values are taken from them so that
+FAWE users find exactly the same commands.  Internal code in this repository was
+written for this project (no upstream source file is copied verbatim), therefore
+no upstream file carries over its own authorship; the *behaviour* is derived
+from the GPL-3.0 licensed upstream projects above and this project is licensed
+GPL-3.0 as well (see LICENSE.txt).
+
+Neither FastAsyncWorldEdit nor WorldEdit are required at runtime: the mod ships
+its own engine.

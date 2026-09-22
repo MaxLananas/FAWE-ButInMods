@@ -1,0 +1,20 @@
+# Gradle / build output
+.gradle/
+build/
+*/build/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+run/
+.loom-cache/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# Local test worlds / schematics produced by the test-suite
+/testrun/
+*.class

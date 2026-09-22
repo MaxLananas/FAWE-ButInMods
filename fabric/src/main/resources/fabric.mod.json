@@ -1,0 +1,32 @@
+{
+    "schemaVersion": 1,
+    "id": "fawe",
+    "version": "${version}",
+
+    "name": "FAWE ButInMods",
+    "description": "FastAsyncWorldEdit as a Fabric mod for singleplayer and servers: complete WorldEdit 7.3 + FAWE command set, FAWE's engine (bulk chunk queue, palette-packed sections, deferred side effects, history), brushes, tools, masks, patterns, transforms and schematics — no WorldEdit/FAWE plugin required.",
+    "authors": [
+        "FAWE-ButInMods contributors"
+    ],
+    "contact": {
+        "homepage": "https://github.com/MaxLananas/FAWE-ButInMods",
+        "sources": "https://github.com/MaxLananas/FAWE-ButInMods"
+    },
+    "license": "GPL-3.0",
+    "environment": "*",
+    "entrypoints": {
+        "main": [
+            "com.fawebutinmods.fabric.FaweMod"
+        ]
+    },
+    "mixins": [
+        "fawe.mixins.json"
+    ],
+    "accessWidener": "fawe.accesswidener",
+    "depends": {
+        "fabricloader": ">=0.17.0",
+        "fabric-api": "*",
+        "minecraft": "~1.21.10",
+        "java": ">=21"
+    }
+}

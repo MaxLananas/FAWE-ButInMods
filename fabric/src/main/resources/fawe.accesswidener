@@ -1,0 +1,11 @@
+accessWidener v2 named
+
+# ServerPlayerGameMode#isDestroyingBlock tells the swing hook whether the player
+# is currently mining; a mining swing must not re-trigger a brush (the same
+# reason WorldEdit's Fabric adapter widens this field).
+accessible field net/minecraft/server/level/ServerPlayerGameMode isDestroyingBlock Z
+
+# The chunk source's main-thread executor is used when a bulk edit has to hand
+# work back to the server thread.
+accessible class net/minecraft/server/level/ServerChunkCache$MainThreadExecutor
+accessible field net/minecraft/server/level/ServerChunkCache mainThreadProcessor Lnet/minecraft/server/level/ServerChunkCache$MainThreadExecutor;
