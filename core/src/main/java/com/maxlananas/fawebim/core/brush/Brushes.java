@@ -143,13 +143,8 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            for (BlockVector3 target : Operations.spherePositions(position, (int) radius, hollow)) {
-                if (place(session, target.x(), target.y(), target.z())) {
-                    changed++;
-                }
-            }
-            return changed;
+            return Operations.forEachInSphere(position, (int) radius, hollow,
+                    (x, y, z) -> place(session, x, y, z));
         }
     }
 
@@ -760,17 +755,13 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (BlockVector3 target : Operations.spherePositions(position, (int) radius, false)) {
-                if (!test(target.x(), target.y(), target.z())) {
-                    continue;
+            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
+                if (!test(x, y, z)) {
+                    return false;
                 }
-                if (random.nextDouble() < 0.3
-                        && session.setBlock(target.x(), target.y(), target.z(), registry.air())) {
-                    changed++;
-                }
-            }
-            return changed;
+                return random.nextDouble() < 0.3
+                        && session.setBlock(x, y, z, registry.air());
+            });
         }
     }
 
@@ -835,27 +826,20 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
             // The angular part of the position drives the noise, so the surface
             // wobbles per direction instead of per block.
             double noiseScale = frequency / 100.0;
             double wobble = amplitude / 100.0;
             double roundness = sphericity / 100.0;
-            for (BlockVector3 target : Operations.spherePositions(position, (int) radius, false)) {
-                double distance = target.distance(position);
-                double x = target.x() - position.x();
-                double y = target.y() - position.y();
-                double z = target.z() - position.z();
-                double noise = Math.sin(x * noiseScale) * Math.cos(y * noiseScale) * Math.sin(z * noiseScale + 1);
+            return Operations.forEachInSphere(position, (int) radius, false, (bx, by, bz) -> {
+                double dx = bx - position.x();
+                double dy = by - position.y();
+                double dz = bz - position.z();
+                double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                double noise = Math.sin(dx * noiseScale) * Math.cos(dy * noiseScale) * Math.sin(dz * noiseScale + 1);
                 double limit = radius * (roundness + noise * wobble * (1 - roundness));
-                if (distance > limit) {
-                    continue;
-                }
-                if (place(session, target.x(), target.y(), target.z())) {
-                    changed++;
-                }
-            }
-            return changed;
+                return distance <= limit && place(session, bx, by, bz);
+            });
         }
     }
 
@@ -1056,33 +1040,28 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (BlockVector3 target : Operations.spherePositions(position, (int) radius, false)) {
-                if (!test(target.x(), target.y(), target.z())) {
-                    continue;
+            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
+                if (!test(x, y, z)) {
+                    return false;
                 }
                 int solidNeighbours = 0;
                 for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    BlockVector3 next = target.add(direction.toVector());
-                    if (registry.isSolid(session.getBlock(next.x(), next.y(), next.z()))) {
+                    BlockVector3 next = direction.toVector();
+                    if (registry.isSolid(session.getBlock(x + next.x(), y + next.y(), z + next.z()))) {
                         solidNeighbours++;
                     }
                 }
                 if (solidNeighbours < fillFaces) {
-                    continue;
+                    return false;
                 }
-                int x0 = target.x() + Integer.signum(position.x() - target.x());
-                int z0 = target.z() + Integer.signum(position.z() - target.z());
-                int state = session.getBlock(target.x(), target.y(), target.z());
+                int x0 = x + Integer.signum(position.x() - x);
+                int z0 = z + Integer.signum(position.z() - z);
+                int state = session.getBlock(x, y, z);
                 if (registry.isAirLike(state)) {
-                    continue;
+                    return false;
                 }
-                if (session.setBlock(x0, target.y(), z0, state) && session.setBlock(
-                        target.x(), target.y(), target.z(), registry.air())) {
-                    changed++;
-                }
-            }
-            return changed;
+                return session.setBlock(x0, y, z0, state) && session.setBlock(x, y, z, registry.air());
+            });
         }
     }
 
@@ -1177,16 +1156,8 @@ public final class Brushes {
 
         /** The plain form without an image still paints a stencil-like surface. */
         private int paintedSphere(EditSession session, BlockVector3 position) {
-            int changed = 0;
-            for (BlockVector3 target : Operations.spherePositions(position, (int) radius, true)) {
-                if ((target.x() + target.y() + target.z()) % 2 != 0) {
-                    continue;
-                }
-                if (place(session, target.x(), target.y(), target.z())) {
-                    changed++;
-                }
-            }
-            return changed;
+            return Operations.forEachInSphere(position, (int) radius, true,
+                    (x, y, z) -> (x + y + z) % 2 == 0 && place(session, x, y, z));
         }
     }
 
@@ -1663,16 +1634,8 @@ public final class Brushes {
             if (path.size() > 128) {
                 path.remove(0);
             }
-            int changed = 0;
-            for (BlockVector3 point : Operations.spherePositions(position, (int) radius, false)) {
-                if (changed > 20000) {
-                    break;
-                }
-                if (place(session, point.x(), point.y(), point.z())) {
-                    changed++;
-                }
-            }
-            return changed;
+            return Operations.forEachInSphere(position, (int) radius, false, 20000,
+                    (x, y, z) -> place(session, x, y, z));
         }
     }
 
@@ -1726,41 +1689,24 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            List<BlockVector3> targets = Operations.spherePositions(position, (int) radius, false);
-            for (BlockVector3 target : targets) {
+            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
                 int solidNeighbours = 0;
                 for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    BlockVector3 next = target.add(direction.toVector());
-                    if (registry.isSolid(session.getBlock(next.x(), next.y(), next.z()))) {
+                    BlockVector3 next = direction.toVector();
+                    if (registry.isSolid(session.getBlock(x + next.x(), y + next.y(), z + next.z()))) {
                         solidNeighbours++;
                     }
                 }
-                boolean solid = registry.isSolid(session.getBlock(target.x(), target.y(), target.z()));
-                switch (mode) {
-                    case "erode" -> {
-                        if (solid && solidNeighbours < 3
-                                && session.setBlock(target.x(), target.y(), target.z(), registry.air())) {
-                            changed++;
-                        }
-                    }
-                    case "dilate" -> {
-                        if (!solid && solidNeighbours >= 3 && fill != null
-                                && place(session, target.x(), target.y(), target.z())) {
-                            changed++;
-                        }
-                    }
-                    default -> {
+                boolean solid = registry.isSolid(session.getBlock(x, y, z));
+                return switch (mode) {
+                    case "erode" -> solid && solidNeighbours < 3 && session.setBlock(x, y, z, registry.air());
+                    case "dilate" -> !solid && solidNeighbours >= 3 && fill != null && place(session, x, y, z);
+                    default ->
                         // morph: swap solid and air inside the brush
-                        if (solid && session.setBlock(target.x(), target.y(), target.z(), registry.air())) {
-                            changed++;
-                        } else if (!solid && fill != null && place(session, target.x(), target.y(), target.z())) {
-                            changed++;
-                        }
-                    }
-                }
-            }
-            return changed;
+                        solid ? session.setBlock(x, y, z, registry.air())
+                                : fill != null && place(session, x, y, z);
+                };
+            });
         }
     }
 
@@ -1826,15 +1772,11 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (BlockVector3 target : Operations.spherePositions(position, (int) radius, false)) {
-                String name = registry.name(session.getBlock(target.x(), target.y(), target.z()));
-                if ((name.contains("fire") || name.contains("lava"))
-                        && session.setBlock(target.x(), target.y(), target.z(), registry.air())) {
-                    changed++;
-                }
-            }
-            return changed;
+            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
+                String name = registry.name(session.getBlock(x, y, z));
+                return (name.contains("fire") || name.contains("lava"))
+                        && session.setBlock(x, y, z, registry.air());
+            });
         }
     }
 

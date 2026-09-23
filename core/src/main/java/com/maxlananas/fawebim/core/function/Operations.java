@@ -1023,12 +1023,34 @@ public final class Operations {
         return world.getHighestBlockY(x, z);
     }
 
-    /** Utility used by the brushes: a list of blocks in a radius, shell or solid. */
-    public static List<BlockVector3> spherePositions(BlockVector3 center, int radius, boolean hollow) {
-        List<BlockVector3> positions = new ArrayList<>();
+    /**
+     * Receives one block of a shape. Returning true counts it as a change, the
+     * same value the shape commands return.
+     */
+    @FunctionalInterface
+    public interface BlockVisitor {
+
+        boolean visit(int x, int y, int z);
+    }
+
+    /**
+     * Walks the blocks of a sphere, solid or hollow, and returns how many of
+     * them the visitor counted as a change. A brush runs on every click of a
+     * drag, so the coordinates reach the visitor as they are computed instead of
+     * going through a list of {@link BlockVector3}, which at a large radius was
+     * the biggest allocation of a stroke.
+     *
+     * @param maxChanges stopped after this many changes; 0 for no limit
+     */
+    public static int forEachInSphere(BlockVector3 center, int radius, boolean hollow, int maxChanges,
+                                      BlockVisitor visitor) {
+        int changed = 0;
         int r = Math.max(0, radius);
         double radiusSq = (double) r * r;
         double innerSq = hollow ? Math.max(0, r - 1) * (double) Math.max(0, r - 1) : -1;
+        int cx = center.x();
+        int cy = center.y();
+        int cz = center.z();
         for (int y = -r; y <= r; y++) {
             for (int z = -r; z <= r; z++) {
                 for (int x = -r; x <= r; x++) {
@@ -1036,10 +1058,30 @@ public final class Operations {
                     if (distanceSq > radiusSq || (hollow && distanceSq < innerSq)) {
                         continue;
                     }
-                    positions.add(center.add(x, y, z));
+                    if (visitor.visit(cx + x, cy + y, cz + z)) {
+                        changed++;
+                        if (maxChanges > 0 && changed >= maxChanges) {
+                            return changed;
+                        }
+                    }
                 }
             }
         }
+        return changed;
+    }
+
+    /** {@link #forEachInSphere(BlockVector3, int, boolean, int, BlockVisitor)} without a limit. */
+    public static int forEachInSphere(BlockVector3 center, int radius, boolean hollow, BlockVisitor visitor) {
+        return forEachInSphere(center, radius, hollow, 0, visitor);
+    }
+
+    /** Utility used by the tools: a list of blocks in a radius, shell or solid. */
+    public static List<BlockVector3> spherePositions(BlockVector3 center, int radius, boolean hollow) {
+        List<BlockVector3> positions = new ArrayList<>();
+        forEachInSphere(center, radius, hollow, (x, y, z) -> {
+            positions.add(new BlockVector3(x, y, z));
+            return false;
+        });
         return positions;
     }
 }
