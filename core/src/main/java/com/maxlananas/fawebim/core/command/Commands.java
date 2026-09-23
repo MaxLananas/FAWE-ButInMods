@@ -2005,14 +2005,22 @@ public final class Commands {
                         throw CommandRegistry.error("Unknown biome '" + ctx.arg(0) + "'");
                     }
                     EditSession session = ctx.editSession();
+                    // A biome cell covers 4x4x4 blocks, so each column is asked
+                    // once per cell instead of once per block.
                     int changed = 0;
-                    for (BlockVector3 position : ctx.selection()) {
-                        if (session.setBiome(position.x(), position.y(), position.z(), biomeId)) {
-                            changed++;
+                    for (int x = ctx.selection().getMinimumPoint().x(); x <= ctx.selection().getMaximumPoint().x(); x++) {
+                        for (int z = ctx.selection().getMinimumPoint().z();
+                                z <= ctx.selection().getMaximumPoint().z(); z++) {
+                            for (int y = ctx.world().minY(); y < ctx.world().maxY(); y += 4) {
+                                if (session.setBiome(x, y, z, biomeId)) {
+                                    changed++;
+                                }
+                            }
                         }
                     }
                     session.flushQueue();
-                    ctx.actor().message(Msg.success("Changed biome of " + Msg.formatNumber(changed) + " column(s)"));
+                    ctx.actor().message(Msg.success("Changed biome of " + Msg.formatNumber(changed)
+                            + " biome cell(s)"));
                 };
 
 

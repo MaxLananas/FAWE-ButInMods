@@ -201,11 +201,20 @@ public final class EditSession implements Extent {
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
         ChunkSet chunk = chunkFor(x, z, true);
-        // The previous value must be read before the buffer takes the new one,
-        // or /snapshot restore -b would restore what the edit just wrote.
+        // A biome cell holds 4x4x4 blocks and commands address blocks, so the
+        // buffer is asked first: without this the world would be read 64 times
+        // per cell and every call after the first would record a no-op change.
         int previous = chunk.getBiome(x, y, z);
+        if (previous == biomeId) {
+            return false;
+        }
+        // The previous value has to be known before the buffer takes the new
+        // one, or /snapshot restore -b would restore what the edit just wrote.
         if (previous < 0) {
             previous = world.getBiome(x, y, z);
+            if (previous == biomeId) {
+                return false;
+            }
         }
         if (record != null) {
             record.addBiome(x, y, z, previous, biomeId);
