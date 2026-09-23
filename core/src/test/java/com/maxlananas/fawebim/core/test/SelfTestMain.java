@@ -7,6 +7,7 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
+import com.maxlananas.fawebim.core.brush.Brushes;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.history.EditLog;
@@ -67,6 +68,7 @@ public final class SelfTestMain {
         testEditLog();
         testSnapshotRoundTrip();
         testFallAndRegionHelpers();
+        testClipboardBrushes();
         testClipboardAndSchematic();
         testCommands();
         testRegen();
@@ -666,6 +668,95 @@ public final class SelfTestMain {
         checkEquals("schematic suffix of sponge.3", ".schem",
                 com.maxlananas.fawebim.core.clipboard.Schematics.suffixOf("sponge.3"));
         check("unknown schematic time", com.maxlananas.fawebim.core.clipboard.Schematics.timeOf("nothing.schem") < 0);
+    }
+
+    private static void testClipboardBrushes() {
+        section("clipboard brushes");
+        TestWorld world = new TestWorld("brushes");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        LocalSession session = actor.session();
+        session.setMaxBlocksChanged(100000);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int air = BlockState.registry().air();
+
+        BlockArrayClipboard source = new BlockArrayClipboard(new BlockVector3(0, 0, 0));
+        source.setBlock(0, 0, 0, stone);
+        source.setBlock(1, 0, 0, air);
+        source.setBlock(2, 0, 0, stone);
+        session.setClipboard(source);
+
+        // The clipboard brush centres what it pastes on the clicked block, so the
+        // three cells land on x = 9, 10, 11.
+        world.setBlock(9, 80, 10, stone);
+        world.setBlock(10, 80, 10, stone);
+        world.setBlock(11, 80, 10, stone);
+        Brushes.ClipboardBrush plain = new Brushes.ClipboardBrush(3, null, false);
+        EditSession centered = new EditSession(world, session, "brush");
+        check("clipboard brush pastes", plain.apply(centered, new BlockVector3(10, 80, 10), actor) > 0);
+        centered.flushQueue();
+        check("clipboard brush pastes the clipboard's air", world.getBlock(10, 80, 10) == air
+                && world.getBlock(9, 80, 10) == stone && world.getBlock(11, 80, 10) == stone);
+
+        // -a skips the clipboard's air cells instead of erasing the target.
+        world.setBlock(9, 82, 10, stone);
+        world.setBlock(10, 82, 10, stone);
+        world.setBlock(11, 82, 10, stone);
+        Brushes.ClipboardBrush ignoreAir = new Brushes.ClipboardBrush(3, null, false, true, false, false, false,
+                null, false);
+        EditSession kept = new EditSession(world, session, "brush -a");
+        ignoreAir.apply(kept, new BlockVector3(10, 82, 10), actor);
+        kept.flushQueue();
+        check("clipboard brush -a keeps the target air cell", world.getBlock(10, 82, 10) == stone
+                && world.getBlock(11, 82, 10) == stone);
+
+        // -o puts the clipboard's origin on the clicked block instead of centring.
+        world.setBlock(20, 80, 20, stone);
+        Brushes.ClipboardBrush onOrigin = new Brushes.ClipboardBrush(3, null, true);
+        EditSession top = new EditSession(world, session, "brush -o");
+        onOrigin.apply(top, new BlockVector3(20, 80, 20), actor);
+        top.flushQueue();
+        check("clipboard brush -o starts at the target", world.getBlock(20, 80, 20) == stone
+                && world.getBlock(21, 80, 20) == air && world.getBlock(22, 80, 20) == stone);
+
+        // -m only pastes where the mask accepts the target block.
+        for (int x = 30; x <= 32; x++) {
+            world.setBlock(x, 80, 30, stone);
+        }
+        Brushes.ClipboardBrush onStone = new Brushes.ClipboardBrush(3, null, true, false, false, false, false,
+                new Masks.BlockMask(world, List.of("minecraft:stone")), false);
+        EditSession matched = new EditSession(world, session, "brush -m");
+        onStone.apply(matched, new BlockVector3(30, 80, 30), actor);
+        matched.flushQueue();
+        check("clipboard brush -m pastes where the target matches", world.getBlock(31, 80, 30) == air);
+        for (int x = 40; x <= 42; x++) {
+            world.setBlock(x, 80, 40, stone);
+        }
+        Brushes.ClipboardBrush onAir = new Brushes.ClipboardBrush(3, null, true, false, false, false, false,
+                new Masks.BlockMask(world, List.of("minecraft:air")), false);
+        EditSession skipped = new EditSession(world, session, "brush -m air");
+        onAir.apply(skipped, new BlockVector3(40, 80, 40), actor);
+        skipped.flushQueue();
+        check("clipboard brush -m skips the rest", world.getBlock(41, 80, 40) == stone);
+
+        // copypaste: the first click copies the connected blob, the next paste it.
+        session.setClipboard(null);
+        check("clearing the clipboard works", !session.hasClipboard());
+        Brushes.CopyPastaBrush pasta = new Brushes.CopyPastaBrush(4, false, false);
+        world.setBlock(50, 71, 50, stone);
+        world.setBlock(50, 72, 50, stone);
+        EditSession copy = new EditSession(world, session, "copypaste");
+        // The walk stops at the height of the click, so the clicked block and the
+        // ones above it are the two that get copied.
+        check("copypaste copies without pasting", pasta.apply(copy, new BlockVector3(50, 71, 50), actor) == 0);
+        copy.flushQueue();
+        check("copypaste filled the clipboard", session.hasClipboard()
+                && session.getClipboard().getClipboard().volume() == 2);
+        EditSession paste = new EditSession(world, session, "copypaste paste");
+        check("copypaste pastes back", pasta.apply(paste, new BlockVector3(54, 71, 50), actor) > 0);
+        paste.flushQueue();
+        check("copypaste placed the blob above the click", world.getBlock(54, 72, 50) == stone
+                && world.getBlock(54, 73, 50) == stone);
     }
 
     private static void testCommands() {

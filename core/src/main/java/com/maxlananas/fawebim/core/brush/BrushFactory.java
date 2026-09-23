@@ -154,8 +154,11 @@ public final class BrushFactory {
                 brush.setFromY(parameters.integer("h", Integer.MIN_VALUE));
                 yield brush;
             }
-            case "clipboard", "copypaste" -> new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),
-                    parameters.flag("o"));
+            case "clipboard" -> new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),
+                    parameters.flag("o"), parameters.flag("a"), parameters.flag("v"), parameters.flag("e"),
+                    parameters.flag("b"), parameters.flagMask(), parameters.flag("r"));
+            case "copypaste" -> new Brushes.CopyPastaBrush(parameters.radius(), parameters.flag("r"),
+                    parameters.flag("a"));
             case "biome" -> {
                 Brushes.BiomeBrush brush = new Brushes.BiomeBrush(parameters.radius(), parameters.mask());
                 brush.setFullColumn(parameters.flag("c"));

@@ -1,20 +1,24 @@
 package com.maxlananas.fawebim.core.brush;
 
 import com.maxlananas.fawebim.core.actor.Actor;
+import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
+import com.maxlananas.fawebim.core.transform.Transform;
+import com.maxlananas.fawebim.core.transform.Transforms;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
-import com.maxlananas.fawebim.core.world.World;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.Extent;
+import com.maxlananas.fawebim.core.world.World;
 
 import java.util.List;
 import java.util.Random;
+
 
 /**
  * Every brush FAWE ships. These are direct ports of the upstream behaviour:
@@ -1235,10 +1239,34 @@ public final class Brushes {
 
         /** {@code -o}: place the clipboard's origin on the click instead of centring it. */
         private final boolean pasteOnTop;
+        /** {@code -a}: leave the target blocks alone where the clipboard holds air. */
+        private final boolean ignoreAir;
+        /** {@code -v}: keep the target block where the clipboard holds a structure void. */
+        private final boolean keepStructureVoid;
+        /** {@code -e}: spawn the clipboard's entities. */
+        private final boolean pasteEntities;
+        /** {@code -b}: apply the clipboard's biomes. */
+        private final boolean pasteBiomes;
+        /** {@code -m}: only paste where this mask accepts the target block. */
+        private final Mask sourceMask;
+        /** {@code -r}: turn the paste by a random quarter turn. */
+        private final boolean randomRotate;
 
         public ClipboardBrush(double radius, Mask mask, boolean pasteOnTop) {
+            this(radius, mask, pasteOnTop, false, false, false, false, null, false);
+        }
+
+        public ClipboardBrush(double radius, Mask mask, boolean pasteOnTop, boolean ignoreAir,
+                              boolean keepStructureVoid, boolean pasteEntities, boolean pasteBiomes,
+                              Mask sourceMask, boolean randomRotate) {
             super(radius, null, mask);
             this.pasteOnTop = pasteOnTop;
+            this.ignoreAir = ignoreAir;
+            this.keepStructureVoid = keepStructureVoid;
+            this.pasteEntities = pasteEntities;
+            this.pasteBiomes = pasteBiomes;
+            this.sourceMask = sourceMask;
+            this.randomRotate = randomRotate;
         }
 
         @Override
@@ -1247,11 +1275,76 @@ public final class Brushes {
                 actor.message(Msg.error("No clipboard: use //copy first"));
                 return 0;
             }
-            var clipboard = actor.session().getClipboard().getClipboard();
+            var holder = actor.session().getClipboard();
+            var clipboard = holder.getClipboard();
             BlockVector3 destination = pasteOnTop ? position : position.add(
                     -clipboard.getWidth() / 2, -clipboard.getHeight() / 2, -clipboard.getLength() / 2);
+            // -r composes a quarter turn with whatever transform the clipboard
+            // already carries, exactly like FAWE's brush does.
+            Transform transform = holder.getTransform();
+            if (randomRotate) {
+                Transform turn = Transforms.rotate(clipboard.getOrigin(), random.nextInt(4) * 90.0);
+                transform = transform == null ? turn : turn.combine(transform);
+            }
             return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, destination, session,
-                    actor.session().getClipboard().getTransform(), false, mask != null, false);
+                    transform, ignoreAir, sourceMask, pasteEntities, pasteBiomes, false, keepStructureVoid);
+        }
+
+        @Override
+        public String describe() {
+            return "clipboard (radius " + radius + ")" + (pasteOnTop ? " at the target" : "");
+        }
+    }
+
+    /**
+     * {@code /brush copypaste [-r] [-a] <radius>} — the first click copies the
+     * connected blob under the cursor, the next ones paste it back with an
+     * optional rotation, which is FAWE's {@code CopyPastaBrush}.
+     */
+    public static final class CopyPastaBrush extends BaseBrush {
+
+        private final boolean randomRotate;
+        private final boolean autoRotate;
+
+        public CopyPastaBrush(double radius, boolean randomRotate, boolean autoRotate) {
+            super(radius, null, null);
+            this.randomRotate = randomRotate;
+            this.autoRotate = autoRotate;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            if (!actor.session().hasClipboard()) {
+                BlockArrayClipboard copied = com.maxlananas.fawebim.core.function.Operations.copyConnected(
+                        session.getWorld(), session, position, (int) Math.ceil(radius), mask);
+                if (copied.volume() == 0) {
+                    actor.message(Msg.error("Nothing to copy at " + position));
+                    return 0;
+                }
+                actor.session().setClipboard(copied);
+                actor.message(Msg.success("Copied " + Msg.formatNumber(copied.volume()) + " block(s)"));
+                return 0;
+            }
+            Transform transform = Transform.identity();
+            if (randomRotate) {
+                transform = Transforms.rotate(position, random.nextInt(4) * 90.0);
+            }
+            if (autoRotate) {
+                // The blob follows the way the player looks, as FAWE's brush does:
+                // the yaw turns it around Y, the pitch tilts it.
+                transform = Transforms.rotate(position, com.maxlananas.fawebim.core.transform.Axis.Y, -actor.yaw())
+                        .combine(transform);
+                transform = Transforms.rotate(position, com.maxlananas.fawebim.core.transform.Axis.X,
+                        actor.pitch() - 90).combine(transform);
+            }
+            return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(actor.session().getClipboard().getClipboard(),
+                    position.add(0, 1, 0), session, transform, true, null, false, false, false, false);
+        }
+
+        @Override
+        public String describe() {
+            return "copypaste (radius " + radius + (randomRotate ? ", random rotation" : "")
+                    + (autoRotate ? ", view rotation" : "") + ")";
         }
     }
 

@@ -397,6 +397,55 @@ public final class Operations {
         return changed;
     }
 
+    /**
+     * Collects the connected non-air blocks under a position into a clipboard,
+     * which is what the first click of {@code /brush copypaste} does: FAWE walks
+     * the blob with a recursive visitor limited to the brush radius and to the
+     * height of the click, so the copy never grows downwards into the ground.
+     *
+     * @param limit the brush radius, which also caps how far the walk goes
+     * @param mask  the brush mask, applied on top of "the block is not air"
+     */
+    public static com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard copyConnected(
+            World world, EditSession session, BlockVector3 start, int limit, Mask mask) {
+        BlockStateRegistry registry = BlockState.registry();
+        com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard clipboard =
+                new com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard(start);
+        if (registry.isAirLike(world.getBlock(start.x(), start.y(), start.z()))) {
+            return clipboard;
+        }
+        Deque<BlockVector3> queue = new ArrayDeque<>();
+        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
+        queue.add(start);
+        while (!queue.isEmpty()) {
+            BlockVector3 current = queue.poll();
+            if (!visited.add(current)) {
+                continue;
+            }
+            if (current.y() < start.y() || current.distance(start) > limit) {
+                continue;
+            }
+            int state = world.getBlock(current.x(), current.y(), current.z());
+            if (registry.isAirLike(state) || mask != null && !mask.test(current.x(), current.y(), current.z())) {
+                continue;
+            }
+            clipboard.setBlock(current.x(), current.y(), current.z(), state);
+            com.maxlananas.fawebim.core.util.NbtCompound nbt = world.getBlockEntity(current.x(), current.y(), current.z());
+            if (nbt != null) {
+                clipboard.addBlockEntity(current, nbt);
+            }
+            session.limiter().check(1);
+            for (com.maxlananas.fawebim.core.world.Direction direction
+                    : com.maxlananas.fawebim.core.world.Direction.values()) {
+                BlockVector3 next = current.add(direction.toVector());
+                if (!visited.contains(next)) {
+                    queue.add(next);
+                }
+            }
+        }
+        return clipboard;
+    }
+
     private static boolean isEdge(World world, BlockVector3 position, Mask mask) {
         for (com.maxlananas.fawebim.core.world.Direction direction : com.maxlananas.fawebim.core.world.Direction.values()) {
             BlockVector3 next = position.add(direction.toVector());

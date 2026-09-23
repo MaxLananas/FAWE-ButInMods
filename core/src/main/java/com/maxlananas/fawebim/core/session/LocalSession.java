@@ -311,7 +311,9 @@ public final class LocalSession {
     }
 
     public void setClipboard(BlockArrayClipboard clipboard) {
-        this.clipboard = new ClipboardHolder(clipboard);
+        // A null clipboard has to clear the holder: wrapping null would leave
+        // hasClipboard() true while every read of the clipboard throws.
+        this.clipboard = clipboard == null ? null : new ClipboardHolder(clipboard);
     }
 
     private com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard anvilClipboard;
