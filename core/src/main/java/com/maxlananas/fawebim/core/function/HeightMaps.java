@@ -24,6 +24,9 @@ public final class HeightMaps {
 
     private static final Pattern SNOW_LAYERS = Pattern.compile("layers=(\\d+)");
 
+    /** The blur radius {@code //snowsmooth} uses; the brush form blurs wider. */
+    private static final int SNOW_KERNEL_RADIUS = 5;
+
     private HeightMaps() {
     }
 
@@ -65,6 +68,16 @@ public final class HeightMaps {
      */
     public static int snowSmooth(World world, EditSession session, Region region, int iterations, int layerBlocks,
                                  Mask mask) {
+        return snowSmooth(world, session, region, iterations, layerBlocks, mask, SNOW_KERNEL_RADIUS);
+    }
+
+    /**
+     * @param kernelRadius the diameter of the blur; FAWE blurs the snow of a brush
+     *                     wider than the snow of a selection to smooth a whole
+     *                     drift in one click
+     */
+    public static int snowSmooth(World world, EditSession session, Region region, int iterations, int layerBlocks,
+                                 Mask mask, int kernelRadius) {
         BlockStateRegistry registry = BlockState.registry();
         int width = region.getWidth();
         int length = region.getLength();
@@ -91,7 +104,7 @@ public final class HeightMaps {
         }
 
         float[] smoothed = heights.clone();
-        float[] kernel = gaussianKernel(5, 1.0);
+        float[] kernel = gaussianKernel(kernelRadius, 1.0);
         for (int iteration = 0; iteration < iterations; iteration++) {
             // The half layer offset keeps the layer count of a flat field stable.
             smoothed = filter(smoothed, width, length, kernel, 0.0625f);

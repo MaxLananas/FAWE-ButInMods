@@ -1917,7 +1917,9 @@ public final class Brushes {
             CuboidRegion region = new CuboidRegion(
                     BlockVector3.at(position.x() - size, position.y() - size, position.z() - size),
                     BlockVector3.at(position.x() + size, position.y() + size + 10, position.z() + size));
-            return HeightMaps.snowSmooth(session.getWorld(), session, region, iterations, snowBlockLayers, mask);
+            // FAWE blurs the snow of a brush with a wider kernel than the one
+            // //snowsmooth uses, so one click evens out the whole drift.
+            return HeightMaps.snowSmooth(session.getWorld(), session, region, iterations, snowBlockLayers, mask, 10);
         }
     }
 
