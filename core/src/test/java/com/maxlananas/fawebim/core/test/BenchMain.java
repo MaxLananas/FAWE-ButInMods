@@ -159,6 +159,9 @@ public final class BenchMain {
         section("commands");
         measureCommands();
 
+        section("undo");
+        measureHistory();
+
         System.exit(0);
     }
 
@@ -242,6 +245,24 @@ public final class BenchMain {
             writeAll(edit, stone);
             edit.flushQueue();
         });
+    }
+
+    /** Undo and redo of an edit the size of a large paste. */
+    private static void measureHistory() {
+        FastWorld world = new FastWorld();
+        TestActor actor = new TestActor("Bench", world, new BlockVector3(0, 64, 0));
+        actor.session().setOwnerName("Bench");
+        actor.session().setMaxBlocksChanged(-1);
+        com.maxlananas.fawebim.core.command.CommandManager.get().initialise();
+        dispatch(actor, "//pos1 0,0,0", "//pos2 63,63,63");
+
+        long small = 64L * 64 * 64;
+        timed("//undo after //set on 64^3", small,
+                () -> dispatch(actor, "//set stone"),
+                () -> dispatch(actor, "//undo"));
+        timed("//redo after //undo of 64^3", small,
+                () -> dispatch(actor, "//set stone", "//undo"),
+                () -> dispatch(actor, "//redo"));
     }
 
     /**
