@@ -76,55 +76,55 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
 | `/brush` | `//brush`, `/br` | Show the current brush | implemented |
-| `/brush biome [shape] [-c]` | — | Biome brush, sets biomes in the area | implemented |
-| `/brush blendball [radius] [-m <mask>] [-a]` | `/brush bb`, `/brush blend` | Smooths and blends terrain | implemented |
+| `/brush biome [shape] [radius] [biometype] [-c]` | — | Biome brush, sets biomes in the area | implemented |
+| `/brush blendball [radius] [minfreqdiff] [-m <mask>] [-a]` | `/brush bb`, `/brush blend` | Smooths and blends terrain | implemented |
 | `/brush butcher [radius] [-p] [-n] [-g] [-a] [-b] [-t] [-f] [-r] [-w]` | `/brush kill` | Butcher brush, kills mobs within a radius | implemented |
-| `/brush catenary [fill] [-h] [-s] [-d]` | `/brush cat`, `/brush gravityline`, `/brush saggedline` | Create a hanging line between two points | implemented |
-| `/brush circle [fill]` | — | Creates a circle, which revolves around your facing direction | implemented |
-| `/brush cliff [radius] [-r] [-l] [-s]` | `/brush flatcylinder` | Cliff brush | implemented |
+| `/brush catenary [fill] [lengthfactor] [radius] [-h] [-s] [-d]` | `/brush cat`, `/brush gravityline`, `/brush saggedline` | Create a hanging line between two points | implemented |
+| `/brush circle [fill] [radius] [filled]` | — | Creates a circle, which revolves around your facing direction | implemented |
+| `/brush cliff [radius] [image] [rotation] [yscale] [-r] [-l] [-s]` | `/brush flatcylinder` | Cliff brush | implemented |
 | `/brush clipboard [-m <sourcemask>] [-a] [-o] [-e] [-b] [-r] [-v]` | `/brush copy` | Paste your clipboard at the brush location. Includes any transforms. | implemented |
-| `/brush command [radius] [-h]` | `/brush cmd` | Command brush | implemented |
+| `/brush command [radius] [input] [-h]` | `/brush cmd` | Command brush | implemented |
 | `/brush copypaste [radius] [-r] [-a]` | `/brush cp`, `/brush copypasta` | Copy Paste brush | implemented |
-| `/brush cylinder [pattern] [-h]` | `/brush cyl`, `/brush c` | Choose the cylinder brush | implemented |
-| `/brush deform [shape] [-r] [-o]` | — | Deform brush, applies an expression to an area | implemented |
+| `/brush cylinder [pattern] [radius] [height] [thickness] [-h]` | `/brush cyl`, `/brush c` | Choose the cylinder brush | implemented |
+| `/brush deform [shape] [radius] [expression] [-r] [-o]` | — | Deform brush, applies an expression to an area | implemented |
 | `/brush dilate [brushsize]` | — | Dilate preset for morph brush, dilates blocks in the area | implemented |
-| `/brush erode [radius]` | — | Erodes terrain | implemented |
+| `/brush erode [radius] [erodefaces] [eroderec] [fillfaces] [fillrec]` | — | Erodes terrain | implemented |
 | `/brush extinguish [radius]` | `/brush ex` | Shortcut fire extinguisher brush | implemented |
-| `/brush feature [shape]` | — | Feature brush, paints Minecraft generation features | implemented |
-| `/brush flatten [radius] [-r] [-l] [-s]` | `/brush flatmap`, `/brush flat` | This brush raises or lowers land towards the clicked point | implemented |
-| `/brush forest [shape]` | — | Plant trees | implemented |
+| `/brush feature [shape] [radius] [density] [type]` | — | Feature brush, paints Minecraft generation features | implemented |
+| `/brush flatten [radius] [image] [rotation] [yscale] [-r] [-l] [-s]` | `/brush flatmap`, `/brush flat` | This brush raises or lowers land towards the clicked point | implemented |
+| `/brush forest [shape] [radius] [density] [type]` | — | Plant trees | implemented |
 | `/brush gravity [radius] [-h <height>]` | `/brush grav` | Gravity brush, simulates the effect of gravity | implemented |
-| `/brush height [radius] [-r] [-l] [-s]` | — | Raise or lower terrain using a heightmap | implemented |
-| `/brush heightmap [imagename] [-e] [-f] [-r]` | — | Heightmap brush, raises or lowers terrain using an image heightmap | implemented |
-| `/brush image [?] [-a] [-f]` | — | Use a height map to paint a surface | implemented |
-| `/brush item [item]` | — | Use an item | implemented |
-| `/brush layer [radius]` | — | Replaces terrain with a layer. | implemented |
-| `/brush line [fill] [-h] [-s] [-f]` | `/brush l` | Create lines | implemented |
+| `/brush height [radius] [yscale] [image] [rotation] [-r] [-l] [-s]` | — | Raise or lower terrain using a heightmap | implemented |
+| `/brush heightmap [imagename] [radius] [intensity] [-e] [-f] [-r]` | — | Heightmap brush, raises or lowers terrain using an image heightmap | implemented |
+| `/brush image [?] [radius] [yscale] [-a] [-f]` | — | Use a height map to paint a surface | implemented |
+| `/brush item [item] [direction]` | — | Use an item | implemented |
+| `/brush layer [radius] [patternlayers]` | — | Replaces terrain with a layer. | implemented |
+| `/brush line [fill] [radius] [-h] [-s] [-f]` | `/brush l` | Create lines | implemented |
 | `/brush listbrush [-p <page>]` | `/brush list` | List the saved brush presets | implemented |
 | `/brush loadbrush <name>` | `/brush load` | Load a saved brush preset | implemented |
-| `/brush lower [shape]` | — | Lower brush, lower all blocks by one | implemented |
-| `/brush morph [brushsize]` | — | Morph brush, morphs blocks in the area | implemented |
+| `/brush lower [shape] [radius]` | — | Lower brush, lower all blocks by one | implemented |
+| `/brush morph [brushsize] [minerodefaces] [numerodeiterations] [mindilatefaces] [numdilateiterations]` | — | Morph brush, morphs blocks in the area | implemented |
 | `/brush none` | `/brush unbind` | Unbind the brush from your current item | implemented |
-| `/brush populateschematic [clipboardstr] [-r]` | `/brush populateschem`, `/brush popschem`, `/brush pschem`, `/brush ps` | Scatter a schematic on a surface | implemented |
-| `/brush pull [radius]` | — | Pull terrain towards you | implemented |
-| `/brush raise [shape]` | — | Raise brush, raise all blocks by one | implemented |
-| `/brush recursive [fill] [-d]` | `/brush recurse`, `/brush r` | Set all connected blocks | implemented |
-| `/brush rock [fill]` | `/brush blob` | Creates a distorted sphere | implemented |
+| `/brush populateschematic [clipboardstr] [mask] [radius] [density] [-r]` | `/brush populateschem`, `/brush popschem`, `/brush pschem`, `/brush ps` | Scatter a schematic on a surface | implemented |
+| `/brush pull [radius] [erodefaces] [eroderec] [fillfaces] [fillrec]` | — | Pull terrain towards you | implemented |
+| `/brush raise [shape] [radius]` | — | Raise brush, raise all blocks by one | implemented |
+| `/brush recursive [fill] [radius] [-d]` | `/brush recurse`, `/brush r` | Set all connected blocks | implemented |
+| `/brush rock [fill] [radius] [sphericity] [frequency] [amplitude]` | `/brush blob` | Creates a distorted sphere | implemented |
 | `/brush savebrush <name>` | `/brush save` | Save the current brush as a preset | implemented |
-| `/brush scatter [fill] [-o]` | — | Scatter a pattern on a surface | implemented |
-| `/brush scattercommand [radius] [-p]` | `/brush scattercmd`, `/brush scmd`, `/brush scommand` | Run commands at random points on a surface | implemented |
-| `/brush set [shape]` | — | Place a block | implemented |
-| `/brush shatter [fill]` | `/brush partition`, `/brush split` | Creates random lines to break the terrain into pieces | implemented |
-| `/brush smooth [radius]` | — | Choose the terrain softener brush | implemented |
-| `/brush snow [shape] [-s]` | — | Snow brush, sets snow in the area | implemented |
-| `/brush snowsmooth [radius] [-l <snowblockcount>] [-m <mask>]` | — | Choose the snow terrain softener brush | implemented |
-| `/brush sphere [pattern] [-h] [-f]` | `/brush s` | Choose the sphere brush | implemented |
-| `/brush splatter [fill]` | `/brush splat` | Splatter a pattern on a surface | implemented |
-| `/brush spline [fill]` | `/brush spl`, `/brush curve` | Join multiple objects together in a curve | implemented |
-| `/brush stencil [fill] [-w] [-r]` | — | Use a height map to paint a surface | implemented |
-| `/brush structure [shape]` | — | Structure brush, paints Minecraft generation structures | implemented |
-| `/brush surface [fill]` | `/brush surf` | Use a height map to paint a surface | implemented |
-| `/brush surfacespline [fill]` | `/brush sspline`, `/brush sspl` | Draws a spline (curved line) on the surface | implemented |
+| `/brush scatter [fill] [radius] [points] [distance] [-o]` | — | Scatter a pattern on a surface | implemented |
+| `/brush scattercommand [radius] [points] [distance] [commandstr] [-p]` | `/brush scattercmd`, `/brush scmd`, `/brush scommand` | Run commands at random points on a surface | implemented |
+| `/brush set [shape] [radius] [pattern]` | — | Place a block | implemented |
+| `/brush shatter [fill] [radius] [count]` | `/brush partition`, `/brush split` | Creates random lines to break the terrain into pieces | implemented |
+| `/brush smooth [radius] [iterations] [mask]` | — | Choose the terrain softener brush | implemented |
+| `/brush snow [shape] [radius] [-s]` | — | Snow brush, sets snow in the area | implemented |
+| `/brush snowsmooth [radius] [iterations] [-l <snowblockcount>] [-m <mask>]` | — | Choose the snow terrain softener brush | implemented |
+| `/brush sphere [pattern] [radius] [-h] [-f]` | `/brush s` | Choose the sphere brush | implemented |
+| `/brush splatter [fill] [radius] [points] [recursion] [solid]` | `/brush splat` | Splatter a pattern on a surface | implemented |
+| `/brush spline [fill] [radius]` | `/brush spl`, `/brush curve` | Join multiple objects together in a curve | implemented |
+| `/brush stencil [fill] [radius] [image] [rotation] [yscale] [-w] [-r]` | — | Use a height map to paint a surface | implemented |
+| `/brush structure [shape] [radius] [density] [type]` | — | Structure brush, paints Minecraft generation structures | implemented |
+| `/brush surface [fill] [radius]` | `/brush surf` | Use a height map to paint a surface | implemented |
+| `/brush surfacespline [fill] [radius] [tension] [bias] [continuity] [quality]` | `/brush sspline`, `/brush sspl` | Draws a spline (curved line) on the surface | implemented |
 | `/brush sweep [copies]` | `/brush sw`, `/brush vaesweep` | Sweep your clipboard content along a curve | implemented |
 
 ## chunk

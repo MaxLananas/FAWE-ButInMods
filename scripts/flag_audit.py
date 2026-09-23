@@ -29,6 +29,10 @@ import re
 from pathlib import Path
 
 BRUSH_TABLE = "core/src/main/java/com/maxlananas/fawebim/core/command/BrushTable.java"
+
+# Parameters a brush takes as a mask: -m <mask> fills one of these, and a mask
+# declared as a positional argument is one of these too.
+MASK_PARAMETERS = {"mask", "sourceMask"}
 BRUSH_FACTORY = "core/src/main/java/com/maxlananas/fawebim/core/brush/BrushFactory.java"
 
 # The command container a class of upstream commands belongs to.
@@ -68,6 +72,18 @@ def family(row: dict) -> tuple[str, list[str]]:
     for prefix in ("//", "/", ""):
         spellings.add(prefix + plain)
     return f"{container or '//'} {plain}".strip(), sorted(spellings)
+
+
+def brush_mask_arguments(table: str) -> dict[str, set[str]]:
+    """The mask parameters every brush row declares as a positional argument."""
+    masks: dict[str, set[str]] = {}
+    for row in re.findall(r"\{\"([^\"]*)\",\s*\"[^\"]*\",\s*\"([^\"]*)\",", table):
+        name, arguments = row
+        declared = {argument.split("=")[0].strip() for argument in arguments.split("|")
+                    if argument.split("=")[0].strip() in MASK_PARAMETERS}
+        if declared:
+            masks[name] = declared
+    return masks
 
 
 def brush_rows(table: str) -> list[tuple[str, str, dict[str, str]]]:
@@ -149,6 +165,7 @@ def brush_flag_audit(table_path: str, factory_path: str) -> list[str]:
         print(f"brush flag audit skipped: {table} or {factory} is missing")
         return []
     blocks = factory_blocks(factory.read_text())
+    mask_arguments = brush_mask_arguments(table.read_text())
     unread: list[str] = []
     for name, letters, pairs in brush_rows(table.read_text()):
         block = blocks.get(name)
@@ -179,6 +196,10 @@ def brush_flag_audit(table_path: str, factory_path: str) -> list[str]:
             if parameter in parameters:
                 continue
             unread.append(f"{name} (-{letter} fills '{parameter}', which the factory never reads)")
+        for parameter in mask_arguments.get(name, set()):
+            if parameter in parameters:
+                continue
+            unread.append(f"{name} (declares the mask argument '{parameter}', which the factory never reads)")
     print(f"brushes whose factory never reads a flag: {len(unread)}")
     for entry in unread:
         print(f"  {entry}")

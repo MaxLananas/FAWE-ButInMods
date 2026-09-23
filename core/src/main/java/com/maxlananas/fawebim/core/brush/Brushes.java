@@ -238,39 +238,13 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            for (int pass = 0; pass < iterations; pass++) {
-                changed += smoothOnce(session, position);
-            }
-            return changed;
-        }
-
-        private int smoothOnce(EditSession session, BlockVector3 position) {
-            BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (BlockVector3 target : Operations.spherePositions(position, (int) radius, false)) {
-                if (!test(target.x(), target.y(), target.z())) {
-                    continue;
-                }
-                int average = 0;
-                int count = 0;
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dy = -1; dy <= 1; dy++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            average += session.getBlock(target.x() + dx, target.y() + dy, target.z() + dz);
-                            count++;
-                        }
-                    }
-                }
-                int best = average / Math.max(1, count);
-                if (registry.isAirLike(best)) {
-                    continue;
-                }
-                if (session.setBlock(target.x(), target.y(), target.z(), best)) {
-                    changed++;
-                }
-            }
-            return changed;
+            // FAWE samples a box around the click that reaches ten blocks up, so
+            // a hill inside the reach of the brush is smoothed, not just its foot.
+            int size = (int) radius;
+            CuboidRegion region = new CuboidRegion(
+                    BlockVector3.at(position.x() - size, position.y() - size, position.z() - size),
+                    BlockVector3.at(position.x() + size, position.y() + size + 10, position.z() + size));
+            return HeightMaps.smooth(session.getWorld(), session, region, iterations, mask);
         }
     }
 
@@ -1561,15 +1535,23 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush populateschematic} — pastes a schematic at the click. */
+    /**
+     * {@code /brush populateschematic} — scatters copies of a schematic over the
+     * surface around the click.
+     *
+     * <p>FAWE walks the chunks the brush covers, rolls the density once per chunk
+     * and drops one copy at a random column of it. The column is found with the
+     * mask, which defaults to any solid block when the command line leaves it
+     * out.</p>
+     */
     public static final class PopulateSchematicBrush extends BaseBrush {
 
         private String schematic;
         private boolean randomRotation;
         private int density = 50;
 
-        public PopulateSchematicBrush(double radius) {
-            super(radius, null, null);
+        public PopulateSchematicBrush(double radius, Mask mask) {
+            super(radius, null, mask);
         }
 
         public void setSchematic(String schematic) {
@@ -1580,30 +1562,50 @@ public final class Brushes {
             this.randomRotation = randomRotation;
         }
 
-        /** How likely a spot of the surface receives a copy, in percent. */
+        /** How likely a chunk receives a copy, in percent. */
         public void setDensity(int density) {
             this.density = Math.max(1, Math.min(100, density));
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            if (schematic == null) {
+            if (schematic == null || schematic.isEmpty()) {
                 actor.message(Msg.error("Set a schematic first: /brush populateschematic <name> <radius>"));
                 return 0;
             }
-            if (random.nextInt(100) >= density) {
-                return 0;
+            // A comma separated list is FAWE's "clipboard uri": one of them is
+            // picked for every copy that is placed.
+            String[] names = schematic.split(",");
+            int size = (int) radius;
+            int minY = session.getWorld().minY();
+            int maxY = session.getWorld().maxY();
+            int changed = 0;
+            for (int chunkX = (position.x() - size) >> 4; chunkX <= (position.x() + size) >> 4; chunkX++) {
+                for (int chunkZ = (position.z() - size) >> 4; chunkZ <= (position.z() + size) >> 4; chunkZ++) {
+                    if (random.nextInt(100) > density) {
+                        continue;
+                    }
+                    int x = (chunkX << 4) + random.nextInt(16);
+                    int z = (chunkZ << 4) + random.nextInt(16);
+                    int y = HeightMaps.highestTerrain(session.getWorld(), mask, x, z, minY, maxY);
+                    if (mask != null && !mask.test(x, y, z)) {
+                        continue;
+                    }
+                    String name = names[random.nextInt(names.length)].trim();
+                    var clipboard = com.maxlananas.fawebim.core.clipboard.Schematics.load(name);
+                    if (clipboard == null) {
+                        actor.message(Msg.error("Could not load schematic '" + name + "'"));
+                        return changed;
+                    }
+                    var transform = randomRotation
+                            ? com.maxlananas.fawebim.core.transform.Transforms.rotate(clipboard.getOrigin(),
+                                    random.nextInt(4) * 90)
+                            : com.maxlananas.fawebim.core.transform.Transform.identity();
+                    changed += com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard,
+                            new BlockVector3(x, y, z), session, transform, false, false, false);
+                }
             }
-            var clipboard = com.maxlananas.fawebim.core.clipboard.Schematics.load(schematic);
-            if (randomRotation) {
-                int rotations = random.nextInt(4);
-                var transform = com.maxlananas.fawebim.core.transform.Transforms.rotate(
-                        clipboard.getOrigin(), rotations * 90);
-                return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, position, session, transform,
-                        false, false, false);
-            }
-            return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, position, session,
-                    com.maxlananas.fawebim.core.transform.Transform.identity(), false, false, false);
+            return changed;
         }
     }
 

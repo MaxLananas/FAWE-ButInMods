@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * The values a {@code /brush} command line carries, resolved against the
@@ -50,7 +51,9 @@ public final class BrushParameters {
      * @param options the flags that were split off the command line
      */
     public static BrushParameters bind(Ctx ctx, String[] row, BrushOptions options) {
-        Map<String, String> values = new LinkedHashMap<>();
+        // The signature lowercases its entries, so the lookup of a parameter is
+        // case insensitive: -l fills "snowBlockCount" whatever its spelling.
+        Map<String, String> values = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         List<String> names = new ArrayList<>();
         List<String> defaults = new ArrayList<>();
         for (String declaration : arguments(row)) {
@@ -100,7 +103,7 @@ public final class BrushParameters {
 
     /** The parameters of a brush built without a command line, i.e. a preset. */
     public static BrushParameters of(String[] row, double radius, Pattern pattern, BrushOptions options) {
-        Map<String, String> values = new LinkedHashMap<>();
+        Map<String, String> values = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         List<String> names = new ArrayList<>();
         List<String> defaults = new ArrayList<>();
         for (String declaration : arguments(row)) {
@@ -242,12 +245,17 @@ public final class BrushParameters {
         return splitList(row[1]);
     }
 
+    /**
+     * Splits a column of a brush signature: aliases, switches and value flags are
+     * comma separated, while the arguments column separates its entries with a
+     * pipe so an argument can keep a comma for a default such as {@code a,b}.
+     */
     private static List<String> splitList(String csv) {
         List<String> parts = new ArrayList<>();
         if (csv == null || csv.isEmpty()) {
             return parts;
         }
-        for (String part : csv.split(",")) {
+        for (String part : csv.split("\\s*[|,]\\s*")) {
             String trimmed = part.trim().toLowerCase(Locale.ROOT);
             if (!trimmed.isEmpty()) {
                 parts.add(trimmed);

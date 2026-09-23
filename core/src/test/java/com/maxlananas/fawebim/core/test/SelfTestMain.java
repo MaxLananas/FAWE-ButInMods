@@ -913,6 +913,73 @@ public final class SelfTestMain {
         snowSession.flushQueue();
         check("brush snowsmooth ran with -l and -m", actor.messages().stream()
                 .noneMatch(message -> message.contains("Syntax")));
+
+        // Every brush reads the arguments of its signature: /brush sphere takes a
+        // pattern and a radius, and neither may fall back to a default.
+        world.setBlock(100, 91, 100, air);
+        CommandManager.get().dispatch(actor, "/brush sphere dirt 2");
+        com.maxlananas.fawebim.core.brush.Brush sphere =
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session);
+        check("brush sphere took its radius", sphere != null && sphere.radius() == 2.0);
+        EditSession sphereSession = new EditSession(world, session, "brush sphere");
+        sphere.apply(sphereSession, new BlockVector3(100, 90, 100), actor);
+        sphereSession.flushQueue();
+        check("brush sphere took its pattern",
+                world.getBlock(100, 90, 100) == registry.defaultState("minecraft:dirt"));
+
+        // /brush smooth samples a box above the click and takes the mask its
+        // height map is built from as a positional argument.
+        world.setBlock(70, 71, 70, stone);
+        world.setBlock(70, 72, 70, stone);
+        CommandManager.get().dispatch(actor, "/brush smooth 3 1 stone");
+        check("brush smooth binds the terrain smoother",
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                        instanceof Brushes.SmoothBrush);
+        EditSession smoothSession = new EditSession(world, session, "brush smooth");
+        com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                .apply(smoothSession, new BlockVector3(70, 69, 70), actor);
+        smoothSession.flushQueue();
+        check("brush smooth flattened the bump", world.getBlock(70, 72, 70) == air);
+
+        // /brush populateschematic drops copies of a schematic where its mask
+        // matches the surface, at the density it was given.
+        int gold = registry.defaultState("minecraft:gold_block");
+        BlockArrayClipboard stamps = new BlockArrayClipboard(new BlockVector3(0, 0, 0));
+        stamps.setBlock(0, 0, 0, gold);
+        Schematics.save(stamps, "populate-selftest", "sponge.3");
+        CommandManager.get().dispatch(actor, "/brush populateschematic populate-selftest.schem stone 4 100");
+        check("brush populateschematic binds the scatter brush",
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                        instanceof Brushes.PopulateSchematicBrush);
+        TestWorld populated = new TestWorld("populate");
+        populated.fillFlat(70);
+        TestActor scatter = new TestActor("Bob", populated, new BlockVector3(0, 71, 0));
+        scatter.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(scatter, "/brush populateschematic populate-selftest.schem stone 4 100");
+        EditSession scatterSession = new EditSession(populated, scatter.session(), "populate");
+        int stamped = com.maxlananas.fawebim.core.brush.BrushFactory.current(scatter.session())
+                .apply(scatterSession, new BlockVector3(0, 70, 0), scatter);
+        scatterSession.flushQueue();
+        check("brush populateschematic placed copies", stamped > 0);
+        // The mask decides which block of a column counts as the surface: the
+        // stone one, so no copy lands on the grass above it.
+        int onStone = 0;
+        int onSurface = 0;
+        for (int x = -16; x < 16; x++) {
+            for (int z = -16; z < 16; z++) {
+                for (int y = 60; y <= 80; y++) {
+                    if (populated.getBlock(x, y, z) != gold) {
+                        continue;
+                    }
+                    if (y == 67) {
+                        onStone++;
+                    } else if (y >= 69) {
+                        onSurface++;
+                    }
+                }
+            }
+        }
+        check("brush populateschematic honoured its mask", onStone > 0 && onSurface == 0);
     }
 
     private static void testGravityBrush() {

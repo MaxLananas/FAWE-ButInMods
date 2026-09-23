@@ -78,7 +78,7 @@ public final class BrushFactory {
                 yield brush;
             }
             case "smooth" -> {
-                Brushes.SmoothBrush brush = new Brushes.SmoothBrush(parameters.radius(), parameters.mask());
+                Brushes.SmoothBrush brush = new Brushes.SmoothBrush(parameters.radius(), parameters.flagMask());
                 brush.setIterations(parameters.integer("iterations", 4));
                 yield brush;
             }
@@ -183,7 +183,8 @@ public final class BrushFactory {
             case "scattercommand" -> new Brushes.ScatterCommandBrush(parameters.radius(),
                     parameters.string("commandStr", ""), parameters.flag("p"));
             case "populateschematic" -> {
-                Brushes.PopulateSchematicBrush brush = new Brushes.PopulateSchematicBrush(parameters.radius());
+                Brushes.PopulateSchematicBrush brush = new Brushes.PopulateSchematicBrush(parameters.radius(),
+                        parameters.flagMask());
                 brush.setSchematic(parameters.string("clipboardStr", ""));
                 brush.setDensity(parameters.integer("density", 50));
                 brush.setRandomRotation(parameters.flag("r"));
