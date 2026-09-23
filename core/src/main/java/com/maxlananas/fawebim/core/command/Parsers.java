@@ -240,13 +240,54 @@ public final class Parsers {
             return hashMask(trimmed, ctx);
         }
         if (trimmed.startsWith("^")) {
-            String[] parts = trimmed.substring(1).split(",");
-            double min = parts.length > 0 ? Double.parseDouble(parts[0]) : 0;
-            double max = parts.length > 1 ? Double.parseDouble(parts[1]) : 90;
-            return new Masks.ROCAngleMask(extOf(ctx), min, max, parts.length > 2);
+            return angleMask("angle", trimmed.substring(1), extOf(ctx));
         }
         // Plain block list, e.g. "stone,dirt,oak_log[axis=y]".
         return new Masks.BlockMask(extOf(ctx), List.of(trimmed));
+    }
+
+    /**
+     * Parses FAWE's slope masks: {@code #angle[<min>,<max>][,o]},
+     * {@code #roc[...]} and {@code #surfaceangle[<min>,<max>[,<size>]]}.
+     *
+     * <p>Limits are tangents unless they end in {@code d}, which is FAWE's way of
+     * writing degrees; {@code #angle} and {@code #roc} take the extra {@code -o} or
+     * {@code o} flag to keep only the blocks with air next to them.</p>
+     */
+    private static Mask angleMask(String id, String args, Extent extent) {
+        String[] tokens = args.replace("-", "").split("[,\\s]+");
+        java.util.List<String> values = new java.util.ArrayList<>();
+        boolean overlay = false;
+        for (String token : tokens) {
+            if (token.isEmpty()) {
+                continue;
+            }
+            if (token.equals("o")) {
+                overlay = true;
+            } else {
+                values.add(token);
+            }
+        }
+        if (id.equals("surfaceangle")) {
+            double min = values.isEmpty() ? 0 : Double.parseDouble(values.get(0).replace("d", ""));
+            double max = values.size() < 2 ? 90 : Double.parseDouble(values.get(1).replace("d", ""));
+            int size = values.size() < 3 ? 1 : Integer.parseInt(values.get(2));
+            return new Masks.SurfaceAngleMask(extent, min, max, size);
+        }
+        double min = values.isEmpty() ? 0 : slopeLimit(values.get(0));
+        double max = values.size() < 2 ? Math.tan(Math.PI / 2) : slopeLimit(values.get(1));
+        if (id.equals("roc")) {
+            return new Masks.ROCAngleMask(extent, min, max, overlay, 4);
+        }
+        return new Masks.AngleMask(extent, min, max, overlay, 1);
+    }
+
+    /** Degrees with the {@code d} suffix become tangents; anything else is a tangent. */
+    private static double slopeLimit(String value) {
+        if (value.endsWith("d")) {
+            return Math.tan(Math.toRadians(Double.parseDouble(value.substring(0, value.length() - 1))));
+        }
+        return Double.parseDouble(value);
     }
 
     private static Mask hashMask(String input, Ctx ctx) {
@@ -279,21 +320,8 @@ public final class Parsers {
                 int offset = args.isEmpty() ? 1 : Integer.parseInt(args);
                 return new Masks.SurfaceMask(extent, offset, false);
             }
-            case "surfaceangle", "angle" -> {
-                String[] parts = args.split(",");
-                double min = parts.length > 0 && !parts[0].isEmpty() ? Double.parseDouble(parts[0]) : 0;
-                double max = parts.length > 1 ? Double.parseDouble(parts[1]) : 90;
-                boolean degrees = args.endsWith("d");
-                double minTan = degrees ? Math.tan(Math.toRadians(min)) : min;
-                double maxTan = degrees ? Math.tan(Math.toRadians(max)) : max;
-                boolean overlay = args.contains("-o");
-                return new Masks.AngleMask(extent, minTan, maxTan, overlay);
-            }
-            case "roc" -> {
-                String[] parts = args.split(",");
-                double min = parts.length > 0 && !parts[0].isEmpty() ? Double.parseDouble(parts[0]) : 0;
-                double max = parts.length > 1 ? Double.parseDouble(parts[1]) : 90;
-                return new Masks.ROCAngleMask(extent, min, max, args.contains("-o"));
+            case "angle", "surfaceangle", "roc" -> {
+                return angleMask(id, args, extent);
             }
             case "beside" -> {
                 return new Masks.BesideMask(extent, new Masks.AirMask(extent, false));

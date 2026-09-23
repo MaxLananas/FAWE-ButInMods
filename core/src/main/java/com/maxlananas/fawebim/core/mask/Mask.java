@@ -10,10 +10,15 @@ import com.maxlananas.fawebim.core.world.Extent;
  */
 public interface Mask {
 
-    boolean test(BlockVector3 position);
+    /**
+     * The primitive form every mask implements: the visitors test millions of
+     * blocks, so nothing on this path may allocate. {@link BlockVector3} callers
+     * are served by the default below.
+     */
+    boolean test(int x, int y, int z);
 
-    default boolean test(int x, int y, int z) {
-        return test(new BlockVector3(x, y, z));
+    default boolean test(BlockVector3 position) {
+        return test(position.x(), position.y(), position.z());
     }
 
     /** 2D variant used by the surface/heightmap operations. */

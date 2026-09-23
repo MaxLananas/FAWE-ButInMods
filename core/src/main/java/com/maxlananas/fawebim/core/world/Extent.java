@@ -42,6 +42,23 @@ public interface Extent {
         return 319;
     }
 
+    /**
+     * The nearest non-air block at or below {@code y} in the given column, or
+     * {@code minY} when the column is empty. FAWE's heightmap lookup, used by the
+     * angle masks and the height brushes.
+     */
+    default int getNearestSurfaceTerrainBlock(int x, int z, int y, int minY, int maxY) {
+        int start = Math.min(maxY, Math.max(minY, y));
+        BlockStateRegistry registry = BlockState.registry();
+        for (int current = start; current >= minY; current--) {
+            int state = getBlock(x, current, z);
+            if (!registry.isAirLike(state) && !registry.isLiquid(state)) {
+                return current;
+            }
+        }
+        return minY;
+    }
+
     default boolean isWorld() {
         return false;
     }

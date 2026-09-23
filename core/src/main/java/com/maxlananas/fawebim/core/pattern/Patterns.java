@@ -32,7 +32,7 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             return stateId;
         }
     }
@@ -52,9 +52,9 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             Pattern chosen = children.next(random);
-            return chosen == null ? 0 : chosen.apply(position);
+            return chosen == null ? 0 : chosen.apply(x, y, z);
         }
 
         @Override
@@ -82,11 +82,10 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
-            int x = position.x() - origin.x();
-            int y = position.y() - origin.y();
-            int z = position.z() - origin.z();
-            if (randomRotation && (x == 0 && z == 0)) {
+        public int apply(int x, int y, int z) {
+            int px = x - origin.x();
+            int pz = z - origin.z();
+            if (randomRotation && (px == 0 && pz == 0)) {
                 // The rotation is picked once per block column, so a tower of
                 // blocks coming from one clipboard cell stays coherent.
                 rotation = random.nextInt(4);
@@ -162,9 +161,9 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             Extent ext = extent != null ? extent : com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
-            return ext == null ? 0 : ext.getBlock(position.x(), position.y(), position.z());
+            return ext == null ? 0 : ext.getBlock(x, y, z);
         }
 
         @Override
@@ -185,7 +184,7 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             Extent ext = extent != null ? extent : com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
             if (ext == null) {
                 return 0;
@@ -194,7 +193,7 @@ public final class Patterns {
             // dry ones sand, cold ones snow, everything else keeps the terrain.
             String biome = BlockState.registry().biomeName(biomeId);
             boolean exposed = BlockState.registry().isAirLike(
-                    ext.getBlock(position.x(), position.y() + 1, position.z()));
+                    ext.getBlock(x, y + 1, z));
             if (!exposed) {
                 return BlockState.registry().defaultState("minecraft:stone");
             }
@@ -223,8 +222,8 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
-            return delegate.apply(position.add(offset));
+        public int apply(int x, int y, int z) {
+            return delegate.apply(x + offset.x(), y + offset.y(), z + offset.z());
         }
 
         @Override
@@ -252,11 +251,11 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             int ox = dx == 0 ? 0 : random.nextInt(dx * 2 + 1) - dx;
             int oy = dy == 0 ? 0 : random.nextInt(dy * 2 + 1) - dy;
             int oz = dz == 0 ? 0 : random.nextInt(dz * 2 + 1) - dz;
-            BlockVector3 target = position.add(ox, oy, oz);
+            BlockVector3 target = new BlockVector3(x + ox, y + oy, z + oz);
             if (solid) {
                 // "#spread" with the solid flag: never carve into the terrain,
                 // only fill where the offset landed on an existing block.
@@ -287,8 +286,8 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
-            return delegate.apply(position.add(origin));
+        public int apply(int x, int y, int z) {
+            return delegate.apply(x + origin.x(), y + origin.y(), z + origin.z());
         }
     }
 
@@ -296,12 +295,12 @@ public final class Patterns {
     public static final class TypeSwap implements Pattern {
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
             if (extent == null) {
                 return 0;
             }
-            int id = extent.getBlock(position.x(), position.y(), position.z());
+            int id = extent.getBlock(x, y, z);
             BlockStateRegistry registry = BlockState.registry();
             String name = registry.name(id);
             // Mud <-> dirt, grass <-> mycelium, stone family, wood families.
@@ -347,11 +346,11 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
-            double t = Math.abs((position.x() * (alongX ? 1 : 0)
-                    + position.y() * (alongY ? 1 : 0)
-                    + position.z() * (alongZ ? 1 : 0)) % 256) / 255.0;
-            return t < 0.5 ? from.apply(position) : to.apply(position);
+        public int apply(int x, int y, int z) {
+            double t = Math.abs((x * (alongX ? 1 : 0)
+                    + y * (alongY ? 1 : 0)
+                    + z * (alongZ ? 1 : 0)) % 256) / 255.0;
+            return t < 0.5 ? from.apply(x, y, z) : to.apply(x, y, z);
         }
     }
 
@@ -367,9 +366,9 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             Expression.Variables vars = new Expression.Variables();
-            vars.set("x", position.x()).set("y", position.y()).set("z", position.z());
+            vars.set("x", x).set("y", y).set("z", z);
             return (int) Math.floor(expression.evaluate(vars));
         }
 
@@ -383,7 +382,7 @@ public final class Patterns {
     public static final class Surface implements Pattern {
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             return 0;
         }
     }
@@ -403,7 +402,7 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             return states[random.nextInt(states.length)];
         }
 
@@ -423,15 +422,15 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
-            int base = delegate.apply(position);
+            int base = delegate.apply(x, y, z);
             if (extent == null) {
                 return base;
             }
             BlockStateRegistry registry = BlockState.registry();
             // Copy matching properties from the block below (stairs' facing...).
-            int below = extent.getBlock(position.x(), position.y() - 1, position.z());
+            int below = extent.getBlock(x, y - 1, z);
             int result = base;
             for (var entry : registry.properties(below).entrySet()) {
                 int updated = registry.withProperty(result, entry.getKey(), entry.getValue());
@@ -455,7 +454,7 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             return closest();
         }
 
@@ -497,12 +496,12 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             Extent ext = extent != null ? extent : com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
             if (ext == null) {
                 return 0;
             }
-            int current = ext.getBlock(position.x(), position.y(), position.z());
+            int current = ext.getBlock(x, y, z);
             BlockStateRegistry registry = BlockState.registry();
             float[] hsb = java.awt.Color.RGBtoHSB(
                     (MapColors.colorOf(registry, current) >> 16) & 0xFF,
@@ -537,9 +536,9 @@ public final class Patterns {
         }
 
         @Override
-        public int apply(BlockVector3 position) {
-            double value = noise.noise(position.x() * scale, position.y() * scale, position.z() * scale);
-            return value > 0 ? high.apply(position) : low.apply(position);
+        public int apply(int x, int y, int z) {
+            double value = noise.noise(x * scale, y * scale, z * scale);
+            return value > 0 ? high.apply(x, y, z) : low.apply(x, y, z);
         }
     }
 }

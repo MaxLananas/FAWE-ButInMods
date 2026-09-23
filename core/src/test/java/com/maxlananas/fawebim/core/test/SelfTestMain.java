@@ -325,7 +325,7 @@ public final class SelfTestMain {
         check("hotbar mask", new Masks.HotbarMask(java.util.Set.of(stone)) != null);
         check("axis mask", new Masks.AxisMask(1, 8) != null);
         check("random mask", new Masks.SimplexMask(0.5, 0.1) != null);
-        check("angle mask", new Masks.AngleMask(session, 0, 1, false) != null);
+        check("angle mask", new Masks.AngleMask(session, 0, 1, false, 1) != null);
         check("extrema mask", new Masks.ExtremaMask(session, 0, 100) != null);
         check("offset mask", new Masks.OffsetMask(session, solid, 0, 1, 0) != null);
         check("exposed mask", new Masks.ExposedMask(session).test(0, 70, 0));

@@ -9,11 +9,16 @@ import com.maxlananas.fawebim.core.world.Extent;
  */
 public interface Pattern {
 
-    /** @return the state id to place at the position. */
-    int apply(BlockVector3 position);
+    /**
+     * The primitive form every pattern implements: patterns run once per changed
+     * block, so the coordinates are passed as ints and nothing allocates.
+     *
+     * @return the state id to place at the position
+     */
+    int apply(int x, int y, int z);
 
-    default int apply(int x, int y, int z) {
-        return apply(new BlockVector3(x, y, z));
+    default int apply(BlockVector3 position) {
+        return apply(position.x(), position.y(), position.z());
     }
 
     /** The extent the pattern reads from (clipboard patterns, biome patterns...). */

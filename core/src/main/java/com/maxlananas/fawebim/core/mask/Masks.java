@@ -1,6 +1,6 @@
 package com.maxlananas.fawebim.core.mask;
 
-import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.expression.Expression;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.util.noise.Noise;
@@ -95,11 +95,6 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            return test(position.x(), position.y(), position.z());
-        }
-
-        @Override
         public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             if (ext == null) {
@@ -151,12 +146,12 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             if (ext == null) {
                 return false;
             }
-            int id = ext.getBlock(position.x(), position.y(), position.z());
+            int id = ext.getBlock(x, y, z);
             if (includeLiquid) {
                 return BlockState.registry().isAirLike(id) || BlockState.registry().isLiquid(id);
             }
@@ -180,12 +175,12 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             if (ext == null) {
                 return false;
             }
-            int id = ext.getBlock(position.x(), position.y(), position.z());
+            int id = ext.getBlock(x, y, z);
             return ignoreAir ? !BlockState.registry().isAirLike(id) : true;
         }
 
@@ -204,9 +199,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            return ext != null && BlockState.registry().isSolid(ext.getBlock(position.x(), position.y(), position.z()));
+            return ext != null && BlockState.registry().isSolid(ext.getBlock(x, y, z));
         }
 
         @Override
@@ -224,9 +219,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            return ext != null && BlockState.registry().isLiquid(ext.getBlock(position.x(), position.y(), position.z()));
+            return ext != null && BlockState.registry().isLiquid(ext.getBlock(x, y, z));
         }
 
         @Override
@@ -244,9 +239,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            return ext != null && BlockState.registry().isFullCube(ext.getBlock(position.x(), position.y(), position.z()));
+            return ext != null && BlockState.registry().isFullCube(ext.getBlock(x, y, z));
         }
 
         @Override
@@ -266,9 +261,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            return ext != null && ext.getBiome(position.x(), position.y(), position.z()) == biomeId;
+            return ext != null && ext.getBiome(x, y, z) == biomeId;
         }
 
         @Override
@@ -292,8 +287,8 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            return region.contains(position);
+        public boolean test(int x, int y, int z) {
+            return region.contains(x, y, z);
         }
 
         @Override
@@ -312,9 +307,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Region region = supplier.get();
-            return region != null && region.contains(position);
+            return region != null && region.contains(x, y, z);
         }
 
         @Override
@@ -340,8 +335,8 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            return source.test(position.add(dx, dy, dz));
+        public boolean test(int x, int y, int z) {
+            return source.test(x + dx, y + dy, z + dz);
         }
 
         @Override
@@ -363,14 +358,14 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            if (source.test(position)) {
+        public boolean test(int x, int y, int z) {
+            if (source.test(x, y, z)) {
                 return true;
             }
-            for (int y = -radius; y <= radius; y++) {
-                for (int z = -radius; z <= radius; z++) {
-                    for (int x = -radius; x <= radius; x++) {
-                        if (source.test(position.add(x, y, z))) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        if (source.test(x + dx, y + dy, z + dz)) {
                             return true;
                         }
                     }
@@ -395,15 +390,12 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             if (ext == null) {
                 return false;
             }
             BlockStateRegistry registry = BlockState.registry();
-            int x = position.x();
-            int y = position.y();
-            int z = position.z();
             boolean northSouth = !registry.isAirLike(ext.getBlock(x, y, z - 1))
                     && !registry.isAirLike(ext.getBlock(x, y, z + 1));
             boolean eastWest = !registry.isAirLike(ext.getBlock(x - 1, y, z))
@@ -431,22 +423,22 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             if (ext == null) {
                 return false;
             }
             BlockStateRegistry registry = BlockState.registry();
             for (int i = 1; i <= offset; i++) {
-                if (!registry.isAirLike(ext.getBlock(position.x(), position.y() + i, position.z()))) {
+                if (!registry.isAirLike(ext.getBlock(x, y + i, z))) {
                     return false;
                 }
             }
             if (alwaysAir) {
                 return true;
             }
-            return !registry.isAirLike(ext.getBlock(position.x(), position.y() - 1, position.z()))
-                    || registry.isSolid(ext.getBlock(position.x(), position.y(), position.z()));
+            return !registry.isAirLike(ext.getBlock(x, y - 1, z))
+                    || registry.isSolid(ext.getBlock(x, y, z));
         }
 
         @Override
@@ -455,51 +447,212 @@ public final class Masks {
         }
     }
 
-    /** {@code #angle}: slope angle test, in tangent or degree units. */
-    public static final class AngleMask implements Mask {
+    /**
+     * {@code #angle}: keeps blocks whose slope is between {@code min} and
+     * {@code max}.
+     *
+     * <p>FAWE's implementation, including its height cache: the column heights are
+     * read once per 256-block window and reused, which is what makes the mask
+     * affordable on large selections. The slope is the largest of the four
+     * differences across the column, with the axial samples weighted by
+     * {@code 0.5} and the diagonal ones by {@code 1/sqrt(8)}.</p>
+     */
+    public static class AngleMask implements Mask {
+
+        protected static final double ADJACENT_MOD = 0.5;
+        protected static final double DIAGONAL_MOD = 1 / Math.sqrt(8);
+
+        private final Extent extent;
+        protected final double min;
+        protected final double max;
+        protected final boolean overlay;
+        protected final boolean checkFirst;
+        protected final int maxY;
+        protected final int minY;
+        protected final int distance;
+        private int cacheBotX = Integer.MIN_VALUE;
+        private int cacheBotZ = Integer.MIN_VALUE;
+        private short[] cacheHeights;
+        protected int lastY;
+        protected boolean lastValue;
+        private int lastX = Integer.MIN_VALUE;
+        private int lastZ = Integer.MIN_VALUE;
+
+        public AngleMask(Extent extent, double min, double max, boolean overlay, int distance) {
+            this.extent = resolve(extent);
+            this.min = min;
+            this.max = max;
+            this.overlay = overlay;
+            this.distance = distance;
+            // A maximum at or above 90 degrees covers every slope, so the mask can
+            // stop at the first sample that reaches the minimum.
+            this.checkFirst = max >= Math.tan(Math.PI / 2);
+            this.maxY = this.extent.maxY();
+            this.minY = this.extent.minY();
+        }
+
+        @Override
+        public boolean test(int x, int y, int z) {
+            if (lastX == x && lastZ == z) {
+                int height = getHeight(extent, x, y, z);
+                if (y <= height) {
+                    return overlay ? lastValue && y == height : lastValue;
+                }
+            }
+            lastX = x;
+            lastZ = z;
+            if (!BlockState.registry().isSolid(extent.getBlock(x, y, z))) {
+                return lastValue = false;
+            }
+
+            if (overlay && y < maxY && !adjacentAir(x, y, z)) {
+                return lastValue = false;
+            }
+            return testSlope(extent, x, y, z);
+        }
+
+        protected boolean testSlope(Extent extent, int x, int y, int z) {
+            lastY = y;
+            double slope = Math.abs(getHeight(extent, x + distance, y, z)
+                    - getHeight(extent, x - distance, y, z)) * ADJACENT_MOD;
+            if (checkFirst) {
+                if (slope >= min) {
+                    return lastValue = true;
+                }
+                slope = Math.max(slope, Math.abs(getHeight(extent, x, y, z + distance)
+                        - getHeight(extent, x, y, z - distance)) * ADJACENT_MOD);
+                slope = Math.max(slope, Math.abs(getHeight(extent, x + distance, y, z + distance)
+                        - getHeight(extent, x - distance, y, z - distance)) * DIAGONAL_MOD);
+                slope = Math.max(slope, Math.abs(getHeight(extent, x - distance, y, z + distance)
+                        - getHeight(extent, x + distance, y, z - distance)) * DIAGONAL_MOD);
+                return lastValue = slope >= min;
+            }
+            slope = Math.max(slope, Math.abs(getHeight(extent, x, y, z + distance)
+                    - getHeight(extent, x, y, z - distance)) * ADJACENT_MOD);
+            slope = Math.max(slope, Math.abs(getHeight(extent, x + distance, y, z + distance)
+                    - getHeight(extent, x - distance, y, z - distance)) * DIAGONAL_MOD);
+            slope = Math.max(slope, Math.abs(getHeight(extent, x - distance, y, z + distance)
+                    - getHeight(extent, x + distance, y, z - distance)) * DIAGONAL_MOD);
+            return lastValue = slope >= min && slope <= max;
+        }
+
+        /** Column height, cached over a 256x256 window like FAWE's {@code cacheHeights}. */
+        protected int getHeight(Extent extent, int x, int y, int z) {
+            int rx = x - cacheBotX + 16;
+            int rz = z - cacheBotZ + 16;
+            int index;
+            if ((rx & 0xFF) != rx || (rz & 0xFF) != rz) {
+                cacheBotX = x - 16;
+                cacheBotZ = z - 16;
+                rx = x - cacheBotX + 16;
+                rz = z - cacheBotZ + 16;
+                if (cacheHeights == null) {
+                    cacheHeights = new short[65536];
+                }
+                java.util.Arrays.fill(cacheHeights, (short) minY);
+            }
+            index = rx + (rz << 8);
+            int result = cacheHeights[index];
+            if (y > result) {
+                result = extent.getNearestSurfaceTerrainBlock(x, z, Math.max(lastY, y), minY, maxY);
+                lastY = result;
+                cacheHeights[index] = (short) result;
+            }
+            return result;
+        }
+
+        /** True when one of the six neighbours is air, which is what {@code -o} keeps. */
+        private boolean adjacentAir(int x, int y, int z) {
+            Extent ext = extent;
+            if (y != maxY && !BlockState.registry().isSolid(ext.getBlock(x, y + 1, z))) {
+                return true;
+            }
+            if (y != minY && !BlockState.registry().isSolid(ext.getBlock(x, y - 1, z))) {
+                return true;
+            }
+            return !BlockState.registry().isSolid(ext.getBlock(x + 1, y, z))
+                    || !BlockState.registry().isSolid(ext.getBlock(x - 1, y, z))
+                    || !BlockState.registry().isSolid(ext.getBlock(x, y, z + 1))
+                    || !BlockState.registry().isSolid(ext.getBlock(x, y, z - 1));
+        }
+
+        @Override
+        public Extent extent() {
+            return extent;
+        }
+    }
+
+    /**
+     * {@code #surfaceangle}: keeps the surface blocks whose surrounding air points
+     * away from straight up.
+     *
+     * <p>FAWE averages the direction of every air block in a cube around the
+     * tested block and turns {@code 1 - average.y} into a fraction of 90 degrees,
+     * which is why the mask's limits are given in degrees.</p>
+     */
+    public static final class SurfaceAngleMask implements Mask {
 
         private final Extent extent;
         private final double min;
         private final double max;
-        private final boolean overlay;
+        private final int size;
 
-        public AngleMask(Extent extent, double min, double max, boolean overlay) {
+        public SurfaceAngleMask(Extent extent, double min, double max, int size) {
             this.extent = extent;
             this.min = min;
             this.max = max;
-            this.overlay = overlay;
+            this.size = size;
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            if (ext == null) {
+            if (ext == null || BlockState.registry().isAirLike(ext.getBlock(x, y, z))
+                    || !nextToAir(ext, x, y, z)) {
                 return false;
             }
-            int x = position.x();
-            int y = position.y();
-            int z = position.z();
-            if (overlay && !BlockState.registry().isAirLike(ext.getBlock(x, y + 1, z))) {
-                return false;
-            }
-            double north = sample(ext, x, y, z - 1);
-            double south = sample(ext, x, y, z + 1);
-            double east = sample(ext, x + 1, y, z);
-            double west = sample(ext, x - 1, y, z);
-            double dx = east - west;
-            double dz = south - north;
-            double angle = Math.atan(Math.sqrt(dx * dx + dz * dz) / 2.0);
-            double tan = Math.tan(angle);
-            return tan >= min && tan <= max;
+            double angle = 1 - averageAirDirection(ext, x, y, z);
+            return angle >= min / 90.0 && angle <= max / 90.0;
         }
 
-        private double sample(Extent extent, int x, int y, int z) {
-            for (int dy = 0; dy < 8; dy++) {
-                if (!BlockState.registry().isAirLike(extent.getBlock(x, y + dy, z))) {
-                    return y + dy;
+        /** The y component of the normalised average of the air directions. */
+        private double averageAirDirection(Extent ext, int px, int py, int pz) {
+            double x = 0;
+            double y = 0;
+            double z = 0;
+            int air = 0;
+            for (int dx = -size; dx <= size; dx++) {
+                for (int dy = -size; dy <= size; dy++) {
+                    for (int dz = -size; dz <= size; dz++) {
+                        int bx = px + dx;
+                        int by = Math.max(ext.minY(), Math.min(ext.maxY(), py + dy));
+                        int bz = pz + dz;
+                        if (BlockState.registry().isAirLike(ext.getBlock(bx, by, bz))) {
+                            x += dx;
+                            y += dy;
+                            z += dz;
+                            air++;
+                        }
+                    }
                 }
             }
-            return y;
+            if (air == 0) {
+                return 1;
+            }
+            Vector3 average = new Vector3(x / air, y / air, z / air);
+            if (average.x() == 0 && average.y() == 0 && average.z() == 0) {
+                return 0;
+            }
+            return average.normalize().y();
+        }
+
+        private static boolean nextToAir(Extent ext, int x, int y, int z) {
+            return BlockState.registry().isAirLike(ext.getBlock(x + 1, y, z))
+                    || BlockState.registry().isAirLike(ext.getBlock(x - 1, y, z))
+                    || BlockState.registry().isAirLike(ext.getBlock(x, y + 1, z))
+                    || BlockState.registry().isAirLike(ext.getBlock(x, y - 1, z))
+                    || BlockState.registry().isAirLike(ext.getBlock(x, y, z + 1))
+                    || BlockState.registry().isAirLike(ext.getBlock(x, y, z - 1));
         }
 
         @Override
@@ -520,10 +673,7 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            int x = position.x();
-            int y = position.y();
-            int z = position.z();
+        public boolean test(int x, int y, int z) {
             return source.test(x - 1, y, z) || source.test(x + 1, y, z)
                     || source.test(x, y, z - 1) || source.test(x, y, z + 1);
         }
@@ -548,18 +698,17 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             if (ext == null) {
                 return false;
             }
             BlockStateRegistry registry = BlockState.registry();
-            int y = position.y();
             if (y < minY || y > maxY) {
                 return false;
             }
-            boolean above = !registry.isAirLike(ext.getBlock(position.x(), y + 1, position.z()));
-            boolean below = !registry.isAirLike(ext.getBlock(position.x(), y - 1, position.z()));
+            boolean above = !registry.isAirLike(ext.getBlock(x, y + 1, z));
+            boolean below = !registry.isAirLike(ext.getBlock(x, y - 1, z));
             return above ^ below;
         }
 
@@ -580,11 +729,11 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             return switch (axis) {
-                case 0 -> position.z() == 0 && Math.abs(position.y()) <= radius;
-                case 1 -> position.x() == 0 && position.z() == 0;
-                default -> position.x() == 0 && position.y() == 0;
+                case 0 -> z == 0 && Math.abs(y) <= radius;
+                case 1 -> x == 0 && z == 0;
+                default -> x == 0 && y == 0;
             };
         }
 
@@ -604,7 +753,7 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             return value;
         }
 
@@ -629,10 +778,10 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             double value = use3D
-                    ? noise.noise(position.x(), position.y(), position.z())
-                    : noise.noise(position.x(), position.z());
+                    ? noise.noise(x, y, z)
+                    : noise.noise(x, z);
             return value > density;
         }
 
@@ -655,58 +804,51 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            double value = noise.noise(position.x() * scale, position.y() * scale, position.z() * scale);
+        public boolean test(int x, int y, int z) {
+            double value = noise.noise(x * scale, y * scale, z * scale);
             return (value + 1) / 2.0 >= threshold;
         }
     }
 
     /** {@code #roc}: angle based on the ROC (run/rise) of the surrounding terrain. */
-    public static final class ROCAngleMask implements Mask {
+    /**
+     * {@code #roc}: like {@code #angle}, but keeps the sign of the slope, so a
+     * mask can tell a rising cliff from a falling one. FAWE samples it over four
+     * blocks.
+     */
+    public static final class ROCAngleMask extends AngleMask {
 
-        private final Extent extent;
-        private final double min;
-        private final double max;
-        private final boolean overlay;
-
-        public ROCAngleMask(Extent extent, double min, double max, boolean overlay) {
-            this.extent = extent;
-            this.min = min;
-            this.max = max;
-            this.overlay = overlay;
+        public ROCAngleMask(Extent extent, double min, double max, boolean overlay, int distance) {
+            super(extent, min, max, overlay, distance);
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            Extent ext = resolve(extent);
-            if (ext == null) {
-                return false;
+        protected boolean testSlope(Extent extent, int x, int y, int z) {
+            lastY = y;
+            int base = getHeight(extent, x, y, z);
+            double slope = rise(base, getHeight(extent, x + distance, y, z),
+                    getHeight(extent, x - distance, y, z)) * ADJACENT_MOD;
+            double tmp = rise(base, getHeight(extent, x, y, z + distance),
+                    getHeight(extent, x, y, z - distance)) * ADJACENT_MOD;
+            if (Math.abs(tmp) > Math.abs(slope)) {
+                slope = tmp;
             }
-            int x = position.x();
-            int y = position.y();
-            int z = position.z();
-            if (overlay && !BlockState.registry().isAirLike(ext.getBlock(x, y + 1, z))) {
-                return false;
+            tmp = rise(base, getHeight(extent, x + distance, y, z + distance),
+                    getHeight(extent, x - distance, y, z - distance)) * DIAGONAL_MOD;
+            if (Math.abs(tmp) > Math.abs(slope)) {
+                slope = tmp;
             }
-            double rise = 1;
-            double run = 0;
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    if (dx == 0 && dz == 0) {
-                        continue;
-                    }
-                    int height = ext.getBlock(x + dx, y, z + dz);
-                    run += Math.abs(height - ext.getBlock(x, y, z));
-                }
+            tmp = rise(base, getHeight(extent, x - distance, y, z + distance),
+                    getHeight(extent, x + distance, y, z - distance)) * DIAGONAL_MOD;
+            if (Math.abs(tmp) > Math.abs(slope)) {
+                slope = tmp;
             }
-            double angle = Math.atan2(rise, run / 8.0);
-            double degrees = Math.toDegrees(angle);
-            return degrees >= min && degrees <= max;
+            return lastValue = slope >= min && slope <= max;
         }
 
-        @Override
-        public Extent extent() {
-            return extent;
+        /** {@code (high - base) - (base - low)}: the curvature around the base. */
+        private static double rise(int base, int high, int low) {
+            return (high - base) - (base - low);
         }
     }
 
@@ -725,7 +867,7 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             int count = 0;
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dy = -1; dy <= 1; dy++) {
@@ -733,7 +875,7 @@ public final class Masks {
                         if (dx == 0 && dy == 0 && dz == 0) {
                             continue;
                         }
-                        if (source.test(position.x() + dx, position.y() + dy, position.z() + dz)) {
+                        if (source.test(x + dx, y + dy, z + dz)) {
                             count++;
                         }
                     }
@@ -758,16 +900,13 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             if (ext == null) {
                 return false;
             }
             // A block is exposed when at least one face touches air.
             BlockStateRegistry registry = BlockState.registry();
-            int x = position.x();
-            int y = position.y();
-            int z = position.z();
             return registry.isAirLike(ext.getBlock(x, y + 1, z))
                     || registry.isAirLike(ext.getBlock(x, y - 1, z))
                     || registry.isAirLike(ext.getBlock(x + 1, y, z))
@@ -795,13 +934,13 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            int blockId = ext == null ? 0 : ext.getBlock(position.x(), position.y(), position.z());
+            int blockId = ext == null ? 0 : ext.getBlock(x, y, z);
             com.maxlananas.fawebim.core.expression.Expression.Variables vars = new com.maxlananas.fawebim.core.expression
                     .Expression.Variables();
-            vars.set("x", position.x()).set("y", position.y()).set("z", position.z());
-            vars.set("bx", position.x() & 15).set("by", position.y() & 15).set("bz", position.z() & 15);
+            vars.set("x", x).set("y", y).set("z", z);
+            vars.set("bx", x & 15).set("by", y & 15).set("bz", z & 15);
             vars.set("block", blockId);
             vars.set("random", random.nextDouble());
             return compiled.evaluate(vars) != 0;
@@ -824,9 +963,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             for (Mask mask : masks) {
-                if (mask.test(position)) {
+                if (mask.test(x, y, z)) {
                     return true;
                 }
             }
@@ -848,9 +987,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             for (Mask mask : masks) {
-                if (!mask.test(position)) {
+                if (!mask.test(x, y, z)) {
                     return false;
                 }
             }
@@ -876,8 +1015,8 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            return !source.test(position);
+        public boolean test(int x, int y, int z) {
+            return !source.test(x, y, z);
         }
 
         @Override
@@ -898,8 +1037,8 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            return region.contains(position) && mask.test(position);
+        public boolean test(int x, int y, int z) {
+            return region.contains(x, y, z) && mask.test(x, y, z);
         }
     }
 
@@ -915,10 +1054,7 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
-            int x = position.x();
-            int y = position.y();
-            int z = position.z();
+        public boolean test(int x, int y, int z) {
             return source.getBlock(x, y, z) != target.getBlock(x, y, z);
         }
     }
@@ -933,9 +1069,9 @@ public final class Masks {
         }
 
         @Override
-        public boolean test(BlockVector3 position) {
+        public boolean test(int x, int y, int z) {
             Extent ext = ExtentHolder.get();
-            return ext != null && blocks.contains(ext.getBlock(position.x(), position.y(), position.z()));
+            return ext != null && blocks.contains(ext.getBlock(x, y, z));
         }
     }
 }

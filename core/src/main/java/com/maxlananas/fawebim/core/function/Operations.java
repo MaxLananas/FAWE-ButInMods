@@ -693,16 +693,16 @@ public final class Operations {
     private record FixedPattern(int state) implements Pattern {
 
         @Override
-        public int apply(BlockVector3 position) {
+        public int apply(int x, int y, int z) {
             return state;
         }
     }
 
     /** A pattern that reuses an expression's output. */
     public static Pattern expressionPattern(Expression expression) {
-        return (position) -> {
+        return (x, y, z) -> {
             Expression.Variables variables = new Expression.Variables();
-            variables.set("x", position.x()).set("y", position.y()).set("z", position.z());
+            variables.set("x", x).set("y", y).set("z", z);
             return (int) expression.evaluate(variables);
         };
     }
