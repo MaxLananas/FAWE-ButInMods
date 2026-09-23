@@ -4,6 +4,8 @@ import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
 import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.history.EditLog;
+import com.maxlananas.fawebim.core.history.Snapshots;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.session.SessionManager;
 import com.maxlananas.fawebim.core.world.BlockState;
@@ -66,6 +68,18 @@ public final class FaweMod implements ModInitializer {
                 EditSession.BlockStateRegistryHolder.set(registry);
                 Schematics.setDirectory(server.getServerDirectory()
                         .resolve(Config.get().schematicSaveDirectory));
+                // The snapshots and the disk history live next to the world, which
+                // is where a player looks for them.
+                Snapshots.setDirectory(server.getServerDirectory()
+                        .resolve(Config.get().snapshotDirectory));
+                EditLog.setDirectory(server.getServerDirectory()
+                        .resolve(Config.get().historyDirectory));
+                if (Config.get().enableDiskHistory) {
+                    int restored = EditLog.load();
+                    if (restored > 0) {
+                        LOGGER.info("Read {} history entries back from disk", restored);
+                    }
+                }
                 CommandManager.get().initialise();
                 LOGGER.info("FAWE-BIM ready: {} commands registered, {} block states known",
                         CommandManager.get().size(), registry.stateCount());
@@ -149,7 +163,11 @@ public final class FaweMod implements ModInitializer {
                 continue;
             }
             LiteralArgumentBuilder<CommandSourceStack> builder = build(child);
-            builder.requires(source -> source.hasPermission(2) || !source.getServer().isDedicatedServer());
+            // A player with operator rights may always run them; a command block
+            // or a function only when the configuration allows it, which is what
+            // WorldEdit's command-block-support decides.
+            builder.requires(source -> (source.hasPermission(2) || !source.getServer().isDedicatedServer())
+                    && (source.getEntity() instanceof ServerPlayer || Config.get().commandBlockSupport));
             dispatcher.register(builder);
         }
     }
@@ -188,6 +206,30 @@ public final class FaweMod implements ModInitializer {
     }
 
     /**
+     * Turns one literal of the tree into a Brigadier builder, children included.
+     *
+     * <p>A command line is free-form text — {@code //set 50%stone,50%dirt -a} is
+     * not something Brigadier parses — so every literal accepts a greedy tail and
+     * hands the whole line to the engine's own argument parser.</p>
+     */
+    private LiteralArgumentBuilder<CommandSourceStack> build(Node node) {
+        LiteralArgumentBuilder<CommandSourceStack> builder = literal(node.name);
+        for (Node child : node.children.values()) {
+            builder.then(build(child));
+        }
+        if (node.entry == null) {
+            return builder;
+        }
+        builder.suggests((context, suggestions) -> suggest(node.entry, suggestions));
+        builder.executes(context -> run(context.getSource(), node.entry.name));
+        builder.then(argument("arguments", StringArgumentType.greedyString())
+                .suggests((context, suggestions) -> suggest(node.entry, suggestions))
+                .executes(context -> run(context.getSource(),
+                        node.entry.name + " " + context.getArgument("arguments", String.class))));
+        return builder;
+    }
+
+    /**
      * The literal Minecraft must register for a WorldEdit name.
      *
      * <p>WorldEdit names are written with one leading slash ({@code /set},
@@ -214,9 +256,19 @@ public final class FaweMod implements ModInitializer {
         }
     }
 
+    /**
+     * The tab completions of a command: the argument names its signature declares,
+     * plus whatever the command computes from the text typed so far — the setting
+     * keys of {@code /fawebim} come from there.
+     */
     private static CompletableFuture<Suggestions> suggest(CommandRegistry.Entry entry, SuggestionsBuilder builder) {
         for (String suggestion : entry.arguments) {
             if (!suggestion.startsWith("<")) {
+                builder.suggest(suggestion);
+            }
+        }
+        if (entry.suggestions != null) {
+            for (String suggestion : entry.suggestions.apply(builder.getRemaining())) {
                 builder.suggest(suggestion);
             }
         }

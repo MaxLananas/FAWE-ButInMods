@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
   "minecraft": "1.21.10",
-  "count": 266,
-  "implemented": 246,
+  "count": 267,
+  "implemented": 247,
   "stub": 0,
   "inventoryResolved": 255,
   "inventoryUnresolved": [],
@@ -2588,6 +2588,21 @@
       "requiresWorld": true
     },
     {
+      "name": "/fawebim",
+      "registration": "/fawebim",
+      "usage": "/fawebim [settings|set|reset|reload|save|path]",
+      "description": "Show and edit the mod configuration in game",
+      "group": "utility",
+      "status": "implemented",
+      "aliases": ["//fawebim", "/fbm"],
+      "arguments": ["[settings|set|reset|reload|save|path]"],
+      "booleanFlags": [],
+      "valueFlags": ["p", "s"],
+      "requiresSelection": false,
+      "requiresPlayer": false,
+      "requiresWorld": true
+    },
+    {
       "name": "/gmask",
       "registration": "/gmask",
       "usage": "/gmask [mask]",
@@ -2635,12 +2650,12 @@
     {
       "name": "/history",
       "registration": "/history",
-      "usage": "/history <list|info|summary|summarize|distr|distribution|find|inspect|search|near|rollback|restore|rerun|import|clear> [-u <user>] [-t <time>] [-r <radius>] [-p <page>]",
+      "usage": "/history <list|info|summary|summarize|distr|distribution|find|inspect|search|near|rollback|restore|rerun|import|clear|size|rollback|restore|rerun|import|clear> [-u <user>] [-t <time>] [-r <radius>] [-p <page>]",
       "description": "Inspect the edits of this server",
       "group": "history",
       "status": "implemented",
       "aliases": [],
-      "arguments": ["list|info|summary|summarize|distr|distribution|find|inspect|search|near|rollback|restore|rerun|import|clear", "[-u <user>]", "[-t <time>]", "[-r <radius>]", "[-p <page>]"],
+      "arguments": ["list|info|summary|summarize|distr|distribution|find|inspect|search|near|rollback|restore|rerun|import|clear|size|rollback|restore|rerun|import|clear", "[-u <user>]", "[-t <time>]", "[-r <radius>]", "[-p <page>]"],
       "booleanFlags": ["f"],
       "valueFlags": ["p", "u", "t", "r"],
       "requiresSelection": false,

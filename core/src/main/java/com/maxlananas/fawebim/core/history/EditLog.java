@@ -1,12 +1,19 @@
 package com.maxlananas.fawebim.core.history;
 
 import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.util.NbtCompound;
+import com.maxlananas.fawebim.core.util.NbtIo;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Stream;
 
 /**
  * The edits every player made in this server, newest first.
@@ -16,6 +23,11 @@ import java.util.Locale;
  * it does have the same records in memory, so the log keeps a bounded list of
  * the finished edits of every session together with who made them and when.
  * That is what the {@code -u}, {@code -t} and {@code -r} filters search.</p>
+ *
+ * <p>With {@code history.use-disk} on, every finished edit is also written next
+ * to the world as a snapshot file and read back when the server starts, which is
+ * what makes {@code /history find} and {@code /history rollback} reach the edits
+ * of a previous session.</p>
  */
 public final class EditLog {
 
@@ -23,6 +35,8 @@ public final class EditLog {
     private static final int CAPACITY = 128;
 
     private static final Deque<Entry> ENTRIES = new ArrayDeque<>();
+
+    private static volatile Path directory;
 
     private EditLog() {
     }
@@ -59,15 +73,90 @@ public final class EditLog {
         }
     }
 
+    /** The folder the edits are written to when disk history is on. */
+    public static void setDirectory(Path path) {
+        directory = path;
+        if (path != null) {
+            try {
+                Files.createDirectories(path);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+    }
+
+    public static Path directory() {
+        return directory;
+    }
+
     /** Records a finished edit; called when a session closes a history record. */
     public static synchronized void add(String actor, String world, History.Record record) {
-        if (record == null || record.isEmpty()) {
-            return;
+        Entry entry = addQuietly(actor, world, record);
+        if (entry != null && com.maxlananas.fawebim.core.platform.Config.get().enableDiskHistory) {
+            persist(entry, record);
         }
-        ENTRIES.addFirst(new Entry(actor == null ? "console" : actor, world == null ? "world" : world, record));
+    }
+
+    /** Adds an entry to the in-memory log, returning it, without touching disk. */
+    public static synchronized Entry addQuietly(String actor, String world, History.Record record) {
+        if (record == null || record.isEmpty()) {
+            return null;
+        }
+        Entry entry = new Entry(actor == null ? "console" : actor, world == null ? "world" : world, record);
+        ENTRIES.addFirst(entry);
         while (ENTRIES.size() > CAPACITY) {
             ENTRIES.removeLast();
         }
+        return entry;
+    }
+
+    /** Writes one edit to the history folder, named after who made it and when. */
+    public static synchronized void persist(Entry entry, History.Record record) {
+        Path folder = directory;
+        if (folder == null) {
+            return;
+        }
+        String name = entry.time + "-" + entry.actor.replaceAll("[^A-Za-z0-9_.-]", "_") + ".snap";
+        try {
+            Files.createDirectories(folder);
+            NbtCompound root = Snapshots.of(record, entry.actor);
+            root.putString("world", entry.world);
+            Files.write(folder.resolve(name), NbtIo.write(root, true));
+        } catch (IOException e) {
+            // A history that cannot be written must never take the edit down.
+        }
+    }
+
+    /** Reads the history folder back into the log, oldest entry first. */
+    public static synchronized int load() {
+        Path folder = directory;
+        if (folder == null || !Files.isDirectory(folder)) {
+            return 0;
+        }
+        List<Entry> loaded = new ArrayList<>();
+        try (Stream<Path> files = Files.list(folder)) {
+            for (Path path : files.filter(file -> file.getFileName().toString().endsWith(".snap")).toList()) {
+                try {
+                    NbtCompound root = NbtIo.readNbtOrGzip(Files.readAllBytes(path));
+                    History.Record record = Snapshots.toRecord(root);
+                    Entry entry = new Entry(root.getString("owner", "console"),
+                            root.getString("world", "world"), record);
+                    loaded.add(entry);
+                } catch (IOException | RuntimeException e) {
+                    // A single unreadable file must not stop the rest.
+                }
+            }
+        } catch (IOException e) {
+            return 0;
+        }
+        loaded.sort(java.util.Comparator.comparingLong(entry -> entry.time));
+        for (Entry entry : loaded) {
+            ENTRIES.addFirst(entry);
+        }
+        while (ENTRIES.size() > CAPACITY) {
+            ENTRIES.removeLast();
+        }
+        return loaded.size();
     }
 
     public static synchronized List<Entry> entries() {

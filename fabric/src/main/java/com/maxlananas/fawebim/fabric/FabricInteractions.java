@@ -84,8 +84,10 @@ public final class FabricInteractions {
             }
         }
 
-        // 2. Super-pickaxe: break the area/recursive blocks.
-        if (held != null && held.equals(Config.get().wandItem) && session.isSuperPickaxeEnabled()) {
+        // 2. Super-pickaxe: break the area/recursive blocks. A wand that is not
+        // also a tool leaves the left click to the game.
+        if (held != null && held.equals(Config.get().wandItem) && Config.get().wandItemIsTool
+                && session.isSuperPickaxeEnabled()) {
             return superPickaxe(actor, FabricMessages.blockVector(pos)) ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
@@ -222,7 +224,11 @@ public final class FabricInteractions {
         }
         edit.flushQueue();
         ServerPlayer player = actor.player();
-        if (Config.get().superPickaxeDrop && player != null) {
+        // A single break drops what it broke; an area break only drops everything
+        // when many-drop-items is on, which is how WorldEdit reads the pair.
+        boolean drops = radius == 0 ? Config.get().superPickaxeDrop
+                : Config.get().superPickaxeDrop && Config.get().superPickaxeManyDrop;
+        if (drops && player != null) {
             // Break particles/sound, exactly like a vanilla block break.
             player.level().levelEvent(2001, new BlockPos(start.x(), start.y(), start.z()),
                     net.minecraft.world.level.block.Block.getId(

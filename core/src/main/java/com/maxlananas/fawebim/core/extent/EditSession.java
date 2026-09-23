@@ -54,6 +54,8 @@ public final class EditSession implements Extent {
     private boolean tracing;
     private final List<String> traceLog = new ArrayList<>();
     private boolean queueEnabled = true;
+    /** When the session was opened, which is what queue.max-wait-ms measures. */
+    private final long openedAt = System.currentTimeMillis();
 
     public EditSession(World world, LocalSession session, String description) {
         this(world, session, description, true);
@@ -68,7 +70,11 @@ public final class EditSession implements Extent {
         this.session = session;
         session.setLastWorldName(world.name());
         this.registry = BlockStateRegistryHolder.registry();
-        this.record = recordHistory ? session.getHistory().newRecord(description, world.name()) : null;
+        // With history turned off in the configuration the session records
+        // nothing, so //undo has nothing to undo and no record is kept.
+        this.record = recordHistory && com.maxlananas.fawebim.core.platform.Config.get().historyEnabled
+                ? session.getHistory().newRecord(description, world.name())
+                : null;
         this.limiter = new TimeLimiter(session.getTimeout() * 1000L);
         this.changeLimit = session.hasBlockChangeLimit() ? session.getMaxBlocksChanged() : -1;
         this.mask = session.getMask();
@@ -266,7 +272,7 @@ public final class EditSession implements Extent {
             traceLog.add("set " + x + "," + y + "," + z + " " + registry.describe(previous) + " -> "
                     + registry.describe(stateId));
         }
-        if (queueEnabled && blocksChanged % 4096 == 0) {
+        if (queueEnabled && (blocksChanged & 0xFFF) == 0) {
             flushChunksThatAreFull();
         }
         return true;
@@ -288,9 +294,21 @@ public final class EditSession implements Extent {
         return chunk;
     }
 
-    /** Flushes chunks once the buffer is holding a lot of data, keeping memory bounded. */
+    /**
+     * Flushes the buffer once it is holding a lot of data, keeping memory
+     * bounded. How much is "a lot" is {@code queue.target-size}; the wait is
+     * {@code queue.max-wait-ms}, so a long single-chunk edit cannot sit in memory
+     * for the whole operation either.
+     */
     private void flushChunksThatAreFull() {
-        if (chunks.size() >= 64) {
+        long target = Math.max(4096, com.maxlananas.fawebim.core.platform.Config.get().queueTargetSize);
+        long maxWait = Math.max(0, com.maxlananas.fawebim.core.platform.Config.get().queueMaxWait);
+        if (blocksChanged >= target) {
+            flushQueue();
+            return;
+        }
+        if (chunks.size() >= 64
+                || (maxWait > 0 && System.currentTimeMillis() - openedAt >= maxWait && !chunks.isEmpty())) {
             flushQueue();
         }
     }

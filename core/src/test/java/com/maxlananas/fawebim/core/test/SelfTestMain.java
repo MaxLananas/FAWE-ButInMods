@@ -23,6 +23,8 @@ import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.BlockVectorSet;
 import com.maxlananas.fawebim.core.math.Vector3;
+import com.maxlananas.fawebim.core.platform.Config;
+import com.maxlananas.fawebim.core.platform.Setting;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.Region;
@@ -30,6 +32,7 @@ import com.maxlananas.fawebim.core.region.RegionSelector;
 import com.maxlananas.fawebim.core.region.SelectorLimits;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.session.SessionManager;
+import com.maxlananas.fawebim.core.util.MiniYaml;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.RandomCollection;
 import com.maxlananas.fawebim.core.util.Str;
@@ -41,6 +44,7 @@ import com.maxlananas.fawebim.core.world.RegenOptions;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.List;
 import java.util.Random;
 
@@ -79,6 +83,7 @@ public final class SelfTestMain {
         testClipboardAndSchematic();
         testLargeSchematicSave();
         testCommands();
+        testConfigAndSettings();
         testRegen();
         testAngleMasks();
         testNavigation();
@@ -1159,6 +1164,118 @@ public final class SelfTestMain {
 
         Schematics.delete("bigselftest.schem");
         Schematics.delete("smallselftest.schem");
+    }
+
+    private static void testConfigAndSettings() throws Exception {
+        section("configuration");
+        Path directory = Files.createTempDirectory("fawebim-config");
+        Config config = Config.get();
+        config.load(directory);
+
+        // Every declared setting is listed, has a description and a file path, and
+        // the file that was just written holds all of them.
+        check("config declares its settings", config.settings().size() >= 35);
+        check("every setting is described", config.settings().stream()
+                .allMatch(setting -> !setting.description().isEmpty()));
+        check("every setting has a file path", config.settings().stream()
+                .allMatch(setting -> !setting.path().isEmpty()));
+        Path file = directory.resolve("config/fawebim.yml");
+        check("config file written", Files.exists(file));
+        Map<String, Object> onDisk = MiniYaml.parse(Files.readString(file));
+        for (Setting<?> setting : config.settings()) {
+            check("config file holds " + setting.path(),
+                    MiniYaml.path(onDisk, setting.path(), null) != null);
+        }
+
+        // A value typed in game lands in the field, in the file, and comes back.
+        int before = config.maxBrushRadius;
+        check("setting a value succeeds", config.set("max-brush-radius", "42") == null);
+        checkEquals("setting changed the field", 42, config.maxBrushRadius);
+        check("setting wrote the file", Files.readString(file).contains("42"));
+        config.maxBrushRadius = before;
+        config.save();
+        config.reload();
+        checkEquals("reload read the value back", before, config.maxBrushRadius);
+
+        // A bad value is refused and the field keeps what it had.
+        check("a bad value is refused", config.set("max-brush-radius", "lots") != null);
+        checkEquals("a refused value changed nothing", before, config.maxBrushRadius);
+        check("an unknown key is refused", config.set("no-such-setting", "1") != null);
+
+        // A value written by hand in the file is picked up by a reload, and a
+        // partial file only changes the keys it mentions.
+        Files.writeString(file, "limits:\n  max-brush-radius:\n    maximum: 77\n");
+        config.reload();
+        checkEquals("reload picked up the edited file", 77, config.maxBrushRadius);
+        Setting<?> history = config.find("history-size");
+        check("a partial file left the other keys alone",
+                history != null && history.value().equals(history.defaultValue()));
+        config.maxBrushRadius = before;
+        config.save();
+
+        // The in-game surface edits the same thing.
+        CommandManager.get().initialise();
+        TestWorld world = new TestWorld("config");
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim settings");
+        check("/fawebim settings lists the keys", actor.messages().stream()
+                .anyMatch(message -> message.contains("Settings (")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim set max-brush-radius 33");
+        check("/fawebim set reports the change", actor.messages().stream()
+                .anyMatch(message -> message.contains("saved to config/fawebim.yml")));
+        checkEquals("/fawebim set changed the field", 33, config.maxBrushRadius);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim reset max-brush-radius");
+        check("/fawebim reset reports the default", actor.messages().stream()
+                .anyMatch(message -> message.contains("default")));
+        checkEquals("/fawebim reset restored the default", 1000, config.maxBrushRadius);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim set max-brush-radius nonsense");
+        check("/fawebim set refuses a bad value", actor.messages().stream()
+                .anyMatch(message -> message.contains("Expected")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim settings wand");
+        check("/fawebim settings narrows to one key", actor.messages().stream()
+                .anyMatch(message -> message.contains("wand-item")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim settings -s boolean");
+        check("/fawebim settings filters by type", actor.messages().stream()
+                .anyMatch(message -> message.contains("Settings (")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim path");
+        check("/fawebim path reports the file", actor.messages().stream()
+                .anyMatch(message -> message.contains("config/fawebim.yml")));
+
+        // The wired limits are read from the configuration, not from a constant.
+        check("a ceiling can be configured", config.set("max-change-limit", "100") == null);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/limit 1000000");
+        check("//limit is capped by limits.max-blocks-changed.maximum", actor.messages().stream()
+                .anyMatch(message -> message.contains("at most")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/limit 50");
+        check("//limit accepts a value under the ceiling", actor.messages().stream()
+                .anyMatch(message -> message.contains("Limit set to 50")));
+        config.set("max-change-limit", "-1");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/history size 12");
+        check("/history size sets the undo depth", actor.messages().stream()
+                .anyMatch(message -> message.contains("History size set to 12")));
+        checkEquals("history kept the new depth", 12, actor.session().getHistory().maxRecords());
+
+        // Tab completion offers the keys the player has started to type.
+        CommandRegistry.Entry entry = CommandManager.get().registry().get("/fawebim");
+        check("/fawebim declares completions", entry != null && entry.suggestions != null);
+        if (entry != null && entry.suggestions != null) {
+            check("completion offers the actions",
+                    entry.suggestions.apply("").contains("settings"));
+            check("completion offers a matching key",
+                    entry.suggestions.apply("max-brush").contains("max-brush-radius"));
+        }
+        config.maxBrushRadius = 1000;
+        config.save();
     }
 
     private static void testCommands() {

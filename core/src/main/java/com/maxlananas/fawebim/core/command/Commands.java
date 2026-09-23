@@ -91,6 +91,7 @@ public final class Commands {
         new ScriptCommands(registry).register();
         new SnapshotCommands(registry).register();
         new UtilityExtras(registry).register();
+        new ConfigCommands(registry).register();
         new ToolUtilCommands(registry).register();
         new WorldCommands(registry).register();
         Stubs.register(registry);
@@ -878,6 +879,13 @@ public final class Commands {
         e32.booleanFlags.add("r");
         e32.handler = ctx -> {
                     Region region = ctx.selection();
+                    com.maxlananas.fawebim.core.platform.Config settings =
+                            com.maxlananas.fawebim.core.platform.Config.get();
+                    if (settings.maxRegenVolume > 0 && region.getVolume() > settings.maxRegenVolume) {
+                        throw CommandRegistry.error("Selection is too large to regenerate ("
+                                + region.getVolume() + " blocks, limit " + settings.maxRegenVolume
+                                + "; raise regen.max-volume in config/fawebim.yml)");
+                    }
                     Long seed = null;
                     if (ctx.hasFlag("r")) {
                         seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
@@ -902,7 +910,8 @@ public final class Commands {
                             ctx.world().loadChunk(chunk.x(), chunk.z());
                             ctx.world().regenerateChunk(chunk.x(), chunk.z(),
                                     new com.maxlananas.fawebim.core.world.RegenOptions()
-                                            .setRegenBiomes(ctx.hasFlag("b") || biomeId >= 0)
+                                            .setRegenBiomes(ctx.hasFlag("b") || biomeId >= 0
+                                                    || settings.regenerateBiomes)
                                             .setSeed(seed));
                         }
                     } finally {
@@ -2403,8 +2412,16 @@ public final class Commands {
                         ctx.actor().message(Msg.keyValue("Limit", ctx.session().getMaxBlocksChanged() < 0 ? "none"
                                 : String.valueOf(ctx.session().getMaxBlocksChanged())));
                     } else {
-                        ctx.session().setMaxBlocksChanged(ctx.intArg(0));
-                        ctx.actor().message(Msg.success("Limit set to " + ctx.intArg(0)));
+                        // The configured maximum caps what a player may give
+                        // themselves, the way FAWE limits it.
+                        int maximum = com.maxlananas.fawebim.core.platform.Config.get().maxChangeLimit;
+                        int requested = ctx.intArg(0);
+                        if (maximum >= 0 && requested >= 0 && requested > maximum) {
+                            throw CommandRegistry.error("Limit must be at most " + maximum
+                                    + " (raise limits.max-blocks-changed.maximum in config/fawebim.yml)");
+                        }
+                        ctx.session().setMaxBlocksChanged(requested);
+                        ctx.actor().message(Msg.success("Limit set to " + requested));
                     }
                 };
 

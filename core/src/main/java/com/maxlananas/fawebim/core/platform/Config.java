@@ -5,15 +5,24 @@ import com.maxlananas.fawebim.core.util.MiniYaml;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
- * The engine configuration ({@code config.yml} of FAWE), stored as
- * {@code config/fawebim.yml} in the game directory.
+ * The engine configuration of the mod, stored as {@code config/fawebim.yml} in
+ * the game directory.
  *
- * <p>FAWE ships hundreds of options; the ones that change behaviour are all
- * present here, and the rest of the file is preserved verbatim on reload so a
- * user-edited file is never destroyed.</p>
+ * <p>Key names follow WorldEdit's and FAWE's configuration files, so a value can
+ * be copied straight out of one of them. Every key is declared once, in the
+ * table built by the constructor: that declaration carries the path in the file,
+ * the type, a sentence explaining what it does and the field behind it, which is
+ * what lets {@code /fawebim settings} list and edit the whole configuration from
+ * inside the game without a second list to keep in sync.</p>
  */
 public final class Config {
 
@@ -22,7 +31,7 @@ public final class Config {
 
     private static final Config INSTANCE = new Config();
 
-    /** Everything a user can tune, mirroring FAWE's config keys. */
+    /** Everything a user can tune, mirroring WorldEdit's and FAWE's keys. */
     public String wandItem = "minecraft:wooden_axe";
     public String navigationWandItem = "minecraft:compass";
     public boolean wandItemIsTool = true;
@@ -38,53 +47,192 @@ public final class Config {
     public int defaultVerticalHeight = 256;
     public boolean regenerateBiomes = true;
     public int maxRegenVolume = 100000000;
-    public boolean wandItemDurability = true;
-    public boolean commandBlockSupport = false;
     public boolean superPickaxeDrop = true;
     public boolean superPickaxeManyDrop = true;
     public int butcherDefaultRadius = 20;
     public int butcherMaxRadius = 100;
     public boolean historyEnabled = true;
     public int historySize = 20;
-    public boolean perPlayerHistory = true;
     public int maxHistorySize = 500;
+    public boolean perPlayerHistory = true;
     public boolean enableDiskHistory = true;
-    public String schematicSaveDirectory = "schematics";
+    public String historyDirectory = "history";
+    public boolean snapshotsEnabled = true;
     public String snapshotDirectory = "snapshots";
+    public String schematicSaveDirectory = "schematics";
+    public String defaultSchematicFormat = "sponge.3";
+    public int maxSchematicSize = 0;
     public String macroDirectory = "macros";
     public String brushPresetDirectory = "brushes";
     public String scriptDirectory = "craftscripts";
-    public boolean snapshotsEnabled = true;
-    public String defaultSchematicFormat = "sponge.3";
     public boolean allowSymlinks = false;
-    public int maxSchematicSize = 0;
     public int queueTargetSize = 5000000;
     public int queueMaxWait = 500;
-    public int queueTickInterval = 1;
-    public boolean combineStages = true;
-    public boolean serverSideCUI = true;
-    public boolean extendedYLimit = false;
-    public int chunkWaitTimeout = 5000;
-    public boolean entityBrushEnabled = true;
-    public boolean lightningEnabled = true;
-    public int maxEntitiesPerChunk = 256;
+    public boolean commandBlockSupport = false;
     public boolean debug = false;
 
+    private List<Setting<?>> settings = new ArrayList<>();
     private Path file;
     private Path gameDirectory;
 
     private Config() {
+        text("wand-item", "wand-item", wandItem,
+                "Item used as the selection wand.", () -> wandItem, value -> wandItem = value);
+        text("navigation-wand-item", "navigation-wand.item", navigationWandItem,
+                "Item used as the navigation wand.", () -> navigationWandItem,
+                value -> navigationWandItem = value);
+        bool("wand-item-tool", "wand-item-tool", wandItemIsTool,
+                "Whether the wand also acts as a tool, so a right click uses the bound tool.",
+                () -> wandItemIsTool, value -> wandItemIsTool = value);
+        integer("default-change-limit", "limits.max-blocks-changed.default", defaultChangeLimit,
+                "Blocks a new player may change per command, -1 for no limit.",
+                () -> defaultChangeLimit, value -> defaultChangeLimit = value);
+        integer("max-change-limit", "limits.max-blocks-changed.maximum", maxChangeLimit,
+                "Highest value /limit accepts, -1 for no ceiling.", () -> maxChangeLimit,
+                value -> maxChangeLimit = value);
+        integer("default-max-brush-radius", "limits.max-brush-radius.default", defaultMaxBrushRadius,
+                "Brush radius a new player starts with.", () -> defaultMaxBrushRadius,
+                value -> defaultMaxBrushRadius = value);
+        integer("max-brush-radius", "limits.max-brush-radius.maximum", maxBrushRadius,
+                "Largest brush radius /tool size accepts.", () -> maxBrushRadius,
+                value -> maxBrushRadius = value);
+        integer("max-brush-range", "limits.max-brush-range", maxBrushRange,
+                "How far a brush reaches from the player, in blocks.", () -> maxBrushRange,
+                value -> maxBrushRange = value);
+        integer("timeout", "calculation.timeout", timeout,
+                "Seconds an operation may run before it is stopped.", () -> timeout,
+                value -> timeout = value);
+        integer("threads", "threads", threads,
+                "Worker threads the engine may use.", () -> threads, value -> threads = value);
+        bool("allow-ancient-blocks", "allow-ancient-blocks", allowAncientBlocks,
+                "Accept the numeric block ids of Minecraft 1.12 and older.",
+                () -> allowAncientBlocks, value -> allowAncientBlocks = value);
+        bool("allow-non-player-entities", "allow-non-player-entities", allowNonPlayerEntities,
+                "Allow command blocks and other non-player sources to run commands.",
+                () -> allowNonPlayerEntities, value -> allowNonPlayerEntities = value);
+        integer("vertical-height", "limits.vertical-height.default", defaultVerticalHeight,
+                "Height of the vertical cylinder and sphere selections.", () -> defaultVerticalHeight,
+                value -> defaultVerticalHeight = value);
+        bool("regenerate-biomes", "regen.biomes", regenerateBiomes,
+                "Restore biomes together with the terrain in //regen.", () -> regenerateBiomes,
+                value -> regenerateBiomes = value);
+        integer("max-regen-volume", "regen.max-volume", maxRegenVolume,
+                "Largest region //regen accepts, in blocks.", () -> maxRegenVolume,
+                value -> maxRegenVolume = value);
+        bool("super-pickaxe-drop", "super-pickaxe.drop-items", superPickaxeDrop,
+                "Drop the blocks the super pickaxe breaks.", () -> superPickaxeDrop,
+                value -> superPickaxeDrop = value);
+        bool("super-pickaxe-many-drop", "super-pickaxe.many-drop-items", superPickaxeManyDrop,
+                "Drop the blocks of an area super-pickaxe break.", () -> superPickaxeManyDrop,
+                value -> superPickaxeManyDrop = value);
+        integer("butcher-default-radius", "limits.butcher-radius.default", butcherDefaultRadius,
+                "Radius //butcher takes when the command gives none.", () -> butcherDefaultRadius,
+                value -> butcherDefaultRadius = value);
+        integer("butcher-max-radius", "limits.butcher-radius.maximum", butcherMaxRadius,
+                "Largest radius //butcher accepts.", () -> butcherMaxRadius,
+                value -> butcherMaxRadius = value);
+        bool("history-enabled", "history.enabled", historyEnabled,
+                "Record the changes so //undo and //redo work.", () -> historyEnabled,
+                value -> historyEnabled = value);
+        integer("history-size", "history.size", historySize,
+                "Changes a player can undo.", () -> historySize, value -> historySize = value);
+        integer("max-history-size", "history.max-size", maxHistorySize,
+                "Largest history a player may ask for.", () -> maxHistorySize,
+                value -> maxHistorySize = value);
+        bool("per-player-history", "history.per-player", perPlayerHistory,
+                "Keep a separate history per player instead of one shared one.",
+                () -> perPlayerHistory, value -> perPlayerHistory = value);
+        bool("enable-disk-history", "history.use-disk", enableDiskHistory,
+                "Keep history in the world folder so it survives a restart.",
+                () -> enableDiskHistory, value -> enableDiskHistory = value);
+        text("history-directory", "history.dir", historyDirectory,
+                "Folder the history files are written to.", () -> historyDirectory,
+                value -> historyDirectory = value);
+        bool("snapshots-enabled", "history.snapshots.enabled", snapshotsEnabled,
+                "Take snapshots that //restore can bring back.", () -> snapshotsEnabled,
+                value -> snapshotsEnabled = value);
+        text("snapshot-directory", "snapshots.directory", snapshotDirectory,
+                "Folder the snapshots are written to, inside the world or game directory.",
+                () -> snapshotDirectory, value -> snapshotDirectory = value);
+        text("schematic-directory", "saving.dir", schematicSaveDirectory,
+                "Folder the schematics are read from and written to.", () -> schematicSaveDirectory,
+                value -> schematicSaveDirectory = value);
+        text("schematic-format", "saving.format", defaultSchematicFormat,
+                "Format //schem save writes when the command gives none.", () -> defaultSchematicFormat,
+                value -> defaultSchematicFormat = value);
+        integer("max-schematic-size", "limits.max-schematic-size", maxSchematicSize,
+                "Largest schematic that may be loaded, in blocks, 0 for no limit.",
+                () -> maxSchematicSize, value -> maxSchematicSize = value);
+        text("macro-directory", "macros.dir", macroDirectory,
+                "Folder the macros are read from.", () -> macroDirectory, value -> macroDirectory = value);
+        text("brush-preset-directory", "brushes.dir", brushPresetDirectory,
+                "Folder the saved brushes are kept in.", () -> brushPresetDirectory,
+                value -> brushPresetDirectory = value);
+        text("script-directory", "scripting.dir", scriptDirectory,
+                "Folder the scripts are read from.", () -> scriptDirectory, value -> scriptDirectory = value);
+        bool("allow-symlinks", "files.allow-symbolic-links", allowSymlinks,
+                "Follow symbolic links when reading files.", () -> allowSymlinks, value -> allowSymlinks = value);
+        integer("queue-target-size", "queue.target-size", queueTargetSize,
+                "Blocks the edit queue holds before it is written out.", () -> queueTargetSize,
+                value -> queueTargetSize = value);
+        integer("queue-max-wait", "queue.max-wait-ms", queueMaxWait,
+                "Longest the queue may wait before it is flushed, in milliseconds.", () -> queueMaxWait,
+                value -> queueMaxWait = value);
+        bool("command-block-support", "command-block-support", commandBlockSupport,
+                "Let command blocks run the mod's commands.", () -> commandBlockSupport,
+                value -> commandBlockSupport = value);
+        bool("debug", "debug", debug,
+                "Write extra engine diagnostics to the log and to /we report.", () -> debug,
+                value -> debug = value);
+        settings = Collections.unmodifiableList(settings);
     }
 
     public static Config get() {
         return INSTANCE;
     }
 
-    /** Loads {@code config/fawebim.yml} from the given game directory if present. */
+    /** Every setting, in the order the configuration file writes them. */
+    public List<Setting<?>> settings() {
+        return settings;
+    }
+
+    /** The setting a token names, by key or by file path, or null. */
+    public Setting<?> find(String token) {
+        for (Setting<?> setting : settings) {
+            if (setting.matches(token)) {
+                return setting;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Applies a value typed in game and writes the file.
+     *
+     * @return an error message when the key is unknown or the value does not fit
+     */
+    public String set(String token, String value) {
+        Setting<?> setting = find(token);
+        if (setting == null) {
+            return "Unknown setting '" + token + "'. Use /fawebim settings to list them";
+        }
+        String error = setting.apply(value);
+        if (error != null) {
+            return error + " for " + setting.key() + " (currently " + setting.value() + ")";
+        }
+        save();
+        return null;
+    }
+
     /** Resolves a directory name against the game directory. */
     public Path resolveDirectory(String name) {
         Path base = gameDirectory == null ? Path.of(".") : gameDirectory;
         return base.resolve(name);
+    }
+
+    /** The configuration file, once the game directory is known. */
+    public Path configFile() {
+        return file;
     }
 
     public void load(Path gameDirectory) {
@@ -102,31 +250,12 @@ public final class Config {
     }
 
     private void apply(Map<String, Object> map) {
-        wandItem = string(map, "wand-item", wandItem);
-        navigationWandItem = string(map, "navigation-wand-item", navigationWandItem);
-        defaultChangeLimit = integer(map, "limits.max-blocks-changed.default", defaultChangeLimit);
-        maxChangeLimit = integer(map, "limits.max-blocks-changed.maximum", maxChangeLimit);
-        defaultMaxBrushRadius = integer(map, "limits.max-brush-radius.default", defaultMaxBrushRadius);
-        maxBrushRadius = integer(map, "limits.max-brush-radius.maximum", maxBrushRadius);
-        maxBrushRange = integer(map, "limits.max-brush-range", maxBrushRange);
-        timeout = integer(map, "limits.operation-timeout", timeout);
-        threads = integer(map, "threads", threads);
-        historySize = integer(map, "history.size", historySize);
-        maxHistorySize = integer(map, "history.max-size", maxHistorySize);
-        allowAncientBlocks = bool(map, "allow-ancient-blocks", allowAncientBlocks);
-        defaultVerticalHeight = integer(map, "extent.default-vertical-height", defaultVerticalHeight);
-        regenerateBiomes = bool(map, "regen.biomes", regenerateBiomes);
-        schematicSaveDirectory = string(map, "saving.dir", schematicSaveDirectory);
-        snapshotDirectory = string(map, "history.snapshots.dir", snapshotDirectory);
-        snapshotsEnabled = bool(map, "history.snapshots.enabled", snapshotsEnabled);
-        macroDirectory = string(map, "macros.dir", macroDirectory);
-        brushPresetDirectory = string(map, "brushes.dir", brushPresetDirectory);
-        scriptDirectory = string(map, "scripts.dir", scriptDirectory);
-        defaultSchematicFormat = string(map, "saving.format", defaultSchematicFormat);
-        queueTargetSize = integer(map, "queue.target-size", queueTargetSize);
-        queueMaxWait = integer(map, "queue.max-wait-ms", queueMaxWait);
-        serverSideCUI = bool(map, "cui.server-side", serverSideCUI);
-        debug = bool(map, "debug", debug);
+        for (Setting<?> setting : settings) {
+            Object value = MiniYaml.path(map, setting.path(), null);
+            if (value != null) {
+                setting.apply(String.valueOf(value));
+            }
+        }
     }
 
     public void reload() {
@@ -135,70 +264,46 @@ public final class Config {
         }
     }
 
+    /** Writes the whole configuration back, creating the config folder. */
     public void save() {
         if (file == null) {
             return;
         }
-        java.util.Map<String, Object> root = new java.util.LinkedHashMap<>();
-        root.put("wand-item", wandItem);
-        root.put("navigation-wand-item", navigationWandItem);
-        root.put("allow-ancient-blocks", allowAncientBlocks);
-        root.put("debug", debug);
-        root.put("threads", threads);
-        java.util.Map<String, Object> limits = new java.util.LinkedHashMap<>();
-        java.util.Map<String, Object> blocks = new java.util.LinkedHashMap<>();
-        blocks.put("default", defaultChangeLimit);
-        blocks.put("maximum", maxChangeLimit);
-        limits.put("max-blocks-changed", blocks);
-        java.util.Map<String, Object> brush = new java.util.LinkedHashMap<>();
-        brush.put("default", defaultMaxBrushRadius);
-        brush.put("maximum", maxBrushRadius);
-        limits.put("max-brush-radius", brush);
-        limits.put("max-brush-range", maxBrushRange);
-        limits.put("operation-timeout", timeout);
-        root.put("limits", limits);
-        java.util.Map<String, Object> history = new java.util.LinkedHashMap<>();
-        history.put("size", historySize);
-        history.put("max-size", maxHistorySize);
-        root.put("history", history);
-        java.util.Map<String, Object> queue = new java.util.LinkedHashMap<>();
-        queue.put("target-size", queueTargetSize);
-        queue.put("max-wait-ms", queueMaxWait);
-        root.put("queue", queue);
-        java.util.Map<String, Object> saving = new java.util.LinkedHashMap<>();
-        saving.put("dir", schematicSaveDirectory);
-        saving.put("format", defaultSchematicFormat);
-        root.put("saving", saving);
+        Map<String, Object> root = new LinkedHashMap<>();
+        for (Setting<?> setting : settings) {
+            put(root, setting.path(), setting.value());
+        }
         try {
             Files.createDirectories(file.getParent());
             Files.writeString(file, MiniYaml.write(root));
         } catch (IOException e) {
-            // Ignore: the defaults stay in memory.
+            // Ignore: the values stay in memory.
         }
     }
 
-    private static String string(Map<String, Object> map, String path, String fallback) {
-        Object value = MiniYaml.path(map, path, null);
-        return value == null ? fallback : String.valueOf(value);
+    /** Flattens a dotted path into the nested map the file is written from. */
+    @SuppressWarnings("unchecked")
+    private static void put(Map<String, Object> root, String path, String value) {
+        String[] parts = path.split("\\.");
+        Map<String, Object> node = root;
+        for (int i = 0; i < parts.length - 1; i++) {
+            node = (Map<String, Object>) node.computeIfAbsent(parts[i], key -> new LinkedHashMap<String, Object>());
+        }
+        node.put(parts[parts.length - 1], MiniYaml.scalar(value));
     }
 
-    private static int integer(Map<String, Object> map, String path, int fallback) {
-        Object value = MiniYaml.path(map, path, null);
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String text) {
-            try {
-                return Integer.parseInt(text.trim());
-            } catch (NumberFormatException e) {
-                return fallback;
-            }
-        }
-        return fallback;
+    private void bool(String key, String path, boolean fallback, String description,
+                      Supplier<Boolean> reader, Consumer<Boolean> writer) {
+        settings.add(Setting.of(key, path, Setting.Kind.BOOLEAN, description, fallback, reader, writer));
     }
 
-    private static boolean bool(Map<String, Object> map, String path, boolean fallback) {
-        Object value = MiniYaml.path(map, path, null);
-        return value == null ? fallback : Boolean.parseBoolean(String.valueOf(value));
+    private void integer(String key, String path, int fallback, String description,
+                         Supplier<Integer> reader, Consumer<Integer> writer) {
+        settings.add(Setting.of(key, path, Setting.Kind.INTEGER, description, fallback, reader, writer));
+    }
+
+    private void text(String key, String path, String fallback, String description,
+                      Supplier<String> reader, Consumer<String> writer) {
+        settings.add(Setting.of(key, path, Setting.Kind.TEXT, description, fallback, reader, writer));
     }
 }

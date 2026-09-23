@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-332%20passing-3fb950?style=flat-square)](docs/STATUS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-400%20passing-3fb950?style=flat-square)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-266%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](docs/COMMANDS.md)
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 332-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 400-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -86,9 +86,20 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 3. Launch the game.
 
 The mod works in singleplayer and on a Fabric server. Its configuration is written to
-`config/fawebim.yml` on first start. Schematics are read from and written to `schematics/` (the
-`general.schematicSaveDirectory` setting) and diagnostics reports to `fawe-reports/`, both relative
-to the game directory.
+`config/fawebim.yml` on first start, and every value in it is also editable from the chat, so a
+change never needs a restart:
+
+```text
+/fawebim settings                  list every setting with its current value
+/fawebim settings wand             show the settings whose name matches
+/fawebim set max-brush-radius 50   change one and write the file
+/fawebim reset max-brush-radius    put one back to the value the mod ships with
+/fawebim reload                    pick up a file edited by hand
+```
+
+The file only holds settings the mod actually reads: the audits in `scripts/` fail the build when a
+configuration key does nothing, so no knob lies about its effect. Schematics live in `schematics/`
+and diagnostics reports in `fawe-reports/`, both relative to the game directory.
 
 Build the jar yourself with `./gradlew build` — it lands in `fabric/build/libs/FAWE-BIM-<version>.jar`.
 
@@ -169,13 +180,14 @@ Three ideas do most of the work:
 
 | | |
 |---|---|
-| Engine tests | **332 passing, 0 failing** (`./gradlew :core:selfTest`) |
-| Commands registered | **266** |
-| Implemented | **246** |
+| Engine tests | **400 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Commands registered | **267** |
+| Implemented | **247** |
 | Aliases of an implemented command | **20** |
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
 | Flags declared but never read | **0** |
+| Settings in `config/fawebim.yml` | **38, all read by the code** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
 
@@ -187,7 +199,11 @@ name cannot quietly stop working.
 Every command switch upstream declares is declared here too, with the same kind, and every one of
 them is read by the code that implements it: `scripts/flag_audit.py` compares the command surface
 with upstream and the brush table with the brush factory, and currently reports nothing missing,
-nothing taking the wrong kind of value, and no brush flag the factory ignores.
+nothing taking the wrong kind of value, and no brush flag the factory ignores. The same idea covers
+the configuration: `scripts/settings_audit.py` reads the declaration table of the config and fails
+when a key is not read anywhere else, so a setting that does nothing cannot ship. The settings that
+only a server has a use for (`queue.tick-interval`, `extent.extended-y-limit`, lightning and entity
+caps) are not offered at all rather than shown as knobs that pretend to work.
 
 ## Known platform limits
 

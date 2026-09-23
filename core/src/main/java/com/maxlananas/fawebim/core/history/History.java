@@ -15,13 +15,29 @@ import java.util.Map;
  */
 public final class History {
 
-    private final int maxRecords;
+    private int maxRecords;
     private final List<Record> records = new ArrayList<>();
     private int currentIndex = -1;
     private java.util.function.Consumer<Record> recordListener;
 
     public History(int maxRecords) {
         this.maxRecords = Math.max(1, maxRecords);
+    }
+
+    /** How many changes can be undone, as {@code /history size} sets it. */
+    public int maxRecords() {
+        return maxRecords;
+    }
+
+    public void setMaxRecords(int maxRecords) {
+        this.maxRecords = Math.max(1, maxRecords);
+        while (records.size() > this.maxRecords) {
+            records.remove(0);
+            currentIndex--;
+        }
+        if (currentIndex < -1) {
+            currentIndex = -1;
+        }
     }
 
     /** A single undo step. */

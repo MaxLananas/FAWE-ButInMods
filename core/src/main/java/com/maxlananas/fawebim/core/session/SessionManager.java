@@ -10,6 +10,11 @@ public final class SessionManager {
     private static final SessionManager INSTANCE = new SessionManager();
 
     private final Map<UUID, LocalSession> sessions = new ConcurrentHashMap<>();
+    /** The history every session uses when {@code history.per-player} is off. */
+    private static final com.maxlananas.fawebim.core.history.History SHARED_HISTORY =
+            new com.maxlananas.fawebim.core.history.History(
+                    com.maxlananas.fawebim.core.platform.Config.get().historySize);
+
     private final LocalSession consoleSession = new LocalSession();
 
     private SessionManager() {
@@ -37,7 +42,11 @@ public final class SessionManager {
     }
 
     private static LocalSession newSession(String ownerName) {
-        LocalSession session = new LocalSession();
+        // With per-player history off every session shares one history, which is
+        // how a server that answers //undo for the whole team is set up.
+        LocalSession session = com.maxlananas.fawebim.core.platform.Config.get().perPlayerHistory
+                ? new LocalSession()
+                : new LocalSession(SHARED_HISTORY);
         session.setOwnerName(ownerName);
         session.enableSnapshots();
         return session;

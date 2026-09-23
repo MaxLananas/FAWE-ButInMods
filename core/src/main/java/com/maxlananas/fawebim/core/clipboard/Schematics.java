@@ -201,6 +201,10 @@ public final class Schematics {
         if (!path.getFileName().toString().equals(name)) {
             throw new IllegalArgumentException("Invalid schematic name");
         }
+        if (!com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks && Files.isSymbolicLink(path)) {
+            throw new IllegalArgumentException("Symbolic links are disabled"
+                    + " (files.allow-symbolic-links in config/fawebim.yml)");
+        }
         return path;
     }
 
@@ -283,14 +287,34 @@ public final class Schematics {
 
     public static BlockArrayClipboard load(String name) {
         try {
-            byte[] data = Files.readAllBytes(resolve(name));
-            NbtCompound root = readAny(data);
-            if (root == null) {
-                throw new IllegalStateException("Corrupted schematic file");
-            }
-            return readDetected(root, name);
+            BlockArrayClipboard clipboard = readAll(resolve(name), name);
+            checkSize(clipboard, name);
+            return clipboard;
         } catch (IOException e) {
             throw new IllegalStateException("Could not load schematic '" + name + "': " + e.getMessage());
+        }
+    }
+
+    /** Reads a schematic file, whatever layout it uses. */
+    private static BlockArrayClipboard readAll(Path path, String name) throws IOException {
+        byte[] data = Files.readAllBytes(path);
+        NbtCompound root = readAny(data);
+        if (root == null) {
+            throw new IllegalStateException("Corrupted schematic file");
+        }
+        return readDetected(root, name);
+    }
+
+    /** Refuses a schematic bigger than {@code limits.max-schematic-size}. */
+    private static void checkSize(BlockArrayClipboard clipboard, String name) {
+        int maximum = com.maxlananas.fawebim.core.platform.Config.get().maxSchematicSize;
+        if (maximum <= 0) {
+            return;
+        }
+        long volume = (long) clipboard.getWidth() * clipboard.getHeight() * clipboard.getLength();
+        if (volume > maximum) {
+            throw new IllegalStateException("Schematic '" + name + "' holds " + volume
+                    + " blocks, more than limits.max-schematic-size (" + maximum + ")");
         }
     }
 
@@ -598,7 +622,11 @@ public final class Schematics {
                     int id = blocks[index] & 0xFF;
                     int meta = data.length > index ? data[index] & 0xFF : 0;
                     index++;
-                    int state = registry.legacyState(id, meta);
+                    // WorldEdit only reads the numeric ids of old files when the
+                    // configuration allows ancient blocks.
+                    int state = com.maxlananas.fawebim.core.platform.Config.get().allowAncientBlocks
+                            ? registry.legacyState(id, meta)
+                            : registry.air();
                     clipboard.setBlock(x, y, z, state);
                 }
             }

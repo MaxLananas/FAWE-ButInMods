@@ -47,6 +47,13 @@ public final class CommandRegistry {
         public boolean requiresWorld = true;
         public CommandHandler handler;
         public String status = "implemented";
+        /**
+         * Extra tab completions, when the arguments are not a fixed list: the
+         * platform passes the text typed so far and shows what comes back. The
+         * configuration commands are the ones that use it, to complete a setting
+         * key the player has started to type.
+         */
+        public java.util.function.Function<String, List<String>> suggestions;
 
         Entry(String name) {
             this.name = name;

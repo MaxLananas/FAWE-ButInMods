@@ -423,6 +423,7 @@ final class UtilityExtras {
         // -f restores instead of rolling back, exactly as FAWE's flag does.
         entry.booleanFlags.add("f");
         entry.arguments.add("list|info|summary|summarize|distr|distribution|find|inspect|search|near"
+                + "|rollback|restore|rerun|import|clear|size"
                 + "|rollback|restore|rerun|import|clear");
         entry.arguments.add("[-u <user>]");
         entry.arguments.add("[-t <time>]");
@@ -445,6 +446,22 @@ final class UtilityExtras {
                 case "restore", "rerun" -> applyMatches(ctx, false);
                 case "import" -> ctx.actor().message(Msg.info(
                         "Importing a database history needs a database, which the standalone mod does not ship"));
+                case "size" -> {
+                    if (ctx.args().size() < 2) {
+                        ctx.actor().message(Msg.keyValue("History size",
+                                ctx.session().getHistory().maxRecords()));
+                        return;
+                    }
+                    int requested = ctx.intArg(1);
+                    int maximum = Config.get().maxHistorySize;
+                    if (maximum >= 0 && requested > maximum) {
+                        throw CommandRegistry.error("History size must be at most " + maximum
+                                + " (raise history.max-size in config/fawebim.yml)");
+                    }
+                    ctx.session().getHistory().setMaxRecords(requested);
+                    ctx.actor().message(Msg.success("History size set to "
+                            + ctx.session().getHistory().maxRecords()));
+                }
                 case "clear" -> {
                     session.getHistory().clear();
                     EditLog.clear();

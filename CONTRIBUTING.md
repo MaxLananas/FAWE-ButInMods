@@ -94,6 +94,20 @@ so the audit exits non-zero when it finds one. When a value flag fills a paramet
 differs from the switch letter, the brush table spells it `parameter:letter` (`-m <sourceMask>` on
 the clipboard brush), which is also how the factory finds the value.
 
+## Configuration
+
+`Config` declares every setting once, in a table: the key a player types in game, the path the same
+value has in `config/fawebim.yml`, the type, a sentence saying what it does, and the field behind it.
+Adding a setting means adding a row there; `/fawebim settings`, `/fawebim set` and the file all read
+that row, so nothing has to be kept in sync by hand.
+
+Two rules follow from that:
+
+* A setting must change something. `python3 scripts/settings_audit.py` fails when a declared key is
+  read nowhere else in the sources, and it is part of the verification list below.
+* A behaviour the platform cannot honour does not get a knob. The mod ships no switch that only
+  pretends: those are listed under *Known platform limits* in the README instead.
+
 ## Platform rules
 
 The engine is testable because everything platform specific sits behind one interface. Keep it that
@@ -109,6 +123,16 @@ way:
   CraftScripts, PlotSquared claims for `deleteallunclaimed`, a server-side mouse wheel), implement
   what the platform allows and say the rest in the command output — a silent no-op is worse than an
   explicit message.
+* A machine without the Minecraft jars can still screen the adapter for the mistakes that matter,
+  such as a call to a method the engine never declared:
+
+  ```bash
+  python3 scripts/fabric_screen.py --engine core/build/classes/java/main --ecj /path/to/ecj.jar
+  ```
+
+  It compiles `fabric/` with Eclipse's batch compiler and filters out every report that is only a
+  consequence of the game being absent. Anything it prints is a real defect; the Gradle build
+  compiles the adapter properly and is still the source of truth.
 
 ## Verifying a change
 
@@ -116,7 +140,7 @@ A change is ready when all of the following hold:
 
 1. `./gradlew :core:selfTest` passes, and `./gradlew :core:checkInventory` reports no unresolved
    WorldEdit or FAWE name. `python3 scripts/flag_audit.py` reports no missing, mistyped or unread
-   flag.
+   flag, and `python3 scripts/settings_audit.py` no configuration key that nothing reads.
 2. `./gradlew build` succeeds.
 3. `./gradlew :core:genDocs` shows no unexpected change in
    [`docs/STATUS.md`](docs/STATUS.md) (a ported command must move from *still to port* to

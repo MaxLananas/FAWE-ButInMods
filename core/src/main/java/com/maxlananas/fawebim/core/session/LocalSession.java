@@ -30,10 +30,10 @@ public final class LocalSession {
     private boolean superPickaxeEnabled = true;
     private int superPickaxeMode = 1; // 0 = single, 1 = area, 2 = recursive
     private int superPickaxeRadius = 1;
-    private int maxBlocksChanged = -1;
-    private int timeout = 20;
-    private long maxBrushRadius = 10;
-    private double maxBrushRange = 100;
+    private int maxBlocksChanged = com.maxlananas.fawebim.core.platform.Config.get().defaultChangeLimit;
+    private int timeout = com.maxlananas.fawebim.core.platform.Config.get().timeout;
+    private long maxBrushRadius = com.maxlananas.fawebim.core.platform.Config.get().defaultMaxBrushRadius;
+    private double maxBrushRange = com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange;
     private int changeLimit = -1;
     private boolean sideEffectsLighting = true;
     private boolean sideEffectsNeighbors = true;
@@ -74,7 +74,12 @@ public final class LocalSession {
     public static final int REORDER_FULL = 2;
 
     public LocalSession() {
-        this.history = new History(20);
+        this(new History(com.maxlananas.fawebim.core.platform.Config.get().historySize));
+    }
+
+    /** A session recording into the given history, shared when the config says so. */
+    public LocalSession(History history) {
+        this.history = history;
     }
 
     /** Name of the player this session belongs to, used for snapshots. */
