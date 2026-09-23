@@ -31,6 +31,10 @@ server:
   world's region files to decide what qualifies and edit the chunks through the server,
 * mouse-wheel bindings (`/tool scroll size|range|mask|pattern|target|targetoffset|clipboard`),
 * multi clipboards (`//schem loadall` + a `//paste` that picks one at random),
+* an edit log behind `/history list|find|rollback|restore`, which filters by user (`-u`), time (`-t`)
+  and radius (`-r`) and replays the matching edits,
+* snapshots of every finished edit (`/snapshot list|use|restore`), including the biomes and the
+  entities a restore can put back with `-b` and `-e`,
 * CraftScripts (`//cs`, `//.s`) through whatever JSR-223 engine the server has,
 * FAWE's engine: palette-packed chunk sections, bulk chunk writes, deferred side effects,
   chunk-level history, operation timeouts and block-change limits.
@@ -47,6 +51,8 @@ whole editing engine, including its test suite, runs without launching Minecraft
 | Commands registered | **266** |
 | Implemented | **246** |
 | Aliases of an implemented command | **20** |
+| Brushes with their upstream signature | **46** |
+| Command switches upstream declares but this build lacks | **0** |
 | Still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
 
@@ -110,7 +116,7 @@ Both spellings of every command work, because Minecraft strips one slash from wh
 //copy   //paste            clipboard
 //schem save house          schematics in ./schematics
 //sphere 15 glass           shapes: //sphere, //cyl, //pyramid, //cone, //line, //spline, ...
-//brush sphere 5 stone      bind a brush to the held item
+//brush sphere stone 5      bind a brush to the held item
 /brush savebrush round      save and reload brush presets
 //tool tree                 bind a tool to the held item
 /tool mask #existing        brush settings: mask, material, range, size, tracemask, transform
