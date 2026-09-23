@@ -24,7 +24,9 @@ import java.util.Locale;
  *
  * <p>Most of them edit the settings of the brush bound to the held item, which is
  * where FAWE keeps them too, and report the same "no brush bound" message when
- * there is none.</p>
+ * there is none. Their {@code -h} switch addresses the second brush, the one
+ * {@code /tool secondary} binds to the offhand: FAWE keeps a separate settings
+ * object per hand, and so does this port.</p>
  */
 final class ToolUtilCommands {
 
