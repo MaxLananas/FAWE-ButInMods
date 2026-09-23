@@ -44,22 +44,26 @@ final class ConfigCommands {
         // Typing /fawebim <tab> suggests the actions, /fawebim set <tab> the keys.
         entry.suggestions = typed -> {
             java.util.List<String> completions = new ArrayList<>();
-            String last = lastWord(typed);
-            boolean afterAction = typed.contains(" ");
-            if (!afterAction || typed.endsWith(" ")) {
-                if (afterAction) {
-                    // "set " and "reset " want a key, "settings" wants a filter.
-                    if (typed.trim().endsWith("set") || typed.trim().endsWith("reset")) {
-                        keys(completions, last);
-                        return completions;
-                    }
-                }
+            String remaining = typed.stripLeading();
+            String[] words = remaining.isEmpty() ? new String[0] : remaining.split("\\s+", -1);
+            String last = lastWord(remaining);
+            if (words.length <= 1) {
                 completions.addAll(List.of("settings", "set", "reset", "reload", "save", "path"));
                 keys(completions, last);
                 return completions;
             }
-            if (typed.trim().startsWith("set") || typed.trim().startsWith("reset")) {
-                keys(completions, last);
+            switch (words[0].toLowerCase(Locale.ROOT)) {
+                case "set" -> {
+                    // Past the key, the useful completion is a value the key takes.
+                    if (words.length <= 2) {
+                        keys(completions, last);
+                    } else {
+                        values(completions, words[1], last);
+                    }
+                }
+                case "reset" -> keys(completions, last);
+                default -> {
+                }
             }
             return completions;
         };
@@ -121,11 +125,20 @@ final class ConfigCommands {
 
     /** {@code /fawebim set <key> <value>} — edits a value and writes the file. */
     private void set(Ctx ctx) {
-        if (ctx.args().size() < 3) {
+        if (ctx.args().size() < 2) {
             throw CommandRegistry.error("Usage: /fawebim set <key> <value>, for example"
                     + " /fawebim set max-brush-radius 50");
         }
         String key = ctx.arg(1);
+        if (ctx.args().size() < 3) {
+            Setting<?> current = Config.get().find(key);
+            if (current == null) {
+                throw CommandRegistry.error("Unknown setting '" + key
+                        + "'. Use /fawebim settings to list them");
+            }
+            throw CommandRegistry.error(current.key() + " holds " + current.value()
+                    + " and expects " + current.expected() + ". /fawebim set " + current.key() + " <value>");
+        }
         String value = ctx.joined(2);
         Setting<?> setting = Config.get().find(key);
         if (setting == null) {
@@ -183,6 +196,27 @@ final class ConfigCommands {
         for (Setting<?> setting : Config.get().settings()) {
             if (setting.key().toLowerCase(Locale.ROOT).startsWith(lower)) {
                 completions.add(setting.key());
+            }
+        }
+    }
+
+    /**
+     * The values a setting accepts, narrowed to what was typed: a switch offers
+     * its two spellings, anything else offers what it holds now, which is what a
+     * player usually wants to change to something else.
+     */
+    private static void values(List<String> completions, String key, String prefix) {
+        Setting<?> setting = Config.get().find(key);
+        if (setting == null) {
+            return;
+        }
+        String lower = prefix.toLowerCase(Locale.ROOT);
+        List<String> candidates = setting.kind() == Setting.Kind.BOOLEAN
+                ? List.of("true", "false")
+                : List.of(setting.value());
+        for (String candidate : candidates) {
+            if (candidate.toLowerCase(Locale.ROOT).startsWith(lower)) {
+                completions.add(candidate);
             }
         }
     }

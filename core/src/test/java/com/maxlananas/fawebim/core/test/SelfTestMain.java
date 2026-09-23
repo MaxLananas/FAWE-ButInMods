@@ -1283,6 +1283,11 @@ public final class SelfTestMain {
                 .anyMatch(message -> message.contains("Limit set to 50")));
         config.set("max-change-limit", "-1");
         actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim set max-brush-radius");
+        check("/fawebim set <key> says what the key holds", actor.messages().stream()
+                .anyMatch(message -> message.contains("holds") && message.contains("expects")));
+
+        actor.clearMessages();
         CommandManager.get().dispatch(actor, "/history size 12");
         check("/history size sets the undo depth", actor.messages().stream()
                 .anyMatch(message -> message.contains("History size set to 12")));
@@ -1296,6 +1301,13 @@ public final class SelfTestMain {
                     entry.suggestions.apply("").contains("settings"));
             check("completion offers a matching key",
                     entry.suggestions.apply("max-brush").contains("max-brush-radius"));
+            check("a switch offers both spellings",
+                    entry.suggestions.apply("set per-player-history t").contains("true")
+                            && entry.suggestions.apply("set per-player-history f").contains("false"));
+            check("a number offers the value it holds now", entry.suggestions
+                    .apply("set max-brush-radius ").contains(config.find("max-brush-radius").value()));
+            check("a key that is not a setting offers nothing",
+                    entry.suggestions.apply("set nope ").isEmpty());
         }
         config.maxBrushRadius = 1000;
         config.save();
