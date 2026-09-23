@@ -14,6 +14,7 @@ placeholder commands.
 [![Fabric API](https://img.shields.io/badge/fabric%20api-0.136.0%2B1.21.10-dbb69c?style=flat-square)](https://modrinth.com/mod/fabric-api)
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
+[![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
 [![Engine tests](https://img.shields.io/badge/engine%20tests-268%20passing-3fb950?style=flat-square)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-266%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
@@ -45,7 +46,7 @@ placeholder commands.
 | [How it works](#how-it-works) | The engine, and why it is fast |
 | [Status](#status) | Live numbers, always generated from the registry |
 | [Known platform limits](#known-platform-limits) | What a mod cannot do that a plugin can |
-| [Development](#development) | Build, test, regenerate the docs |
+| [Development](#development) | Build, test, regenerate the docs, continuous integration |
 | [Project layout](#project-layout) | Where things live |
 | [Credits and licence](#credits-and-licence) | Upstream projects and attribution |
 
@@ -232,6 +233,11 @@ the implementation. The command tables (`SubCommandTable`, `StubTable`, `BrushTa
 from `docs/commands-inventory.json`, which is itself extracted from the upstream sources, and from
 the registry dump — that is how the project tracks which WorldEdit/FAWE commands are ported and
 which are still missing.
+
+Continuous integration runs on every push and pull request
+([`.github/workflows/build.yml`](.github/workflows/build.yml)): it builds the engine, runs the
+self-tests and the command inventory check, builds the mod jar, and fails when the generated
+documentation or the generated command tables have drifted from the registry.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the porting workflow, the code style and how to verify a
 change, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.

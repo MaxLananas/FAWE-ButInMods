@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Engine, tests and mod jar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run the engine tests and the command inventory check
+        run: ./gradlew --no-daemon :core:verify
+
+      - name: Build the mod
+        run: ./gradlew --no-daemon build
+
+      - name: Check the generated documentation is up to date
+        run: |
+          ./gradlew --no-daemon :core:genDocs
+          python3 scripts/generate_command_tables.py
+          git diff --exit-code -- docs core/src/main/java/com/maxlananas/fawebim/core/command/BrushTable.java \
+            core/src/main/java/com/maxlananas/fawebim/core/command/SubCommandTable.java \
+            core/src/main/java/com/maxlananas/fawebim/core/command/StubTable.java
+
+      - name: Upload the mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: FAWE-BIM
+          path: fabric/build/libs/*.jar
+          if-no-files-found: warn
