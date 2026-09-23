@@ -146,9 +146,10 @@ final class WorldCommands {
         }
         entry.description = "Write a report about this installation";
         entry.group = "worldedit";
-        // -p adds the registered command list, one page per report entry.
-        entry.valueFlags.add("p");
-        entry.arguments.add("[-p <page>]");
+        // -p asks FAWE to upload the report to a paste service; without one the
+        // report stays on disk and says so.
+        entry.booleanFlags.add("p");
+        entry.arguments.add("[-p]");
         entry.handler = ctx -> {
             Path file = Config.get().resolveDirectory("fawe-reports")
                     .resolve("report-" + System.currentTimeMillis() + ".txt");
@@ -165,22 +166,19 @@ final class WorldCommands {
                     "Registered commands: " + registry.all().size(),
                     "World: " + ctx.world().name() + " (" + ctx.world().minY() + ".." + ctx.world().maxY() + ")",
                     "Configured threads: " + Config.get().threads));
-            // -p appends the command list of one page, which is what FAWE's
-            // report does once the summary is written.
-            int page = ctx.flagInt("p", 0);
-            if (page > 0) {
+            // FAWE's -p uploads the report to a paste service; a standalone mod
+            // has none to talk to, so the report stays local and says so.
+            if (ctx.hasFlag("p")) {
                 lines.add("");
-                lines.add("Registered commands (page " + page + "):");
-                List<CommandRegistry.Entry> entries = new ArrayList<>(registry.all());
-                entries.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
-                // The report is written to a file, so its pages are fixed at 50
-                // lines and the header is plain text.
-                int pageSize = 50;
-                int from = Math.min(entries.size(), (page - 1) * pageSize);
-                int to = Math.min(entries.size(), from + pageSize);
-                for (CommandRegistry.Entry registered : entries.subList(from, to)) {
-                    lines.add("  " + registered.usage() + " - " + registered.description);
-                }
+                lines.add("FAWE's -p uploads this report to a paste service. The mod has none"
+                        + " configured, so the report was written next to the world instead.");
+            }
+            lines.add("");
+            lines.add("Registered commands (" + registry.all().size() + "):");
+            List<CommandRegistry.Entry> entries = new ArrayList<>(registry.all());
+            entries.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
+            for (CommandRegistry.Entry registered : entries) {
+                lines.add("  " + registered.usage() + " - " + registered.description);
             }
             try {
                 Files.createDirectories(file.getParent());

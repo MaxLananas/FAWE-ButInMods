@@ -147,11 +147,12 @@ public final class Commands {
 
 
         CommandRegistry.Entry e5 = registry.register("//pos");
-        e5.description = "Set both positions to your position";
+        e5.description = "Set positions";
         e5.group = "selection";
-        e5.requiresPlayer = true;
         // -s switches to the given selector before placing the positions.
         e5.valueFlags.add("s");
+        e5.arguments.add("[coordinates]");
+        e5.arguments.add("[secondary coordinates]");
         e5.arguments.add("[-s <selector>]");
         e5.handler = ctx -> {
                     if (ctx.hasFlag("s")) {
@@ -162,12 +163,19 @@ public final class Commands {
                         }
                         ctx.session().setSelector(chosen);
                     }
-                    BlockVector3 pos = ctx.actor().position();
-                    ctx.session().getSelector(ctx.world()).selectPrimary(pos,
-                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.session().getSelector(ctx.world()).selectSecondary(pos,
-                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.info("Both positions set to ").append(Msg.value(pos)));
+                    // Without coordinates both positions land where the player
+                    // stands; with them the first sets position 1 and the second
+                    // position 2, as WorldEdit's /pos does.
+                    BlockVector3 primary = ctx.args().isEmpty() ? ctx.actor().position() : ctx.blockVector(0);
+                    if (primary == null) {
+                        throw CommandRegistry.error("Coordinates are required when the command is not run by a player");
+                    }
+                    BlockVector3 secondary = ctx.args().size() > 1 ? ctx.blockVector(1) : primary;
+                    RegionSelector selector = ctx.session().getSelector(ctx.world());
+                    selector.selectPrimary(primary, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+                    selector.selectSecondary(secondary, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+                    ctx.actor().message(Msg.info("Position 1 set to ").append(Msg.value(primary)));
+                    ctx.actor().message(Msg.info("Position 2 set to ").append(Msg.value(secondary)));
                 };
 
 
