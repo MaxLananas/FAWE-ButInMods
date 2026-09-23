@@ -41,6 +41,20 @@ public interface BlockStateRegistry {
         return air();
     }
 
+    /**
+     * The legacy numeric id of a state, or {@code -1} when the legacy format
+     * cannot express it. MCEdit {@code .schematic} files store blocks as an id
+     * and a metadata nibble, so writing one only makes sense with this.
+     */
+    default int legacyId(int stateId) {
+        return -1;
+    }
+
+    /** The legacy metadata of a state, the other half of {@link #legacyId(int)}. */
+    default int legacyMetadata(int stateId) {
+        return 0;
+    }
+
     /** Canonical name of a state id, without properties, e.g. {@code minecraft:stone}. */
     String name(int stateId);
 

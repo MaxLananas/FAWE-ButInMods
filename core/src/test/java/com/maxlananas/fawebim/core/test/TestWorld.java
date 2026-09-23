@@ -38,6 +38,13 @@ public final class TestWorld implements World {
         return ((long) (x & 0x3FFFFFF) << 38) | ((long) (y & 0xFFF) << 26) | (z & 0x3FFFFFF);
     }
 
+    private final java.util.concurrent.ExecutorService executor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "fawebim-test-worker");
+                thread.setDaemon(true);
+                return thread;
+            });
+
     @Override
     public String name() {
         return name;
@@ -253,6 +260,21 @@ public final class TestWorld implements World {
 
     public java.util.Set<BlockVector2> relitChunks() {
         return relit;
+    }
+
+    /**
+     * The worker pool of a real world. It is a single daemon thread so that a test
+     * can wait for the writes handed to it with {@link #awaitExecutor()}.
+     */
+    @Override
+    public java.util.concurrent.ExecutorService executor() {
+        return executor;
+    }
+
+    /** Waits for the work already queued on {@link #executor()}. */
+    public void awaitExecutor() throws Exception {
+        executor.submit(() -> {
+        }).get(30, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     public int setCount() {

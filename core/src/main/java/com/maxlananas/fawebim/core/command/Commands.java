@@ -1823,9 +1823,29 @@ public final class Commands {
                             // A large save goes to the worker pool, so the tick
                             // loop is not held up while the file is written.
                             BlockArrayClipboard saving = ctx.session().getClipboard().getClipboard();
+                            if (format.toLowerCase(java.util.Locale.ROOT).startsWith("mcedit")
+                                    || format.toLowerCase(java.util.Locale.ROOT).startsWith("legacy")) {
+                                int lost = Schematics.legacyLosses(saving);
+                                if (lost > 0) {
+                                    ctx.actor().message(Msg.error(lost + " block(s) have no legacy id and are"
+                                            + " saved as air; use sponge.3 to keep them"));
+                                }
+                            }
                             if (saving.volume() >= Schematics.ASYNC_SAVE_THRESHOLD) {
-                                Schematics.saveAsync(saving, name, format, ctx.world().executor());
                                 ctx.actor().message(Msg.success("Saving schematic '" + name + "' in the background"));
+                                // The write runs on a worker, so its outcome comes
+                                // back to the main thread; a failure would otherwise
+                                // be lost with the worker.
+                                Schematics.saveAsync(saving, name, format, ctx.world().executor())
+                                        .whenComplete((file, error) -> ctx.world().sync(() -> {
+                                            if (error != null) {
+                                                ctx.actor().message(Msg.error("Could not save schematic '"
+                                                        + name + "': " + error.getCause()));
+                                            } else {
+                                                ctx.actor().message(Msg.success("Saved schematic '"
+                                                        + file.getFileName() + "'"));
+                                            }
+                                        }));
                             } else {
                                 Schematics.save(saving, name, format);
                                 ctx.actor().message(Msg.success("Saved schematic '" + name + "'"));

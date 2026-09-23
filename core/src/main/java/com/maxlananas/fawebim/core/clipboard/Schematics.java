@@ -527,6 +527,27 @@ public final class Schematics {
 
     // ---------------------------------------------------------------- MCEdit
 
+    /**
+     * How many blocks of the clipboard the legacy format cannot name, so the
+     * command can warn before writing them as air.
+     */
+    public static int legacyLosses(BlockArrayClipboard clipboard) {
+        BlockVector3 origin = clipboard.getOrigin();
+        BlockStateRegistry registry = BlockState.registry();
+        int unsupported = 0;
+        for (int y = 0; y < clipboard.getHeight(); y++) {
+            for (int z = 0; z < clipboard.getLength(); z++) {
+                for (int x = 0; x < clipboard.getWidth(); x++) {
+                    int state = clipboard.getBlock(origin.x() + x, origin.y() + y, origin.z() + z);
+                    if (!registry.isAirLike(state) && registry.legacyId(state) < 0) {
+                        unsupported++;
+                    }
+                }
+            }
+        }
+        return unsupported;
+    }
+
     private static NbtCompound writeMcedit(BlockArrayClipboard clipboard) {
         BlockVector3 origin = clipboard.getOrigin();
         int width = clipboard.getWidth();
@@ -534,13 +555,17 @@ public final class Schematics {
         int length = clipboard.getLength();
         byte[] blocks = new byte[width * height * length];
         byte[] data = new byte[width * height * length];
+        BlockStateRegistry registry = BlockState.registry();
         int index = 0;
         for (int y = 0; y < height; y++) {
             for (int z = 0; z < length; z++) {
                 for (int x = 0; x < width; x++) {
                     int state = clipboard.getBlock(origin.x() + x, origin.y() + y, origin.z() + z);
-                    blocks[index] = (byte) (state & 0xFF);
-                    data[index] = (byte) ((state >> 8) & 0xFF);
+                    // Blocks the legacy ids cannot express are written as air, which
+                    // is what WorldEdit's MCEdit writer does.
+                    int id = registry.legacyId(state);
+                    blocks[index] = (byte) (id < 0 ? 0 : id);
+                    data[index] = (byte) (id < 0 ? 0 : registry.legacyMetadata(state) & 0xF);
                     index++;
                 }
             }
@@ -715,30 +740,35 @@ public final class Schematics {
     }
 
     /**
-     * Reads a schematic whatever the container is: plain NBT, gzipped NBT,
-     * plain varint NBT (Sponge v3) or gzipped varint NBT.
+     * Reads a schematic whatever the container is: plain NBT, gzipped NBT, plain
+     * varint NBT (Sponge v3) or gzipped varint NBT.
+     *
+     * <p>The layout is guessed from the file and then checked: varint NBT read as
+     * plain NBT yields a parse that happens to succeed for a large payload, so a
+     * candidate only counts when the compound it produced is a schematic.</p>
      */
     private static NbtCompound readAny(byte[] data) {
-        try {
-            return NbtIo.read(data, false);
-        } catch (Exception ignored) {
-            // fall through
+        boolean gzipped = data.length > 2 && (data[0] & 0xFF) == 0x1F && (data[1] & 0xFF) == 0x8B;
+        for (boolean varint : new boolean[]{gzipped, !gzipped}) {
+            for (boolean gzip : new boolean[]{gzipped, false}) {
+                try {
+                    NbtCompound root = NbtIo.read(new ByteArrayInputStream(data), varint, gzip);
+                    if (isSchematicRoot(root)) {
+                        return root;
+                    }
+                } catch (Exception ignored) {
+                    // Not this layout; the next candidate gets a turn.
+                }
+            }
         }
-        try {
-            return NbtIo.readNbtOrGzip(data);
-        } catch (Exception ignored) {
-            // fall through
-        }
-        try {
-            return NbtIo.read(data, true);
-        } catch (Exception ignored) {
-            // fall through
-        }
-        try {
-            return NbtIo.read(new ByteArrayInputStream(data), true, true);
-        } catch (Exception e) {
-            throw new IllegalStateException("Corrupted schematic data: " + e);
-        }
+        throw new IllegalStateException("Corrupted schematic data");
+    }
+
+    /** True when a parsed root carries one of the containers a schematic uses. */
+    private static boolean isSchematicRoot(NbtCompound root) {
+        return root.contains("Schematic") || root.contains("Palette") || root.contains("BlockData")
+                || root.contains("Blocks") || root.contains("Width") || root.contains("Height")
+                || root.contains("palette") || root.contains("blocks") || root.contains("size");
     }
 
     /** A schematic's data version, used to warn about newer formats. */

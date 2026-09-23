@@ -169,51 +169,68 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         return idOf(block.defaultBlockState());
     }
 
+    /**
+     * The 1.12 numeric ids the legacy schematic format understands. Everything
+     * else is written as air, as WorldEdit does, because the format has no way to
+     * name it.
+     */
+    private static final Map<Integer, String> LEGACY_NAMES = legacyNames();
+    private static final Map<String, Integer> LEGACY_IDS = legacyIds();
+
+    private static Map<Integer, String> legacyNames() {
+        Map<Integer, String> names = new LinkedHashMap<>();
+        names.put(0, "minecraft:air");
+        names.put(1, "minecraft:stone");
+        names.put(2, "minecraft:grass_block");
+        names.put(3, "minecraft:dirt");
+        names.put(4, "minecraft:cobblestone");
+        names.put(5, "minecraft:oak_planks");
+        names.put(7, "minecraft:bedrock");
+        names.put(8, "minecraft:water");
+        names.put(10, "minecraft:lava");
+        names.put(12, "minecraft:sand");
+        names.put(13, "minecraft:gravel");
+        names.put(14, "minecraft:gold_ore");
+        names.put(15, "minecraft:iron_ore");
+        names.put(16, "minecraft:coal_ore");
+        names.put(17, "minecraft:oak_log");
+        names.put(18, "minecraft:oak_leaves");
+        names.put(20, "minecraft:glass");
+        names.put(24, "minecraft:sandstone");
+        names.put(45, "minecraft:bricks");
+        names.put(49, "minecraft:obsidian");
+        names.put(54, "minecraft:chest");
+        names.put(56, "minecraft:diamond_ore");
+        names.put(57, "minecraft:diamond_block");
+        names.put(73, "minecraft:redstone_ore");
+        names.put(79, "minecraft:ice");
+        names.put(80, "minecraft:snow_block");
+        names.put(82, "minecraft:clay");
+        names.put(87, "minecraft:netherrack");
+        names.put(89, "minecraft:glowstone");
+        names.put(98, "minecraft:stone_bricks");
+        names.put(110, "minecraft:mycelium");
+        names.put(121, "minecraft:end_stone");
+        names.put(129, "minecraft:emerald_ore");
+        names.put(133, "minecraft:emerald_block");
+        return Map.copyOf(names);
+    }
+
+    private static Map<String, Integer> legacyIds() {
+        Map<String, Integer> ids = new LinkedHashMap<>();
+        for (Map.Entry<Integer, String> entry : LEGACY_NAMES.entrySet()) {
+            ids.putIfAbsent(entry.getValue(), entry.getKey());
+        }
+        return Map.copyOf(ids);
+    }
+
     @Override
     public int legacyState(int blockId, int metadata) {
-        // 1.12 numeric ids: stone = 1, grass = 2, dirt = 3, ... only the first
-        // few are unambiguous, the rest is best-effort.
-        String name = switch (blockId) {
-            case 0 -> "minecraft:air";
-            case 1 -> "minecraft:stone";
-            case 2 -> "minecraft:grass_block";
-            case 3 -> "minecraft:dirt";
-            case 4 -> "minecraft:cobblestone";
-            case 5 -> "minecraft:oak_planks";
-            case 7 -> "minecraft:bedrock";
-            case 8, 9 -> "minecraft:water";
-            case 10, 11 -> "minecraft:lava";
-            case 12 -> "minecraft:sand";
-            case 13 -> "minecraft:gravel";
-            case 14 -> "minecraft:gold_ore";
-            case 15 -> "minecraft:iron_ore";
-            case 16 -> "minecraft:coal_ore";
-            case 17 -> "minecraft:oak_log";
-            case 18 -> "minecraft:oak_leaves";
-            case 20 -> "minecraft:glass";
-            case 24 -> "minecraft:sandstone";
-            case 45 -> "minecraft:bricks";
-            case 49 -> "minecraft:obsidian";
-            case 54 -> "minecraft:chest";
-            case 56 -> "minecraft:diamond_ore";
-            case 57 -> "minecraft:diamond_block";
-            case 73, 74 -> "minecraft:redstone_ore";
-            case 79 -> "minecraft:ice";
-            case 80 -> "minecraft:snow_block";
-            case 82 -> "minecraft:clay";
-            case 87 -> "minecraft:netherrack";
-            case 89 -> "minecraft:glowstone";
-            case 98 -> "minecraft:stone_bricks";
-            case 110 -> "minecraft:mycelium";
-            case 121 -> "minecraft:end_stone";
-            case 129 -> "minecraft:emerald_ore";
-            case 133 -> "minecraft:emerald_block";
-            default -> null;
-        };
-        if (name == null) {
+        String blockName = LEGACY_NAMES.get(blockId);
+        if (blockName == null) {
             return air();
         }
-        Block block = BuiltInRegistries.BLOCK.getValue(ResourceLocation.parse(name));
+        Block block = BuiltInRegistries.BLOCK.getValue(ResourceLocation.parse(blockName));
         if (block == null) {
             return air();
         }
@@ -225,6 +242,25 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
             }
         }
         return idOf(state);
+    }
+
+    @Override
+    public int legacyId(int stateId) {
+        Integer id = LEGACY_IDS.get(name(stateId));
+        return id == null ? -1 : id;
+    }
+
+    @Override
+    public int legacyMetadata(int stateId) {
+        if (legacyId(stateId) != 17) {
+            return 0;
+        }
+        // The legacy metadata of a log is its axis; the reader turns it back.
+        return switch (properties(stateId).getOrDefault("axis", "y")) {
+            case "x" -> 1;
+            case "z" -> 2;
+            default -> 0;
+        };
     }
 
     @Override

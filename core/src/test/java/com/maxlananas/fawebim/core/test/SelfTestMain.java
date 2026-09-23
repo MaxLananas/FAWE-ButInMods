@@ -72,6 +72,7 @@ public final class SelfTestMain {
         testClipboardBrushes();
         testGravityBrush();
         testClipboardAndSchematic();
+        testLargeSchematicSave();
         testCommands();
         testRegen();
         testAngleMasks();
@@ -866,6 +867,78 @@ public final class SelfTestMain {
             check("clipboard brush -m pasted onto the matching block", world.getBlock(70, 80, 70) == gold);
             check("clipboard brush -m skipped the other block", world.getBlock(71, 80, 70) == dirt);
         }
+    }
+
+    /**
+     * {@code //schem save} writes small clipboards on the calling thread and hands
+     * anything past the threshold to the world's worker pool; the large branch is
+     * the one a player notices when they save a build, so it is exercised here.
+     */
+    private static void testLargeSchematicSave() throws Exception {
+        section("large schematic save");
+        CommandManager.get().initialise();
+        TestWorld world = new TestWorld("large-save");
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        LocalSession session = actor.session();
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+
+        Path dir = Files.createTempDirectory("fawebim-large-schematics");
+        Schematics.setDirectory(dir);
+
+        // Two cells far apart, so the bounding box is past the async threshold
+        // without the clipboard holding a million blocks.
+        BlockArrayClipboard big = new BlockArrayClipboard(new BlockVector3(0, 0, 0));
+        big.setBlock(0, 0, 0, stone);
+        big.setBlock(200, 100, 50, stone);
+        check("large clipboard is past the async threshold",
+                big.volume() >= Schematics.ASYNC_SAVE_THRESHOLD);
+        session.setClipboard(big);
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//schem save bigselftest sponge.3");
+        // The write runs on the worker, so the notice is not necessarily the last
+        // message by the time it is checked.
+        check("large save reports a background write", actor.messages().stream()
+                .anyMatch(message -> message.contains("in the background")));
+
+        world.awaitExecutor();
+        check("large save reports the result", actor.messages().stream()
+                .anyMatch(message -> message.contains("Saved schematic 'bigselftest.schem'")));
+        check("large save wrote the file", Schematics.exists("bigselftest", "sponge.3")
+                && Files.isRegularFile(dir.resolve("bigselftest.schem")));
+        BlockArrayClipboard reloaded = Schematics.load("bigselftest.schem");
+        checkEquals("large save kept the volume", big.volume(), reloaded.volume());
+        check("large save kept the far block", reloaded.getBlock(200, 100, 50) == stone);
+
+        // A large payload is where guessing the layout from the file used to pick
+        // the wrong reader, so every format is round-tripped at this size.
+        check("large legacy save counts what it cannot store", Schematics.legacyLosses(big) == 0);
+        for (String format : List.of("sponge.2", "mcedit")) {
+            Schematics.save(big, "bigselftest-" + format.replace('.', '_'), format);
+            String written = Files.list(dir).map(p -> p.getFileName().toString())
+                    .filter(n -> n.startsWith("bigselftest-" + format.replace('.', '_')))
+                    .findFirst().orElse(null);
+            check("large " + format + " save wrote the file", written != null);
+            if (written != null) {
+                BlockArrayClipboard back = Schematics.load(written);
+                check("large " + format + " save round-trips", back.volume() == big.volume()
+                        && back.getBlock(200, 100, 50) == stone);
+                Schematics.delete(written);
+            }
+        }
+
+        // The small branch stays on the calling thread and says so.
+        BlockArrayClipboard small = new BlockArrayClipboard(new BlockVector3(0, 0, 0));
+        small.setBlock(0, 0, 0, stone);
+        session.setClipboard(small);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//schem save smallselftest sponge.3");
+        check("small save reports a direct write",
+                actor.lastMessage().contains("Saved schematic") && !actor.lastMessage().contains("background"));
+        check("small save wrote the file", Schematics.exists("smallselftest", "sponge.3"));
+
+        Schematics.delete("bigselftest.schem");
+        Schematics.delete("smallselftest.schem");
     }
 
     private static void testCommands() {

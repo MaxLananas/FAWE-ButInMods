@@ -182,6 +182,21 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
     }
 
     @Override
+    public int legacyId(int stateId) {
+        if (stateId == air()) {
+            return 0;
+        }
+        // The inverse of the mapping above, so a round-trip through the legacy
+        // format gives back the block that was written.
+        for (int id = 1; id <= names.size(); id++) {
+            if (legacyState(id, 0) == stateId) {
+                return id;
+            }
+        }
+        return -1;
+    }
+
+    @Override
     public String name(int stateId) {
         return ids.getOrDefault(stateId, "minecraft:air");
     }
