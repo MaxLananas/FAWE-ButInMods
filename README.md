@@ -188,13 +188,13 @@ run of it, on one machine, and are only meant as a floor and as a way to see wha
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **10.6 M blocks/s** |
-| `//set` over 64x64x64 | **27.8 M blocks/s** |
-| `//copy` over 64x64x64 | **59.6 M blocks/s** |
-| `//paste` over 64x64x64 | **30.1 M blocks/s** |
-| `//replace` over 64x64x64 | **7.1 M blocks/s** |
-| `//sphere` radius 40 | **12.6 M blocks/s** |
-| `//undo` after `//set` on 64x64x64 | **19.7 M blocks/s** |
+| Block writes, engine with history | **12.8 M blocks/s** |
+| `//set` over 64x64x64 | **28.6 M blocks/s** |
+| `//copy` over 64x64x64 | **65.3 M blocks/s** |
+| `//paste` over 64x64x64 | **24.5 M blocks/s** |
+| `//replace` over 64x64x64 | **7.9 M blocks/s** |
+| `//sphere` radius 40 | **14.5 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **25.4 M blocks/s** |
 
 The shape of that came from measuring rather than guessing: a palette lookup used to walk the
 palette entry by entry (487 ns per block on a build with four thousand block states, now 3.7), the
