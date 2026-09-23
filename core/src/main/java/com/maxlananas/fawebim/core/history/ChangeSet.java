@@ -98,9 +98,4 @@ public final class ChangeSet {
         }
         return out;
     }
-
-    /** Memory footprint estimate, used by {@code /history} style reporting. */
-    public int memoryBytes() {
-        return indices.length * 4 * 3 + 32;
-    }
 }

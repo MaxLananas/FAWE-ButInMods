@@ -178,9 +178,4 @@ public final class PackedBlockArray {
         copy.rehashIndex(Math.max(16, paletteSize * 2));
         return copy;
     }
-
-    /** Raw palette, used by the schematic serializer. */
-    public int[] palette() {
-        return palette;
-    }
 }

@@ -1009,20 +1009,6 @@ public final class Operations {
         }
     }
 
-    /** A pattern that reuses an expression's output. */
-    public static Pattern expressionPattern(Expression expression) {
-        return (x, y, z) -> {
-            Expression.Variables variables = new Expression.Variables();
-            variables.set("x", x).set("y", y).set("z", z);
-            return (int) expression.evaluate(variables);
-        };
-    }
-
-    /** Utility used by the brushes: the highest non-air block in a column. */
-    public static int highestBlock(World world, int x, int z) {
-        return world.getHighestBlockY(x, z);
-    }
-
     /**
      * Receives one block of a shape. Returning true counts it as a change, the
      * same value the shape commands return.
