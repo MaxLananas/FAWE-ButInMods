@@ -612,40 +612,57 @@ public final class Operations {
 
     /** {@code /brush gravity} — drops blocks straight down. */
     public static int gravity(World world, EditSession session, BlockVector3 center, int radius) {
-        return gravity(world, session, center, radius, Integer.MIN_VALUE);
+        return gravity(world, session, center, radius, null, false);
     }
 
     /**
-     * Drops blocks straight down inside the brush sphere. The optional
-     * {@code fromY} bounds the search: FAWE's {@code -h <height>} starts at that
-     * height instead of at the top of the brush.
+     * Drops the blocks of every column of the brush onto the first gap below
+     * them, which is what WorldEdit and FAWE both do: each column keeps its
+     * blocks in order and compacts them into the lowest air cells of the scan
+     * window.
+     *
+     * <p>The window spans the brush radius above and below the clicked block.
+     * {@code -h <height>} replaces that offset with the given height in
+     * WorldEdit; FAWE turns the same switch into a flag with no value and scans
+     * down to the bottom of the world instead, which is why the two are passed
+     * separately here and why a height wins when both are present.</p>
      */
-    public static int gravity(World world, EditSession session, BlockVector3 center, int radius, int fromY) {
+    public static int gravity(World world, EditSession session, BlockVector3 center, int radius,
+                              Integer heightOffset, boolean scanToWorldFloor) {
         BlockStateRegistry registry = BlockState.registry();
+        int offset = heightOffset == null ? radius : heightOffset;
+        int top = Math.min(center.y() + offset, world.maxY());
+        int floor = scanToWorldFloor && heightOffset == null
+                ? world.minY()
+                : Math.max(center.y() - offset, world.minY());
         int changed = 0;
-        for (int z = -radius; z <= radius; z++) {
-            for (int x = -radius; x <= radius; x++) {
-                if (Math.sqrt(x * x + z * z) > radius) {
-                    continue;
-                }
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
                 int bx = center.x() + x;
                 int bz = center.z() + z;
-                int radiusY = (int) Math.sqrt(Math.max(0, radius * radius - x * x - z * z));
-                int top = fromY == Integer.MIN_VALUE ? center.y() + radiusY : Math.max(fromY, center.y() - radiusY);
-                for (int y = top; y >= center.y() - radiusY; y--) {
+                // The lowest air cell of the window that nothing has fallen into
+                // yet; null until the column opens up, because a block sitting on
+                // the bottom of its window has nowhere to go.
+                Integer lowestAir = null;
+                for (int y = floor; y <= top; y++) {
                     int state = world.getBlock(bx, y, bz);
-                    if (registry.isAirLike(state) || !registry.isFullCube(state)) {
+                    if (registry.isAirLike(state)) {
+                        if (lowestAir == null) {
+                            lowestAir = y;
+                        }
                         continue;
                     }
-                    int below = y - 1;
-                    while (below > world.minY() && registry.isAirLike(world.getBlock(bx, below, bz))) {
-                        below--;
+                    if (lowestAir == null) {
+                        continue;
                     }
-                    if (below + 1 != y) {
-                        session.setBlock(bx, y, bz, registry.air());
-                        if (session.setBlock(bx, below + 1, bz, state)) {
-                            changed++;
-                        }
+                    int target = lowestAir;
+                    lowestAir = target + 1;
+                    if (target == y) {
+                        continue;
+                    }
+                    session.setBlock(bx, y, bz, registry.air());
+                    if (session.setBlock(bx, target, bz, state)) {
+                        changed++;
                     }
                 }
             }

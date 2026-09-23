@@ -1217,20 +1217,28 @@ public final class Brushes {
     /** {@code /brush gravity} — drops blocks. */
     public static final class GravityBrush extends BaseBrush {
 
-        private int fromY = Integer.MIN_VALUE;
+        /** {@code -h <height>}: WorldEdit's height, in place of the brush radius. */
+        private Integer height;
+        /** {@code -h}: FAWE's flag form, which scans down to the bottom of the world. */
+        private boolean fullHeight;
 
         public GravityBrush(double radius, Mask mask) {
             super(radius, null, mask);
         }
 
-        /** {@code -h <height>}: start dropping at that height. */
-        public void setFromY(int fromY) {
-            this.fromY = fromY;
+        /** {@code /brush gravity <radius> -h <height>} — WorldEdit's window offset. */
+        public void setHeight(int height) {
+            this.height = height;
+        }
+
+        /** {@code /brush gravity <radius> -h} — FAWE's full-height scan. */
+        public void setFullHeight(boolean fullHeight) {
+            this.fullHeight = fullHeight;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.gravity(session.getWorld(), session, position, (int) radius, fromY);
+            return Operations.gravity(session.getWorld(), session, position, (int) radius, height, fullHeight);
         }
     }
 

@@ -2587,15 +2587,19 @@ public final class Commands {
                 boolean optional = argument.contains("=");
                 entry.arguments.add(optional ? "[" + name + "]" : "<" + name + ">");
             }
-            for (String flag : com.maxlananas.fawebim.core.brush.BrushParameters.switches(row)) {
-                entry.booleanFlags.add(flag);
-                entry.arguments.add("[-" + flag + "]");
-            }
+            // A flag upstream declares both as a switch and as a value flag is
+            // listed once, in the form that takes a value.
             for (String flag : com.maxlananas.fawebim.core.brush.BrushParameters.valueFlags(row)) {
                 String name = flag.contains(":") ? flag.substring(0, flag.indexOf(':')) : flag;
                 String switchName = flag.contains(":") ? flag.substring(flag.indexOf(':') + 1) : flag;
                 entry.valueFlags.add(switchName);
                 entry.arguments.add("[-" + switchName + " <" + name + ">]");
+            }
+            for (String flag : com.maxlananas.fawebim.core.brush.BrushParameters.switches(row)) {
+                entry.booleanFlags.add(flag);
+                if (!entry.valueFlags.contains(flag)) {
+                    entry.arguments.add("[-" + flag + "]");
+                }
             }
             entry.handler = ctx -> bindBrush(ctx, row);
         }

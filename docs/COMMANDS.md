@@ -77,12 +77,12 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 |---|---|---|---|
 | `/brush` | `//brush`, `/br` | Show the current brush | implemented |
 | `/brush biome <[shape]> <[-c]>` | — | Biome brush, sets biomes in the area | implemented |
-| `/brush blendball <[radius]> <[-a]> <[-m <m>]>` | `/brush bb`, `/brush blend` | Smooths and blends terrain | implemented |
+| `/brush blendball <[radius]> <[-m <m>]> <[-a]>` | `/brush bb`, `/brush blend` | Smooths and blends terrain | implemented |
 | `/brush butcher <[radius]> <[-p]> <[-n]> <[-g]> <[-a]> <[-b]> <[-t]> <[-f]> <[-r]> <[-w]>` | `/brush kill` | Butcher brush, kills mobs within a radius | implemented |
 | `/brush catenary <[fill]> <[-h]> <[-s]> <[-d]>` | `/brush cat`, `/brush gravityline`, `/brush saggedline` | Create a hanging line between two points | implemented |
 | `/brush circle <[fill]>` | — | Creates a circle, which revolves around your facing direction | implemented |
 | `/brush cliff <[radius]> <[-r]> <[-l]> <[-s]>` | `/brush flatcylinder` | Cliff brush | implemented |
-| `/brush clipboard <[-a]> <[-o]> <[-e]> <[-b]> <[-r]> <[-v]> <[-m <m>]>` | `/brush copy` | Paste your clipboard at the brush location. Includes any transforms. | implemented |
+| `/brush clipboard <[-m <m>]> <[-a]> <[-o]> <[-e]> <[-b]> <[-r]> <[-v]>` | `/brush copy` | Paste your clipboard at the brush location. Includes any transforms. | implemented |
 | `/brush command <[radius]> <[-h]>` | `/brush cmd` | Command brush | implemented |
 | `/brush copypaste <[radius]> <[-r]> <[-a]>` | `/brush cp`, `/brush copypasta` | Copy Paste brush | implemented |
 | `/brush cylinder <[pattern]> <[-h]>` | `/brush cyl`, `/brush c` | Choose the cylinder brush | implemented |
@@ -93,7 +93,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/brush feature <[shape]>` | — | Feature brush, paints Minecraft generation features | implemented |
 | `/brush flatten <[radius]> <[-r]> <[-l]> <[-s]>` | `/brush flatmap`, `/brush flat` | This brush raises or lowers land towards the clicked point | implemented |
 | `/brush forest <[shape]>` | — | Plant trees | implemented |
-| `/brush gravity <[radius]> <[-h]> <[-h <h>]>` | `/brush grav` | Gravity brush, simulates the effect of gravity | implemented |
+| `/brush gravity <[radius]> <[-h <h>]>` | `/brush grav` | Gravity brush, simulates the effect of gravity | implemented |
 | `/brush height <[radius]> <[-r]> <[-l]> <[-s]>` | — | Raise or lower terrain using a heightmap | implemented |
 | `/brush heightmap <[imagename]> <[-e]> <[-f]> <[-r]>` | — | Heightmap brush, raises or lowers terrain using an image heightmap | implemented |
 | `/brush image <[?]> <[-a]> <[-f]>` | — | Use a height map to paint a surface | implemented |

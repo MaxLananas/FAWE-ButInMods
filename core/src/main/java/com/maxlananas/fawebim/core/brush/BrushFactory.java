@@ -151,7 +151,14 @@ public final class BrushFactory {
             }
             case "gravity" -> {
                 Brushes.GravityBrush brush = new Brushes.GravityBrush(parameters.radius(), parameters.mask());
-                brush.setFromY(parameters.integer("h", Integer.MIN_VALUE));
+                // WorldEdit carries a height on -h, FAWE makes the same switch a
+                // plain flag; a height, when given, is the more specific request.
+                String height = parameters.string("h", "");
+                if (!height.isEmpty()) {
+                    brush.setHeight(parameters.integer("h", 0));
+                } else {
+                    brush.setFullHeight(parameters.flag("h"));
+                }
                 yield brush;
             }
             case "clipboard" -> new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),

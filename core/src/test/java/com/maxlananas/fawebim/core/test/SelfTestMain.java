@@ -7,6 +7,7 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
+import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.brush.Brushes;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.Operations;
@@ -69,6 +70,7 @@ public final class SelfTestMain {
         testSnapshotRoundTrip();
         testFallAndRegionHelpers();
         testClipboardBrushes();
+        testGravityBrush();
         testClipboardAndSchematic();
         testCommands();
         testRegen();
@@ -757,6 +759,96 @@ public final class SelfTestMain {
         paste.flushQueue();
         check("copypaste placed the blob above the click", world.getBlock(54, 72, 50) == stone
                 && world.getBlock(54, 73, 50) == stone);
+    }
+
+    private static void testGravityBrush() {
+        section("gravity brush");
+        CommandManager.get().initialise();
+        TestWorld world = new TestWorld("gravity");
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        LocalSession session = actor.session();
+        session.setMaxBlocksChanged(100000);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int dirt = BlockState.registry().defaultState("minecraft:dirt");
+        int air = BlockState.registry().air();
+
+        // The window is a square of the brush radius around the click, so with a
+        // radius of 3 and a click at y 71 it spans y 68 to 74. A column already
+        // resting on the bottom of its window is left alone.
+        world.setBlock(10, 68, 10, stone);
+        Brushes.GravityBrush resting = new Brushes.GravityBrush(3, null);
+        EditSession still = new EditSession(world, session, "gravity resting");
+        checkEquals("gravity leaves a settled column alone", 0,
+                resting.apply(still, new BlockVector3(10, 71, 10), actor));
+        still.flushQueue();
+        check("gravity kept the resting block", world.getBlock(10, 68, 10) == stone);
+
+        // A block with air under it inside the window falls onto the lowest gap,
+        // and the blocks of the column keep their order.
+        world.setBlock(20, 70, 20, stone);
+        world.setBlock(20, 74, 20, dirt);
+        EditSession compact = new EditSession(world, session, "gravity compact");
+        resting.apply(compact, new BlockVector3(20, 71, 20), actor);
+        compact.flushQueue();
+        check("gravity compacted the column", world.getBlock(20, 68, 20) == stone
+                && world.getBlock(20, 69, 20) == dirt && world.getBlock(20, 74, 20) == air);
+
+        // WorldEdit carries a height on -h and uses it in place of the radius,
+        // so a block below that window is out of reach.
+        world.setBlock(30, 70, 30, stone);
+        world.setBlock(30, 72, 30, dirt);
+        Brushes.GravityBrush windowed = new Brushes.GravityBrush(10, null);
+        windowed.setHeight(2);
+        EditSession window = new EditSession(world, session, "gravity -h 2");
+        windowed.apply(window, new BlockVector3(30, 71, 30), actor);
+        window.flushQueue();
+        check("gravity -h <height> narrows the window", world.getBlock(30, 69, 30) == stone
+                && world.getBlock(30, 70, 30) == dirt && world.getBlock(30, 72, 30) == air);
+
+        // FAWE turns the same switch into a flag: the scan then starts at the
+        // bottom of the world, so the column falls to the world floor.
+        world.setBlock(40, 71, 40, stone);
+        Brushes.GravityBrush full = new Brushes.GravityBrush(3, null);
+        full.setFullHeight(true);
+        EditSession toFloor = new EditSession(world, session, "gravity -h");
+        full.apply(toFloor, new BlockVector3(40, 71, 40), actor);
+        toFloor.flushQueue();
+        check("gravity -h reaches the world floor", world.getBlock(40, world.minY(), 40) == stone
+                && world.getBlock(40, 71, 40) == air);
+
+        // The command line wires both forms, which is what the switch audit wants:
+        // -h <height> is WorldEdit's, -h alone is FAWE's.
+        CommandRegistry.Entry entry = CommandManager.get().registry().get("/brush gravity");
+        check("gravity is registered", entry != null);
+        if (entry != null) {
+            check("gravity declares -h both ways",
+                    entry.booleanFlags.contains("h") && entry.valueFlags.contains("h"));
+            check("gravity lists -h once", entry.arguments.stream()
+                    .filter(argument -> argument.contains("-h")).count() == 1);
+
+            actor.clearMessages();
+            world.setBlock(50, 85, 50, stone);
+            CommandManager.get().dispatch(actor, "/brush gravity 5 -h 20");
+            check("gravity -h 20 binds a gravity brush",
+                    com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                            instanceof Brushes.GravityBrush);
+            EditSession byHeight = new EditSession(world, session, "brush gravity -h 20");
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                    .apply(byHeight, new BlockVector3(50, 71, 50), actor);
+            byHeight.flushQueue();
+            check("gravity -h 20 used the height", world.getBlock(50, 51, 50) == stone
+                    && world.getBlock(50, 85, 50) == air);
+
+            actor.clearMessages();
+            world.setBlock(60, 75, 60, stone);
+            CommandManager.get().dispatch(actor, "/brush gravity 5 -h");
+            EditSession byFlag = new EditSession(world, session, "brush gravity -h");
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                    .apply(byFlag, new BlockVector3(60, 71, 60), actor);
+            byFlag.flushQueue();
+            check("gravity -h alone used the world floor", world.getBlock(60, world.minY(), 60) == stone
+                    && world.getBlock(60, 75, 60) == air);
+        }
     }
 
     private static void testCommands() {

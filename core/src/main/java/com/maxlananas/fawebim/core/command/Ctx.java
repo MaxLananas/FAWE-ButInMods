@@ -54,6 +54,10 @@ public final class Ctx {
                                 .add(flag.substring(eq + 1));
                     } else if (i + 1 < raw.size()) {
                         flags.computeIfAbsent(flag, k -> new ArrayList<>()).add(raw.get(++i));
+                    } else if (entry.booleanFlags.contains(flag)) {
+                        // A flag upstream declares both ways and that ends the
+                        // line keeps its switch reading, e.g. /brush gravity 5 -h.
+                        flags.computeIfAbsent(flag, k -> new ArrayList<>());
                     }
                 } else {
                     flags.computeIfAbsent(flag, k -> new ArrayList<>());
