@@ -18,3 +18,7 @@ run/
 # Local test worlds / schematics produced by the test-suite
 /testrun/
 *.class
+
+# Python bytecode from the doc generators
+__pycache__/
+*.pyc
