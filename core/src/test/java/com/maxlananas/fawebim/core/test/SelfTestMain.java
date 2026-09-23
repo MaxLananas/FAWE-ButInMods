@@ -570,7 +570,7 @@ public final class SelfTestMain {
         session.getHistory().redo();
     }
 
-    private static void testEditLog() {
+    private static void testEditLog() throws Exception {
         section("edit log");
         TestWorld world = new TestWorld("log");
         world.fillFlat(70);
@@ -604,7 +604,30 @@ public final class SelfTestMain {
                 EditLog.find(null, "log", -1, System.currentTimeMillis() - 60_000, null).size());
         check("log filters by a future time", EditLog.find(null, "log", -1,
                 System.currentTimeMillis() + 60_000, null).isEmpty());
-        EditLog.clear();
+        // The disk log has to come back with the moment of the edit, not with
+        // the moment of the read, or the -t filter of /history find lies.
+        java.nio.file.Path folder = java.nio.file.Files.createTempDirectory("fawebim-log");
+        try {
+            EditLog.setDirectory(folder);
+            com.maxlananas.fawebim.core.platform.Config.get().enableDiskHistory = true;
+            EditLog.clear();
+            EditLog.add("Alice", "log", logged.get(1).record);
+            try (var files = java.nio.file.Files.list(folder)) {
+                checkEquals("the edit reached the disk", 1L, files.count());
+            }
+            long written = EditLog.entries().get(0).time;
+            EditLog.clear();
+            checkEquals("the disk log reads back", 1, EditLog.load());
+            EditLog.Entry restored = EditLog.entries().get(0);
+            checkEquals("the read entry keeps the actor", "Alice", restored.actor);
+            checkEquals("the read entry keeps the world", "log", restored.world);
+            checkEquals("the read entry keeps the time of the edit", written, restored.time);
+            checkEquals("the read record keeps its changes",
+                    logged.get(1).record.changeCount(), restored.record.changeCount());
+        } finally {
+            EditLog.setDirectory(null);
+            EditLog.clear();
+        }
         check("log cleared", EditLog.entries().isEmpty());
     }
 

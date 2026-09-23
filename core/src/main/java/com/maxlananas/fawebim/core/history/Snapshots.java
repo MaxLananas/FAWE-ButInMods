@@ -44,12 +44,35 @@ public final class Snapshots {
     }
 
     /** Writes a history record to disk, named after the operation. */
+    /**
+     * Serialising a record takes as long as the edit was big, so the write is
+     * handed to the writer the platform installed instead of running on the
+     * thread that just finished the edit. Without one it runs inline, which is
+     * what the tests and a plain JVM want.
+     */
+    private static volatile java.util.concurrent.Executor writer = Runnable::run;
+
+    public static void setWriter(java.util.concurrent.Executor executor) {
+        writer = executor == null ? Runnable::run : executor;
+    }
+
+    /** Writes a record off the editing thread, ignoring a failed write. */
+    public static void saveAsync(History.Record record, String owner) {
+        writer.execute(() -> {
+            try {
+                save(record, owner);
+            } catch (IOException | RuntimeException e) {
+                // A failing snapshot must never take an edit down with it.
+            }
+        });
+    }
+
     public static Path save(History.Record record, String owner) throws IOException {
         Path folder = ownerFolder(owner);
         Files.createDirectories(folder);
         Path file = folder.resolve(timestamp() + ".snap");
         try (OutputStream out = Files.newOutputStream(file)) {
-            NbtIo.write(of(record, owner), out, true, true);
+            NbtIo.write(of(record, owner), out, false, true);
         }
         return file;
     }
@@ -260,6 +283,11 @@ public final class Snapshots {
 
     /** The snapshot form of a record, as it is written to disk. */
     public static NbtCompound of(History.Record record, String owner) {
+        return of(record, owner, System.currentTimeMillis());
+    }
+
+    /** Serialises a record with the timestamp of the edit, not of the write. */
+    public static NbtCompound of(History.Record record, String owner, long time) {
         List<NbtCompound> sections = new ArrayList<>();
         int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] max = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
@@ -290,7 +318,7 @@ public final class Snapshots {
         NbtCompound root = new NbtCompound();
         root.putString("owner", owner);
         root.putString("description", record.description == null ? "" : record.description);
-        root.putLong("time", System.currentTimeMillis());
+        root.putLong("time", time);
         root.putInt("changes", record.changeCount());
         root.putIntArray("min", min[0] == Integer.MAX_VALUE ? new int[]{0, 0, 0} : min);
         root.putIntArray("max", max[0] == Integer.MIN_VALUE ? new int[]{0, 0, 0} : max);

@@ -38,6 +38,13 @@ public final class EditLog {
 
     private static volatile Path directory;
 
+    /** Executes the history writes, inline by default so a test sees its file. */
+    private static volatile java.util.concurrent.Executor writer = Runnable::run;
+
+    /** Makes two edits finished in the same millisecond land in two files. */
+    private static final java.util.concurrent.atomic.AtomicInteger SEQUENCE =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     private EditLog() {
     }
 
@@ -52,10 +59,15 @@ public final class EditLog {
         private final BlockVector3 maximum;
 
         Entry(String actor, String world, History.Record record) {
+            this(actor, world, record, System.currentTimeMillis());
+        }
+
+        /** An entry of an edit that happened at a known moment. */
+        Entry(String actor, String world, History.Record record, long time) {
             this.actor = actor;
             this.world = world;
             this.record = record;
-            this.time = System.currentTimeMillis();
+            this.time = time;
             int[] bounds = record.bounds();
             this.minimum = bounds == null ? null : BlockVector3.at(bounds[0], bounds[1], bounds[2]);
             this.maximum = bounds == null ? null : BlockVector3.at(bounds[3], bounds[4], bounds[5]);
@@ -90,11 +102,18 @@ public final class EditLog {
     }
 
     /** Records a finished edit; called when a session closes a history record. */
-    public static synchronized void add(String actor, String world, History.Record record) {
+    public static void add(String actor, String world, History.Record record) {
         Entry entry = addQuietly(actor, world, record);
         if (entry != null && com.maxlananas.fawebim.core.platform.Config.get().enableDiskHistory) {
-            persist(entry, record);
+            // The file holds the whole record, so writing it must not hold up
+            // the thread that just finished the edit.
+            writer.execute(() -> persist(entry, record));
         }
+    }
+
+    /** Where the history files are written; inline until a platform installs one. */
+    public static void setWriter(java.util.concurrent.Executor executor) {
+        writer = executor == null ? Runnable::run : executor;
     }
 
     /** Adds an entry to the in-memory log, returning it, without touching disk. */
@@ -116,12 +135,14 @@ public final class EditLog {
         if (folder == null) {
             return;
         }
-        String name = entry.time + "-" + entry.actor.replaceAll("[^A-Za-z0-9_.-]", "_") + ".snap";
+        String name = entry.time + "-" + SEQUENCE.incrementAndGet() + "-"
+                + entry.actor.replaceAll("[^A-Za-z0-9_.-]", "_") + ".snap";
         try {
             Files.createDirectories(folder);
-            NbtCompound root = Snapshots.of(record, entry.actor);
+            NbtCompound root = Snapshots.of(record, entry.actor, entry.time);
             root.putString("world", entry.world);
-            Files.write(folder.resolve(name), NbtIo.write(root, true));
+            // Gzipped, like every other file the mod reads back.
+            Files.write(folder.resolve(name), NbtIo.write(root, false, true));
         } catch (IOException e) {
             // A history that cannot be written must never take the edit down.
         }
@@ -139,8 +160,10 @@ public final class EditLog {
                 try {
                     NbtCompound root = NbtIo.readNbtOrGzip(Files.readAllBytes(path));
                     History.Record record = Snapshots.toRecord(root);
+                    // The file carries the moment of the edit, which is what the
+                    // -t filter of /history find compares against.
                     Entry entry = new Entry(root.getString("owner", "console"),
-                            root.getString("world", "world"), record);
+                            root.getString("world", "world"), record, root.getLong("time", 0L));
                     loaded.add(entry);
                 } catch (IOException | RuntimeException e) {
                     // A single unreadable file must not stop the rest.

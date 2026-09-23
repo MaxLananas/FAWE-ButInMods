@@ -66,6 +66,13 @@ public final class NbtIo {
         return out.toByteArray();
     }
 
+    /** Writes a compound in the layout {@link #readNbtOrGzip(byte[])} expects. */
+    public static byte[] write(NbtCompound compound, boolean varint, boolean gzip) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(compound, out, varint, gzip);
+        return out.toByteArray();
+    }
+
     public static void write(NbtCompound compound, OutputStream target, boolean varint, boolean gzip) throws IOException {
         OutputStream sink = gzip ? new GZIPOutputStream(target) : target;
         DataOutputStream out = new DataOutputStream(sink);

@@ -52,6 +52,18 @@ public final class FaweMod implements ModInitializer {
     public static final String MOD_ID = "fawebim";
     private static final Logger LOGGER = LoggerFactory.getLogger("FAWE-BIM");
 
+    /**
+     * Disk writes of the mod. One thread, so two edits of the same millisecond
+     * cannot race for the same file, and off the server thread, so a large edit
+     * is not held up by its own history file.
+     */
+    private static final java.util.concurrent.ExecutorService WRITER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "FAWE-BIM history");
+                thread.setDaemon(true);
+                return thread;
+            });
+
     private static FabricBlockStateRegistry registry;
 
     public static FabricBlockStateRegistry registry() {
@@ -74,6 +86,10 @@ public final class FaweMod implements ModInitializer {
                         .resolve(Config.get().snapshotDirectory));
                 EditLog.setDirectory(server.getServerDirectory()
                         .resolve(Config.get().historyDirectory));
+                // Writing a history file or a snapshot serialises the whole edit,
+                // so both run on the writer instead of on the server thread.
+                EditLog.setWriter(WRITER);
+                Snapshots.setWriter(WRITER);
                 if (Config.get().enableDiskHistory) {
                     int restored = EditLog.load();
                     if (restored > 0) {

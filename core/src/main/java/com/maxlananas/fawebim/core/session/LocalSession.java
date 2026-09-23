@@ -101,13 +101,8 @@ public final class LocalSession {
             // /history find, rollback and restore search.
             com.maxlananas.fawebim.core.history.EditLog.add(ownerName,
                     record.world == null ? lastWorldName : record.world, record);
-            if (!com.maxlananas.fawebim.core.platform.Config.get().snapshotsEnabled) {
-                return;
-            }
-            try {
-                com.maxlananas.fawebim.core.history.Snapshots.save(record, ownerName);
-            } catch (java.io.IOException | RuntimeException e) {
-                // A failing snapshot must never take an edit down with it.
+            if (com.maxlananas.fawebim.core.platform.Config.get().snapshotsEnabled) {
+                com.maxlananas.fawebim.core.history.Snapshots.saveAsync(record, ownerName);
             }
         });
     }
