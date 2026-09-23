@@ -60,7 +60,15 @@ public final class CommandRegistry {
         public String usage() {
             StringBuilder sb = new StringBuilder(name);
             for (String argument : arguments) {
-                sb.append(' ').append(argument.startsWith("-") ? argument : '<' + argument + '>');
+                sb.append(' ');
+                // A flag, and an argument that already carries its own brackets
+                // (the brushes declare their optional arguments that way), is
+                // printed as it is; everything else is a required argument.
+                if (argument.startsWith("-") || argument.startsWith("[") || argument.startsWith("<")) {
+                    sb.append(argument);
+                } else {
+                    sb.append('<').append(argument).append('>');
+                }
             }
             return sb.toString();
         }

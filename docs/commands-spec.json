@@ -25,7 +25,7 @@
     {
       "name": "/.s",
       "registration": "/.s",
-      "usage": "/.s <[args]>",
+      "usage": "/.s [args]",
       "description": "Execute last CraftScript",
       "group": "utility",
       "status": "implemented",
@@ -55,7 +55,7 @@
     {
       "name": "//ascend",
       "registration": "/ascend",
-      "usage": "//ascend <[levels]>",
+      "usage": "//ascend [levels]",
       "description": "Go up a floor",
       "group": "navigation",
       "status": "implemented",
@@ -100,7 +100,7 @@
     {
       "name": "//biomelist",
       "registration": "/biomelist",
-      "usage": "//biomelist <[-p <page>]>",
+      "usage": "//biomelist [-p <page>]",
       "description": "List available biomes",
       "group": "biome",
       "status": "implemented",
@@ -130,7 +130,7 @@
     {
       "name": "//caves",
       "registration": "/caves",
-      "usage": "//caves <[frequency]> <[rarity]> <[size]>",
+      "usage": "//caves [frequency] [rarity] [size]",
       "description": "Generate cave systems in the selection",
       "group": "generation",
       "status": "implemented",
@@ -145,7 +145,7 @@
     {
       "name": "//ceil",
       "registration": "/ceil",
-      "usage": "//ceil <[clearance]>",
+      "usage": "//ceil [clearance]",
       "description": "Go to the ceiling",
       "group": "navigation",
       "status": "implemented",
@@ -175,7 +175,7 @@
     {
       "name": "//chunk",
       "registration": "/chunk",
-      "usage": "//chunk <[coordinates]>",
+      "usage": "//chunk [coordinates]",
       "description": "Select the chunk you are standing in",
       "group": "chunk",
       "status": "implemented",
@@ -235,7 +235,7 @@
     {
       "name": "//cone",
       "registration": "/cone",
-      "usage": "//cone <pattern> <radius> <[height]>",
+      "usage": "//cone <pattern> <radius> [height]",
       "description": "Create a cone at your position",
       "group": "generation",
       "status": "implemented",
@@ -250,7 +250,7 @@
     {
       "name": "//contract",
       "registration": "/contract",
-      "usage": "//contract <amount> <[direction]>",
+      "usage": "//contract <amount> [direction]",
       "description": "Contract the selection area",
       "group": "selection",
       "status": "implemented",
@@ -265,7 +265,7 @@
     {
       "name": "//copy",
       "registration": "/copy",
-      "usage": "//copy <[-m <mask>]>",
+      "usage": "//copy [-m <mask>]",
       "description": "Copy the selection to your clipboard",
       "group": "clipboard",
       "status": "implemented",
@@ -295,7 +295,7 @@
     {
       "name": "//curve",
       "registration": "/curve",
-      "usage": "//curve <pattern> <[thickness]>",
+      "usage": "//curve <pattern> [thickness]",
       "description": "Draw a spline through the convex selection's vertices",
       "group": "generation",
       "status": "implemented",
@@ -310,7 +310,7 @@
     {
       "name": "//cut",
       "registration": "/cut",
-      "usage": "//cut <[-m <mask>]>",
+      "usage": "//cut [-m <mask>]",
       "description": "Cut the selection to your clipboard",
       "group": "clipboard",
       "status": "implemented",
@@ -325,7 +325,7 @@
     {
       "name": "//cyl",
       "registration": "/cyl",
-      "usage": "//cyl <pattern> <radius> <[height]>",
+      "usage": "//cyl <pattern> <radius> [height]",
       "description": "Create a cyl at your position",
       "group": "generation",
       "status": "implemented",
@@ -355,7 +355,7 @@
     {
       "name": "//delchunks",
       "registration": "/delchunks",
-      "usage": "//delchunks <[-o <time>]>",
+      "usage": "//delchunks [-o <time>]",
       "description": "Delete the chunks in the selection (regenerates them)",
       "group": "chunk",
       "status": "implemented",
@@ -385,7 +385,7 @@
     {
       "name": "//descend",
       "registration": "/descend",
-      "usage": "//descend <[levels]>",
+      "usage": "//descend [levels]",
       "description": "Go down a floor",
       "group": "navigation",
       "status": "implemented",
@@ -415,7 +415,7 @@
     {
       "name": "//distr",
       "registration": "/distr",
-      "usage": "//distr <[-p <page>]>",
+      "usage": "//distr [-p <page>]",
       "description": "Show the block distribution in the selection",
       "group": "selection",
       "status": "implemented",
@@ -430,7 +430,7 @@
     {
       "name": "//drain",
       "registration": "/drain",
-      "usage": "//drain <[radius]>",
+      "usage": "//drain [radius]",
       "description": "Drain liquids in the selection",
       "group": "region",
       "status": "implemented",
@@ -460,7 +460,7 @@
     {
       "name": "//expand",
       "registration": "/expand",
-      "usage": "//expand <amount> <[direction]>",
+      "usage": "//expand <amount> [direction]",
       "description": "Expand the selection area",
       "group": "selection",
       "status": "implemented",
@@ -520,7 +520,7 @@
     {
       "name": "//fill",
       "registration": "/fill",
-      "usage": "//fill <pattern> <[radius]>",
+      "usage": "//fill <pattern> [radius]",
       "description": "Fill a hole with a pattern (flood fill)",
       "group": "region",
       "status": "implemented",
@@ -535,7 +535,7 @@
     {
       "name": "//fixlava",
       "registration": "/fixlava",
-      "usage": "//fixlava <[radius]>",
+      "usage": "//fixlava [radius]",
       "description": "Fix lava placement in the selection",
       "group": "region",
       "status": "implemented",
@@ -550,7 +550,7 @@
     {
       "name": "//fixwater",
       "registration": "/fixwater",
-      "usage": "//fixwater <[radius]>",
+      "usage": "//fixwater [radius]",
       "description": "Fix water placement in the selection",
       "group": "region",
       "status": "implemented",
@@ -565,7 +565,7 @@
     {
       "name": "//flip",
       "registration": "/flip",
-      "usage": "//flip <[direction]>",
+      "usage": "//flip [direction]",
       "description": "Flip the clipboard",
       "group": "clipboard",
       "status": "implemented",
@@ -580,7 +580,7 @@
     {
       "name": "//flora",
       "registration": "/flora",
-      "usage": "//flora <[density]>",
+      "usage": "//flora [density]",
       "description": "Generate flora/forest in the selection",
       "group": "generation",
       "status": "implemented",
@@ -625,7 +625,7 @@
     {
       "name": "//hcyl",
       "registration": "/hcyl",
-      "usage": "//hcyl <pattern> <radius> <[height]>",
+      "usage": "//hcyl <pattern> <radius> [height]",
       "description": "Create a cyl at your position",
       "group": "generation",
       "status": "implemented",
@@ -640,7 +640,7 @@
     {
       "name": "//help",
       "registration": "/help",
-      "usage": "//help <[filter]> <[-p <page>]>",
+      "usage": "//help [filter] [-p <page>]",
       "description": "List the commands",
       "group": "utility",
       "status": "implemented",
@@ -655,7 +655,7 @@
     {
       "name": "//hollow",
       "registration": "/hollow",
-      "usage": "//hollow <[thickness]> <[-m <mask>]> <[pattern]>",
+      "usage": "//hollow [thickness] [-m <mask>] [pattern]",
       "description": "Hollow out the selection",
       "group": "region",
       "status": "implemented",
@@ -700,7 +700,7 @@
     {
       "name": "//hsphere",
       "registration": "/hsphere",
-      "usage": "//hsphere <pattern> <radius> <[height]>",
+      "usage": "//hsphere <pattern> <radius> [height]",
       "description": "Create a sphere at your position",
       "group": "generation",
       "status": "implemented",
@@ -730,7 +730,7 @@
     {
       "name": "//jumpto",
       "registration": "/jumpto",
-      "usage": "//jumpto <[location]>",
+      "usage": "//jumpto [location]",
       "description": "Teleport to a location",
       "group": "navigation",
       "status": "implemented",
@@ -760,7 +760,7 @@
     {
       "name": "//line",
       "registration": "/line",
-      "usage": "//line <pattern> <[thickness]>",
+      "usage": "//line <pattern> [thickness]",
       "description": "Draw a line between selection corners",
       "group": "generation",
       "status": "implemented",
@@ -775,7 +775,7 @@
     {
       "name": "//listchunks",
       "registration": "/listchunks",
-      "usage": "//listchunks <[-p <page>]>",
+      "usage": "//listchunks [-p <page>]",
       "description": "List the chunks in the selection",
       "group": "chunk",
       "status": "implemented",
@@ -805,7 +805,7 @@
     {
       "name": "//move",
       "registration": "/move",
-      "usage": "//move <amount> <direction> <[pattern]> <[-m <mask>]>",
+      "usage": "//move <amount> <direction> [pattern] [-m <mask>]",
       "description": "Move the selection's contents in a direction",
       "group": "region",
       "status": "implemented",
@@ -865,7 +865,7 @@
     {
       "name": "//outset",
       "registration": "/outset",
-      "usage": "//outset <[amount]>",
+      "usage": "//outset [amount]",
       "description": "Outset the selection area in every direction",
       "group": "selection",
       "status": "implemented",
@@ -895,7 +895,7 @@
     {
       "name": "//paste",
       "registration": "/paste",
-      "usage": "//paste <[destination]> <[-m <mask>]>",
+      "usage": "//paste [destination] [-m <mask>]",
       "description": "Paste your clipboard",
       "group": "clipboard",
       "status": "implemented",
@@ -925,7 +925,7 @@
     {
       "name": "//pos",
       "registration": "/pos",
-      "usage": "//pos <[coordinates]> <[secondary coordinates]> <[-s <selector>]>",
+      "usage": "//pos [coordinates] [secondary coordinates] [-s <selector>]",
       "description": "Set positions",
       "group": "selection",
       "status": "implemented",
@@ -940,7 +940,7 @@
     {
       "name": "//pos1",
       "registration": "/pos1",
-      "usage": "//pos1 <[coordinates]>",
+      "usage": "//pos1 [coordinates]",
       "description": "Set position 1 to your position or the given coordinates",
       "group": "selection",
       "status": "implemented",
@@ -955,7 +955,7 @@
     {
       "name": "//pos2",
       "registration": "/pos2",
-      "usage": "//pos2 <[coordinates]>",
+      "usage": "//pos2 [coordinates]",
       "description": "Set position 2 to your position or the given coordinates",
       "group": "selection",
       "status": "implemented",
@@ -970,7 +970,7 @@
     {
       "name": "//pumpkins",
       "registration": "/pumpkins",
-      "usage": "//pumpkins <[density]>",
+      "usage": "//pumpkins [density]",
       "description": "Generate a pumpkin patch",
       "group": "generation",
       "status": "implemented",
@@ -1000,7 +1000,7 @@
     {
       "name": "//redo",
       "registration": "/redo",
-      "usage": "//redo <[number]>",
+      "usage": "//redo [number]",
       "description": "Redo your last undone operation",
       "group": "history",
       "status": "implemented",
@@ -1015,7 +1015,7 @@
     {
       "name": "//regen",
       "registration": "/regen",
-      "usage": "//regen <[seed]> <[biome]>",
+      "usage": "//regen [seed] [biome]",
       "description": "Regenerate the selection from the world seed",
       "group": "region",
       "status": "implemented",
@@ -1030,7 +1030,7 @@
     {
       "name": "//removeabove",
       "registration": "/removeabove",
-      "usage": "//removeabove <[size]> <[height]>",
+      "usage": "//removeabove [size] [height]",
       "description": "Remove blocks above a height",
       "group": "region",
       "status": "implemented",
@@ -1045,7 +1045,7 @@
     {
       "name": "//removebelow",
       "registration": "/removebelow",
-      "usage": "//removebelow <[size]> <[height]>",
+      "usage": "//removebelow [size] [height]",
       "description": "Remove blocks below a height",
       "group": "region",
       "status": "implemented",
@@ -1060,7 +1060,7 @@
     {
       "name": "//removenear",
       "registration": "/removenear",
-      "usage": "//removenear <mask> <[size]>",
+      "usage": "//removenear <mask> [size]",
       "description": "Remove blocks near you",
       "group": "region",
       "status": "implemented",
@@ -1105,7 +1105,7 @@
     {
       "name": "//rotate",
       "registration": "/rotate",
-      "usage": "//rotate <angle> <[direction]>",
+      "usage": "//rotate <angle> [direction]",
       "description": "Rotate the clipboard",
       "group": "clipboard",
       "status": "implemented",
@@ -1120,7 +1120,7 @@
     {
       "name": "//schem",
       "registration": "/schem",
-      "usage": "//schem <list|ls|all|save|load|loadall|delete|d|formats|listformats|f|move|m|share|clear|unload> <[name]> <[format]> <[-p <page>]>",
+      "usage": "//schem <list|ls|all|save|load|loadall|delete|d|formats|listformats|f|move|m|share|clear|unload> [name] [format] [-p <page>]",
       "description": "Save/load/list schematics",
       "group": "schematic",
       "status": "implemented",
@@ -1165,7 +1165,7 @@
     {
       "name": "//shift",
       "registration": "/shift",
-      "usage": "//shift <amount> <[direction]>",
+      "usage": "//shift <amount> [direction]",
       "description": "Shift the selection area",
       "group": "selection",
       "status": "implemented",
@@ -1195,7 +1195,7 @@
     {
       "name": "//smooth",
       "registration": "/smooth",
-      "usage": "//smooth <[iterations]>",
+      "usage": "//smooth [iterations]",
       "description": "Smooth the terrain in the selection",
       "group": "region",
       "status": "implemented",
@@ -1210,7 +1210,7 @@
     {
       "name": "//snow",
       "registration": "/snow",
-      "usage": "//snow <[pattern]>",
+      "usage": "//snow [pattern]",
       "description": "Simulate snow on the terrain",
       "group": "region",
       "status": "implemented",
@@ -1225,7 +1225,7 @@
     {
       "name": "//sphere",
       "registration": "/sphere",
-      "usage": "//sphere <pattern> <radius> <[height]>",
+      "usage": "//sphere <pattern> <radius> [height]",
       "description": "Create a sphere at your position",
       "group": "generation",
       "status": "implemented",
@@ -1240,7 +1240,7 @@
     {
       "name": "//stack",
       "registration": "/stack",
-      "usage": "//stack <[count]> <[direction]> <[-m <mask>]>",
+      "usage": "//stack [count] [direction] [-m <mask>]",
       "description": "Stack the selection's contents",
       "group": "region",
       "status": "implemented",
@@ -1330,7 +1330,7 @@
     {
       "name": "//tree",
       "registration": "/tree",
-      "usage": "//tree <[type]>",
+      "usage": "//tree [type]",
       "description": "Create a tree at your position",
       "group": "generation",
       "status": "implemented",
@@ -1345,7 +1345,7 @@
     {
       "name": "//undo",
       "registration": "/undo",
-      "usage": "//undo <[number]>",
+      "usage": "//undo [number]",
       "description": "Undo your last operation",
       "group": "history",
       "status": "implemented",
@@ -1435,7 +1435,7 @@
     {
       "name": "//we",
       "registration": "/we",
-      "usage": "//we <[version|reload|trace|help]>",
+      "usage": "//we [version|reload|trace|help]",
       "description": "WorldEdit/FAWE information",
       "group": "utility",
       "status": "implemented",
@@ -1450,7 +1450,7 @@
     {
       "name": "//world",
       "registration": "/world",
-      "usage": "//world <[world]>",
+      "usage": "//world [world]",
       "description": "Show or change the world override",
       "group": "navigation",
       "status": "implemented",
@@ -1570,7 +1570,7 @@
     {
       "name": "/anvil deleteallunclaimed",
       "registration": "/anvil deleteallunclaimed",
-      "usage": "/anvil deleteallunclaimed <inhabitedTicks> <[fileDurationMillis]>",
+      "usage": "/anvil deleteallunclaimed <inhabitedTicks> [fileDurationMillis]",
       "description": "Delete every chunk that was never occupied",
       "group": "anvil",
       "status": "implemented",
@@ -1585,7 +1585,7 @@
     {
       "name": "/anvil deleteallunvisited",
       "registration": "/anvil deleteallunvisited",
-      "usage": "/anvil deleteallunvisited <inhabitedTicks> <[fileDurationMillis]>",
+      "usage": "/anvil deleteallunvisited <inhabitedTicks> [fileDurationMillis]",
       "description": "Delete all chunks which haven't been occupied",
       "group": "anvil",
       "status": "implemented",
@@ -1615,7 +1615,7 @@
     {
       "name": "/anvil deleteunclaimed",
       "registration": "/anvil deleteunclaimed",
-      "usage": "/anvil deleteunclaimed <inhabitedTicks> <[fileDurationMillis]>",
+      "usage": "/anvil deleteunclaimed <inhabitedTicks> [fileDurationMillis]",
       "description": "Delete every chunk of the selection that was never occupied",
       "group": "anvil",
       "status": "implemented",
@@ -1795,7 +1795,7 @@
     {
       "name": "/brush biome",
       "registration": "/brush biome",
-      "usage": "/brush biome <[shape]> <[-c]>",
+      "usage": "/brush biome [shape] [-c]",
       "description": "Biome brush, sets biomes in the area",
       "group": "brush",
       "status": "implemented",
@@ -1810,12 +1810,12 @@
     {
       "name": "/brush blendball",
       "registration": "/brush blendball",
-      "usage": "/brush blendball <[radius]> <[-m <m>]> <[-a]>",
+      "usage": "/brush blendball [radius] [-m <mask>] [-a]",
       "description": "Smooths and blends terrain",
       "group": "brush",
       "status": "implemented",
       "aliases": ["/brush bb", "/brush blend"],
-      "arguments": ["[radius]", "[-m <m>]", "[-a]"],
+      "arguments": ["[radius]", "[-m <mask>]", "[-a]"],
       "booleanFlags": ["a"],
       "valueFlags": ["m"],
       "requiresSelection": false,
@@ -1825,7 +1825,7 @@
     {
       "name": "/brush butcher",
       "registration": "/brush butcher",
-      "usage": "/brush butcher <[radius]> <[-p]> <[-n]> <[-g]> <[-a]> <[-b]> <[-t]> <[-f]> <[-r]> <[-w]>",
+      "usage": "/brush butcher [radius] [-p] [-n] [-g] [-a] [-b] [-t] [-f] [-r] [-w]",
       "description": "Butcher brush, kills mobs within a radius",
       "group": "brush",
       "status": "implemented",
@@ -1840,7 +1840,7 @@
     {
       "name": "/brush catenary",
       "registration": "/brush catenary",
-      "usage": "/brush catenary <[fill]> <[-h]> <[-s]> <[-d]>",
+      "usage": "/brush catenary [fill] [-h] [-s] [-d]",
       "description": "Create a hanging line between two points",
       "group": "brush",
       "status": "implemented",
@@ -1855,7 +1855,7 @@
     {
       "name": "/brush circle",
       "registration": "/brush circle",
-      "usage": "/brush circle <[fill]>",
+      "usage": "/brush circle [fill]",
       "description": "Creates a circle, which revolves around your facing direction",
       "group": "brush",
       "status": "implemented",
@@ -1870,7 +1870,7 @@
     {
       "name": "/brush cliff",
       "registration": "/brush cliff",
-      "usage": "/brush cliff <[radius]> <[-r]> <[-l]> <[-s]>",
+      "usage": "/brush cliff [radius] [-r] [-l] [-s]",
       "description": "Cliff brush",
       "group": "brush",
       "status": "implemented",
@@ -1885,12 +1885,12 @@
     {
       "name": "/brush clipboard",
       "registration": "/brush clipboard",
-      "usage": "/brush clipboard <[-m <m>]> <[-a]> <[-o]> <[-e]> <[-b]> <[-r]> <[-v]>",
+      "usage": "/brush clipboard [-m <sourcemask>] [-a] [-o] [-e] [-b] [-r] [-v]",
       "description": "Paste your clipboard at the brush location. Includes any transforms.",
       "group": "brush",
       "status": "implemented",
       "aliases": ["/brush copy"],
-      "arguments": ["[-m <m>]", "[-a]", "[-o]", "[-e]", "[-b]", "[-r]", "[-v]"],
+      "arguments": ["[-m <sourcemask>]", "[-a]", "[-o]", "[-e]", "[-b]", "[-r]", "[-v]"],
       "booleanFlags": ["a", "o", "e", "b", "r", "v"],
       "valueFlags": ["m"],
       "requiresSelection": false,
@@ -1900,7 +1900,7 @@
     {
       "name": "/brush command",
       "registration": "/brush command",
-      "usage": "/brush command <[radius]> <[-h]>",
+      "usage": "/brush command [radius] [-h]",
       "description": "Command brush",
       "group": "brush",
       "status": "implemented",
@@ -1915,7 +1915,7 @@
     {
       "name": "/brush copypaste",
       "registration": "/brush copypaste",
-      "usage": "/brush copypaste <[radius]> <[-r]> <[-a]>",
+      "usage": "/brush copypaste [radius] [-r] [-a]",
       "description": "Copy Paste brush",
       "group": "brush",
       "status": "implemented",
@@ -1930,7 +1930,7 @@
     {
       "name": "/brush cylinder",
       "registration": "/brush cylinder",
-      "usage": "/brush cylinder <[pattern]> <[-h]>",
+      "usage": "/brush cylinder [pattern] [-h]",
       "description": "Choose the cylinder brush",
       "group": "brush",
       "status": "implemented",
@@ -1945,7 +1945,7 @@
     {
       "name": "/brush deform",
       "registration": "/brush deform",
-      "usage": "/brush deform <[shape]> <[-r]> <[-o]>",
+      "usage": "/brush deform [shape] [-r] [-o]",
       "description": "Deform brush, applies an expression to an area",
       "group": "brush",
       "status": "implemented",
@@ -1960,7 +1960,7 @@
     {
       "name": "/brush dilate",
       "registration": "/brush dilate",
-      "usage": "/brush dilate <[brushsize]>",
+      "usage": "/brush dilate [brushsize]",
       "description": "Dilate preset for morph brush, dilates blocks in the area",
       "group": "brush",
       "status": "implemented",
@@ -1975,7 +1975,7 @@
     {
       "name": "/brush erode",
       "registration": "/brush erode",
-      "usage": "/brush erode <[radius]>",
+      "usage": "/brush erode [radius]",
       "description": "Erodes terrain",
       "group": "brush",
       "status": "implemented",
@@ -1990,7 +1990,7 @@
     {
       "name": "/brush extinguish",
       "registration": "/brush extinguish",
-      "usage": "/brush extinguish <[radius]>",
+      "usage": "/brush extinguish [radius]",
       "description": "Shortcut fire extinguisher brush",
       "group": "brush",
       "status": "implemented",
@@ -2005,7 +2005,7 @@
     {
       "name": "/brush feature",
       "registration": "/brush feature",
-      "usage": "/brush feature <[shape]>",
+      "usage": "/brush feature [shape]",
       "description": "Feature brush, paints Minecraft generation features",
       "group": "brush",
       "status": "implemented",
@@ -2020,7 +2020,7 @@
     {
       "name": "/brush flatten",
       "registration": "/brush flatten",
-      "usage": "/brush flatten <[radius]> <[-r]> <[-l]> <[-s]>",
+      "usage": "/brush flatten [radius] [-r] [-l] [-s]",
       "description": "This brush raises or lowers land towards the clicked point",
       "group": "brush",
       "status": "implemented",
@@ -2035,7 +2035,7 @@
     {
       "name": "/brush forest",
       "registration": "/brush forest",
-      "usage": "/brush forest <[shape]>",
+      "usage": "/brush forest [shape]",
       "description": "Plant trees",
       "group": "brush",
       "status": "implemented",
@@ -2050,12 +2050,12 @@
     {
       "name": "/brush gravity",
       "registration": "/brush gravity",
-      "usage": "/brush gravity <[radius]> <[-h <h>]>",
+      "usage": "/brush gravity [radius] [-h <height>]",
       "description": "Gravity brush, simulates the effect of gravity",
       "group": "brush",
       "status": "implemented",
       "aliases": ["/brush grav"],
-      "arguments": ["[radius]", "[-h <h>]"],
+      "arguments": ["[radius]", "[-h <height>]"],
       "booleanFlags": ["h"],
       "valueFlags": ["h"],
       "requiresSelection": false,
@@ -2065,7 +2065,7 @@
     {
       "name": "/brush height",
       "registration": "/brush height",
-      "usage": "/brush height <[radius]> <[-r]> <[-l]> <[-s]>",
+      "usage": "/brush height [radius] [-r] [-l] [-s]",
       "description": "Raise or lower terrain using a heightmap",
       "group": "brush",
       "status": "implemented",
@@ -2080,7 +2080,7 @@
     {
       "name": "/brush heightmap",
       "registration": "/brush heightmap",
-      "usage": "/brush heightmap <[imagename]> <[-e]> <[-f]> <[-r]>",
+      "usage": "/brush heightmap [imagename] [-e] [-f] [-r]",
       "description": "Heightmap brush, raises or lowers terrain using an image heightmap",
       "group": "brush",
       "status": "implemented",
@@ -2095,7 +2095,7 @@
     {
       "name": "/brush image",
       "registration": "/brush image",
-      "usage": "/brush image <[?]> <[-a]> <[-f]>",
+      "usage": "/brush image [?] [-a] [-f]",
       "description": "Use a height map to paint a surface",
       "group": "brush",
       "status": "implemented",
@@ -2110,7 +2110,7 @@
     {
       "name": "/brush item",
       "registration": "/brush item",
-      "usage": "/brush item <[item]>",
+      "usage": "/brush item [item]",
       "description": "Use an item",
       "group": "brush",
       "status": "implemented",
@@ -2125,7 +2125,7 @@
     {
       "name": "/brush layer",
       "registration": "/brush layer",
-      "usage": "/brush layer <[radius]>",
+      "usage": "/brush layer [radius]",
       "description": "Replaces terrain with a layer.",
       "group": "brush",
       "status": "implemented",
@@ -2140,7 +2140,7 @@
     {
       "name": "/brush line",
       "registration": "/brush line",
-      "usage": "/brush line <[fill]> <[-h]> <[-s]> <[-f]>",
+      "usage": "/brush line [fill] [-h] [-s] [-f]",
       "description": "Create lines",
       "group": "brush",
       "status": "implemented",
@@ -2155,7 +2155,7 @@
     {
       "name": "/brush listbrush",
       "registration": "/brush listbrush",
-      "usage": "/brush listbrush <[-p <page>]>",
+      "usage": "/brush listbrush [-p <page>]",
       "description": "List the saved brush presets",
       "group": "brush",
       "status": "implemented",
@@ -2185,7 +2185,7 @@
     {
       "name": "/brush lower",
       "registration": "/brush lower",
-      "usage": "/brush lower <[shape]>",
+      "usage": "/brush lower [shape]",
       "description": "Lower brush, lower all blocks by one",
       "group": "brush",
       "status": "implemented",
@@ -2200,7 +2200,7 @@
     {
       "name": "/brush morph",
       "registration": "/brush morph",
-      "usage": "/brush morph <[brushsize]>",
+      "usage": "/brush morph [brushsize]",
       "description": "Morph brush, morphs blocks in the area",
       "group": "brush",
       "status": "implemented",
@@ -2230,7 +2230,7 @@
     {
       "name": "/brush populateschematic",
       "registration": "/brush populateschematic",
-      "usage": "/brush populateschematic <[clipboardstr]> <[-r]>",
+      "usage": "/brush populateschematic [clipboardstr] [-r]",
       "description": "Scatter a schematic on a surface",
       "group": "brush",
       "status": "implemented",
@@ -2245,7 +2245,7 @@
     {
       "name": "/brush pull",
       "registration": "/brush pull",
-      "usage": "/brush pull <[radius]>",
+      "usage": "/brush pull [radius]",
       "description": "Pull terrain towards you",
       "group": "brush",
       "status": "implemented",
@@ -2260,7 +2260,7 @@
     {
       "name": "/brush raise",
       "registration": "/brush raise",
-      "usage": "/brush raise <[shape]>",
+      "usage": "/brush raise [shape]",
       "description": "Raise brush, raise all blocks by one",
       "group": "brush",
       "status": "implemented",
@@ -2275,7 +2275,7 @@
     {
       "name": "/brush recursive",
       "registration": "/brush recursive",
-      "usage": "/brush recursive <[fill]> <[-d]>",
+      "usage": "/brush recursive [fill] [-d]",
       "description": "Set all connected blocks",
       "group": "brush",
       "status": "implemented",
@@ -2290,7 +2290,7 @@
     {
       "name": "/brush rock",
       "registration": "/brush rock",
-      "usage": "/brush rock <[fill]>",
+      "usage": "/brush rock [fill]",
       "description": "Creates a distorted sphere",
       "group": "brush",
       "status": "implemented",
@@ -2320,7 +2320,7 @@
     {
       "name": "/brush scatter",
       "registration": "/brush scatter",
-      "usage": "/brush scatter <[fill]> <[-o]>",
+      "usage": "/brush scatter [fill] [-o]",
       "description": "Scatter a pattern on a surface",
       "group": "brush",
       "status": "implemented",
@@ -2335,7 +2335,7 @@
     {
       "name": "/brush scattercommand",
       "registration": "/brush scattercommand",
-      "usage": "/brush scattercommand <[radius]> <[-p]>",
+      "usage": "/brush scattercommand [radius] [-p]",
       "description": "Run commands at random points on a surface",
       "group": "brush",
       "status": "implemented",
@@ -2350,7 +2350,7 @@
     {
       "name": "/brush set",
       "registration": "/brush set",
-      "usage": "/brush set <[shape]>",
+      "usage": "/brush set [shape]",
       "description": "Place a block",
       "group": "brush",
       "status": "implemented",
@@ -2365,7 +2365,7 @@
     {
       "name": "/brush shatter",
       "registration": "/brush shatter",
-      "usage": "/brush shatter <[fill]>",
+      "usage": "/brush shatter [fill]",
       "description": "Creates random lines to break the terrain into pieces",
       "group": "brush",
       "status": "implemented",
@@ -2380,7 +2380,7 @@
     {
       "name": "/brush smooth",
       "registration": "/brush smooth",
-      "usage": "/brush smooth <[radius]>",
+      "usage": "/brush smooth [radius]",
       "description": "Choose the terrain softener brush",
       "group": "brush",
       "status": "implemented",
@@ -2395,7 +2395,7 @@
     {
       "name": "/brush snow",
       "registration": "/brush snow",
-      "usage": "/brush snow <[shape]> <[-s]>",
+      "usage": "/brush snow [shape] [-s]",
       "description": "Snow brush, sets snow in the area",
       "group": "brush",
       "status": "implemented",
@@ -2410,12 +2410,12 @@
     {
       "name": "/brush snowsmooth",
       "registration": "/brush snowsmooth",
-      "usage": "/brush snowsmooth <[radius]> <[-l <l>]> <[-m <m>]>",
+      "usage": "/brush snowsmooth [radius] [-l <snowblockcount>] [-m <mask>]",
       "description": "Choose the snow terrain softener brush",
       "group": "brush",
       "status": "implemented",
       "aliases": [],
-      "arguments": ["[radius]", "[-l <l>]", "[-m <m>]"],
+      "arguments": ["[radius]", "[-l <snowblockcount>]", "[-m <mask>]"],
       "booleanFlags": [],
       "valueFlags": ["l", "m"],
       "requiresSelection": false,
@@ -2425,7 +2425,7 @@
     {
       "name": "/brush sphere",
       "registration": "/brush sphere",
-      "usage": "/brush sphere <[pattern]> <[-h]> <[-f]>",
+      "usage": "/brush sphere [pattern] [-h] [-f]",
       "description": "Choose the sphere brush",
       "group": "brush",
       "status": "implemented",
@@ -2440,7 +2440,7 @@
     {
       "name": "/brush splatter",
       "registration": "/brush splatter",
-      "usage": "/brush splatter <[fill]>",
+      "usage": "/brush splatter [fill]",
       "description": "Splatter a pattern on a surface",
       "group": "brush",
       "status": "implemented",
@@ -2455,7 +2455,7 @@
     {
       "name": "/brush spline",
       "registration": "/brush spline",
-      "usage": "/brush spline <[fill]>",
+      "usage": "/brush spline [fill]",
       "description": "Join multiple objects together in a curve",
       "group": "brush",
       "status": "implemented",
@@ -2470,7 +2470,7 @@
     {
       "name": "/brush stencil",
       "registration": "/brush stencil",
-      "usage": "/brush stencil <[fill]> <[-w]> <[-r]>",
+      "usage": "/brush stencil [fill] [-w] [-r]",
       "description": "Use a height map to paint a surface",
       "group": "brush",
       "status": "implemented",
@@ -2485,7 +2485,7 @@
     {
       "name": "/brush structure",
       "registration": "/brush structure",
-      "usage": "/brush structure <[shape]>",
+      "usage": "/brush structure [shape]",
       "description": "Structure brush, paints Minecraft generation structures",
       "group": "brush",
       "status": "implemented",
@@ -2500,7 +2500,7 @@
     {
       "name": "/brush surface",
       "registration": "/brush surface",
-      "usage": "/brush surface <[fill]>",
+      "usage": "/brush surface [fill]",
       "description": "Use a height map to paint a surface",
       "group": "brush",
       "status": "implemented",
@@ -2515,7 +2515,7 @@
     {
       "name": "/brush surfacespline",
       "registration": "/brush surfacespline",
-      "usage": "/brush surfacespline <[fill]>",
+      "usage": "/brush surfacespline [fill]",
       "description": "Draws a spline (curved line) on the surface",
       "group": "brush",
       "status": "implemented",
@@ -2530,7 +2530,7 @@
     {
       "name": "/brush sweep",
       "registration": "/brush sweep",
-      "usage": "/brush sweep <[copies]>",
+      "usage": "/brush sweep [copies]",
       "description": "Sweep your clipboard content along a curve",
       "group": "brush",
       "status": "implemented",
@@ -2545,7 +2545,7 @@
     {
       "name": "/cs",
       "registration": "/cs",
-      "usage": "/cs <filename> <[args]>",
+      "usage": "/cs <filename> [args]",
       "description": "Execute a CraftScript",
       "group": "utility",
       "status": "implemented",
@@ -2560,7 +2560,7 @@
     {
       "name": "/download",
       "registration": "/download",
-      "usage": "/download <[name]> <[format]>",
+      "usage": "/download [name] [format]",
       "description": "Save your clipboard to a schematic file",
       "group": "clipboard",
       "status": "implemented",
@@ -2590,7 +2590,7 @@
     {
       "name": "/gmask",
       "registration": "/gmask",
-      "usage": "/gmask <[mask]>",
+      "usage": "/gmask [mask]",
       "description": "Set the global mask (/smask = source mask on overwrite)",
       "group": "utility",
       "status": "implemented",
@@ -2605,7 +2605,7 @@
     {
       "name": "/gtexture",
       "registration": "/gtexture",
-      "usage": "/gtexture <[pattern]>",
+      "usage": "/gtexture [pattern]",
       "description": "Set the global pattern",
       "group": "utility",
       "status": "implemented",
@@ -2620,7 +2620,7 @@
     {
       "name": "/gtransform",
       "registration": "/gtransform",
-      "usage": "/gtransform <[transform]>",
+      "usage": "/gtransform [transform]",
       "description": "Apply a transform to every edit you make",
       "group": "utility",
       "status": "implemented",
@@ -2635,7 +2635,7 @@
     {
       "name": "/history",
       "registration": "/history",
-      "usage": "/history <list|info|summary|summarize|distr|distribution|find|inspect|search|near|rollback|restore|rerun|import|clear> <[-u <user>]> <[-t <time>]> <[-r <radius>]> <[-p <page>]>",
+      "usage": "/history <list|info|summary|summarize|distr|distribution|find|inspect|search|near|rollback|restore|rerun|import|clear> [-u <user>] [-t <time>] [-r <radius>] [-p <page>]",
       "description": "Inspect the edits of this server",
       "group": "history",
       "status": "implemented",
@@ -2650,7 +2650,7 @@
     {
       "name": "/limit",
       "registration": "/limit",
-      "usage": "/limit <[limit]>",
+      "usage": "/limit [limit]",
       "description": "Set the maximum number of blocks you can change",
       "group": "utility",
       "status": "implemented",
@@ -2665,7 +2665,7 @@
     {
       "name": "/list",
       "registration": "/list",
-      "usage": "/list <[filter]>",
+      "usage": "/list [filter]",
       "description": "Choose which schematics //schem list shows",
       "group": "schematic",
       "status": "implemented",
@@ -2680,7 +2680,7 @@
     {
       "name": "/macro",
       "registration": "/macro",
-      "usage": "/macro <file> <[args...]>",
+      "usage": "/macro <file> [args...]",
       "description": "Run a macro from the macros directory",
       "group": "utility",
       "status": "implemented",
@@ -2755,7 +2755,7 @@
     {
       "name": "/snapshot after",
       "registration": "/snapshot after",
-      "usage": "/snapshot after <[date]>",
+      "usage": "/snapshot after [date]",
       "description": "Choose the nearest snapshot after a date",
       "group": "snapshot",
       "status": "implemented",
@@ -2770,7 +2770,7 @@
     {
       "name": "/snapshot before",
       "registration": "/snapshot before",
-      "usage": "/snapshot before <[date]>",
+      "usage": "/snapshot before [date]",
       "description": "Choose the nearest snapshot before a date",
       "group": "snapshot",
       "status": "implemented",
@@ -2785,7 +2785,7 @@
     {
       "name": "/snapshot list",
       "registration": "/snapshot list",
-      "usage": "/snapshot list <[-p <page>]>",
+      "usage": "/snapshot list [-p <page>]",
       "description": "List your snapshots",
       "group": "snapshot",
       "status": "implemented",
@@ -2800,7 +2800,7 @@
     {
       "name": "/snapshot restore",
       "registration": "/snapshot restore",
-      "usage": "/snapshot restore <[name]>",
+      "usage": "/snapshot restore [name]",
       "description": "Restore a snapshot",
       "group": "snapshot",
       "status": "implemented",
@@ -2845,7 +2845,7 @@
     {
       "name": "/superpickaxe",
       "registration": "/superpickaxe",
-      "usage": "/superpickaxe <[single|area|recursive|recur|off]> <[radius]>",
+      "usage": "/superpickaxe [single|area|recursive|recur|off] [radius]",
       "description": "Super-pickaxe: single, area <radius>, recursive",
       "group": "tool",
       "status": "implemented",
@@ -2860,7 +2860,7 @@
     {
       "name": "/timeout",
       "registration": "/timeout",
-      "usage": "/timeout <[seconds]>",
+      "usage": "/timeout [seconds]",
       "description": "Set your operation timeout in seconds",
       "group": "utility",
       "status": "implemented",
@@ -2890,7 +2890,7 @@
     {
       "name": "/tool",
       "registration": "/tool",
-      "usage": "/tool <[none|tree|repl|cycler|floodfill|info|farwand|navwand|lrbuild|stacker|deltree|brush|selwand|featureplacer|structureplacer|command|flood|warwand]> <[target]>",
+      "usage": "/tool [none|tree|repl|cycler|floodfill|info|farwand|navwand|lrbuild|stacker|deltree|brush|selwand|featureplacer|structureplacer|command|flood|warwand] [target]",
       "description": "Bind a tool to an item: none, tree, repl, cycler, flood-fill, brush, info, farwand, navwand, lrbuild, stacker, deltree",
       "group": "tool",
       "status": "implemented",
@@ -2935,7 +2935,7 @@
     {
       "name": "/tool mask",
       "registration": "/tool mask",
-      "usage": "/tool mask <[mask]> <[-h]>",
+      "usage": "/tool mask [mask] [-h]",
       "description": "Set the brush destination mask",
       "group": "tool",
       "status": "implemented",
@@ -2965,7 +2965,7 @@
     {
       "name": "/tool material",
       "registration": "/tool material",
-      "usage": "/tool material <pattern> <[-h]>",
+      "usage": "/tool material <pattern> [-h]",
       "description": "Set the brush material",
       "group": "tool",
       "status": "implemented",
@@ -2995,7 +2995,7 @@
     {
       "name": "/tool primary",
       "registration": "/tool primary",
-      "usage": "/tool primary <type> <[args...]>",
+      "usage": "/tool primary <type> [args...]",
       "description": "Set the right click brush",
       "group": "tool",
       "status": "implemented",
@@ -3025,7 +3025,7 @@
     {
       "name": "/tool scroll",
       "registration": "/tool scroll",
-      "usage": "/tool scroll <[action]> <[arguments]>",
+      "usage": "/tool scroll [action] [arguments]",
       "description": "Toggle between different target modes",
       "group": "tool",
       "status": "implemented",
@@ -3040,7 +3040,7 @@
     {
       "name": "/tool secondary",
       "registration": "/tool secondary",
-      "usage": "/tool secondary <type> <[args...]>",
+      "usage": "/tool secondary <type> [args...]",
       "description": "Set the left click brush",
       "group": "tool",
       "status": "implemented",
@@ -3070,7 +3070,7 @@
     {
       "name": "/tool smask",
       "registration": "/tool smask",
-      "usage": "/tool smask <[mask]> <[-h]>",
+      "usage": "/tool smask [mask] [-h]",
       "description": "Set the brush source mask",
       "group": "tool",
       "status": "implemented",
@@ -3100,7 +3100,7 @@
     {
       "name": "/tool target",
       "registration": "/tool target",
-      "usage": "/tool target <[mode]>",
+      "usage": "/tool target [mode]",
       "description": "Toggle between the different target modes",
       "group": "tool",
       "status": "implemented",
@@ -3175,7 +3175,7 @@
     {
       "name": "/tool tracemask",
       "registration": "/tool tracemask",
-      "usage": "/tool tracemask <[mask]>",
+      "usage": "/tool tracemask [mask]",
       "description": "Set the mask used to stop tool traces",
       "group": "tool",
       "status": "implemented",
@@ -3190,7 +3190,7 @@
     {
       "name": "/tool transform",
       "registration": "/tool transform",
-      "usage": "/tool transform <[transform]> <[args...]> <[-h]>",
+      "usage": "/tool transform [transform] [args...] [-h]",
       "description": "Set the transform applied to what the brush places",
       "group": "tool",
       "status": "implemented",
@@ -3250,7 +3250,7 @@
     {
       "name": "/we report",
       "registration": "/we report",
-      "usage": "/we report <[-p]>",
+      "usage": "/we report [-p]",
       "description": "Write a report about this installation",
       "group": "worldedit",
       "status": "implemented",
@@ -3295,7 +3295,7 @@
     {
       "name": "/we tz",
       "registration": "/we tz",
-      "usage": "/we tz <[timezone]>",
+      "usage": "/we tz [timezone]",
       "description": "Set your timezone for snapshots",
       "group": "worldedit",
       "status": "implemented",
@@ -3355,7 +3355,7 @@
     {
       "name": "blob",
       "registration": "blob",
-      "usage": "blob <pattern> <[radius]>",
+      "usage": "blob <pattern> [radius]",
       "description": "Create a distorted sphere",
       "group": "generation",
       "status": "implemented",
@@ -3370,7 +3370,7 @@
     {
       "name": "butcher",
       "registration": "butcher",
-      "usage": "butcher <[radius]>",
+      "usage": "butcher [radius]",
       "description": "Kill all or matching entities within a radius",
       "group": "region",
       "status": "implemented",
@@ -3475,7 +3475,7 @@
     {
       "name": "feature",
       "registration": "feature",
-      "usage": "feature <feature> <[position]>",
+      "usage": "feature <feature> [position]",
       "description": "Generate a feature at your position",
       "group": "generation",
       "status": "implemented",
@@ -3550,7 +3550,7 @@
     {
       "name": "gsmask",
       "registration": "gsmask",
-      "usage": "gsmask <[mask]>",
+      "usage": "gsmask [mask]",
       "description": "Set the global source mask",
       "group": "mask",
       "status": "implemented",
@@ -3580,7 +3580,7 @@
     {
       "name": "img",
       "registration": "img",
-      "usage": "img <image> <[pattern]>",
+      "usage": "img <image> [pattern]",
       "description": "Build terrain from a heightmap image",
       "group": "generation",
       "status": "implemented",
@@ -3745,7 +3745,7 @@
     {
       "name": "registry",
       "registration": "registry",
-      "usage": "registry <[-p <page>]>",
+      "usage": "registry [-p <page>]",
       "description": "Show the size of the block and biome registries",
       "group": "infos",
       "status": "implemented",
@@ -3880,7 +3880,7 @@
     {
       "name": "snowsmooth",
       "registration": "snowsmooth",
-      "usage": "snowsmooth <[iterations]> <[-l <snowBlockCount>]> <[-m <mask>]>",
+      "usage": "snowsmooth [iterations] [-l <snowBlockCount>] [-m <mask>]",
       "description": "Smooth the terrain, only considering snow blocks",
       "group": "region",
       "status": "implemented",
@@ -3925,7 +3925,7 @@
     {
       "name": "trim",
       "registration": "trim",
-      "usage": "trim <[mask]>",
+      "usage": "trim [mask]",
       "description": "Minimize the selection to encompass matching blocks",
       "group": "region",
       "status": "implemented",

@@ -28,16 +28,16 @@ public final class BrushParameters {
     private final String name;
     private final Pattern pattern;
     private final Mask mask;
-    private final Mask flagMask;
+    private final Map<String, Mask> masks;
     private final Map<String, String> values;
     private final BrushOptions options;
 
-    private BrushParameters(String name, Pattern pattern, Mask mask, Mask flagMask,
+    private BrushParameters(String name, Pattern pattern, Mask mask, Map<String, Mask> masks,
                             Map<String, String> values, BrushOptions options) {
         this.name = name;
         this.pattern = pattern;
         this.mask = mask;
-        this.flagMask = flagMask;
+        this.masks = masks;
         this.values = values;
         this.options = options;
     }
@@ -82,12 +82,20 @@ public final class BrushParameters {
             pattern = patternArgument.startsWith("#clipboard") ? null : Parsers.pattern(patternArgument, ctx);
         }
         Mask sessionMask = ctx == null ? null : ctx.session().getMask();
-        Mask flagMask = null;
-        String flagged = values.get("mask");
-        if (ctx != null && flagged != null && !flagged.isEmpty()) {
-            flagMask = Parsers.mask(flagged, ctx);
+        // Mask-valued flags are parsed here, where the session is known: -m on the
+        // clipboard brush fills its source mask, -m on the blend ball its mask.
+        Map<String, Mask> masks = new LinkedHashMap<>();
+        if (ctx != null) {
+            for (Map.Entry<String, String> value : values.entrySet()) {
+                String parameter = value.getKey();
+                if (value.getValue().isEmpty()
+                        || !(parameter.equals("mask") || parameter.endsWith("Mask"))) {
+                    continue;
+                }
+                masks.put(parameter, Parsers.mask(value.getValue(), ctx));
+            }
         }
-        return new BrushParameters(row[0], pattern, sessionMask, flagMask, values, options);
+        return new BrushParameters(row[0], pattern, sessionMask, masks, values, options);
     }
 
     /** The parameters of a brush built without a command line, i.e. a preset. */
@@ -113,7 +121,7 @@ public final class BrushParameters {
             // are re-parsed from the command line when the brush is reloaded.
             values.put("pattern", "");
         }
-        return new BrushParameters(row[0], pattern, null, null, values, options);
+        return new BrushParameters(row[0], pattern, null, Map.of(), values, options);
     }
 
     /** The name of the brush, as FAWE spells it. */
@@ -133,11 +141,21 @@ public final class BrushParameters {
 
     /** The mask a {@code -m <mask>} flag added, if any. */
     public Mask flagMask() {
-        return flagMask;
+        return maskValue("mask");
+    }
+
+    /**
+     * The mask a value flag added under the given parameter name, which is how a
+     * brush whose flag fills a parameter that is not called {@code mask} reads it
+     * (the clipboard brush's {@code -m <mask>} fills {@code sourceMask}).
+     */
+    public Mask maskValue(String parameter) {
+        return masks.get(parameter);
     }
 
     /** The mask the brush should paint through, session mask and flag merged. */
     public Mask combinedMask() {
+        Mask flagMask = flagMask();
         if (mask == null) {
             return flagMask;
         }

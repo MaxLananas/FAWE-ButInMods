@@ -848,6 +848,23 @@ public final class SelfTestMain {
             byFlag.flushQueue();
             check("gravity -h alone used the world floor", world.getBlock(60, world.minY(), 60) == stone
                     && world.getBlock(60, 75, 60) == air);
+
+            // The clipboard brush reads -m as the source mask, a parameter FAWE
+            // names differently from the generic one, so the flag has to reach
+            // that parameter on the command line too.
+            int gold = BlockState.registry().defaultState("minecraft:gold_block");
+            BlockArrayClipboard patch = new BlockArrayClipboard(new BlockVector3(0, 0, 0));
+            patch.setBlock(0, 0, 0, gold);
+            session.setClipboard(patch);
+            world.setBlock(70, 80, 70, stone);
+            world.setBlock(71, 80, 70, dirt);
+            CommandManager.get().dispatch(actor, "/brush clipboard -o -m minecraft:stone");
+            EditSession sourceMasked = new EditSession(world, session, "brush clipboard -m");
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                    .apply(sourceMasked, new BlockVector3(70, 80, 70), actor);
+            sourceMasked.flushQueue();
+            check("clipboard brush -m pasted onto the matching block", world.getBlock(70, 80, 70) == gold);
+            check("clipboard brush -m skipped the other block", world.getBlock(71, 80, 70) == dirt);
         }
     }
 

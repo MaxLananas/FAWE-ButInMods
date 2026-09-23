@@ -9,16 +9,27 @@ on both sides but with a different kind is a command line that means something
 else: upstream {@code -f <format>} and a local {@code -f} with no value are not
 the same switch, so those are reported as well.
 
+A flag can also be declared and still do nothing: the brush table carries the
+signature of every brush, and a brush whose factory never reads one of its flags
+accepts the command line and ignores it. That cross-check is the last thing this
+audit prints.
+
 Usage:
     python3 scripts/flag_audit.py [--inventory docs/commands-inventory.json]
                                   [--spec docs/commands-spec.json]
+                                  [--brush-table core/src/main/java/.../BrushTable.java]
+                                  [--brush-factory core/src/main/java/.../BrushFactory.java]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
+
+BRUSH_TABLE = "core/src/main/java/com/maxlananas/fawebim/core/command/BrushTable.java"
+BRUSH_FACTORY = "core/src/main/java/com/maxlananas/fawebim/core/brush/BrushFactory.java"
 
 # The command container a class of upstream commands belongs to.
 CONTAINERS = {
@@ -59,10 +70,93 @@ def family(row: dict) -> tuple[str, list[str]]:
     return f"{container or '//'} {plain}".strip(), sorted(spellings)
 
 
+def brush_rows(table: str) -> list[tuple[str, str]]:
+    """The name and the declared letters of every brush of the brush table."""
+    rows = []
+    for row in re.findall(r"\{\"([^\"]*)\",\s*\"[^\"]*\",\s*\"[^\"]*\",\s*\"([^\"]*)\",\s*\"([^\"]*)\",",
+                          table):
+        name, switches, value_flags = row
+        letters = {letter.strip() for letter in switches.split(",") if letter.strip()}
+        letters |= {entry.rsplit(":", 1)[-1].strip() for entry in value_flags.split(",") if entry.strip()}
+        rows.append((name, sorted(letters)))
+    return rows
+
+
+def factory_blocks(factory: str) -> dict[str, str]:
+    """The body of every brush case of the factory, keyed by brush name."""
+    starts = [(match.start(), match.group(1))
+              for match in re.finditer(r'case ((?:"[a-z]+",?\s*)+)->', factory)]
+    blocks: dict[str, str] = {}
+    for index, (position, names) in enumerate(starts):
+        end = starts[index + 1][0] if index + 1 < len(starts) else len(factory)
+        body = factory[position:end]
+        # The same name also appears in the switches that translate an alias to
+        # its canonical brush, whose case is a bare string return; keep the body
+        # that actually builds the brush.
+        if re.search(r"case [^-]*->\s*\"[^\"]*\";", body.split("\n")[0]):
+            continue
+        for name in re.findall(r'"([a-z]+)"', names):
+            if name not in blocks or len(body) > len(blocks[name]):
+                blocks[name] = body
+    return blocks
+
+
+def flags_read(text: str) -> set[str]:
+    """Every flag letter the given code reads off a BrushParameters."""
+    read = set()
+    if "flagMask()" in text or "maskValue(" in text:
+        read.add("m")
+    for match in re.finditer(r'(?:flag|switchOn|string|integer|number|expression|intValue|doubleValue)\('
+                             r'\s*"([\w]+)"', text):
+        read.add(match.group(1))
+    for match in re.finditer(r'maskValue\("([\w]+)"\)', text):
+        read.add("m")
+    for match in re.finditer(r'integer\("(snowBlockCount)"', text):
+        read.add("l")
+    return read
+
+
+def brush_flag_audit(table_path: str, factory_path: str) -> list[str]:
+    """Reports brush flags the factory declares but never reads."""
+    table = Path(table_path)
+    factory = Path(factory_path)
+    if not table.exists() or not factory.exists():
+        print(f"brush flag audit skipped: {table} or {factory} is missing")
+        return []
+    blocks = factory_blocks(factory.read_text())
+    unread: list[str] = []
+    for name, letters in brush_rows(table.read_text()):
+        block = blocks.get(name)
+        if block is None:
+            unread.append(f"{name} (no factory case)")
+            continue
+        # A case may delegate to a helper that reads the flags for it.
+        body = block
+        for helper in re.findall(r'\b(\w+)\(parameters\b', body):
+            match = re.search(rf"private static [\w.<>\[\]]+ {helper}\([^)]*\) \{{", factory.read_text())
+            if match:
+                helper_end = factory.read_text().find("\n    }", match.end())
+                body += factory.read_text()[match.start():helper_end]
+        read = flags_read(body)
+        if name == "gravity":
+            # -h is WorldEdit's height and FAWE's flag at once; the factory reads
+            # the height under its parameter name and the flag under its letter.
+            read.add("h")
+        missing = [letter for letter in letters if letter not in read]
+        if missing:
+            unread.append(f"{name} (never reads {', '.join('-' + m for m in missing)})")
+    print(f"brushes whose factory never reads a flag: {len(unread)}")
+    for entry in unread:
+        print(f"  {entry}")
+    return unread
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inventory", default="docs/commands-inventory.json")
     parser.add_argument("--spec", default="docs/commands-spec.json")
+    parser.add_argument("--brush-table", default=BRUSH_TABLE)
+    parser.add_argument("--brush-factory", default=BRUSH_FACTORY)
     arguments = parser.parse_args()
 
     inventory = json.loads(Path(arguments.inventory).read_text())
@@ -138,6 +232,11 @@ def main() -> None:
     print(f"families whose value flags are not declared as value flags: {len(wrong_kind)}")
     for name, flags in wrong_kind.items():
         print(f"  {name:<28} should take a value: {', '.join(flags)}")
+
+    unread_brushes = brush_flag_audit(arguments.brush_table, arguments.brush_factory)
+
+    if missing or wrong_kind or unread_brushes:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

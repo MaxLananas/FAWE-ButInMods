@@ -242,6 +242,21 @@ def write_stubs(stubs: list[tuple[str, str]]) -> None:
     (COMMAND_DIR / "StubTable.java").write_text("\n".join(body))
 
 
+def parameter_name(parameter: dict) -> str:
+    """The name of a parameter the inventory could not resolve on its own.
+
+    An annotation the extractor does not know, e.g. FAWE's ``@ClipboardMask
+    Mask sourceMask``, leaves the name empty and the type carries the parameter
+    behind its modifiers; the last identifier of the type is that name.
+    """
+    name = (parameter.get("name") or "").strip()
+    if name and name != "?":
+        return name
+    type_name = (parameter.get("type") or "").strip()
+    match = re.findall(r"[A-Za-z_$][\w$]*", type_name)
+    return match[-1] if match else ""
+
+
 def write_brush_table(inventory: list[dict]) -> None:
     """Emits the brush signatures, so /brush takes what FAWE's brushes take.
 
@@ -271,7 +286,13 @@ def write_brush_table(inventory: list[dict]) -> None:
             if kind == "Arg":
                 arguments.append([parameter["name"], ann.get("def", "")])
             elif kind == "ArgFlag":
-                value_flags.append(ann.get("name", "").strip("'"))
+                # The value flag fills a parameter of its own; when upstream names
+                # that parameter differently from the switch letter the table has
+                # to carry both, e.g. FAWE's "Mask mask" on the switch -m.
+                letter = ann.get("name", "").strip("'")
+                parameter = parameter_name(parameter)
+                value_flags.append(f"{parameter}:{letter}"
+                                   if parameter and parameter != letter else letter)
             elif kind == "Switch":
                 switches.append(ann.get("name", "").strip("'"))
         if not arguments and not switches and not value_flags:

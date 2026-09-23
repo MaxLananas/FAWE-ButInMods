@@ -84,7 +84,15 @@ registry). Never edit them by hand; re-run the script instead.
 python3 scripts/generate_command_tables.py
 ./gradlew :core:selfTest
 ./gradlew :core:genDocs     # picks up the updated tables
+python3 scripts/flag_audit.py
 ```
+
+`scripts/flag_audit.py` is the flag gate: it compares every upstream `@Switch` and `@ArgFlag` with
+what the registry declares (same name, same kind), and it checks that the brush factory actually
+reads each flag the brush table declares. A flag that is accepted and then ignored is a porting bug,
+so the audit exits non-zero when it finds one. When a value flag fills a parameter whose name
+differs from the switch letter, the brush table spells it `parameter:letter` (`-m <sourceMask>` on
+the clipboard brush), which is also how the factory finds the value.
 
 ## Platform rules
 
@@ -107,7 +115,8 @@ way:
 A change is ready when all of the following hold:
 
 1. `./gradlew :core:selfTest` passes, and `./gradlew :core:checkInventory` reports no unresolved
-   WorldEdit or FAWE name.
+   WorldEdit or FAWE name. `python3 scripts/flag_audit.py` reports no missing, mistyped or unread
+   flag.
 2. `./gradlew build` succeeds.
 3. `./gradlew :core:genDocs` shows no unexpected change in
    [`docs/STATUS.md`](docs/STATUS.md) (a ported command must move from *still to port* to

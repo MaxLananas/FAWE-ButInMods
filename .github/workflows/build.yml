@@ -39,6 +39,9 @@ jobs:
             core/src/main/java/com/maxlananas/fawebim/core/command/SubCommandTable.java \
             core/src/main/java/com/maxlananas/fawebim/core/command/StubTable.java
 
+      - name: Audit the command flags against WorldEdit and FAWE
+        run: python3 scripts/flag_audit.py
+
       - name: Upload the mod jar
         uses: actions/upload-artifact@v4
         with:

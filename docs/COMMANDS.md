@@ -46,10 +46,10 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/anvil countall` | — | Count all blocks in a world | implemented |
 | `/anvil debugfixroads` | — | debug - do not use | implemented |
 | `/anvil deletealloldregions <time>` | `/anvil deloldreg` | Delete regions which haven't been accessed in a certain amount of time | implemented |
-| `/anvil deleteallunclaimed <inhabitedTicks> <[fileDurationMillis]>` | `/anvil delallunclaimed` | Delete every chunk that was never occupied | implemented |
-| `/anvil deleteallunvisited <inhabitedTicks> <[fileDurationMillis]>` | `/anvil delunvisited` | Delete all chunks which haven't been occupied | implemented |
+| `/anvil deleteallunclaimed <inhabitedTicks> [fileDurationMillis]` | `/anvil delallunclaimed` | Delete every chunk that was never occupied | implemented |
+| `/anvil deleteallunvisited <inhabitedTicks> [fileDurationMillis]` | `/anvil delunvisited` | Delete all chunks which haven't been occupied | implemented |
 | `/anvil deletebiomechunks <biome>` | — | Delete chunks matching a specific biome | implemented |
-| `/anvil deleteunclaimed <inhabitedTicks> <[fileDurationMillis]>` | — | Delete every chunk of the selection that was never occupied | implemented |
+| `/anvil deleteunclaimed <inhabitedTicks> [fileDurationMillis]` | — | Delete every chunk of the selection that was never occupied | implemented |
 | `/anvil distr` | — | Show the block distribution of a selection | implemented |
 | `/anvil paste` | — | Paste chunks from your anvil clipboard | implemented |
 | `/anvil remapall` | — | Remap the world between MCPE/PC values | implemented |
@@ -67,7 +67,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 |---|---|---|---|
 | `//biome <biome>` | `//setbiome` | Set the biome in the selection | implemented |
 | `//biomeinfo` | `//biomeinfo -p` | Show the biome you are standing in | implemented |
-| `//biomelist <[-p <page>]>` | — | List available biomes | implemented |
+| `//biomelist [-p <page>]` | — | List available biomes | implemented |
 | `biomels` | — | List available biomes | alias |
 | `listbiomes` | — | List available biomes | alias |
 
@@ -76,77 +76,77 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
 | `/brush` | `//brush`, `/br` | Show the current brush | implemented |
-| `/brush biome <[shape]> <[-c]>` | — | Biome brush, sets biomes in the area | implemented |
-| `/brush blendball <[radius]> <[-m <m>]> <[-a]>` | `/brush bb`, `/brush blend` | Smooths and blends terrain | implemented |
-| `/brush butcher <[radius]> <[-p]> <[-n]> <[-g]> <[-a]> <[-b]> <[-t]> <[-f]> <[-r]> <[-w]>` | `/brush kill` | Butcher brush, kills mobs within a radius | implemented |
-| `/brush catenary <[fill]> <[-h]> <[-s]> <[-d]>` | `/brush cat`, `/brush gravityline`, `/brush saggedline` | Create a hanging line between two points | implemented |
-| `/brush circle <[fill]>` | — | Creates a circle, which revolves around your facing direction | implemented |
-| `/brush cliff <[radius]> <[-r]> <[-l]> <[-s]>` | `/brush flatcylinder` | Cliff brush | implemented |
-| `/brush clipboard <[-m <m>]> <[-a]> <[-o]> <[-e]> <[-b]> <[-r]> <[-v]>` | `/brush copy` | Paste your clipboard at the brush location. Includes any transforms. | implemented |
-| `/brush command <[radius]> <[-h]>` | `/brush cmd` | Command brush | implemented |
-| `/brush copypaste <[radius]> <[-r]> <[-a]>` | `/brush cp`, `/brush copypasta` | Copy Paste brush | implemented |
-| `/brush cylinder <[pattern]> <[-h]>` | `/brush cyl`, `/brush c` | Choose the cylinder brush | implemented |
-| `/brush deform <[shape]> <[-r]> <[-o]>` | — | Deform brush, applies an expression to an area | implemented |
-| `/brush dilate <[brushsize]>` | — | Dilate preset for morph brush, dilates blocks in the area | implemented |
-| `/brush erode <[radius]>` | — | Erodes terrain | implemented |
-| `/brush extinguish <[radius]>` | `/brush ex` | Shortcut fire extinguisher brush | implemented |
-| `/brush feature <[shape]>` | — | Feature brush, paints Minecraft generation features | implemented |
-| `/brush flatten <[radius]> <[-r]> <[-l]> <[-s]>` | `/brush flatmap`, `/brush flat` | This brush raises or lowers land towards the clicked point | implemented |
-| `/brush forest <[shape]>` | — | Plant trees | implemented |
-| `/brush gravity <[radius]> <[-h <h>]>` | `/brush grav` | Gravity brush, simulates the effect of gravity | implemented |
-| `/brush height <[radius]> <[-r]> <[-l]> <[-s]>` | — | Raise or lower terrain using a heightmap | implemented |
-| `/brush heightmap <[imagename]> <[-e]> <[-f]> <[-r]>` | — | Heightmap brush, raises or lowers terrain using an image heightmap | implemented |
-| `/brush image <[?]> <[-a]> <[-f]>` | — | Use a height map to paint a surface | implemented |
-| `/brush item <[item]>` | — | Use an item | implemented |
-| `/brush layer <[radius]>` | — | Replaces terrain with a layer. | implemented |
-| `/brush line <[fill]> <[-h]> <[-s]> <[-f]>` | `/brush l` | Create lines | implemented |
-| `/brush listbrush <[-p <page>]>` | `/brush list` | List the saved brush presets | implemented |
+| `/brush biome [shape] [-c]` | — | Biome brush, sets biomes in the area | implemented |
+| `/brush blendball [radius] [-m <mask>] [-a]` | `/brush bb`, `/brush blend` | Smooths and blends terrain | implemented |
+| `/brush butcher [radius] [-p] [-n] [-g] [-a] [-b] [-t] [-f] [-r] [-w]` | `/brush kill` | Butcher brush, kills mobs within a radius | implemented |
+| `/brush catenary [fill] [-h] [-s] [-d]` | `/brush cat`, `/brush gravityline`, `/brush saggedline` | Create a hanging line between two points | implemented |
+| `/brush circle [fill]` | — | Creates a circle, which revolves around your facing direction | implemented |
+| `/brush cliff [radius] [-r] [-l] [-s]` | `/brush flatcylinder` | Cliff brush | implemented |
+| `/brush clipboard [-m <sourcemask>] [-a] [-o] [-e] [-b] [-r] [-v]` | `/brush copy` | Paste your clipboard at the brush location. Includes any transforms. | implemented |
+| `/brush command [radius] [-h]` | `/brush cmd` | Command brush | implemented |
+| `/brush copypaste [radius] [-r] [-a]` | `/brush cp`, `/brush copypasta` | Copy Paste brush | implemented |
+| `/brush cylinder [pattern] [-h]` | `/brush cyl`, `/brush c` | Choose the cylinder brush | implemented |
+| `/brush deform [shape] [-r] [-o]` | — | Deform brush, applies an expression to an area | implemented |
+| `/brush dilate [brushsize]` | — | Dilate preset for morph brush, dilates blocks in the area | implemented |
+| `/brush erode [radius]` | — | Erodes terrain | implemented |
+| `/brush extinguish [radius]` | `/brush ex` | Shortcut fire extinguisher brush | implemented |
+| `/brush feature [shape]` | — | Feature brush, paints Minecraft generation features | implemented |
+| `/brush flatten [radius] [-r] [-l] [-s]` | `/brush flatmap`, `/brush flat` | This brush raises or lowers land towards the clicked point | implemented |
+| `/brush forest [shape]` | — | Plant trees | implemented |
+| `/brush gravity [radius] [-h <height>]` | `/brush grav` | Gravity brush, simulates the effect of gravity | implemented |
+| `/brush height [radius] [-r] [-l] [-s]` | — | Raise or lower terrain using a heightmap | implemented |
+| `/brush heightmap [imagename] [-e] [-f] [-r]` | — | Heightmap brush, raises or lowers terrain using an image heightmap | implemented |
+| `/brush image [?] [-a] [-f]` | — | Use a height map to paint a surface | implemented |
+| `/brush item [item]` | — | Use an item | implemented |
+| `/brush layer [radius]` | — | Replaces terrain with a layer. | implemented |
+| `/brush line [fill] [-h] [-s] [-f]` | `/brush l` | Create lines | implemented |
+| `/brush listbrush [-p <page>]` | `/brush list` | List the saved brush presets | implemented |
 | `/brush loadbrush <name>` | `/brush load` | Load a saved brush preset | implemented |
-| `/brush lower <[shape]>` | — | Lower brush, lower all blocks by one | implemented |
-| `/brush morph <[brushsize]>` | — | Morph brush, morphs blocks in the area | implemented |
+| `/brush lower [shape]` | — | Lower brush, lower all blocks by one | implemented |
+| `/brush morph [brushsize]` | — | Morph brush, morphs blocks in the area | implemented |
 | `/brush none` | `/brush unbind` | Unbind the brush from your current item | implemented |
-| `/brush populateschematic <[clipboardstr]> <[-r]>` | `/brush populateschem`, `/brush popschem`, `/brush pschem`, `/brush ps` | Scatter a schematic on a surface | implemented |
-| `/brush pull <[radius]>` | — | Pull terrain towards you | implemented |
-| `/brush raise <[shape]>` | — | Raise brush, raise all blocks by one | implemented |
-| `/brush recursive <[fill]> <[-d]>` | `/brush recurse`, `/brush r` | Set all connected blocks | implemented |
-| `/brush rock <[fill]>` | `/brush blob` | Creates a distorted sphere | implemented |
+| `/brush populateschematic [clipboardstr] [-r]` | `/brush populateschem`, `/brush popschem`, `/brush pschem`, `/brush ps` | Scatter a schematic on a surface | implemented |
+| `/brush pull [radius]` | — | Pull terrain towards you | implemented |
+| `/brush raise [shape]` | — | Raise brush, raise all blocks by one | implemented |
+| `/brush recursive [fill] [-d]` | `/brush recurse`, `/brush r` | Set all connected blocks | implemented |
+| `/brush rock [fill]` | `/brush blob` | Creates a distorted sphere | implemented |
 | `/brush savebrush <name>` | `/brush save` | Save the current brush as a preset | implemented |
-| `/brush scatter <[fill]> <[-o]>` | — | Scatter a pattern on a surface | implemented |
-| `/brush scattercommand <[radius]> <[-p]>` | `/brush scattercmd`, `/brush scmd`, `/brush scommand` | Run commands at random points on a surface | implemented |
-| `/brush set <[shape]>` | — | Place a block | implemented |
-| `/brush shatter <[fill]>` | `/brush partition`, `/brush split` | Creates random lines to break the terrain into pieces | implemented |
-| `/brush smooth <[radius]>` | — | Choose the terrain softener brush | implemented |
-| `/brush snow <[shape]> <[-s]>` | — | Snow brush, sets snow in the area | implemented |
-| `/brush snowsmooth <[radius]> <[-l <l>]> <[-m <m>]>` | — | Choose the snow terrain softener brush | implemented |
-| `/brush sphere <[pattern]> <[-h]> <[-f]>` | `/brush s` | Choose the sphere brush | implemented |
-| `/brush splatter <[fill]>` | `/brush splat` | Splatter a pattern on a surface | implemented |
-| `/brush spline <[fill]>` | `/brush spl`, `/brush curve` | Join multiple objects together in a curve | implemented |
-| `/brush stencil <[fill]> <[-w]> <[-r]>` | — | Use a height map to paint a surface | implemented |
-| `/brush structure <[shape]>` | — | Structure brush, paints Minecraft generation structures | implemented |
-| `/brush surface <[fill]>` | `/brush surf` | Use a height map to paint a surface | implemented |
-| `/brush surfacespline <[fill]>` | `/brush sspline`, `/brush sspl` | Draws a spline (curved line) on the surface | implemented |
-| `/brush sweep <[copies]>` | `/brush sw`, `/brush vaesweep` | Sweep your clipboard content along a curve | implemented |
+| `/brush scatter [fill] [-o]` | — | Scatter a pattern on a surface | implemented |
+| `/brush scattercommand [radius] [-p]` | `/brush scattercmd`, `/brush scmd`, `/brush scommand` | Run commands at random points on a surface | implemented |
+| `/brush set [shape]` | — | Place a block | implemented |
+| `/brush shatter [fill]` | `/brush partition`, `/brush split` | Creates random lines to break the terrain into pieces | implemented |
+| `/brush smooth [radius]` | — | Choose the terrain softener brush | implemented |
+| `/brush snow [shape] [-s]` | — | Snow brush, sets snow in the area | implemented |
+| `/brush snowsmooth [radius] [-l <snowblockcount>] [-m <mask>]` | — | Choose the snow terrain softener brush | implemented |
+| `/brush sphere [pattern] [-h] [-f]` | `/brush s` | Choose the sphere brush | implemented |
+| `/brush splatter [fill]` | `/brush splat` | Splatter a pattern on a surface | implemented |
+| `/brush spline [fill]` | `/brush spl`, `/brush curve` | Join multiple objects together in a curve | implemented |
+| `/brush stencil [fill] [-w] [-r]` | — | Use a height map to paint a surface | implemented |
+| `/brush structure [shape]` | — | Structure brush, paints Minecraft generation structures | implemented |
+| `/brush surface [fill]` | `/brush surf` | Use a height map to paint a surface | implemented |
+| `/brush surfacespline [fill]` | `/brush sspline`, `/brush sspl` | Draws a spline (curved line) on the surface | implemented |
+| `/brush sweep [copies]` | `/brush sw`, `/brush vaesweep` | Sweep your clipboard content along a curve | implemented |
 
 ## chunk
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//chunk <[coordinates]>` | — | Select the chunk you are standing in | implemented |
+| `//chunk [coordinates]` | — | Select the chunk you are standing in | implemented |
 | `//chunkinfo` | — | Show information about the current chunk | implemented |
-| `//delchunks <[-o <time>]>` | — | Delete the chunks in the selection (regenerates them) | implemented |
-| `//listchunks <[-p <page>]>` | — | List the chunks in the selection | implemented |
+| `//delchunks [-o <time>]` | — | Delete the chunks in the selection (regenerates them) | implemented |
+| `//listchunks [-p <page>]` | — | List the chunks in the selection | implemented |
 
 ## clipboard
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
 | `//clearclipboard` | — | Clear your clipboard | implemented |
-| `//copy <[-m <mask>]>` | `//cp` | Copy the selection to your clipboard | implemented |
-| `//cut <[-m <mask>]>` | — | Cut the selection to your clipboard | implemented |
-| `//flip <[direction]>` | — | Flip the clipboard | implemented |
-| `//paste <[destination]> <[-m <mask>]>` | `//p` | Paste your clipboard | implemented |
-| `//rotate <angle> <[direction]>` | — | Rotate the clipboard | implemented |
-| `/download <[name]> <[format]>` | — | Save your clipboard to a schematic file | implemented |
+| `//copy [-m <mask>]` | `//cp` | Copy the selection to your clipboard | implemented |
+| `//cut [-m <mask>]` | — | Cut the selection to your clipboard | implemented |
+| `//flip [direction]` | — | Flip the clipboard | implemented |
+| `//paste [destination] [-m <mask>]` | `//p` | Paste your clipboard | implemented |
+| `//rotate <angle> [direction]` | — | Rotate the clipboard | implemented |
+| `/download [name] [format]` | — | Save your clipboard to a schematic file | implemented |
 | `/place` | — | Place the clipboard's contents without applying transformations | implemented |
 | `cc` | — | Clear your clipboard | alias |
 | `clearclip` | — | Clear your clipboard | alias |
@@ -159,27 +159,27 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//caves <[frequency]> <[rarity]> <[size]>` | — | Generate cave systems in the selection | implemented |
-| `//cone <pattern> <radius> <[height]>` | — | Create a cone at your position | implemented |
-| `//curve <pattern> <[thickness]>` | — | Draw a spline through the convex selection's vertices | implemented |
-| `//cyl <pattern> <radius> <[height]>` | — | Create a cyl at your position | implemented |
+| `//caves [frequency] [rarity] [size]` | — | Generate cave systems in the selection | implemented |
+| `//cone <pattern> <radius> [height]` | — | Create a cone at your position | implemented |
+| `//curve <pattern> [thickness]` | — | Draw a spline through the convex selection's vertices | implemented |
+| `//cyl <pattern> <radius> [height]` | — | Create a cyl at your position | implemented |
 | `//deform <expression>` | — | Deform blocks in the selection using an expression | implemented |
 | `//deltree` | — | Remove the tree you are looking at | implemented |
 | `//fall` | — | Make blocks fall | implemented |
-| `//flora <[density]>` | `//forest`, `//forestgen` | Generate flora/forest in the selection | implemented |
+| `//flora [density]` | `//forest`, `//forestgen` | Generate flora/forest in the selection | implemented |
 | `//generate <pattern>` | `//gen`, `//g` | Generate a shape from an expression or noise pattern | implemented |
-| `//hcyl <pattern> <radius> <[height]>` | — | Create a cyl at your position | implemented |
-| `//hsphere <pattern> <radius> <[height]>` | — | Create a sphere at your position | implemented |
-| `//line <pattern> <[thickness]>` | — | Draw a line between selection corners | implemented |
+| `//hcyl <pattern> <radius> [height]` | — | Create a cyl at your position | implemented |
+| `//hsphere <pattern> <radius> [height]` | — | Create a sphere at your position | implemented |
+| `//line <pattern> [thickness]` | — | Draw a line between selection corners | implemented |
 | `//ore <pattern>` | `//ores` | Generate ores in the selection | implemented |
-| `//pumpkins <[density]>` | — | Generate a pumpkin patch | implemented |
+| `//pumpkins [density]` | — | Generate a pumpkin patch | implemented |
 | `//pyramid <pattern> <size>` | `//hpyramid` | Create a pyramid at your position | implemented |
-| `//sphere <pattern> <radius> <[height]>` | — | Create a sphere at your position | implemented |
-| `//tree <[type]>` | — | Create a tree at your position | implemented |
-| `blob <pattern> <[radius]>` | — | Create a distorted sphere | implemented |
-| `feature <feature> <[position]>` | — | Generate a feature at your position | implemented |
+| `//sphere <pattern> <radius> [height]` | — | Create a sphere at your position | implemented |
+| `//tree [type]` | — | Create a tree at your position | implemented |
+| `blob <pattern> [radius]` | — | Create a distorted sphere | implemented |
+| `feature <feature> [position]` | — | Generate a feature at your position | implemented |
 | `generatebiome <biome> <formula>` | `/genbiome`, `/gb` | Sets biome according to a formula | implemented |
-| `img <image> <[pattern]>` | `/image` | Build terrain from a heightmap image | implemented |
+| `img <image> [pattern]` | `/image` | Build terrain from a heightmap image | implemented |
 | `placefeature` | — | Generate a feature at your position | alias |
 | `rock` | — | Create a distorted sphere | alias |
 | `structure <structure>` | `/struct` | Generate a structure over the selection | implemented |
@@ -189,9 +189,9 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
 | `//clearhistory` | — | Clear your history | implemented |
-| `//redo <[number]>` | `//r` | Redo your last undone operation | implemented |
-| `//undo <[number]>` | `//u` | Undo your last operation | implemented |
-| `/history <list\|info\|summary\|summarize\|distr\|distribution\|find\|inspect\|search\|near\|rollback\|restore\|rerun\|import\|clear> <[-u <user>]> <[-t <time>]> <[-r <radius>]> <[-p <page>]>` | — | Inspect the edits of this server | implemented |
+| `//redo [number]` | `//r` | Redo your last undone operation | implemented |
+| `//undo [number]` | `//u` | Undo your last operation | implemented |
+| `/history <list\|info\|summary\|summarize\|distr\|distribution\|find\|inspect\|search\|near\|rollback\|restore\|rerun\|import\|clear> [-u <user>] [-t <time>] [-r <radius>] [-p <page>]` | — | Inspect the edits of this server | implemented |
 
 ## infos
 
@@ -199,60 +199,60 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 |---|---|---|---|
 | `/searchitem <query>` | `/search`, `/l` | Search for an item | implemented |
 | `heightmapinterface` | `/hmi` | Show the world's height limits and heightmap information | implemented |
-| `registry <[-p <page>]>` | — | Show the size of the block and biome registries | implemented |
+| `registry [-p <page>]` | — | Show the size of the block and biome registries | implemented |
 
 ## mask
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
 | `globalsourcemask` | — | Set the global source mask | alias |
-| `gsmask <[mask]>` | `/sourcemask`, `/targetmask`, `/tarmask` | Set the global source mask | implemented |
+| `gsmask [mask]` | `/sourcemask`, `/targetmask`, `/tarmask` | Set the global source mask | implemented |
 
 ## navigation
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//ascend <[levels]>` | `//asc` | Go up a floor | implemented |
-| `//ceil <[clearance]>` | `//ceiling` | Go to the ceiling | implemented |
-| `//descend <[levels]>` | `//desc` | Go down a floor | implemented |
-| `//jumpto <[location]>` | `//j` | Teleport to a location | implemented |
+| `//ascend [levels]` | `//asc` | Go up a floor | implemented |
+| `//ceil [clearance]` | `//ceiling` | Go to the ceiling | implemented |
+| `//descend [levels]` | `//desc` | Go down a floor | implemented |
+| `//jumpto [location]` | `//j` | Teleport to a location | implemented |
 | `//thru` | — | Pass through walls | implemented |
 | `//unstuck` | — | Escape from being stuck inside a block | implemented |
 | `//up <distance>` | — | Go upwards some distance | implemented |
-| `//world <[world]>` | — | Show or change the world override | implemented |
+| `//world [world]` | — | Show or change the world override | implemented |
 
 ## region
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
 | `//center <pattern>` | — | Set the center block(s) of the selection | implemented |
-| `//drain <[radius]>` | — | Drain liquids in the selection | implemented |
+| `//drain [radius]` | — | Drain liquids in the selection | implemented |
 | `//extinguish` | `//ex` | Extinguish fires in the region | implemented |
 | `//faces <pattern>` | — | Build the faces of the selection | implemented |
-| `//fill <pattern> <[radius]>` | `//fillr` | Fill a hole with a pattern (flood fill) | implemented |
-| `//fixlava <[radius]>` | — | Fix lava placement in the selection | implemented |
-| `//fixwater <[radius]>` | — | Fix water placement in the selection | implemented |
+| `//fill <pattern> [radius]` | `//fillr` | Fill a hole with a pattern (flood fill) | implemented |
+| `//fixlava [radius]` | — | Fix lava placement in the selection | implemented |
+| `//fixwater [radius]` | — | Fix water placement in the selection | implemented |
 | `//green` | — | Turn dirt into grass | implemented |
-| `//hollow <[thickness]> <[-m <mask>]> <[pattern]>` | — | Hollow out the selection | implemented |
+| `//hollow [thickness] [-m <mask>] [pattern]` | — | Hollow out the selection | implemented |
 | `//lay <pattern>` | — | Lay a pattern on the ground, keeping natural layers below | implemented |
-| `//move <amount> <direction> <[pattern]> <[-m <mask>]>` | — | Move the selection's contents in a direction | implemented |
+| `//move <amount> <direction> [pattern] [-m <mask>]` | — | Move the selection's contents in a direction | implemented |
 | `//naturalize` | — | Turn the terrain into grass over dirt over stone | implemented |
 | `//outline <pattern>` | `//outline-remove` | Build a hollow outline | implemented |
 | `//overlay <pattern>` | — | Overlay the top layer of blocks with a pattern | implemented |
-| `//regen <[seed]> <[biome]>` | — | Regenerate the selection from the world seed | implemented |
-| `//removeabove <[size]> <[height]>` | — | Remove blocks above a height | implemented |
-| `//removebelow <[size]> <[height]>` | — | Remove blocks below a height | implemented |
-| `//removenear <mask> <[size]>` | — | Remove blocks near you | implemented |
+| `//regen [seed] [biome]` | — | Regenerate the selection from the world seed | implemented |
+| `//removeabove [size] [height]` | — | Remove blocks above a height | implemented |
+| `//removebelow [size] [height]` | — | Remove blocks below a height | implemented |
+| `//removenear <mask> [size]` | — | Remove blocks near you | implemented |
 | `//replace <mask> <pattern>` | `//re` | Replace all blocks matching a mask with a pattern inside a region | implemented |
 | `//replacenear <size> <mask> <pattern>` | — | Replace blocks near you | implemented |
 | `//set <pattern>` | — | Set all blocks inside a region to a pattern | implemented |
-| `//smooth <[iterations]>` | — | Smooth the terrain in the selection | implemented |
-| `//snow <[pattern]>` | — | Simulate snow on the terrain | implemented |
-| `//stack <[count]> <[direction]> <[-m <mask>]>` | — | Stack the selection's contents | implemented |
+| `//smooth [iterations]` | — | Smooth the terrain in the selection | implemented |
+| `//snow [pattern]` | — | Simulate snow on the terrain | implemented |
+| `//stack [count] [direction] [-m <mask>]` | — | Stack the selection's contents | implemented |
 | `//thaw` | — | Thaw snow and ice in the region | implemented |
 | `//walls <pattern>` | — | Build the walls of the selection | implemented |
 | `air` | `/0` | Sets all the blocks in the region to air | implemented |
-| `butcher <[radius]>` | — | Kill all or matching entities within a radius | implemented |
+| `butcher [radius]` | — | Kill all or matching entities within a radius | implemented |
 | `ext` | — | Extinguish fires in the region | alias |
 | `fixblocks` | `/updateblocks`, `/fixconnect` | Fixes all blocks in the region to the correct shape and connections | implemented |
 | `fixlighting` | — | Propagate lighting through the selection | implemented |
@@ -265,9 +265,9 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `select` | — | Select your allowed region (there are none in the standalone mod) | alias |
 | `setblocklight <level>` | — | Set the block light level in the selection | implemented |
 | `setskylight <level>` | — | Set the sky light level in the selection | implemented |
-| `snowsmooth <[iterations]> <[-l <snowBlockCount>]> <[-m <mask>]>` | — | Smooth the terrain, only considering snow blocks | implemented |
+| `snowsmooth [iterations] [-l <snowBlockCount>] [-m <mask>]` | — | Smooth the terrain, only considering snow blocks | implemented |
 | `test <value>` | — | Prints the given value back, used to check command parsing | implemented |
-| `trim <[mask]>` | — | Minimize the selection to encompass matching blocks | implemented |
+| `trim [mask]` | — | Minimize the selection to encompass matching blocks | implemented |
 | `update` | — | Apply side effects and neighbour updates to the selection | implemented |
 | `wea` | `/weanywhere`, `/worldeditanywhere` | Bypass region restrictions (there are none in the standalone mod) | implemented |
 | `wer` | `/worldeditregion` | Select your allowed region (there are none in the standalone mod) | implemented |
@@ -276,28 +276,28 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//schem <list\|ls\|all\|save\|load\|loadall\|delete\|d\|formats\|listformats\|f\|move\|m\|share\|clear\|unload> <[name]> <[format]> <[-p <page>]>` | `//schematic` | Save/load/list schematics | implemented |
-| `/list <[filter]>` | `/list all`, `/list global`, `/list local`, `/list me`, `/list mine`, `/list private`, `/list public` | Choose which schematics //schem list shows | implemented |
+| `//schem <list\|ls\|all\|save\|load\|loadall\|delete\|d\|formats\|listformats\|f\|move\|m\|share\|clear\|unload> [name] [format] [-p <page>]` | `//schematic` | Save/load/list schematics | implemented |
+| `/list [filter]` | `/list all`, `/list global`, `/list local`, `/list me`, `/list mine`, `/list private`, `/list public` | Choose which schematics //schem list shows | implemented |
 
 ## selection
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//contract <amount> <[direction]>` | — | Contract the selection area | implemented |
+| `//contract <amount> [direction]` | — | Contract the selection area | implemented |
 | `//count <mask>` | — | Count the number of blocks matching a mask | implemented |
 | `//desel` | `//deselect` | Clear your selection | implemented |
-| `//distr <[-p <page>]>` | `//distribution` | Show the block distribution in the selection | implemented |
+| `//distr [-p <page>]` | `//distribution` | Show the block distribution in the selection | implemented |
 | `//drawsel` | — | Draw the selection outline (uses particles, no client mod needed) | implemented |
-| `//expand <amount> <[direction]>` | — | Expand the selection area | implemented |
+| `//expand <amount> [direction]` | — | Expand the selection area | implemented |
 | `//hpos1` | — | Set position 1 to the block you are looking at | implemented |
 | `//hpos2` | — | Set position 2 to the block you are looking at | implemented |
 | `//inset <amount>` | — | Inset the selection area | implemented |
-| `//outset <[amount]>` | `//expand-out` | Outset the selection area in every direction | implemented |
-| `//pos <[coordinates]> <[secondary coordinates]> <[-s <selector>]>` | — | Set positions | implemented |
-| `//pos1 <[coordinates]>` | `//p1` | Set position 1 to your position or the given coordinates | implemented |
-| `//pos2 <[coordinates]>` | `//p2` | Set position 2 to your position or the given coordinates | implemented |
+| `//outset [amount]` | `//expand-out` | Outset the selection area in every direction | implemented |
+| `//pos [coordinates] [secondary coordinates] [-s <selector>]` | — | Set positions | implemented |
+| `//pos1 [coordinates]` | `//p1` | Set position 1 to your position or the given coordinates | implemented |
+| `//pos2 [coordinates]` | `//p2` | Set position 2 to your position or the given coordinates | implemented |
 | `//sel <type>` | — | Choose the selection type: cuboid, extend, poly, ellipsoid, sphere, cyl, convex | implemented |
-| `//shift <amount> <[direction]>` | — | Shift the selection area | implemented |
+| `//shift <amount> [direction]` | — | Shift the selection area | implemented |
 | `//size` | — | Show the size and dimensions of the selection | implemented |
 | `//toggleeditwand` | — | Toggle the wand's function (only the commands remain active) | implemented |
 | `//toggleplace` | — | Switch between placing at position 1 or at your position | implemented |
@@ -307,10 +307,10 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `/snapshot after <[date]>` | — | Choose the nearest snapshot after a date | implemented |
-| `/snapshot before <[date]>` | — | Choose the nearest snapshot before a date | implemented |
-| `/snapshot list <[-p <page>]>` | — | List your snapshots | implemented |
-| `/snapshot restore <[name]>` | `/restore` | Restore a snapshot | implemented |
+| `/snapshot after [date]` | — | Choose the nearest snapshot after a date | implemented |
+| `/snapshot before [date]` | — | Choose the nearest snapshot before a date | implemented |
+| `/snapshot list [-p <page>]` | — | List your snapshots | implemented |
+| `/snapshot restore [name]` | `/restore` | Restore a snapshot | implemented |
 | `/snapshot sel` | — | Select the region of the chosen snapshot | implemented |
 | `/snapshot use <name>` | — | Choose the snapshot to work with | implemented |
 
@@ -320,51 +320,51 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 |---|---|---|---|
 | `/` | — | Toggle the super pickaxe function | implemented |
 | `//` | — | Toggle the super pickaxe function | implemented |
-| `/superpickaxe <[single\|area\|recursive\|recur\|off]> <[radius]>` | `/sp`, `//sp` | Super-pickaxe: single, area <radius>, recursive | implemented |
-| `/tool <[none\|tree\|repl\|cycler\|floodfill\|info\|farwand\|navwand\|lrbuild\|stacker\|deltree\|brush\|selwand\|featureplacer\|structureplacer\|command\|flood\|warwand]> <[target]>` | `//tool` | Bind a tool to an item: none, tree, repl, cycler, flood-fill, brush, info, farwand, navwand, lrbuild, stacker, deltree | implemented |
+| `/superpickaxe [single\|area\|recursive\|recur\|off] [radius]` | `/sp`, `//sp` | Super-pickaxe: single, area <radius>, recursive | implemented |
+| `/tool [none\|tree\|repl\|cycler\|floodfill\|info\|farwand\|navwand\|lrbuild\|stacker\|deltree\|brush\|selwand\|featureplacer\|structureplacer\|command\|flood\|warwand] [target]` | `//tool` | Bind a tool to an item: none, tree, repl, cycler, flood-fill, brush, info, farwand, navwand, lrbuild, stacker, deltree | implemented |
 | `/tool featureplacer <feature>` | `/tool featuretool` | Bind a tool that places a worldgen feature on click | implemented |
 | `/tool inspect` | — | Block information tool | implemented |
-| `/tool mask <[mask]> <[-h]>` | — | Set the brush destination mask | implemented |
+| `/tool mask [mask] [-h]` | — | Set the brush destination mask | implemented |
 | `/tool mat` | — | Set the brush material | alias |
-| `/tool material <pattern> <[-h]>` | — | Set the brush material | implemented |
+| `/tool material <pattern> [-h]` | — | Set the brush material | implemented |
 | `/tool pattern` | — | Set the brush material | alias |
-| `/tool primary <type> <[args...]>` | — | Set the right click brush | implemented |
+| `/tool primary <type> [args...]` | — | Set the right click brush | implemented |
 | `/tool range <range>` | — | Set the brush range | implemented |
-| `/tool scroll <[action]> <[arguments]>` | `/brush scroll` | Toggle between different target modes | implemented |
-| `/tool secondary <type> <[args...]>` | — | Set the left click brush | implemented |
+| `/tool scroll [action] [arguments]` | `/brush scroll` | Toggle between different target modes | implemented |
+| `/tool secondary <type> [args...]` | — | Set the left click brush | implemented |
 | `/tool size <size>` | — | Set the brush size | implemented |
-| `/tool smask <[mask]> <[-h]>` | `/tool sourcemask` | Set the brush source mask | implemented |
+| `/tool smask [mask] [-h]` | `/tool sourcemask` | Set the brush source mask | implemented |
 | `/tool structureplacer <structure>` | `/tool structuretool` | Bind a tool that generates a structure on click | implemented |
-| `/tool target <[mode]>` | `/tool tar` | Toggle between the different target modes | implemented |
+| `/tool target [mode]` | `/tool tar` | Toggle between the different target modes | implemented |
 | `/tool targetmask` | — | Set the mask used to stop tool traces | alias |
 | `/tool targetoffset <offset>` | `/tool to` | Set the targeting offset | implemented |
 | `/tool tarmask` | — | Set the mask used to stop tool traces | alias |
 | `/tool tm` | — | Set the mask used to stop tool traces | alias |
-| `/tool tracemask <[mask]>` | — | Set the mask used to stop tool traces | implemented |
-| `/tool transform <[transform]> <[args...]> <[-h]>` | — | Set the transform applied to what the brush places | implemented |
+| `/tool tracemask [mask]` | — | Set the mask used to stop tool traces | implemented |
+| `/tool transform [transform] [args...] [-h]` | — | Set the transform applied to what the brush places | implemented |
 
 ## utility
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `/.s <[args]>` | `//.s` | Execute last CraftScript | implemented |
+| `/.s [args]` | `//.s` | Execute last CraftScript | implemented |
 | `//brushes` | — | List the available brushes | implemented |
-| `//help <[filter]> <[-p <page>]>` | `/help` | List the commands | implemented |
+| `//help [filter] [-p <page>]` | `/help` | List the commands | implemented |
 | `//masks` | — | List the available masks | implemented |
 | `//patterns` | — | List the available patterns | implemented |
 | `//transforms` | — | List the available transforms | implemented |
 | `//version` | — | Show the mod version | implemented |
-| `//we <[version\|reload\|trace\|help]>` | `/we`, `/worldedit` | WorldEdit/FAWE information | implemented |
-| `/cs <filename> <[args]>` | `//cs` | Execute a CraftScript | implemented |
+| `//we [version\|reload\|trace\|help]` | `/we`, `/worldedit` | WorldEdit/FAWE information | implemented |
+| `/cs <filename> [args]` | `//cs` | Execute a CraftScript | implemented |
 | `/fast` | — | Toggle FAWE's fast mode for your session | implemented |
-| `/gmask <[mask]>` | `//gmask`, `/smask`, `//smask` | Set the global mask (/smask = source mask on overwrite) | implemented |
-| `/gtexture <[pattern]>` | `//gtexture`, `/material`, `//material` | Set the global pattern | implemented |
-| `/gtransform <[transform]>` | `//gtransform` | Apply a transform to every edit you make | implemented |
-| `/limit <[limit]>` | `//limit` | Set the maximum number of blocks you can change | implemented |
-| `/macro <file> <[args...]>` | `/m` | Run a macro from the macros directory | implemented |
+| `/gmask [mask]` | `//gmask`, `/smask`, `//smask` | Set the global mask (/smask = source mask on overwrite) | implemented |
+| `/gtexture [pattern]` | `//gtexture`, `/material`, `//material` | Set the global pattern | implemented |
+| `/gtransform [transform]` | `//gtransform` | Apply a transform to every edit you make | implemented |
+| `/limit [limit]` | `//limit` | Set the maximum number of blocks you can change | implemented |
+| `/macro <file> [args...]` | `/m` | Run a macro from the macros directory | implemented |
 | `/masks-list` | — | List every available mask | alias |
 | `/perf` | `//perf` | Show performance information | implemented |
-| `/timeout <[seconds]>` | — | Set your operation timeout in seconds | implemented |
+| `/timeout [seconds]` | — | Set your operation timeout in seconds | implemented |
 | `/tips` | — | Toggle FAWE's tips on and off | implemented |
 | `calculate <expression>` | `/calc`, `/evaluate`, `/eval`, `/solve`, `/!` | Evaluate a mathematical expression | implemented |
 | `cancel` | `/fcancel` | Cancel your current command | implemented |
@@ -380,10 +380,10 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/we cui` | `/cui` | Complete the CUI handshake | implemented |
 | `/we debugpaste` | `/debugpaste` | Write the debug information a paste would contain | implemented |
 | `/we reload` | — | Reload the FAWE-BIM configuration | implemented |
-| `/we report <[-p]>` | `/report` | Write a report about this installation | implemented |
+| `/we report [-p]` | `/report` | Write a report about this installation | implemented |
 | `/we threads` | `/threads` | Print all thread stacks | implemented |
 | `/we trace` | `/trace` | Toggle the trace hook for your edits | implemented |
-| `/we tz <[timezone]>` | `/tz` | Set your timezone for snapshots | implemented |
+| `/we tz [timezone]` | `/tz` | Set your timezone for snapshots | implemented |
 | `/we version` | `/we ver`, `/version`, `/ver` | Get the FAWE-BIM version | implemented |
 
 ## Inventory cross-check

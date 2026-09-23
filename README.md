@@ -175,14 +175,19 @@ Three ideas do most of the work:
 | Aliases of an implemented command | **20** |
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
+| Flags declared but never read | **0** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
 
 Every name WorldEdit 7.3.17 and FastAsyncWorldEdit declare is registered and resolves, with no stub
 left in the registry. `./gradlew :core:verify` runs the self-tests and then feeds the 255 declared
 commands and their 201 aliases (457 spellings in total) to the same lookup the dispatcher uses, so a
-name cannot quietly stop working. Every command switch upstream declares is declared here too, with
-the same kind — `scripts/flag_audit.py` compares the two and currently reports zero missing.
+name cannot quietly stop working.
+
+Every command switch upstream declares is declared here too, with the same kind, and every one of
+them is read by the code that implements it: `scripts/flag_audit.py` compares the command surface
+with upstream and the brush table with the brush factory, and currently reports nothing missing,
+nothing taking the wrong kind of value, and no brush flag the factory ignores.
 
 ## Known platform limits
 
@@ -225,7 +230,7 @@ fetched automatically.
 ./gradlew :fabric:runServer   # test server
 ./gradlew :core:genDocs       # regenerate docs/ from the live command registry
 python3 scripts/generate_command_tables.py   # after changing the command set
-python3 scripts/flag_audit.py                # compare switches with upstream
+python3 scripts/flag_audit.py                # compare the flags with upstream
 ```
 
 The documentation is generated *from the registry*, never written by hand, so it cannot drift from
