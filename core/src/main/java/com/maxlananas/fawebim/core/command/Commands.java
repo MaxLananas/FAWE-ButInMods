@@ -335,21 +335,15 @@ public final class Commands {
                                 : blockRegistry.name(entry.getKey());
                         named.merge(name, entry.getValue(), Integer::sum);
                     }
-                    int page = Math.max(1, ctx.flagInt("p", 1));
-                    int pageSize = 20;
                     java.util.List<java.util.Map.Entry<String, Integer>> sorted = new java.util.ArrayList<>(named.entrySet());
                     sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
-                    int pages = Math.max(1, (sorted.size() + pageSize - 1) / pageSize);
-                    int from = Math.min(sorted.size(), (page - 1) * pageSize);
-                    int to = Math.min(sorted.size(), from + pageSize);
-                    for (java.util.Map.Entry<String, Integer> entry : sorted.subList(from, to)) {
+                    Page page = Page.of(ctx, sorted.size());
+                    for (java.util.Map.Entry<String, Integer> entry : sorted.subList(page.from(), page.to())) {
                         ctx.actor().message(Msg.of("§7 - §f" + entry.getKey() + " §7= §b" + entry.getValue()
                                 + " §7(" + String.format(Locale.ROOT, "%.2f",
                                 entry.getValue() * 100.0 / Math.max(1, total)) + "%)"));
                     }
-                    if (pages > 1) {
-                        ctx.actor().message(Msg.info("Page " + page + "/" + pages + " (-p <page>)"));
-                    }
+                    page.hint(ctx, "//distr");
 
                 };
 
@@ -1775,14 +1769,10 @@ public final class Commands {
                         case "list" -> {
                             List<String> names = Schematics.list(ctx.session().getListFilter(),
                                     ctx.actor().isPlayer() ? ctx.actor().name() : null);
-                            int pageSize = 20;
-                            int pages = Math.max(1, (names.size() + pageSize - 1) / pageSize);
-                            int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
-                            int from = (page - 1) * pageSize;
-                            int to = Math.min(names.size(), from + pageSize);
-                            ctx.actor().message(Msg.info("Schematics (" + names.size() + ", page " + page + "/"
-                                    + pages + ", " + ctx.session().getListFilter().describe() + "):"));
-                            for (String name : names.subList(from, to)) {
+                            Page page = Page.of(ctx, names.size());
+                            ctx.actor().message(Msg.info("Schematics (" + names.size() + ", page " + page.number()
+                                    + "/" + page.pages() + ", " + ctx.session().getListFilter().describe() + "):"));
+                            for (String name : names.subList(page.from(), page.to())) {
                                 // -d stamps the file date, -f keeps the file name
                                 // with its format, -n hides the format.
                                 if (ctx.hasFlag("d")) {
@@ -1796,9 +1786,7 @@ public final class Commands {
                                     ctx.actor().message(Msg.of("§7 - §f" + shown));
                                 }
                             }
-                            if (pages > 1) {
-                                ctx.actor().message(Msg.info("Next page: //schem list -p <page>"));
-                            }
+                            page.hint(ctx, "//schem list");
                         }
                         case "save" -> {
                             if (!ctx.session().hasClipboard()) {
@@ -2039,13 +2027,9 @@ public final class Commands {
         e70.arguments.add("[-p <page>]");
         e70.handler = ctx -> {
                     List<String> biomes = BlockState.registry().biomeNames();
-                    int pageSize = 20;
-                    int pages = Math.max(1, (biomes.size() + pageSize - 1) / pageSize);
-                    int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
-                    int from = (page - 1) * pageSize;
-                    int to = Math.min(biomes.size(), from + pageSize);
-                    ctx.actor().message(Msg.info("Biomes (" + biomes.size() + ", page " + page + "/" + pages
-                            + "): " + Str.limit(String.join(", ", biomes.subList(from, to)), 2000)));
+                    Page page = Page.of(ctx, biomes.size());
+                    ctx.actor().message(Msg.info(page.header("Biomes", biomes.size()) + " "
+                            + Str.limit(String.join(", ", biomes.subList(page.from(), page.to())), 2000)));
                 };
 
 
@@ -2092,14 +2076,9 @@ public final class Commands {
         e73.arguments.add("[-p <page>]");
         e73.handler = ctx -> {
                     List<BlockVector2> chunks = ctx.selection().getChunks();
-                    int pageSize = 40;
-                    int pages = Math.max(1, (chunks.size() + pageSize - 1) / pageSize);
-                    int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
-                    int from = (page - 1) * pageSize;
-                    int to = Math.min(chunks.size(), from + pageSize);
-                    StringBuilder sb = new StringBuilder("Chunks (" + chunks.size() + ", page " + page + "/"
-                            + pages + "): ");
-                    for (int i = from; i < to; i++) {
+                    Page page = Page.of(ctx, chunks.size(), 40);
+                    StringBuilder sb = new StringBuilder(page.header("Chunks", chunks.size()) + " ");
+                    for (int i = page.from(); i < page.to(); i++) {
                         sb.append(chunks.get(i).x()).append(',').append(chunks.get(i).z()).append(' ');
                     }
                     ctx.actor().message(Msg.info(sb.toString()));
@@ -2540,20 +2519,16 @@ public final class Commands {
                         }
                         matches.add(entry);
                     }
-                    int pageSize = 20;
-                    int pages = Math.max(1, (matches.size() + pageSize - 1) / pageSize);
-                    int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
-                    int from = (page - 1) * pageSize;
-                    int to = Math.min(matches.size(), from + pageSize);
-                    for (CommandRegistry.Entry entry : matches.subList(from, to)) {
-                        ctx.actor().message(Msg.of("§b" + entry.usage() + " §7- §f" + entry.description));
-                    }
                     if (matches.isEmpty()) {
                         ctx.actor().message(Msg.error("No command matches '" + filter + "'"));
                         return;
                     }
-                    ctx.actor().message(Msg.info("Page " + page + "/" + pages + " of " + matches.size()
-                            + " command(s)"));
+                    Page page = Page.of(ctx, matches.size());
+                    for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
+                        ctx.actor().message(Msg.of("§b" + entry.usage() + " §7- §f" + entry.description));
+                    }
+                    ctx.actor().message(Msg.info(page.header("Commands matching '" + filter + "'", matches.size())));
+                    page.hint(ctx, "//help");
                 };
 
 
@@ -2754,14 +2729,9 @@ public final class Commands {
                     ctx.actor().message(Msg.info("No brush preset saved yet"));
                     return;
                 }
-                int page = Math.max(1, ctx.flagInt("p", 1));
-                int pageSize = 15;
-                int pages = Math.max(1, (presets.size() + pageSize - 1) / pageSize);
-                int from = Math.min(presets.size(), (page - 1) * pageSize);
-                int to = Math.min(presets.size(), from + pageSize);
-                ctx.actor().message(Msg.info("Brush presets (" + presets.size() + ", page " + page + "/"
-                        + pages + "):"));
-                for (String preset : presets.subList(from, to)) {
+                Page page = Page.of(ctx, presets.size(), 15);
+                ctx.actor().message(Msg.info(page.header("Brush presets", presets.size())));
+                for (String preset : presets.subList(page.from(), page.to())) {
                     ctx.actor().message(Msg.of("\u00a77 - \u00a7f" + preset));
                 }
             };

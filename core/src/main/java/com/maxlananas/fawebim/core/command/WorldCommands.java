@@ -173,6 +173,8 @@ final class WorldCommands {
                 lines.add("Registered commands (page " + page + "):");
                 List<CommandRegistry.Entry> entries = new ArrayList<>(registry.all());
                 entries.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
+                // The report is written to a file, so its pages are fixed at 50
+                // lines and the header is plain text.
                 int pageSize = 50;
                 int from = Math.min(entries.size(), (page - 1) * pageSize);
                 int to = Math.min(entries.size(), from + pageSize);

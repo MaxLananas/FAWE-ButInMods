@@ -468,8 +468,8 @@ final class UtilityExtras {
             return;
         }
         Page page = Page.of(ctx, entries.size());
-        ctx.actor().message(Msg.info("Edits (" + entries.size() + ", page " + page.number + "/" + page.pages + "):"));
-        for (EditLog.Entry entry : entries.subList(page.from, page.to)) {
+        ctx.actor().message(Msg.info(page.header("Edits", entries.size())));
+        for (EditLog.Entry entry : entries.subList(page.from(), page.to())) {
             ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
                     + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
         }
@@ -493,9 +493,9 @@ final class UtilityExtras {
         List<Map.Entry<String, Integer>> sorted = new ArrayList<>(counts.entrySet());
         sorted.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
         Page page = Page.of(ctx, sorted.size());
-        ctx.actor().message(Msg.info("Blocks changed by the last edit (before state, page " + page.number
-                + "/" + page.pages + "):"));
-        for (Map.Entry<String, Integer> counted : sorted.subList(page.from, page.to)) {
+        ctx.actor().message(Msg.info(page.header("Blocks changed by the last edit (before state)",
+                sorted.size())));
+        for (Map.Entry<String, Integer> counted : sorted.subList(page.from(), page.to())) {
             ctx.actor().message(Msg.of("§7" + counted.getKey() + "§r: §f" + counted.getValue()));
         }
         page.hint(ctx, "//history distr");
@@ -509,9 +509,8 @@ final class UtilityExtras {
             return;
         }
         Page page = Page.of(ctx, matches.size());
-        ctx.actor().message(Msg.info("Matching edits (" + matches.size() + ", page " + page.number
-                + "/" + page.pages + "):"));
-        for (EditLog.Entry entry : matches.subList(page.from, page.to)) {
+        ctx.actor().message(Msg.info(page.header("Matching edits", matches.size())));
+        for (EditLog.Entry entry : matches.subList(page.from(), page.to())) {
             ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
                     + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
         }
@@ -557,37 +556,6 @@ final class UtilityExtras {
         return java.time.ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(entry.time),
                         ctx.session().getTimezone())
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-    }
-
-    /** One page of a result list; the page size matches the other listings. */
-    private static final class Page {
-
-        private static final int SIZE = 20;
-
-        private final int number;
-        private final int pages;
-        private final int from;
-        private final int to;
-
-        private Page(int number, int pages, int from, int to) {
-            this.number = number;
-            this.pages = pages;
-            this.from = from;
-            this.to = to;
-        }
-
-        static Page of(Ctx ctx, int total) {
-            int pages = Math.max(1, (total + SIZE - 1) / SIZE);
-            int number = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
-            int from = (number - 1) * SIZE;
-            return new Page(number, pages, from, Math.min(total, from + SIZE));
-        }
-
-        void hint(Ctx ctx, String command) {
-            if (pages > 1) {
-                ctx.actor().message(Msg.info("Next page: " + command + " -p <page>"));
-            }
-        }
     }
 
 }

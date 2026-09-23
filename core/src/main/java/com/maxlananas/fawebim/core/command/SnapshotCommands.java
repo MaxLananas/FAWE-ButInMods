@@ -58,19 +58,15 @@ final class SnapshotCommands {
                 ctx.actor().message(Msg.info("No snapshots yet"));
                 return;
             }
-            int pageSize = 20;
-            int pages = Math.max(1, (snapshots.size() + pageSize - 1) / pageSize);
-            int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
-            int from = (page - 1) * pageSize;
-            int to = Math.min(snapshots.size(), from + pageSize);
-            ctx.actor().message(Msg.info("Snapshots (" + snapshots.size() + ", page " + page + "/"
-                    + pages + "):"));
-            for (Path path : snapshots.subList(from, to)) {
+            Page page = Page.of(ctx, snapshots.size());
+            ctx.actor().message(Msg.info(page.header("Snapshots", snapshots.size())));
+            for (Path path : snapshots.subList(page.from(), page.to())) {
                 long time = Snapshots.timestampOf(path);
                 ctx.actor().message(Msg.of("§7 - §f" + path.getFileName() + "§7 "
                         + (time < 0 ? "?" : ZonedDateTime.ofInstant(Instant.ofEpochMilli(time),
                         ctx.session().getTimezone()).format(DATE))));
             }
+            page.hint(ctx, "/snapshot list");
         };
     }
 
