@@ -330,16 +330,12 @@ final class UtilityExtras {
             // -p walks the block tags a page at a time, which is what FAWE uses
             // the page argument for once the summary above is printed.
             List<String> tags = states.blockTags();
-            int pageSize = 20;
             if (tags.isEmpty()) {
                 return;
             }
-            int pages = Math.max(1, (tags.size() + pageSize - 1) / pageSize);
-            int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
-            int from = (page - 1) * pageSize;
-            int to = Math.min(tags.size(), from + pageSize);
-            ctx.actor().message(Msg.info("Block tags (" + tags.size() + ", page " + page + "/" + pages + "): "
-                    + String.join(", ", tags.subList(from, to))));
+            Page page = Page.of(ctx, tags.size());
+            ctx.actor().message(Msg.info(page.header("Block tags", tags.size()) + " "
+                    + String.join(", ", tags.subList(page.from(), page.to()))));
         };
     }
 
