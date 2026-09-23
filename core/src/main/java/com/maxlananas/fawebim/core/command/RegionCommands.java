@@ -67,16 +67,13 @@ final class RegionCommands {
             Region region = ctx.selection();
             Pattern air = new Patterns.Single(BlockState.registry().air());
             Mask mask = ctx.mask(0, null);
-            int changed = 0;
-            for (BlockVector3 position : region) {
+            int changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
-                if (mask != null && !mask.test(position)) {
-                    continue;
+                if (mask != null && !mask.test(x, y, z)) {
+                    return false;
                 }
-                if (session.setBlock(position.x(), position.y(), position.z(), air.apply(position))) {
-                    changed++;
-                }
-            }
+                return session.setBlock(x, y, z, air.apply(x, y, z));
+            });
             session.flushQueue();
             ctx.actor().message(Msg.success(changed + " block(s) set to air"));
         };
@@ -215,20 +212,18 @@ final class RegionCommands {
             World world = ctx.world();
             Region region = ctx.selection();
             EditSession session = ctx.editSession("fixblocks");
-            int changed = 0;
-            for (BlockVector3 position : region) {
+            int changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
-                int state = world.getBlock(position.x(), position.y(), position.z());
+                int state = world.getBlock(x, y, z);
                 if (state == BlockState.registry().air()) {
-                    continue;
+                    return false;
                 }
                 // Writing the value that is already there only triggers the
                 // neighbour updates that recompute the block's shape.
-                if (session.setBlock(position.x(), position.y(), position.z(), state, false)) {
-                    changed++;
-                }
-                world.queueBlockUpdate(position.x(), position.y(), position.z());
-            }
+                boolean wrote = session.setBlock(x, y, z, state, false);
+                world.queueBlockUpdate(x, y, z);
+                return wrote;
+            });
             session.flushQueue();
             ctx.actor().message(Msg.success(changed + " block(s) updated"));
         };
@@ -272,11 +267,10 @@ final class RegionCommands {
         entry.handler = ctx -> {
             World world = ctx.world();
             Region region = ctx.selection();
-            long updated = 0;
-            for (BlockVector3 position : region) {
-                world.queueBlockUpdate(position.x(), position.y(), position.z());
-                updated++;
-            }
+            int updated = region.forEachPosition((x, y, z) -> {
+                world.queueBlockUpdate(x, y, z);
+                return true;
+            });
             ctx.actor().message(Msg.success(updated + " block update(s) queued"));
         };
     }
@@ -382,19 +376,16 @@ final class RegionCommands {
             World world = ctx.world();
             EditSession session = ctx.editSession("remove");
             int air = BlockState.registry().air();
-            int changed = 0;
-            for (BlockVector3 position : region) {
+            int changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
-                if (!mask.test(position)) {
-                    continue;
+                if (!mask.test(x, y, z)) {
+                    return false;
                 }
-                if (!BlockState.registry().isAir(world.getBlock(position.x(), position.y() + 1, position.z()))) {
-                    continue;
+                if (!BlockState.registry().isAir(world.getBlock(x, y + 1, z))) {
+                    return false;
                 }
-                if (session.setBlock(position.x(), position.y(), position.z(), air)) {
-                    changed++;
-                }
-            }
+                return session.setBlock(x, y, z, air);
+            });
             session.flushQueue();
             ctx.actor().message(Msg.success(changed + " block(s) removed"));
         };

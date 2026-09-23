@@ -163,6 +163,21 @@ public class CuboidRegion implements Region {
     }
 
     @Override
+    public int forEachPosition(BlockVisitor visitor) {
+        int visited = 0;
+        for (int y = minY; y <= maxY; y++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int x = minX; x <= maxX; x++) {
+                    if (visitor.visit(x, y, z)) {
+                        visited++;
+                    }
+                }
+            }
+        }
+        return visited;
+    }
+
+    @Override
     public Iterator<BlockVector3> iterator() {
         return new Iterator<>() {
             private int x = minX;

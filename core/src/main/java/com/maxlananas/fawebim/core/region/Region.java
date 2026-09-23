@@ -41,6 +41,38 @@ public interface Region extends Iterable<BlockVector3> {
     @Override
     Iterator<BlockVector3> iterator();
 
+    /**
+     * Receives one block of a region; returning true counts it, the way a
+     * command counts the blocks it changed.
+     */
+    @FunctionalInterface
+    interface BlockVisitor {
+
+        boolean visit(int x, int y, int z);
+    }
+
+    /**
+     * Walks every block of the region without building a {@link BlockVector3}
+     * for it.
+     *
+     * <p>Region commands visit a million blocks on a large selection, and an
+     * object per block is the largest allocation of such an edit. The default
+     * here keeps the iterator contract for the shapes whose traversal is not on
+     * a hot path; a region walked constantly (the cuboid) overrides it with
+     * plain loops.</p>
+     *
+     * @return how many visits reported true
+     */
+    default int forEachPosition(BlockVisitor visitor) {
+        int visited = 0;
+        for (BlockVector3 position : this) {
+            if (visitor.visit(position.x(), position.y(), position.z())) {
+                visited++;
+            }
+        }
+        return visited;
+    }
+
     default int getMinimumY() {
         return getMinimumPoint().y();
     }

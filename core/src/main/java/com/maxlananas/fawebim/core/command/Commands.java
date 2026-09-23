@@ -55,18 +55,13 @@ public final class Commands {
 
     /** Replaces every block in a region matching {@code mask} with {@code pattern}. */
     private int fill(EditSession session, Region region, Pattern pattern, Mask mask) {
-        int changed = 0;
-        for (BlockVector3 position : region) {
-            if (mask != null && !mask.test(position)) {
-                continue;
+        return region.forEachPosition((x, y, z) -> {
+            if (mask != null && !mask.test(x, y, z)) {
+                return false;
             }
             session.limiter().check(1);
-            int state = pattern.apply(position.x(), position.y(), position.z());
-            if (session.setBlock(position.x(), position.y(), position.z(), state)) {
-                changed++;
-            }
-        }
-        return changed;
+            return session.setBlock(x, y, z, pattern.apply(x, y, z));
+        });
     }
 
     public void registerAll() {
@@ -696,21 +691,16 @@ public final class Commands {
                     Mask hollowMask = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
                     Region region = ctx.selection();
                     int depth = Math.max(1, thickness);
-                    for (BlockVector3 position : region) {
-                        int distance = distanceToEdge(region, position);
-                        if (distance >= depth) {
-                            continue;
+                    region.forEachPosition((x, y, z) -> {
+                        if (distanceToEdge(region, x, y, z) >= depth) {
+                            return false;
                         }
-                        if (hollowMask != null && !hollowMask.test(position.x(), position.y(), position.z())) {
-                            continue;
+                        if (hollowMask != null && !hollowMask.test(x, y, z)) {
+                            return false;
                         }
-                        if (pattern != null) {
-                            session.setBlock(position.x(), position.y(), position.z(),
-                                    pattern.apply(position.x(), position.y(), position.z()));
-                        } else {
-                            session.setBlock(position.x(), position.y(), position.z(), air());
-                        }
-                    }
+                        session.setBlock(x, y, z, pattern != null ? pattern.apply(x, y, z) : air());
+                        return false;
+                    });
                     flush(ctx, session);
                 };
 
@@ -725,14 +715,11 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     Region region = ctx.selection();
-                    for (BlockVector3 position : region) {
-                        if (distanceToEdge(region, position) < 1) {
-                            session.setBlock(position.x(), position.y(), position.z(),
-                                    pattern.apply(position.x(), position.y(), position.z()));
-                        } else {
-                            session.setBlock(position.x(), position.y(), position.z(), air());
-                        }
-                    }
+                    region.forEachPosition((x, y, z) -> {
+                        session.setBlock(x, y, z, distanceToEdge(region, x, y, z) < 1
+                                ? pattern.apply(x, y, z) : air());
+                        return false;
+                    });
                     flush(ctx, session);
                 };
 
@@ -919,9 +906,11 @@ public final class Commands {
                     }
                     if (biomeId >= 0) {
                         EditSession editSession = ctx.editSession();
-                        for (BlockVector3 position : region) {
-                            editSession.setBiome(position.x(), position.y(), position.z(), biomeId);
-                        }
+                        int targetBiome = biomeId;
+                        region.forEachPosition((x, y, z) -> {
+                            editSession.setBiome(x, y, z, targetBiome);
+                            return true;
+                        });
                         editSession.flushQueue();
                     }
                     ctx.actor().message(Msg.success("Regenerated " + region.getChunks().size() + " chunk(s)"));
@@ -1171,27 +1160,35 @@ public final class Commands {
                             region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, false);
                     Pattern pattern = ctx.args().size() > 2 ? Parsers.pattern(ctx.joined(2), ctx) : null;
                     // Clear the source region.
-                    for (BlockVector3 position : region) {
-                        session.setBlock(position.x(), position.y(), position.z(), air(), false);
-                    }
+                    int empty = air();
+                    region.forEachPosition((x, y, z) -> {
+                        session.setBlock(x, y, z, empty, false);
+                        return false;
+                    });
                     // Paste at the offset.
                     BlockVector3 origin = clipboard.getOrigin();
-                    for (BlockVector3 position : clipboard.positions()) {
-                        int state = clipboard.getBlock(position);
-                        int x = position.x() - origin.x() + region.getMinimumPoint().x() + offset.x();
-                        int y = position.y() - origin.y() + region.getMinimumPoint().y() + offset.y();
-                        int z = position.z() - origin.z() + region.getMinimumPoint().z() + offset.z();
+                    BlockVector3 target = region.getMinimumPoint();
+                    boolean keepSource = ctx.hasFlag("a");
+                    int targetX = target.x() + offset.x();
+                    int targetY = target.y() + offset.y();
+                    int targetZ = target.z() + offset.z();
+                    clipboard.forEachPosition((x, y, z, state) -> {
+                        int bx = x - origin.x() + targetX;
+                        int by = y - origin.y() + targetY;
+                        int bz = z - origin.z() + targetZ;
                         if (BlockState.registry().isAirLike(state)) {
-                            if (ctx.hasFlag("a")) {
+                            if (keepSource) {
                                 // -a keeps the blocks the copy would erase.
-                                continue;
+                                return false;
                             }
                             if (pattern != null) {
-                                state = pattern.apply(x, y, z);
+                                session.setBlock(bx, by, bz, pattern.apply(bx, by, bz));
+                                return false;
                             }
                         }
-                        session.setBlock(x, y, z, state);
-                    }
+                        session.setBlock(bx, by, bz, state);
+                        return false;
+                    });
                     // -s moves the selection along with the blocks.
                     if (ctx.hasFlag("s")) {
                         region.shift(offset);
@@ -1258,12 +1255,11 @@ public final class Commands {
         return holder.getClipboard().getOrigin();
     }
 
-    private int distanceToEdge(Region region, BlockVector3 position) {
+    private static int distanceToEdge(Region region, int x, int y, int z) {
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        return Math.min(Math.min(position.x() - min.x(), max.x() - position.x()),
-                Math.min(Math.min(position.y() - min.y(), max.y() - position.y()),
-                        Math.min(position.z() - min.z(), max.z() - position.z())));
+        return Math.min(Math.min(x - min.x(), max.x() - x),
+                Math.min(Math.min(y - min.y(), max.y() - y), Math.min(z - min.z(), max.z() - z)));
     }
 
     // --------------------------------------------------------------- generation

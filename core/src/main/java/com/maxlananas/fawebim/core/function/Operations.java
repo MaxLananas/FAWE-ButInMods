@@ -500,14 +500,9 @@ public final class Operations {
         if (source < 0) {
             return 0;
         }
-        int changed = 0;
-        for (BlockVector3 position : region) {
-            if (registry.name(world.getBlock(position.x(), position.y(), position.z())).equals("minecraft:" + liquid)
-                    && session.setBlock(position.x(), position.y(), position.z(), source)) {
-                changed++;
-            }
-        }
-        return changed;
+        String name = "minecraft:" + liquid;
+        return region.forEachPosition((x, y, z) -> registry.name(world.getBlock(x, y, z)).equals(name)
+                && session.setBlock(x, y, z, source));
     }
 
     // ------------------------------------------------------------------- smooth
@@ -909,25 +904,22 @@ public final class Operations {
      */
     public static int fall(World world, EditSession session, Region region, boolean withinSelection) {
         BlockStateRegistry registry = BlockState.registry();
-        int changed = 0;
-        for (BlockVector3 position : region) {
-            int state = world.getBlock(position.x(), position.y(), position.z());
+        int floor = withinSelection ? region.getMinimumPoint().y() : world.minY();
+        return region.forEachPosition((x, y, z) -> {
+            int state = world.getBlock(x, y, z);
             if (registry.isAirLike(state)) {
-                continue;
+                return false;
             }
-            int y = position.y();
-            int floor = withinSelection ? region.getMinimumPoint().y() : world.minY();
-            while (y > floor && registry.isAirLike(world.getBlock(position.x(), y - 1, position.z()))) {
-                y--;
+            int landing = y;
+            while (landing > floor && registry.isAirLike(world.getBlock(x, landing - 1, z))) {
+                landing--;
             }
-            if (y != position.y()) {
-                session.setBlock(position.x(), position.y(), position.z(), registry.air());
-                if (session.setBlock(position.x(), y, position.z(), state)) {
-                    changed++;
-                }
+            if (landing == y) {
+                return false;
             }
-        }
-        return changed;
+            session.setBlock(x, y, z, registry.air());
+            return session.setBlock(x, landing, z, state);
+        });
     }
 
     /** {@code /brush scatter} — scatters a pattern over the surface. */
@@ -982,22 +974,18 @@ public final class Operations {
      */
     public static int drainWaterlogged(EditSession session, Region region) {
         BlockStateRegistry registry = BlockState.registry();
-        int changed = 0;
-        for (BlockVector3 position : region) {
-            int state = session.getBlock(position.x(), position.y(), position.z());
+        return region.forEachPosition((x, y, z) -> {
+            int state = session.getBlock(x, y, z);
             if (state == registry.air()) {
-                continue;
+                return false;
             }
             Map<String, String> properties = registry.properties(state);
             if (!"true".equals(properties.get("waterlogged"))) {
-                continue;
+                return false;
             }
             int cleared = registry.withProperty(state, "waterlogged", "false");
-            if (cleared >= 0 && session.setBlock(position.x(), position.y(), position.z(), cleared)) {
-                changed++;
-            }
-        }
-        return changed;
+            return cleared >= 0 && session.setBlock(x, y, z, cleared);
+        });
     }
 
     /** A pattern that always returns the same state. */

@@ -220,14 +220,39 @@ public final class BlockArrayClipboard implements Extent {
     /** Iterates the clipboard in the region's natural order. */
     public Iterable<BlockVector3> positions() {
         List<BlockVector3> positions = new ArrayList<>();
+        forEachPosition((x, y, z, state) -> {
+            positions.add(new BlockVector3(x, y, z));
+            return false;
+        });
+        return positions;
+    }
+
+    /** Receives one clipboard cell: its position and the state stored there. */
+    @FunctionalInterface
+    public interface CellVisitor {
+
+        boolean visit(int x, int y, int z, int state);
+    }
+
+    /**
+     * Walks every cell of the clipboard without building a position object for
+     * it: {@code //paste} walks a clipboard once per paste, and the list of
+     * vectors used to be the largest allocation of the command.
+     *
+     * @return how many visits reported true
+     */
+    public int forEachPosition(CellVisitor visitor) {
+        int visited = 0;
         for (int y = box.minY(); y <= box.maxY(); y++) {
             for (int z = box.minZ(); z <= box.maxZ(); z++) {
                 for (int x = box.minX(); x <= box.maxX(); x++) {
-                    positions.add(new BlockVector3(x, y, z));
+                    if (visitor.visit(x, y, z, getBlock(x, y, z))) {
+                        visited++;
+                    }
                 }
             }
         }
-        return positions;
+        return visited;
     }
 
     /** True when the clipboard contains no non-air blocks (nothing to paste). */
