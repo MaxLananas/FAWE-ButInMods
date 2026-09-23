@@ -16,7 +16,7 @@
     "environment": "*",
     "entrypoints": {
         "main": [
-            "com.fawebutinmods.fabric.FaweMod"
+            "com.maxlananas.fawebim.fabric.FaweMod"
         ]
     },
     "mixins": [

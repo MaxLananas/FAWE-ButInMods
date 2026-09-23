@@ -21,7 +21,7 @@ val selfTest by tasks.registering(JavaExec::class) {
     group = "verification"
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
-    mainClass.set("com.fawebutinmods.core.test.SelfTestMain")
+    mainClass.set("com.maxlananas.fawebim.core.test.SelfTestMain")
 }
 
 val genDocs by tasks.registering(JavaExec::class) {
@@ -29,7 +29,7 @@ val genDocs by tasks.registering(JavaExec::class) {
     group = "documentation"
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
-    mainClass.set("com.fawebutinmods.core.test.CommandDocGenerator")
+    mainClass.set("com.maxlananas.fawebim.core.test.CommandDocGenerator")
     args(layout.projectDirectory.file("../docs/COMMANDS.md").asFile.absolutePath,
          layout.projectDirectory.file("../docs/commands-spec.json").asFile.absolutePath)
 }
@@ -39,7 +39,7 @@ val checkInventory by tasks.registering(JavaExec::class) {
     group = "verification"
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
-    mainClass.set("com.fawebutinmods.core.test.StrictInventoryCheck")
+    mainClass.set("com.maxlananas.fawebim.core.test.StrictInventoryCheck")
     args(layout.projectDirectory.file("../docs/commands-inventory.json").asFile.absolutePath)
 }
 

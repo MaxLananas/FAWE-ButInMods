@@ -8,7 +8,7 @@ server platform required.
 [![Minecraft](https://img.shields.io/badge/minecraft-1.21.10-brightgreen.svg)](https://www.minecraft.net/)
 [![Fabric](https://img.shields.io/badge/loader-Fabric%200.17.3%2B-dbb69c.svg)](https://fabricmc.net/)
 [![Engine tests](https://img.shields.io/badge/engine%20tests-213%20passing-success.svg)](docs/STATUS.md)
-[![Commands](https://img.shields.io/badge/commands-289%20registered-informational.svg)](docs/COMMANDS.md)
+[![Commands](https://img.shields.io/badge/commands-304%20registered-informational.svg)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/WorldEdit%2BFAWE%20names-259%2F259-success.svg)](docs/COMMANDS.md)
 
 ---
@@ -44,9 +44,9 @@ whole editing engine, including its test suite, runs without launching Minecraft
 | | |
 |---|---|
 | Engine tests | **213 passing, 0 failing** (`./gradlew :core:selfTest`) |
-| Commands registered | **289** |
-| Implemented | **247** |
-| Aliases of an implemented command | **42** |
+| Commands registered | **304** |
+| Implemented | **250** |
+| Aliases of an implemented command | **54** |
 | Still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **259 / 259** |
 

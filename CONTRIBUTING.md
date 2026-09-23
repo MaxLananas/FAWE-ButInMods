@@ -57,7 +57,7 @@ The rule that keeps this project testable: if something needs a Minecraft type, 
    parameters, switches and permissions.
 2. Implement the behaviour in the group class that matches upstream (`RegionCommands`,
    `GenerationCommands`, `BrushCommands`, `ToolCommands`, …) under
-   `core/src/main/java/com/fawebutinmods/core/command/`. Reuse what exists: `Operations` holds the
+   `core/src/main/java/com/maxlananas/fawebim/core/command/`. Reuse what exists: `Operations` holds the
    shape generators and terrain algorithms, `Parsers` compiles masks/patterns/blocks,
    `EditSession` handles writes, history, limits and timeouts.
 3. Register it with `registry.registerUnlessPresent(...)` so a name implemented elsewhere is never
@@ -112,7 +112,7 @@ A change is ready when all of the following hold:
 3. `./gradlew :core:genDocs` shows no unexpected change in
    [`docs/STATUS.md`](docs/STATUS.md) (a ported command must move from *still to port* to
    *implemented*, nothing else).
-4. New behaviour has a test in `core/src/test/java/com/fawebutinmods/core/test/` when it can be
+4. New behaviour has a test in `core/src/test/java/com/maxlananas/fawebim/core/test/` when it can be
    exercised without Minecraft — shapes, masks, patterns, parsers, schematics, history and the
    command registry all can.
 5. The engine stays free of Minecraft imports.

@@ -1,0 +1,61 @@
+package com.maxlananas.fawebim.core.session;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+/** Keeps one {@link LocalSession} per actor (players and the console). */
+public final class SessionManager {
+
+    private static final SessionManager INSTANCE = new SessionManager();
+
+    private final Map<UUID, LocalSession> sessions = new ConcurrentHashMap<>();
+    private final LocalSession consoleSession = new LocalSession();
+
+    private SessionManager() {
+        consoleSession.enableSnapshots();
+    }
+
+    public static SessionManager get() {
+        return INSTANCE;
+    }
+
+    public LocalSession of(UUID uuid) {
+        return of(uuid, null);
+    }
+
+    /** The session of a player, snapshots included, created on first use. */
+    public LocalSession of(UUID uuid, String ownerName) {
+        if (uuid == null) {
+            return consoleSession;
+        }
+        LocalSession session = sessions.computeIfAbsent(uuid, k -> newSession(ownerName));
+        if (ownerName != null) {
+            session.setOwnerName(ownerName);
+        }
+        return session;
+    }
+
+    private static LocalSession newSession(String ownerName) {
+        LocalSession session = new LocalSession();
+        session.setOwnerName(ownerName);
+        session.enableSnapshots();
+        return session;
+    }
+
+    public LocalSession console() {
+        return consoleSession;
+    }
+
+    public void remove(UUID uuid) {
+        sessions.remove(uuid);
+    }
+
+    public void clear() {
+        sessions.clear();
+    }
+
+    public int size() {
+        return sessions.size();
+    }
+}

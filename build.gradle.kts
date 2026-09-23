@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-group = "com.fawebutinmods"
+group = "com.maxlananas.fawebim"
 version = property("mod_version") as String
 
 allprojects {

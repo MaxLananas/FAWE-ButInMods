@@ -1,7 +1,7 @@
 {
     "required": true,
     "minVersion": "0.8",
-    "package": "com.fawebutinmods.fabric.mixin",
+    "package": "com.maxlananas.fawebim.fabric.mixin",
     "compatibilityLevel": "JAVA_21",
     "injectors": {
         "defaultRequire": 1
