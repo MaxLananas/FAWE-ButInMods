@@ -267,7 +267,7 @@ final class RegionCommands {
         entry.handler = ctx -> {
             World world = ctx.world();
             Region region = ctx.selection();
-            int updated = region.forEachPosition((x, y, z) -> {
+            long updated = region.forEachPosition((x, y, z) -> {
                 world.queueBlockUpdate(x, y, z);
                 return true;
             });
