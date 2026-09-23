@@ -512,44 +512,6 @@ public final class Operations {
 
     // ------------------------------------------------------------------- smooth
 
-    /** {@code //smooth} — heightmap smoothing, exactly the FAWE flood-fill variant. */
-    public static int smooth(World world, EditSession session, Region region, int iterations) {
-        BlockStateRegistry registry = BlockState.registry();
-        int changed = 0;
-        int air = registry.air();
-        int stone = registry.defaultState("minecraft:stone");
-        for (int iteration = 0; iteration < iterations; iteration++) {
-            for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                    int height = 0;
-                    int count = 0;
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            height += world.getHighestBlockY(x + dx, z + dz);
-                            count++;
-                        }
-                    }
-                    int average = height / Math.max(1, count);
-                    int currentHeight = world.getHighestBlockY(x, z);
-                    if (average > currentHeight) {
-                        for (int y = currentHeight + 1; y <= average; y++) {
-                            if (session.setBlock(x, y, z, stone)) {
-                                changed++;
-                            }
-                        }
-                    } else if (average < currentHeight) {
-                        for (int y = average + 1; y <= currentHeight; y++) {
-                            if (session.setBlock(x, y, z, air)) {
-                                changed++;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return changed;
-    }
-
     /** {@code /brush blendball} — blends the brush area with its surroundings. */
     public static int blendBall(EditSession session, BlockVector3 center, int radius, Mask mask) {
         return blendBall(session, center, radius, mask, false, 1);

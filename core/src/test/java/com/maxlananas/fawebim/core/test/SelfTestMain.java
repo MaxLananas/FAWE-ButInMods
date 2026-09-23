@@ -35,6 +35,7 @@ import com.maxlananas.fawebim.core.util.RandomCollection;
 import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.util.TimeLimiter;
 import com.maxlananas.fawebim.core.world.BlockState;
+import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.RegenOptions;
 
@@ -74,6 +75,7 @@ public final class SelfTestMain {
         testFallAndRegionHelpers();
         testClipboardBrushes();
         testGravityBrush();
+        testHeightMapSmoothing();
         testClipboardAndSchematic();
         testLargeSchematicSave();
         testCommands();
@@ -838,6 +840,79 @@ public final class SelfTestMain {
         paste.flushQueue();
         check("copypaste placed the blob above the click", world.getBlock(54, 72, 50) == stone
                 && world.getBlock(54, 73, 50) == stone);
+    }
+
+    private static void testHeightMapSmoothing() {
+        section("height map smoothing");
+        CommandManager.get().initialise();
+        BlockStateRegistry registry = BlockState.registry();
+        TestWorld world = new TestWorld("smooth");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        LocalSession session = actor.session();
+        session.setMaxBlocksChanged(100000);
+        int stone = registry.defaultState("minecraft:stone");
+        int sand = registry.defaultState("minecraft:sand");
+        int snow = registry.parse("minecraft:snow[layers=8]");
+        int air = registry.air();
+
+        // //smooth blurs the height map, so the spike of a column is pulled back
+        // down to the height of its neighbours.
+        for (int y = 71; y <= 74; y++) {
+            world.setBlock(25, y, 25, stone);
+        }
+        CommandManager.get().dispatch(actor, "//pos1 20,68,20");
+        CommandManager.get().dispatch(actor, "//pos2 30,74,30");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//smooth 1");
+        check("//smooth lowered the spike", world.getBlock(25, 74, 25) == air && world.getBlock(25, 72, 25) == air);
+        check("//smooth kept a top block", world.getBlock(25, 70, 25) != air);
+        check("//smooth reported the change", actor.messages().stream()
+                .anyMatch(message -> message.contains("Smoothed")));
+
+        // The optional second argument is the mask the height map is built from,
+        // so a stone height map does not see a sand spike at all.
+        for (int y = 71; y <= 74; y++) {
+            world.setBlock(45, y, 45, sand);
+        }
+        CommandManager.get().dispatch(actor, "//pos1 40,68,40");
+        CommandManager.get().dispatch(actor, "//pos2 50,74,50");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//smooth 1 stone");
+        check("//smooth <mask> left the sand alone", world.getBlock(45, 74, 45) == sand);
+        check("//smooth <mask> ran", actor.messages().stream()
+                .anyMatch(message -> message.contains("Smoothed")));
+
+        // //snowsmooth blurs the snow layer of every column instead of the terrain.
+        for (int x = 20; x <= 30; x++) {
+            for (int z = 20; z <= 30; z++) {
+                world.setBlock(x, 71, z, registry.parse("minecraft:snow[layers=1]"));
+            }
+        }
+        world.setBlock(25, 72, 25, snow);
+        world.setBlock(25, 73, 25, snow);
+        CommandManager.get().dispatch(actor, "//pos1 20,68,20");
+        CommandManager.get().dispatch(actor, "//pos2 30,75,30");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//snowsmooth 1 -l 2");
+        check("//snowsmooth flattened the drift", world.getBlock(25, 73, 25) == air);
+        check("//snowsmooth kept the snow", registry.describe(world.getBlock(21, 71, 21))
+                .startsWith("minecraft:snow"));
+        check("//snowsmooth reported the change", actor.messages().stream()
+                .anyMatch(message -> message.contains("Smoothed")));
+
+        // The brush form takes the same -l and -m flags.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/brush snowsmooth 5 1 -l 3 -m stone");
+        check("brush snowsmooth binds the smoother",
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                        instanceof Brushes.SnowSmoothBrush);
+        EditSession snowSession = new EditSession(world, session, "brush snowsmooth");
+        com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                .apply(snowSession, new BlockVector3(25, 71, 25), actor);
+        snowSession.flushQueue();
+        check("brush snowsmooth ran with -l and -m", actor.messages().stream()
+                .noneMatch(message -> message.contains("Syntax")));
     }
 
     private static void testGravityBrush() {

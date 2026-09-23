@@ -4,6 +4,7 @@ import com.maxlananas.fawebim.core.actor.Navigation;
 import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.function.HeightMaps;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector2;
@@ -739,14 +740,16 @@ public final class Commands {
         e27.description = "Smooth the terrain in the selection";
         e27.group = "region";
         e27.requiresSelection = true;
-        e27.booleanFlags.add("m");
-        e27.booleanFlags.add("l");
+        // WorldEdit takes the mask of blocks the height map is built from as its
+        // second argument, not as a switch.
         e27.arguments.add("[iterations]");
+        e27.arguments.add("[mask]");
         e27.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int iterations = ctx.intArg(0, 1);
-                    int changed = com.maxlananas.fawebim.core.function.Operations.smooth(ctx.world(), session,
-                            ctx.selection(), iterations);
+                    int iterations = Math.max(1, ctx.intArg(0, 1));
+                    String maskInput = ctx.arg(1, "");
+                    Mask smoothMask = maskInput.isEmpty() ? null : Parsers.mask(maskInput, ctx);
+                    int changed = HeightMaps.smooth(ctx.world(), session, ctx.selection(), iterations, smoothMask);
                     ctx.actor().message(Msg.success("Smoothed " + Msg.formatNumber(changed) + " block(s)"));
                     flush(ctx, session);
                 };

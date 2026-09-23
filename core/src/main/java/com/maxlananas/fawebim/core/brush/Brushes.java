@@ -3,6 +3,8 @@ package com.maxlananas.fawebim.core.brush;
 import com.maxlananas.fawebim.core.actor.Actor;
 import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.region.CuboidRegion;
+import com.maxlananas.fawebim.core.function.HeightMaps;
 import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.math.BlockVector3;
@@ -1834,23 +1836,17 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush snow} and {@code /brush snowsmooth}. */
     /**
-     * {@code /brush snow} and {@code /brush snowsmooth}: covers the surface with
-     * snow. {@code -s} stacks the snow layers up instead of laying a single one,
-     * and the smooth form follows the brush position rather than the terrain and
-     * takes a layer count and a height mask.
+     * {@code /brush snow}: covers the surface with snow. {@code -s} stacks the
+     * snow layers up instead of laying a single one.
      */
     public static final class SnowBrush extends BaseBrush {
 
-        private final boolean smooth;
         private boolean stack;
         private int layers = 1;
-        private Mask heightMask;
 
-        public SnowBrush(double radius, boolean smooth, Mask mask) {
+        public SnowBrush(double radius, Mask mask) {
             super(radius, null, mask);
-            this.smooth = smooth;
         }
 
         public void setStack(boolean stack) {
@@ -1859,10 +1855,6 @@ public final class Brushes {
 
         public void setLayers(int layers) {
             this.layers = Math.max(1, layers);
-        }
-
-        public void setHeightMask(Mask heightMask) {
-            this.heightMask = heightMask;
         }
 
         @Override
@@ -1877,10 +1869,7 @@ public final class Brushes {
                     }
                     int x0 = position.x() + x;
                     int z0 = position.z() + z;
-                    int y = smooth ? position.y() : session.getWorld().getHighestBlockY(x0, z0);
-                    if (heightMask != null && !heightMask.test(x0, y, z0)) {
-                        continue;
-                    }
+                    int y = session.getWorld().getHighestBlockY(x0, z0);
                     if (stack) {
                         // Stacked snow: one layer per block, up to a full snow
                         // block, which is what FAWE grows when you brush again.
@@ -1900,6 +1889,33 @@ public final class Brushes {
                 }
             }
             return changed;
+        }
+    }
+
+    /**
+     * {@code /brush snowsmooth}: smooths the snow around the brush position.
+     * FAWE samples a box that reaches ten blocks above the position, which is
+     * where a drifted snow layer sits, and blurs it with a wider kernel than the
+     * terrain smooth so a single click does not leave a spike.
+     */
+    public static final class SnowSmoothBrush extends BaseBrush {
+
+        private final int iterations;
+        private final int snowBlockLayers;
+
+        public SnowSmoothBrush(double radius, int iterations, int snowBlockLayers, Mask mask) {
+            super(radius, null, mask);
+            this.iterations = Math.max(1, iterations);
+            this.snowBlockLayers = Math.max(0, snowBlockLayers);
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            int size = (int) radius;
+            CuboidRegion region = new CuboidRegion(
+                    BlockVector3.at(position.x() - size, position.y() - size, position.z() - size),
+                    BlockVector3.at(position.x() + size, position.y() + size + 10, position.z() + size));
+            return HeightMaps.snowSmooth(session.getWorld(), session, region, iterations, snowBlockLayers, mask);
         }
     }
 

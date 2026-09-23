@@ -246,7 +246,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//replace <mask> <pattern>` | `//re` | Replace all blocks matching a mask with a pattern inside a region | implemented |
 | `//replacenear <size> <mask> <pattern>` | — | Replace blocks near you | implemented |
 | `//set <pattern>` | — | Set all blocks inside a region to a pattern | implemented |
-| `//smooth [iterations]` | — | Smooth the terrain in the selection | implemented |
+| `//smooth [iterations] [mask]` | — | Smooth the terrain in the selection | implemented |
 | `//snow [pattern]` | — | Simulate snow on the terrain | implemented |
 | `//stack [count] [direction] [-m <mask>]` | — | Stack the selection's contents | implemented |
 | `//thaw` | — | Thaw snow and ice in the region | implemented |
@@ -265,7 +265,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `select` | — | Select your allowed region (there are none in the standalone mod) | alias |
 | `setblocklight <level>` | — | Set the block light level in the selection | implemented |
 | `setskylight <level>` | — | Set the sky light level in the selection | implemented |
-| `snowsmooth [iterations] [-l <snowBlockCount>] [-m <mask>]` | — | Smooth the terrain, only considering snow blocks | implemented |
+| `snowsmooth [iterations] [-l <snowBlockCount>] [-m <mask>]` | `/snowsmooth`, `//snowsmooth` | Smooth the elevation in the selection with snow layers | implemented |
 | `test <value>` | — | Prints the given value back, used to check command parsing | implemented |
 | `trim [mask]` | — | Minimize the selection to encompass matching blocks | implemented |
 | `update` | — | Apply side effects and neighbour updates to the selection | implemented |

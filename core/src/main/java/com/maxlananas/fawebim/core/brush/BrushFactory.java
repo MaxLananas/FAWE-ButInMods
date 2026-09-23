@@ -202,16 +202,13 @@ public final class BrushFactory {
                     parameters.mask());
             case "extinguish" -> new Brushes.ExtinguishBrush(parameters.radius());
             case "snow" -> {
-                Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), false, parameters.mask());
+                Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), parameters.mask());
                 brush.setStack(parameters.flag("s"));
                 yield brush;
             }
-            case "snowsmooth" -> {
-                Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), true, parameters.mask());
-                brush.setLayers(parameters.integer("snowBlockCount", 1));
-                brush.setHeightMask(parameters.flagMask());
-                yield brush;
-            }
+            case "snowsmooth" -> new Brushes.SnowSmoothBrush(parameters.radius(),
+                    parameters.integer("iterations", 1), parameters.integer("snowBlockCount", 1),
+                    parameters.flagMask());
             case "item" -> new Brushes.ItemBrush(parameters.radius(), parameters.string("item", ""),
                     parameters.string("direction", "up"));
             case "recurse", "recursive" -> {

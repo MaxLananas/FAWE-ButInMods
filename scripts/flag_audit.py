@@ -70,15 +70,27 @@ def family(row: dict) -> tuple[str, list[str]]:
     return f"{container or '//'} {plain}".strip(), sorted(spellings)
 
 
-def brush_rows(table: str) -> list[tuple[str, str]]:
-    """The name and the declared letters of every brush of the brush table."""
+def brush_rows(table: str) -> list[tuple[str, str, dict[str, str]]]:
+    """The name, the declared letters and the value flags of every brush row.
+
+    A value flag is written {@code parameter:letter} when the parameter it fills
+    is not spelled like the letter, and the returned mapping keeps that pair so
+    the audit can check that the value really reaches the parameter.
+    """
     rows = []
     for row in re.findall(r"\{\"([^\"]*)\",\s*\"[^\"]*\",\s*\"[^\"]*\",\s*\"([^\"]*)\",\s*\"([^\"]*)\",",
                           table):
         name, switches, value_flags = row
         letters = {letter.strip() for letter in switches.split(",") if letter.strip()}
         letters |= {entry.rsplit(":", 1)[-1].strip() for entry in value_flags.split(",") if entry.strip()}
-        rows.append((name, sorted(letters)))
+        pairs = {}
+        for entry in value_flags.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            parameter, _, letter = entry.partition(":")
+            pairs[letter or parameter] = parameter
+        rows.append((name, sorted(letters), pairs))
     return rows
 
 
@@ -101,6 +113,19 @@ def factory_blocks(factory: str) -> dict[str, str]:
     return blocks
 
 
+def parameters_read(text: str) -> set[str]:
+    """Every BrushParameters parameter the given code reads, by its own name."""
+    read = set()
+    if "flagMask()" in text:
+        read.add("mask")
+    for match in re.finditer(r'maskValue\("([\w]+)"\)', text):
+        read.add(match.group(1))
+    for match in re.finditer(r'(?:flag|switchOn|string|integer|number|expression|intValue|doubleValue)\('
+                             r'\s*"([\w]+)"', text):
+        read.add(match.group(1))
+    return read
+
+
 def flags_read(text: str) -> set[str]:
     """Every flag letter the given code reads off a BrushParameters."""
     read = set()
@@ -108,10 +133,10 @@ def flags_read(text: str) -> set[str]:
         read.add("m")
     for match in re.finditer(r'(?:flag|switchOn|string|integer|number|expression|intValue|doubleValue)\('
                              r'\s*"([\w]+)"', text):
+        # A parameter spelled like the letter it is filled from, e.g. -a.
         read.add(match.group(1))
-    for match in re.finditer(r'maskValue\("([\w]+)"\)', text):
-        read.add("m")
     for match in re.finditer(r'integer\("(snowBlockCount)"', text):
+        # -l fills a parameter whose name is not its letter.
         read.add("l")
     return read
 
@@ -125,7 +150,7 @@ def brush_flag_audit(table_path: str, factory_path: str) -> list[str]:
         return []
     blocks = factory_blocks(factory.read_text())
     unread: list[str] = []
-    for name, letters in brush_rows(table.read_text()):
+    for name, letters, pairs in brush_rows(table.read_text()):
         block = blocks.get(name)
         if block is None:
             unread.append(f"{name} (no factory case)")
@@ -145,6 +170,15 @@ def brush_flag_audit(table_path: str, factory_path: str) -> list[str]:
         missing = [letter for letter in letters if letter not in read]
         if missing:
             unread.append(f"{name} (never reads {', '.join('-' + m for m in missing)})")
+            continue
+        # A flag spelled -m on the command line only reaches the factory if the
+        # table calls the parameter the factory reads, so a brush whose -m fills
+        # "sourceMask" and one whose -m fills "mask" are different rows.
+        parameters = parameters_read(body)
+        for letter, parameter in pairs.items():
+            if parameter in parameters:
+                continue
+            unread.append(f"{name} (-{letter} fills '{parameter}', which the factory never reads)")
     print(f"brushes whose factory never reads a flag: {len(unread)}")
     for entry in unread:
         print(f"  {entry}")

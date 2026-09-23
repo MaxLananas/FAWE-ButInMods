@@ -2,9 +2,8 @@ package com.maxlananas.fawebim.core.command;
 
 import com.maxlananas.fawebim.core.brush.Creatures;
 import com.maxlananas.fawebim.core.extent.EditSession;
-import com.maxlananas.fawebim.core.function.Operations;
+import com.maxlananas.fawebim.core.function.HeightMaps;
 import com.maxlananas.fawebim.core.mask.Mask;
-import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
@@ -13,7 +12,6 @@ import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.noise.Noise;
 import com.maxlananas.fawebim.core.world.BlockState;
-import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
@@ -285,11 +283,13 @@ final class RegionCommands {
 
     /** {@code //snowsmooth} — smooths snow, upstream runs {@code //smooth} with snow. */
     private void snowSmooth() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("snowsmooth");
+        // Upstream spells this one with a single slash; players type it with the
+        // usual double slash next to //smooth, so both are accepted.
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("snowsmooth", "/snowsmooth", "//snowsmooth");
         if (entry == null) {
             return;
         }
-        entry.description = "Smooth the terrain, only considering snow blocks";
+        entry.description = "Smooth the elevation in the selection with snow layers";
         entry.group = "region";
         entry.requiresSelection = true;
         // -l is the snow height to place back, -m restricts the pass to a mask.
@@ -301,31 +301,13 @@ final class RegionCommands {
         entry.handler = ctx -> {
             Region region = ctx.selection();
             int iterations = Math.max(1, ctx.intArg(0, 1));
+            // -l is how many full snow blocks sit under the layer, -m filters the
+            // blocks the height map is built from: snow-only terrain is the
+            // caller's choice rather than the default.
+            int layerBlocks = Math.max(0, ctx.flagInt("l", 1));
+            Mask heightMask = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
             EditSession session = ctx.editSession("snowsmooth");
-            Mask snowMask = new Masks.BlockMask(session, List.of("minecraft:snow", "minecraft:snow_block"));
-            session.setMask(ctx.hasFlag("m")
-                    ? new Masks.IntersectionMask(List.of(snowMask, Parsers.mask(ctx.flagValue("m", ""), ctx)))
-                    : snowMask);
-            int changed = Operations.smooth(ctx.world(), session, region, iterations);
-            int layers = ctx.flagInt("l", 0);
-            if (layers > 0) {
-                // -l lays the given number of snow layers on every smoothed column.
-                BlockStateRegistry states = BlockState.registry();
-                int snow = states.parse("minecraft:snow[layers=" + Math.min(8, layers) + "]");
-                World world = ctx.world();
-                for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                    for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                        int y = world.getHighestBlockY(x, z);
-                        if (!states.isAirLike(session.getBlock(x, y + 1, z))) {
-                            continue;
-                        }
-                        if (session.setBlock(x, y + 1, z, snow)) {
-                            changed++;
-                        }
-                    }
-                }
-            }
-            session.flushQueue();
+            int changed = HeightMaps.snowSmooth(ctx.world(), session, region, iterations, layerBlocks, heightMask);
             session.flushQueue();
             ctx.actor().message(Msg.success("Smoothed " + changed + " snow block(s)"));
         };
