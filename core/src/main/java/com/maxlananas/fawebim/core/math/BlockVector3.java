@@ -131,11 +131,6 @@ public record BlockVector3(int x, int y, int z) implements Comparable<BlockVecto
                 Math.max(min.y, Math.min(max.y, y)),
                 Math.max(min.z, Math.min(max.z, z)));
     }
-
-    public BlockBox toBlockBox() {
-        return new BlockBox(this);
-    }
-
     public BlockVector3 toBlockPoint() {
         return this;
     }

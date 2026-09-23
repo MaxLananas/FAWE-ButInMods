@@ -7,8 +7,8 @@ server platform required.
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE.txt)
 [![Minecraft](https://img.shields.io/badge/minecraft-1.21.10-brightgreen.svg)](https://www.minecraft.net/)
 [![Fabric](https://img.shields.io/badge/loader-Fabric%200.17.3%2B-dbb69c.svg)](https://fabricmc.net/)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-213%20passing-success.svg)](docs/STATUS.md)
-[![Commands](https://img.shields.io/badge/commands-304%20registered-informational.svg)](docs/COMMANDS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-216%20passing-success.svg)](docs/STATUS.md)
+[![Commands](https://img.shields.io/badge/commands-305%20registered-informational.svg)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/WorldEdit%2BFAWE%20names-259%2F259-success.svg)](docs/COMMANDS.md)
 
 ---
@@ -43,9 +43,9 @@ whole editing engine, including its test suite, runs without launching Minecraft
 
 | | |
 |---|---|
-| Engine tests | **213 passing, 0 failing** (`./gradlew :core:selfTest`) |
-| Commands registered | **304** |
-| Implemented | **250** |
+| Engine tests | **216 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Commands registered | **305** |
+| Implemented | **251** |
 | Aliases of an implemented command | **54** |
 | Still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **259 / 259** |
@@ -54,14 +54,28 @@ The exact list of every command, its aliases, arguments and status is generated 
 registry into [`docs/COMMANDS.md`](docs/COMMANDS.md) and [`docs/STATUS.md`](docs/STATUS.md); the
 machine-readable form is [`docs/commands-spec.json`](docs/commands-spec.json).
 
-Every name WorldEdit 7.3.17 and FastAsyncWorldEdit declare is registered and resolves, with no
-stub left in the registry. Two behaviours depend on the platform rather than on the port:
+Every name WorldEdit 7.3.17 and FastAsyncWorldEdit declare is registered and resolves, with no stub
+left in the registry. `./gradlew :core:verify` runs the self-tests and then resolves all 460 command
+names through the same lookup the dispatcher uses, so a name cannot quietly stop working.
 
-* CraftScripts (`//cs`, `//.s`) run through a JSR-223 engine; modern JVMs ship none, so the mod says
-  so instead of pretending the script ran.
-* `/anvil` decides what to touch by reading the dimension's region files (read-only) and then edits
-  the chunks through the server. Rewriting region files behind a running server is what made FAWE's
-  own anvil commands unsafe and is deliberately not done.
+## Known platform limits
+
+A few FAWE features need something a standalone Fabric mod does not have. Where that is the case the
+command says so instead of failing silently:
+
+* **CraftScripts** (`//cs`, `//.s`) run through a JSR-223 engine. Modern JVMs ship none, so the
+  command reports that no engine is available rather than pretending the script ran.
+* **Custom regeneration seeds** (`//regen <seed>`) need a second chunk source. Minecraft builds one
+  from the level seed, so the command regenerates with the world seed and tells the player the seed
+  was ignored. `-b` (regenerate biomes) works: the adapter keeps the biome grid when it is absent.
+* **`/anvil`** reads the dimension's region files (read-only) to decide which chunks qualify and then
+  edits those chunks through the server. Rewriting region files behind a running server is what made
+  FAWE's own anvil commands unsafe and is deliberately not done.
+* **Claim checks in `/anvil deleteunclaimed` and `/anvil trimallplots`** need a claim provider
+  (WorldGuard, PlotSquared, GriefPrevention). FAWE asks one; a mod has none to ask, so the chunk age
+  test decides on its own and the report says the claim check was skipped.
+* **CUI** (`/cui`) targets FAWE's client mod, which a vanilla client does not run; the command
+  reports the state it would advertise.
 
 ## Requirements
 

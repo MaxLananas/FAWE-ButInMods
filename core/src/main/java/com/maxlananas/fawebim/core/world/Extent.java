@@ -43,20 +43,76 @@ public interface Extent {
     }
 
     /**
-     * The nearest non-air block at or below {@code y} in the given column, or
-     * {@code minY} when the column is empty. FAWE's heightmap lookup, used by the
-     * angle masks and the height brushes.
+     * The surface of the terrain around {@code y}: the nearest block whose
+     * solidity differs from the one at the starting height, searched outwards in
+     * both directions. A query that starts in the air returns the topmost solid
+     * block below it, a query that starts inside a block returns the height of
+     * the first free spot above it, which is what makes a cave roof a surface
+     * too. FAWE's heightmap lookup, used by the angle masks.
+     *
+     * @param x         column x
+     * @param z         column z
+     * @param y         height to start from
+     * @param minY      lowest height to consider
+     * @param maxY      highest height to consider
+     * @param failedMin what to return when no surface was found while looking for
+     *                  a solid block
+     * @param failedMax what to return when no surface was found while looking for
+     *                  a free spot
+     * @param ignoreAir whether a match at the {@code failedMin} bound counts
+     * @return the height of the nearest surface
      */
-    default int getNearestSurfaceTerrainBlock(int x, int z, int y, int minY, int maxY) {
-        int start = Math.min(maxY, Math.max(minY, y));
+    default int getNearestSurfaceTerrainBlock(int x, int z, int y, int minY, int maxY,
+                                              int failedMin, int failedMax, boolean ignoreAir) {
+        int lowest = Math.max(minY(), minY);
+        int highest = Math.min(maxY(), maxY);
+        int start = Math.max(lowest, Math.min(highest, y));
         BlockStateRegistry registry = BlockState.registry();
-        for (int current = start; current >= minY; current--) {
-            int state = getBlock(x, current, z);
-            if (!registry.isAirLike(state) && !registry.isLiquid(state)) {
-                return current;
+        boolean lookingForSolid = !registry.isSolid(getBlock(x, start, z));
+        int offset = lookingForSolid ? 0 : 1;
+        int clearance = Math.min(highest - start, start - lowest);
+        for (int distance = 0; distance <= clearance; distance++) {
+            int above = start + distance;
+            if (isSurface(getBlock(x, above, z), lookingForSolid)) {
+                return above - offset;
+            }
+            int below = start - distance;
+            if (isSurface(getBlock(x, below, z), lookingForSolid)) {
+                return below + offset;
             }
         }
-        return minY;
+        if (highest - start != start - lowest) {
+            if (highest - start < start - lowest) {
+                for (int layer = start - clearance - 1; layer >= lowest; layer--) {
+                    if (isSurface(getBlock(x, layer, z), lookingForSolid)) {
+                        return layer + offset;
+                    }
+                }
+            } else {
+                for (int layer = start + clearance + 1; layer <= highest; layer++) {
+                    if (isSurface(getBlock(x, layer, z), lookingForSolid)) {
+                        return layer - offset;
+                    }
+                }
+            }
+        }
+        int result = lookingForSolid ? failedMin : failedMax;
+        if (result > lowest && !ignoreAir) {
+            return registry.isAirLike(getBlock(x, result, z)) ? -1 : result;
+        }
+        return result;
+    }
+
+    /**
+     * The nearest surface around {@code y}, telling the caller the column bounds
+     * when nothing matches.
+     */
+    default int getNearestSurfaceTerrainBlock(int x, int z, int y, int minY, int maxY) {
+        return getNearestSurfaceTerrainBlock(x, z, y, minY, maxY, minY, maxY, true);
+    }
+
+    private static boolean isSurface(int state, boolean lookingForSolid) {
+        return BlockState.registry().isSolid(state) == lookingForSolid;
     }
 
     default boolean isWorld() {

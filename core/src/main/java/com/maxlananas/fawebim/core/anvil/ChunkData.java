@@ -148,9 +148,4 @@ public final class ChunkData {
         }
         return blocks;
     }
-
-    /** The colour a block shows on a map, used by the distribution output. */
-    public static int colorOf(String blockName) {
-        return BlockState.registry().parse(blockName);
-    }
 }

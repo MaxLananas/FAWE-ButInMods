@@ -64,6 +64,16 @@ public interface World extends Extent {
     /** Regenerates a chunk from the world seed, keeping nothing. */
     boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options);
 
+    /**
+     * Whether {@code //regen <seed>} can use the seed it was given. Minecraft's
+     * chunk source is built from the level seed, so a platform that cannot build
+     * a second one says so and the command tells the player instead of silently
+     * regenerating with the world seed.
+     */
+    default boolean supportsCustomRegenSeed() {
+        return false;
+    }
+
     boolean generateTree(BlockVector3 pos, String treeType, Random random);
 
     boolean generateFeature(BlockVector3 pos, String featureType, Random random);

@@ -46,10 +46,10 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/anvil countall` | — | Count all blocks in a world | implemented |
 | `/anvil debugfixroads` | — | debug - do not use | implemented |
 | `/anvil deletealloldregions <time>` | `/anvil deloldreg` | Delete regions which haven't been accessed in a certain amount of time | implemented |
-| `/anvil deleteallunclaimed <inhabitedTicks> <[fileDurationMillis]>` | `/anvil delallunclaimed` | Delete all chunks which haven't been occupied | implemented |
+| `/anvil deleteallunclaimed <inhabitedTicks> <[fileDurationMillis]>` | `/anvil delallunclaimed` | Delete every chunk that was never occupied | implemented |
 | `/anvil deleteallunvisited <inhabitedTicks> <[fileDurationMillis]>` | `/anvil delunvisited` | Delete all chunks which haven't been occupied | implemented |
 | `/anvil deletebiomechunks <biome>` | — | Delete chunks matching a specific biome | implemented |
-| `/anvil deleteunclaimed <inhabitedTicks> <[fileDurationMillis]>` | — | Delete all chunks which haven't been occupied | implemented |
+| `/anvil deleteunclaimed <inhabitedTicks> <[fileDurationMillis]>` | — | Delete every chunk of the selection that was never occupied | implemented |
 | `/anvil distr` | — | Show the block distribution of a selection | implemented |
 | `/anvil paste` | — | Paste chunks from your anvil clipboard | implemented |
 | `/anvil remapall` | — | Remap the world between MCPE/PC values | implemented |
@@ -59,7 +59,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/anvil replacepattern <from> <pattern>` | `/anvil preplace`, `/anvil rp` | Replace all blocks in the selection with a pattern | implemented |
 | `/anvil set <pattern>` | — | Set all blocks in the selection with a pattern | implemented |
 | `/anvil trimallair` | — | Trim all air in the world | implemented |
-| `/anvil trimallplots` | — | Trim chunks in a Plot World | implemented |
+| `/anvil trimallplots` | — | Trim chunks in a plot world | implemented |
 
 ## biome
 
@@ -277,7 +277,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//naturalize` | — | Turn the terrain into grass over dirt over stone | implemented |
 | `//outline <pattern>` | `//outline-remove` | Build a hollow outline | implemented |
 | `//overlay <pattern>` | — | Overlay the top layer of blocks with a pattern | implemented |
-| `//regen` | — | Regenerate the selection from the world seed | implemented |
+| `//regen <[seed]> <[biome]>` | — | Regenerate the selection from the world seed | implemented |
 | `//removeabove <[size]> <[height]>` | — | Remove blocks above a height | implemented |
 | `//removebelow <[size]> <[height]>` | — | Remove blocks below a height | implemented |
 | `//removenear <mask> <[size]>` | — | Remove blocks near you | implemented |

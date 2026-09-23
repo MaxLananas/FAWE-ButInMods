@@ -32,19 +32,9 @@ public final class EntityData implements Cloneable {
     public String type() {
         return type;
     }
-
-    public void setType(String type) {
-        this.type = type;
-    }
-
     public NbtCompound nbt() {
         return nbt;
     }
-
-    public void setNbt(NbtCompound nbt) {
-        this.nbt = nbt;
-    }
-
     public Vector3 position() {
         return position;
     }

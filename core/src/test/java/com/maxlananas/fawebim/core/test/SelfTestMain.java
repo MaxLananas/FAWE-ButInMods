@@ -62,6 +62,8 @@ public final class SelfTestMain {
         testEditSessionAndHistory();
         testClipboardAndSchematic();
         testCommands();
+        testRegen();
+        testAngleMasks();
         testNavigation();
         testTimeLimiter();
         testUtil();
@@ -675,6 +677,67 @@ public final class SelfTestMain {
         actor.setYaw(0);
         check("thru passes the wall", Navigation.passThroughForwardWall(actor, 8));
         checkEquals("thru landed behind the wall", 9, actor.position().z());
+    }
+
+    /**
+     * The angle masks read the terrain surface: flat ground has a slope of zero,
+     * a staircase rises one block per block, {@code #roc} measures curvature
+     * instead and {@code #surfaceangle} looks at the air around the block.
+     */
+    private static void testAngleMasks() {
+        section("angle masks");
+        TestWorld world = new TestWorld("angle");
+        world.fillFlat(70);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+
+        checkEquals("surface under an airborne query", 69,
+                world.getNearestSurfaceTerrainBlock(5, 5, 80, world.minY(), world.maxY()));
+
+        check("flat ground has a slope of zero", new Masks.AngleMask(world, 0, 0, false, 1)
+                .test(5, 69, 5));
+        check("flat ground is not a slope", !new Masks.AngleMask(world, 0.36, 0.58, false, 1)
+                .test(5, 69, 5));
+        check("flat ground has no curvature", !new Masks.ROCAngleMask(world, 0.1, 10, false, 4)
+                .test(20, 69, 20));
+
+        // A staircase: one block up for every block across is a slope of 0.5.
+        for (int step = 1; step <= 6; step++) {
+            for (int y = 70; y <= 69 + step; y++) {
+                world.setBlock(5 + step, y, 5, stone);
+            }
+        }
+        check("a staircase reads as a slope", new Masks.AngleMask(world, 0.36, 0.58, false, 1)
+                .test(5, 69, 5));
+        check("a staircase is not steeper than it is", !new Masks.AngleMask(world, 0.6, 10, false, 1)
+                .test(5, 69, 5));
+        check("roc reads a staircase as curvature", new Masks.ROCAngleMask(world, 0.1, 10, false, 4)
+                .test(5, 69, 5));
+
+        check("surfaceangle accepts flat ground", new Masks.SurfaceAngleMask(world, 0, 90, 1)
+                .test(5, 69, 5));
+        check("surfaceangle rejects a steep minimum", !new Masks.SurfaceAngleMask(world, 45, 90, 1)
+                .test(5, 69, 5));
+    }
+
+    /**
+     * {@code //regen} clears the session mask while it runs and says so when a
+     * seed cannot be used: Minecraft's chunk source is built from the level seed,
+     * so the command must not pretend it regenerated with another one.
+     */
+    private static void testRegen() {
+        section("regen");
+        TestWorld world = new TestWorld("regen");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Erin", world, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(actor, "//pos1 0,70,0");
+        CommandManager.get().dispatch(actor, "//pos2 15,80,15");
+        CommandManager.get().dispatch(actor, "//gmask stone");
+        CommandManager.get().dispatch(actor, "//regen 4242");
+        check("regen warns about the ignored seed",
+                actor.messages().stream().anyMatch(message -> message.contains("seed")));
+        check("regen restored the mask", actor.session().getMask() != null);
+        int chunkChanges = world.setCount();
+        check("regen touched the world", chunkChanges > 0);
     }
 
     private static void testTimeLimiter() {

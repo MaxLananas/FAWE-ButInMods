@@ -720,14 +720,51 @@ public final class Commands {
         e32.description = "Regenerate the selection from the world seed";
         e32.group = "region";
         e32.requiresSelection = true;
+        e32.arguments.add("[seed]");
+        e32.arguments.add("[biome]");
         e32.booleanFlags.add("b");
-        e32.booleanFlags.add("s");
+        e32.booleanFlags.add("r");
         e32.handler = ctx -> {
                     Region region = ctx.selection();
-                    for (BlockVector2 chunk : region.getChunks()) {
-                        ctx.world().loadChunk(chunk.x(), chunk.z());
-                        ctx.world().regenerateChunk(chunk.x(), chunk.z(), new com.maxlananas.fawebim.core.world.RegenOptions()
-                                .setRegenBiomes(ctx.hasFlag("b")));
+                    Long seed = null;
+                    if (ctx.hasFlag("r")) {
+                        seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
+                    } else if (!ctx.args().isEmpty()) {
+                        seed = Long.parseLong(ctx.arg(0));
+                    }
+                    if (seed != null && !ctx.world().supportsCustomRegenSeed()) {
+                        ctx.actor().message(Msg.warn("This platform regenerates with the world seed;"
+                                + " the seed you gave is ignored."));
+                    }
+                    String biome = ctx.args().size() > 1 ? ctx.arg(1) : null;
+                    int biomeId = -1;
+                    if (biome != null) {
+                        biomeId = BlockState.registry().biome(biome);
+                        if (biomeId < 0) {
+                            throw CommandRegistry.error("Unknown biome '" + biome + "'");
+                        }
+                    }
+                    // FAWE clears the masks for the duration of the regeneration:
+                    // a region the mask excludes must not survive a //regen.
+                    Mask previousMask = ctx.session().getMask();
+                    ctx.session().setMask(null);
+                    try {
+                        for (BlockVector2 chunk : region.getChunks()) {
+                            ctx.world().loadChunk(chunk.x(), chunk.z());
+                            ctx.world().regenerateChunk(chunk.x(), chunk.z(),
+                                    new com.maxlananas.fawebim.core.world.RegenOptions()
+                                            .setRegenBiomes(ctx.hasFlag("b") || biomeId >= 0)
+                                            .setSeed(seed));
+                        }
+                    } finally {
+                        ctx.session().setMask(previousMask);
+                    }
+                    if (biomeId >= 0) {
+                        EditSession editSession = ctx.editSession();
+                        for (BlockVector3 position : region) {
+                            editSession.setBiome(position.x(), position.y(), position.z(), biomeId);
+                        }
+                        editSession.flushQueue();
                     }
                     ctx.actor().message(Msg.success("Regenerated " + region.getChunks().size() + " chunk(s)"));
                 };

@@ -1,6 +1,5 @@
 package com.maxlananas.fawebim.core.world;
 
-import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.BlockVectorSet;
 
 import java.util.ArrayList;
@@ -185,17 +184,5 @@ public final class ChunkSet {
             sections[si] = section;
         }
         return section;
-    }
-
-    /** Positions changed inside this chunk, as absolute coordinates. */
-    public void forEachChanged(java.util.function.Consumer<BlockVector3> consumer) {
-        if (changed != null) {
-            changed.forEach(consumer);
-        }
-    }
-
-    public void clearBlocks() {
-        sections = new PackedBlockArray[sectionCount];
-        changed = null;
     }
 }

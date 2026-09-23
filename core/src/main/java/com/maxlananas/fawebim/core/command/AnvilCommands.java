@@ -93,8 +93,9 @@ final class AnvilCommands {
                     "removelayers <block> — strip one block from the selected layers",
                     "trimallair [-u], trimallplots [-v] — drop chunks that hold nothing",
                     "deletebiomechunks <biome> [-u] — drop chunks of one biome",
-                    "deleteallunvisited <ticks> [fileMillis], deleteallunclaimed, deleteunclaimed",
-                    "deletealloldregions <time> — drop chunks untouched for that long",
+                    "deleteallunvisited <ticks> [fileMillis] — drop chunks nobody has been in",
+                    "deleteunclaimed, deleteallunclaimed — the same age test, without a claim provider",
+                    "deletealloldregions <time> — drop region files untouched for that long",
                     "remapall, debugfixroads — legacy maintenance")) {
                 ctx.actor().message(Msg.of("§7 - §f" + line));
             }
@@ -366,16 +367,19 @@ final class AnvilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Trim chunks in a Plot World";
+        entry.description = "Trim chunks in a plot world";
         entry.group = "anvil";
         entry.booleanFlags.add("v");
+        // FAWE deletes unclaimed and unmodified plot chunks. Without a plot
+        // manager the claim half cannot be answered, so -v drops the chunks that
+        // were never occupied and the default drops the unmodified (empty) ones.
         entry.handler = ctx -> {
-            boolean unvisitedOnly = ctx.hasFlag("v");
-            List<int[]> chunks = matchingChunks(ctx, chunk -> {
-                long inhabited = ChunkData.inhabitedTicks(chunk.data());
-                return unvisitedOnly ? inhabited == 0 : inhabited == 0 && ChunkData.isAirOnly(chunk.data());
-            });
-            deleteChunks(ctx, chunks, "unclaimed");
+            if (ctx.hasFlag("v")) {
+                deleteUnvisited(ctx, matchingChunks(ctx, unvisitedFilter(ctx)), "never occupied");
+                return;
+            }
+            deleteChunks(ctx, matchingChunks(ctx, chunk -> ChunkData.isAirOnly(chunk.data())),
+                    "unmodified");
         };
     }
 
@@ -422,12 +426,17 @@ final class AnvilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Delete all chunks which haven't been occupied";
+        entry.description = "Delete every chunk that was never occupied";
         entry.group = "anvil";
         entry.booleanFlags.add("d");
         entry.arguments.add("inhabitedTicks");
         entry.arguments.add("[fileDurationMillis]");
-        entry.handler = ctx -> deleteUnvisited(ctx, matchingChunks(ctx, unvisitedFilter(ctx)));
+        // FAWE asks a claim provider (WorldGuard, PlotSquared, GriefPrevention)
+        // whether the chunk is claimed and then applies the same age test. A mod
+        // has no claim provider to ask, so the age test decides on its own and
+        // the report says so.
+        entry.handler = ctx -> deleteUnvisited(ctx, matchingChunks(ctx, unvisitedFilter(ctx)),
+                "never occupied, no claim provider to check");
     }
 
     /** {@code /anvil deleteunclaimed <ticks> [fileMillis] [-d]} — inside the selection. */
@@ -436,13 +445,14 @@ final class AnvilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Delete all chunks which haven't been occupied";
+        entry.description = "Delete every chunk of the selection that was never occupied";
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
         entry.arguments.add("inhabitedTicks");
         entry.arguments.add("[fileDurationMillis]");
-        entry.handler = ctx -> deleteUnvisited(ctx, matchedInSelection(ctx, unvisitedFilter(ctx)));
+        entry.handler = ctx -> deleteUnvisited(ctx, matchedInSelection(ctx, unvisitedFilter(ctx)),
+                "never occupied, no claim provider to check");
     }
 
     /** {@code /anvil deletealloldregions <time>} — e.g. {@code 8h5m12s}. */
@@ -563,10 +573,14 @@ final class AnvilCommands {
     }
 
     private void deleteUnvisited(Ctx ctx, List<int[]> chunks) {
+        deleteUnvisited(ctx, chunks, "unvisited");
+    }
+
+    private void deleteUnvisited(Ctx ctx, List<int[]> chunks, String reason) {
         if (ctx.hasFlag("d")) {
-            ctx.actor().message(Msg.info(chunks.size() + " chunk(s) qualify"));
+            ctx.actor().message(Msg.info(chunks.size() + " chunk(s) qualify (" + reason + ")"));
         }
-        deleteChunks(ctx, chunks, "unvisited");
+        deleteChunks(ctx, chunks, reason);
     }
 
     /** Deletes (empties) the given chunks and reports the result. */

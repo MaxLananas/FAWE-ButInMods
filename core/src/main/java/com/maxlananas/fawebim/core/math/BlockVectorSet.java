@@ -222,12 +222,4 @@ public final class BlockVectorSet implements Iterable<BlockVector3> {
             }
         };
     }
-
-    /** Allocates the set the same way FAWE does for a known block count. */
-    public static BlockVectorSet forVolume(long volume) {
-        if (volume > Integer.MAX_VALUE / 2) {
-            return new BlockVectorSet(1 << 20);
-        }
-        return new BlockVectorSet((int) Math.max(16, Math.min(volume, 1 << 22)));
-    }
 }

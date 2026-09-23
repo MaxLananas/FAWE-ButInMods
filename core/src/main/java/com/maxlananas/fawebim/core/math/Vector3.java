@@ -74,19 +74,6 @@ public record Vector3(double x, double y, double z) {
     public BlockVector3 toBlockPoint() {
         return BlockVector3.floor(this);
     }
-
-    /** Applies a rotation of {@code yaw}/{@code pitch} degrees, matching Minecraft's rotation order. */
-    public Vector3 rotateYawPitch(double yawDeg, double pitchDeg) {
-        double yaw = Math.toRadians(yawDeg);
-        double pitch = Math.toRadians(pitchDeg);
-        double cy = Math.cos(yaw);
-        double sy = Math.sin(yaw);
-        double cp = Math.cos(pitch);
-        double sp = Math.sin(pitch);
-        // -Z is "north"/forward in Minecraft.
-        return new Vector3(x * cy + z * sy, y * cp - z * sp * cy - x * sp * sy, -x * sy + z * cy);
-    }
-
     @Override
     public String toString() {
         return "(" + x + ", " + y + ", " + z + ")";

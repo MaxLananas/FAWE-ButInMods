@@ -1,7 +1,10 @@
 package com.maxlananas.fawebim.fabric;
 
 import com.maxlananas.fawebim.core.world.RegenOptions;
+import net.minecraft.core.Holder;
+import net.minecraft.core.PalettedContainer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -9,6 +12,8 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -33,6 +38,9 @@ final class FabricWorldRegen {
         if (!options.shouldKeepEntities()) {
             removeEntities(level, chunk);
         }
+        // Without -b the biome grid is kept: the generator would overwrite it
+        // while it rebuilds the terrain, so it is saved and put back below.
+        List<List<Holder<Biome>>> biomes = options.shouldRegenBiomes() ? null : captureBiomes(chunk);
         boolean generated = false;
         try {
             generated = runGenerator(level, chunk);
@@ -42,8 +50,50 @@ final class FabricWorldRegen {
         if (!generated) {
             clear(chunk);
         }
+        if (biomes != null) {
+            restoreBiomes(chunk, biomes);
+        }
         chunk.setUnsaved(true);
         return true;
+    }
+
+    /** The biome of every 4x4x4 cell of the chunk, in section order. */
+    private static List<List<Holder<Biome>>> captureBiomes(LevelChunk chunk) {
+        List<List<Holder<Biome>>> saved = new ArrayList<>();
+        for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
+            LevelChunkSection section = chunk.getSection(sectionIndex);
+            List<Holder<Biome>> cells = new ArrayList<>(64);
+            for (int y = 0; y < 4; y++) {
+                for (int z = 0; z < 4; z++) {
+                    for (int x = 0; x < 4; x++) {
+                        cells.add(section.getBiomes().get(x, y, z));
+                    }
+                }
+            }
+            saved.add(cells);
+        }
+        return saved;
+    }
+
+    private static void restoreBiomes(LevelChunk chunk, List<List<Holder<Biome>>> saved) {
+        for (int sectionIndex = 0; sectionIndex < Math.min(saved.size(), chunk.getSectionsCount()); sectionIndex++) {
+            LevelChunkSection section = chunk.getSection(sectionIndex);
+            PalettedContainer<Holder<Biome>> container = biomeContainer(section);
+            List<Holder<Biome>> cells = saved.get(sectionIndex);
+            int cell = 0;
+            for (int y = 0; y < 4; y++) {
+                for (int z = 0; z < 4; z++) {
+                    for (int x = 0; x < 4; x++) {
+                        container.getAndSetUnchecked(x, y, z, cells.get(cell++));
+                    }
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static PalettedContainer<Holder<Biome>> biomeContainer(LevelChunkSection section) {
+        return (PalettedContainer<Holder<Biome>>) section.getBiomes();
     }
 
     /**
@@ -160,9 +210,7 @@ final class FabricWorldRegen {
 
     private static void copyBiomes(LevelChunkSection from, LevelChunkSection to) {
         var source = from.getBiomes();
-        @SuppressWarnings("unchecked")
-        var target = (net.minecraft.world.level.chunk.PalettedContainer<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>>)
-                to.getBiomes();
+        PalettedContainer<Holder<Biome>> target = biomeContainer(to);
         for (int y = 0; y < 4; y++) {
             for (int z = 0; z < 4; z++) {
                 for (int x = 0; x < 4; x++) {
