@@ -1812,8 +1812,16 @@ public final class Commands {
                                 throw CommandRegistry.error("A schematic named '" + name + "' already exists."
                                         + " Use //schem save -f to overwrite it.");
                             }
-                            Schematics.save(ctx.session().getClipboard().getClipboard(), name, format);
-                            ctx.actor().message(Msg.success("Saved schematic '" + name + "'"));
+                            // A large save goes to the worker pool, so the tick
+                            // loop is not held up while the file is written.
+                            BlockArrayClipboard saving = ctx.session().getClipboard().getClipboard();
+                            if (saving.volume() >= Schematics.ASYNC_SAVE_THRESHOLD) {
+                                Schematics.saveAsync(saving, name, format, ctx.world().executor());
+                                ctx.actor().message(Msg.success("Saving schematic '" + name + "' in the background"));
+                            } else {
+                                Schematics.save(saving, name, format);
+                                ctx.actor().message(Msg.success("Saved schematic '" + name + "'"));
+                            }
                         }
                         case "load" -> {
                             String name = ctx.arg(1);

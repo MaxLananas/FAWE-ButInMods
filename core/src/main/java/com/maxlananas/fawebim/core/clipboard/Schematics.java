@@ -198,8 +198,36 @@ public final class Schematics {
         return path;
     }
 
+    /**
+     * Above this many blocks, {@code //schem save} hands the disk write to the
+     * world's worker pool instead of blocking the server thread.
+     */
+    public static final int ASYNC_SAVE_THRESHOLD = 1_000_000;
+
     /** Writes the clipboard using the given format ({@code sponge.3}, {@code sponge.2}, {@code mcedit}). */
     public static void save(BlockArrayClipboard clipboard, String name, String format) {
+        write(serialize(clipboard, name, format));
+    }
+
+    /**
+     * Serialises the clipboard and writes the result on the given executor, which
+     * is how FAWE keeps a large save from stalling the tick loop. Serialising
+     * itself stays on the calling thread, because it reads the clipboard.
+     *
+     * @return a future that completes with the file that was written
+     */
+    public static java.util.concurrent.CompletableFuture<Path> saveAsync(BlockArrayClipboard clipboard, String name,
+                                                                          String format,
+                                                                          java.util.concurrent.Executor executor) {
+        Serialized data = serialize(clipboard, name, format);
+        return java.util.concurrent.CompletableFuture.supplyAsync(() -> write(data), executor);
+    }
+
+    /** The file name the format produces and the bytes of the schematic. */
+    private record Serialized(String fileName, byte[] data) {
+    }
+
+    private static Serialized serialize(BlockArrayClipboard clipboard, String name, String format) {
         String lower = format.toLowerCase(Locale.ROOT);
         NbtCompound root;
         String fileName = name;
@@ -221,7 +249,6 @@ public final class Schematics {
             }
         }
         try {
-            Files.createDirectories(directory());
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             if (lower.startsWith("mcedit") || lower.startsWith("legacy")) {
                 // MCEdit files are plain (uncompressed) NBT.
@@ -233,7 +260,16 @@ public final class Schematics {
                 // Sponge v2 and the legacy schematic format: gzipped NBT.
                 NbtIo.write(root, buffer, false, true);
             }
-            Files.write(resolve(fileName), buffer.toByteArray());
+            return new Serialized(fileName, buffer.toByteArray());
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not save schematic: " + e.getMessage());
+        }
+    }
+
+    private static Path write(Serialized data) {
+        try {
+            Files.createDirectories(directory());
+            return Files.write(resolve(data.fileName()), data.data());
         } catch (IOException e) {
             throw new IllegalStateException("Could not save schematic: " + e.getMessage());
         }
