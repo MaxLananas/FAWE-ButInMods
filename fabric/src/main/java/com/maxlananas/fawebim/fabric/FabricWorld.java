@@ -182,7 +182,7 @@ public final class FabricWorld implements World {
      * the clients. Nothing goes through the slow per-block neighbour cascade.</p>
      */
     @Override
-    public int applyChunk(ChunkSet set, Collection<BlockVector3> changed) {
+    public int applyChunk(ChunkSet set) {
         LevelChunk chunk = level.getChunk(set.chunkX(), set.chunkZ());
         PackedBlockArray[] sections = set.sections();
         int applied = 0;
@@ -190,12 +190,23 @@ public final class FabricWorld implements World {
         int baseZ = set.chunkZ() << 4;
         int baseY = set.minSection() << 4;
 
-        // 1. Remember the previous states, so the clients can be told what changed.
-        Map<BlockVector3, BlockState> previous = new HashMap<>();
-        for (BlockVector3 position : changed) {
-            previous.put(position, level.getBlockState(
-                    new BlockPos(position.x(), position.y(), position.z())));
-        }
+        // 1. Remember the previous states of the positions that changed, so the
+        //    clients can be told. The positions stay in parallel int arrays rather
+        //    than in a map keyed by a block vector: a large edit changes millions
+        //    of them and this runs on every flush.
+        int count = set.changed().size();
+        int[] previousXs = new int[count];
+        int[] previousYs = new int[count];
+        int[] previousZs = new int[count];
+        BlockState[] previousStates = new BlockState[count];
+        int[] slot = {0};
+        set.changed().forEachPosition((x, y, z) -> {
+            int index = slot[0]++;
+            previousXs[index] = x;
+            previousYs[index] = y;
+            previousZs[index] = z;
+            previousStates[index] = level.getBlockState(new BlockPos(x, y, z));
+        });
 
         // 2. Bulk section write: one palette update per section instead of one
         //    world.setBlock call (with its 6 neighbour updates) per block.
@@ -241,12 +252,13 @@ public final class FabricWorld implements World {
         //    same way WorldEdit's native access does it.
         var chunkSource = level.getChunkSource();
         boolean ticking = chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
-        for (Map.Entry<BlockVector3, BlockState> entry : previous.entrySet()) {
-            BlockVector3 position = entry.getKey();
-            BlockPos pos = new BlockPos(position.x(), position.y(), position.z());
+        int changedCount = slot[0];
+        for (int index = 0; index < changedCount; index++) {
+            BlockPos pos = new BlockPos(previousXs[index], previousYs[index], previousZs[index]);
+            BlockState before = previousStates[index];
             BlockState now = level.getBlockState(pos);
-            if (now != entry.getValue()) {
-                level.sendBlockUpdated(pos, entry.getValue(), now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
+            if (now != before) {
+                level.sendBlockUpdated(pos, before, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
             }
             chunkSource.getLightEngine().checkBlock(pos);
             if (ticking && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {

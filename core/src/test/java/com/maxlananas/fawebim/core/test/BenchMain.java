@@ -84,7 +84,7 @@ public final class BenchMain {
         }
 
         @Override
-        public int applyChunk(ChunkSet set, Collection<BlockVector3> changed) {
+        public int applyChunk(ChunkSet set) {
             return 0;
         }
 

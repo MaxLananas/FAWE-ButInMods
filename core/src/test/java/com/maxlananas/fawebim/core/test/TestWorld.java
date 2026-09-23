@@ -110,7 +110,7 @@ public final class TestWorld implements World {
     }
 
     @Override
-    public int applyChunk(ChunkSet set, Collection<BlockVector3> changed) {
+    public int applyChunk(ChunkSet set) {
         int applied = 0;
         int minY = set.minSection() << 4;
         for (int section = 0; section < set.sectionCount(); section++) {

@@ -4,7 +4,6 @@ import com.maxlananas.fawebim.core.history.ChangeSet;
 import com.maxlananas.fawebim.core.history.History;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.math.BlockVector2;
-import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -324,7 +323,7 @@ public final class EditSession implements Extent {
         for (ChunkSet chunk : pending) {
             if (!chunk.isEmpty()) {
                 world.loadChunk(chunk.chunkX(), chunk.chunkZ());
-                world.applyChunk(chunk, chunk.changed() == null ? List.of() : toList(chunk));
+                world.applyChunk(chunk);
                 dirtyChunks.add(new BlockVector2(chunk.chunkX(), chunk.chunkZ()));
             }
         }
@@ -332,12 +331,6 @@ public final class EditSession implements Extent {
             world.relight(dirtyChunks);
             dirtyChunks.clear();
         }
-    }
-
-    private static List<BlockVector3> toList(ChunkSet chunk) {
-        List<BlockVector3> list = new ArrayList<>(chunk.size());
-        chunk.changed().forEach(list::add);
-        return list;
     }
 
     @Override

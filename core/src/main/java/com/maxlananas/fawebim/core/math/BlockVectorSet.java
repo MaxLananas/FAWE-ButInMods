@@ -55,6 +55,30 @@ public final class BlockVectorSet implements Iterable<BlockVector3> {
         return (v << 20) >> 20; // sign extend 12 bits
     }
 
+    /** Receives one position of the set without allocating it. */
+    @FunctionalInterface
+    public interface PositionVisitor {
+
+        void visit(int x, int y, int z);
+    }
+
+    /**
+     * Walks the set without building a position object per entry, which is what
+     * a chunk flush needs: it visits every changed block of the chunk.
+     */
+    public void forEachPosition(PositionVisitor visitor) {
+        for (long k : keys) {
+            if (k != 0) {
+                visitor.visit(unpackX(k), unpackY(k), unpackZ(k));
+            }
+        }
+        if (fallback != null) {
+            for (BlockVector3 position : fallback) {
+                visitor.visit(position.x(), position.y(), position.z());
+            }
+        }
+    }
+
     public int size() {
         return size + (fallback == null ? 0 : fallback.size());
     }

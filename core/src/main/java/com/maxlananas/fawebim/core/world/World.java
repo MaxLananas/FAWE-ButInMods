@@ -48,11 +48,14 @@ public interface World extends Extent {
      * path: implementations must write packed sections directly (never block by
      * block through the vanilla setBlock cascade) and queue relighting.
      *
-     * @param set      the prepared chunk data
-     * @param changed  positions that actually changed (used for lighting/updates)
+     * <p>The changed positions are read from {@link ChunkSet#changed()}, which
+     * walks them as so many packed longs: a flush of a million-block edit used to
+     * hand the implementation a list of a million position objects.</p>
+     *
+     * @param set the prepared chunk data
      * @return the number of blocks that changed
      */
-    int applyChunk(ChunkSet set, Collection<BlockVector3> changed);
+    int applyChunk(ChunkSet set);
 
     /** Ensures the given chunks get relit after a bulk edit. */
     void relight(Collection<BlockVector2> chunks);
