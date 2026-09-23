@@ -888,7 +888,8 @@ public final class Operations {
                 continue;
             }
             int y = position.y();
-            while (y > world.minY() && registry.isAirLike(world.getBlock(position.x(), y - 1, position.z()))) {
+            int floor = withinSelection ? region.getMinimumPoint().y() : world.minY();
+            while (y > floor && registry.isAirLike(world.getBlock(position.x(), y - 1, position.z()))) {
                 y--;
             }
             if (y != position.y()) {

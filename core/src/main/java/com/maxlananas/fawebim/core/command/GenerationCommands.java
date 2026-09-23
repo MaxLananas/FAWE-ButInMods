@@ -200,48 +200,51 @@ final class GenerationCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Sets the biome according to a formula";
+        entry.description = "Sets biome according to a formula";
         entry.group = "generation";
         entry.requiresSelection = true;
-        // -c evaluates the formula around the centre of the selection, -h keeps
-        // it hollow, -r uses the game origin and -o the player's position.
+        // -c scales the formula around the centre of the selection, -o around the
+        // player, -r is the plain world origin and the default scales the
+        // selection to the -1..1 unit box, as WorldEdit's shape generator does.
         entry.booleanFlags.add("c");
         entry.booleanFlags.add("h");
         entry.booleanFlags.add("r");
         entry.booleanFlags.add("o");
+        entry.arguments.add("biome");
         entry.arguments.add("formula");
         entry.handler = ctx -> {
             Region region = ctx.selection();
-            Expression expression = Expression.compile(ctx.joined(0));
-            BlockStateRegistry states = BlockState.registry();
+            int biomeId = BlockState.registry().biome(ctx.arg(0));
+            if (biomeId < 0) {
+                throw CommandRegistry.error("Unknown biome '" + ctx.arg(0) + "'");
+            }
+            // The formula is everything after the biome, so it may be one
+            // argument or several.
+            Expression expression = Expression.compile(ctx.joined(1));
             World world = ctx.world();
             EditSession session = ctx.editSession("generatebiome");
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            double[] origin = origin(ctx, region);
+            double[] scale = scale(ctx, region, origin);
             Expression.Variables variables = new Expression.Variables();
             variables.set("miny", world.minY());
             variables.set("maxy", world.maxY());
-            double centerX = (region.getMinimumPoint().x() + region.getMaximumPoint().x()) / 2.0;
-            double centerZ = (region.getMinimumPoint().z() + region.getMaximumPoint().z()) / 2.0;
-            BlockVector3 placement = ctx.actor().position() == null ? region.getMinimumPoint()
-                    : ctx.actor().position();
             int changed = 0;
-            for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
+            // Biomes live on a 4x4x4 grid, so one sample per cell is enough.
+            for (int x = min.x(); x <= max.x(); x++) {
+                for (int z = min.z(); z <= max.z(); z++) {
                     session.checkTimeout();
-                    if (ctx.hasFlag("o")) {
-                        variables.set("x", x - placement.x());
-                        variables.set("z", z - placement.z());
-                    } else if (ctx.hasFlag("c")) {
-                        variables.set("x", x - centerX);
-                        variables.set("z", z - centerZ);
-                    } else {
-                        variables.set("x", x);
-                        variables.set("z", z);
-                    }
-                    int biomeId = (int) Math.floor(expression.evaluate(variables));
-                    if (states.biomeName(biomeId) == null) {
-                        continue;
-                    }
                     for (int y = world.minY(); y < world.maxY(); y += 4) {
+                        variables.set("x", (x - origin[0]) / scale[0]);
+                        variables.set("y", (y - origin[1]) / scale[1]);
+                        variables.set("z", (z - origin[2]) / scale[2]);
+                        if (ctx.hasFlag("h") && !isSurface(world, x, y, z)) {
+                            continue;
+                        }
+                        if (expression.evaluate(variables) <= 0) {
+                            continue;
+                        }
                         if (session.setBiome(x, y, z, biomeId)) {
                             changed++;
                         }
@@ -253,11 +256,35 @@ final class GenerationCommands {
         };
     }
 
-    /**
-     * {@code //forestgen} — plants trees over the selection. The planting spots
-     * are picked at random and the height comes from the world's heightmap, so
-     * the result follows the terrain instead of a flat plane.
-     */
+    /** The point the formula's coordinates are measured from, per FAWE's switches. */
+    private static double[] origin(Ctx ctx, Region region) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        if (ctx.hasFlag("r")) {
+            return new double[]{0, 0, 0};
+        }
+        if (ctx.hasFlag("o") && ctx.actor().position() != null) {
+            BlockVector3 placement = ctx.actor().position();
+            return new double[]{placement.x(), placement.y(), placement.z()};
+        }
+        // Both the plain form and -c measure from the centre; only the unit
+        // differs, see scale().
+        return new double[]{(min.x() + max.x()) / 2.0, (min.y() + max.y()) / 2.0, (min.z() + max.z()) / 2.0};
+    }
+
+    /** The unit the formula's coordinates are divided by, per FAWE's switches. */
+    private static double[] scale(Ctx ctx, Region region, double[] origin) {
+        if (ctx.hasFlag("r") || ctx.hasFlag("o") || ctx.hasFlag("c")) {
+            return new double[]{1, 1, 1};
+        }
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        return new double[]{
+                Math.max(1, Math.max(origin[0] - min.x(), max.x() - origin[0])),
+                Math.max(1, Math.max(origin[1] - min.y(), max.y() - origin[1])),
+                Math.max(1, Math.max(origin[2] - min.z(), max.z() - origin[2]))};
+    }
+
     private void forestGen() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("forestgen");
         if (entry == null) {
