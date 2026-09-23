@@ -51,6 +51,14 @@ public final class History {
         final List<EntityChange> entities = new ArrayList<>();
         int changeCount;
         int biomeChangeCount;
+        /**
+         * The section written by the previous call. An edit walks the blocks in
+         * order, so this is almost always the section the next block belongs to
+         * as well; without it every single block boxes a chunk key and searches
+         * the map for the section it is about to append to.
+         */
+        private ChangeSet currentSection;
+        private BiomeChangeSet currentBiomeSection;
 
         public Record(String description) {
             this.description = description;
@@ -63,8 +71,17 @@ public final class History {
 
         /** Records one block change, creating the section's change set on demand. */
         public void addChange(int x, int y, int z, int previous, int current) {
-            List<ChangeSet> sets = changes.computeIfAbsent(key(x >> 4, z >> 4), k -> new ArrayList<>());
+            int chunkX = x >> 4;
+            int chunkZ = z >> 4;
             int sectionY = y >> 4;
+            ChangeSet cached = currentSection;
+            if (cached != null && cached.chunkX() == chunkX && cached.chunkZ() == chunkZ
+                    && cached.sectionY() == sectionY) {
+                cached.add(x, y, z, previous, current);
+                changeCount++;
+                return;
+            }
+            List<ChangeSet> sets = changes.computeIfAbsent(key(chunkX, chunkZ), k -> new ArrayList<>());
             ChangeSet set = null;
             for (ChangeSet candidate : sets) {
                 if (candidate.sectionY() == sectionY) {
@@ -73,9 +90,10 @@ public final class History {
                 }
             }
             if (set == null) {
-                set = new ChangeSet(x >> 4, z >> 4, sectionY);
+                set = new ChangeSet(chunkX, chunkZ, sectionY);
                 sets.add(set);
             }
+            currentSection = set;
             set.add(x, y, z, previous, current);
             changeCount++;
         }
@@ -89,8 +107,17 @@ public final class History {
             if (previous == current) {
                 return;
             }
+            int chunkX = x >> 4;
+            int chunkZ = z >> 4;
             int sectionY = y >> 4;
-            List<BiomeChangeSet> sets = biomes.computeIfAbsent(key(x >> 4, z >> 4),
+            BiomeChangeSet cached = currentBiomeSection;
+            if (cached != null && cached.chunkX() == chunkX && cached.chunkZ() == chunkZ
+                    && cached.sectionY() == sectionY) {
+                cached.add(x, y, z, previous, current);
+                biomeChangeCount++;
+                return;
+            }
+            List<BiomeChangeSet> sets = biomes.computeIfAbsent(key(chunkX, chunkZ),
                     k -> new ArrayList<>());
             BiomeChangeSet set = null;
             for (BiomeChangeSet candidate : sets) {
@@ -100,9 +127,10 @@ public final class History {
                 }
             }
             if (set == null) {
-                set = new BiomeChangeSet(x >> 4, z >> 4, sectionY);
+                set = new BiomeChangeSet(chunkX, chunkZ, sectionY);
                 sets.add(set);
             }
+            currentBiomeSection = set;
             set.add(x, y, z, previous, current);
             biomeChangeCount++;
         }

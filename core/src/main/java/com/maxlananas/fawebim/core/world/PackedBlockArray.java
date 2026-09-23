@@ -18,6 +18,15 @@ public final class PackedBlockArray {
 
     private int[] palette;
     private int paletteSize;
+    /**
+     * Palette index of every state in the palette, as an open-addressed table of
+     * {@code stateId + 1} (0 marks a free slot). Looking a state up by walking
+     * the palette was linear, and a build with a few hundred distinct states made
+     * every single block write a few hundred comparisons.
+     */
+    private int[] indexKeys;
+    private int[] indexValues;
+    private int indexMask;
     private int bitsPerBlock;
     private long[] data;
     private int valuesPerLong;
@@ -28,6 +37,7 @@ public final class PackedBlockArray {
         this.bitsPerBlock = clampBits(initialBits);
         this.palette = new int[1 << Math.min(12, this.bitsPerBlock)];
         this.paletteSize = 0;
+        rehashIndex(16);
         reallocate();
     }
 
@@ -47,6 +57,8 @@ public final class PackedBlockArray {
         palette = new int[1];
         palette[0] = stateId;
         paletteSize = 1;
+        Arrays.fill(indexKeys, 0);
+        indexInsert(stateId, 0);
         bitsPerBlock = 1;
         reallocate();
         uniform = true;
@@ -80,12 +92,18 @@ public final class PackedBlockArray {
     }
 
     private int paletteLookup(int stateId) {
-        for (int i = 0; i < paletteSize; i++) {
-            if (palette[i] == stateId) {
-                return i;
+        int key = stateId + 1;
+        int slot = spread(stateId) & indexMask;
+        while (true) {
+            int candidate = indexKeys[slot];
+            if (candidate == 0) {
+                return -1;
             }
+            if (candidate == key) {
+                return indexValues[slot];
+            }
+            slot = (slot + 1) & indexMask;
         }
-        return -1;
     }
 
     private int paletteAdd(int stateId) {
@@ -93,7 +111,37 @@ public final class PackedBlockArray {
             palette = Arrays.copyOf(palette, Math.min(1 << 12, palette.length << 1));
         }
         palette[paletteSize] = stateId;
-        return paletteSize++;
+        int index = paletteSize++;
+        if (paletteSize * 2 >= indexKeys.length) {
+            rehashIndex(paletteSize * 2);
+        } else {
+            indexInsert(stateId, index);
+        }
+        return index;
+    }
+
+    /** A power-of-two state table of at least {@code capacity} slots. */
+    private void rehashIndex(int capacity) {
+        int size = Integer.highestOneBit(Math.max(16, capacity - 1)) << 1;
+        indexKeys = new int[size];
+        indexValues = new int[size];
+        indexMask = size - 1;
+        for (int i = 0; i < paletteSize; i++) {
+            indexInsert(palette[i], i);
+        }
+    }
+
+    private void indexInsert(int stateId, int index) {
+        int slot = spread(stateId) & indexMask;
+        while (indexKeys[slot] != 0) {
+            slot = (slot + 1) & indexMask;
+        }
+        indexKeys[slot] = stateId + 1;
+        indexValues[slot] = index;
+    }
+
+    private static int spread(int stateId) {
+        return stateId * 0x9E3779B1;
     }
 
     private void growBits() {
@@ -127,6 +175,7 @@ public final class PackedBlockArray {
         copy.mask = mask;
         copy.data = data.clone();
         copy.uniform = uniform;
+        copy.rehashIndex(Math.max(16, paletteSize * 2));
         return copy;
     }
 
