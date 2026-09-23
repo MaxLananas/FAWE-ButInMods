@@ -13,7 +13,7 @@ loom {
     // One mixin (swing packets -> "left click air", which FAWE needs for the
     // shatter/erode brushes) and a minimal access widener that mirrors the two
     // fields WorldEdit's own Fabric adapter widens.
-    accessWidenerPath = file("src/main/resources/fawe.accesswidener")
+    accessWidenerPath = file("src/main/resources/fawebim.accesswidener")
 
     runs {
         named("client") {

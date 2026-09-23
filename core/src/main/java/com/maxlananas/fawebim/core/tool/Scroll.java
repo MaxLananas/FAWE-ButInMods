@@ -137,6 +137,7 @@ public abstract class Scroll {
     private static final class Masks extends Scroll {
 
         private final List<Mask> masks;
+        private int index;
 
         private Masks(Brush brush, List<Mask> masks) {
             super(brush);
@@ -148,7 +149,7 @@ public abstract class Scroll {
             if (masks.size() < 2) {
                 return false;
             }
-            int index = wrap(masks.indexOf(brush().mask()) + amount, 0, masks.size() - 1);
+            index = wrap(index + amount, 0, masks.size() - 1);
             brush().setMask(masks.get(index));
             return true;
         }
@@ -157,6 +158,7 @@ public abstract class Scroll {
     private static final class Patterns extends Scroll {
 
         private final List<Pattern> patterns;
+        private int index;
 
         private Patterns(Brush brush, List<Pattern> patterns) {
             super(brush);
@@ -168,7 +170,7 @@ public abstract class Scroll {
             if (patterns.size() < 2) {
                 return false;
             }
-            int index = wrap(patterns.indexOf(brush().settings().getFill()) + amount, 0, patterns.size() - 1);
+            index = wrap(index + amount, 0, patterns.size() - 1);
             brush().setFill(patterns.get(index));
             return true;
         }

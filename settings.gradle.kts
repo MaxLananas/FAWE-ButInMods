@@ -7,7 +7,7 @@ pluginManagement {
     }
 }
 
-rootProject.name = "fawe-but-in-mods"
+rootProject.name = "FAWE-BIM"
 
 include("core")
 include("fabric")

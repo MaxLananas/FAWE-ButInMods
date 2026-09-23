@@ -47,7 +47,7 @@ import static net.minecraft.commands.Commands.literal;
  */
 public final class FaweMod implements ModInitializer {
 
-    public static final String MOD_ID = "fawe";
+    public static final String MOD_ID = "fawebim";
     private static final Logger LOGGER = LoggerFactory.getLogger("FAWE-BIM");
 
     private static FabricBlockStateRegistry registry;

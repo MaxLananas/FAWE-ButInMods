@@ -91,7 +91,7 @@ command says so instead of failing silently:
 1. Install Fabric Loader for Minecraft 1.21.10.
 2. Put [Fabric API](https://modrinth.com/mod/fabric-api) and the FAWE-BIM jar in `.minecraft/mods`.
 3. Launch the game. FAWE-BIM works in singleplayer and on a Fabric server; the config file is
-   written to `config/fawe.yml` on first start.
+   written to `config/fawebim.yml` on first start.
 
 The jar is produced by `./gradlew build` at `fabric/build/libs/FAWE-BIM-<version>.jar`.
 

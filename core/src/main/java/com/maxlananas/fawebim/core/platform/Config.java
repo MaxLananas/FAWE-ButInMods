@@ -9,7 +9,7 @@ import java.util.Map;
 
 /**
  * The engine configuration ({@code config.yml} of FAWE), stored as
- * {@code config/fawe.yml} in the game directory.
+ * {@code config/fawebim.yml} in the game directory.
  *
  * <p>FAWE ships hundreds of options; the ones that change behaviour are all
  * present here, and the rest of the file is preserved verbatim on reload so a
@@ -80,7 +80,7 @@ public final class Config {
         return INSTANCE;
     }
 
-    /** Loads {@code config/fawe.yml} from the given game directory if present. */
+    /** Loads {@code config/fawebim.yml} from the given game directory if present. */
     /** Resolves a directory name against the game directory. */
     public Path resolveDirectory(String name) {
         Path base = gameDirectory == null ? Path.of(".") : gameDirectory;
@@ -89,7 +89,7 @@ public final class Config {
 
     public void load(Path gameDirectory) {
         this.gameDirectory = gameDirectory;
-        this.file = gameDirectory.resolve("config").resolve("fawe.yml");
+        this.file = gameDirectory.resolve("config").resolve("fawebim.yml");
         if (!Files.exists(file)) {
             save();
             return;
