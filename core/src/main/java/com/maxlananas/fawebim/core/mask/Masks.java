@@ -55,7 +55,7 @@ public final class Masks {
     public static final class BlockMask implements Mask {
 
         private final Extent extent;
-        private final Set<Integer> states = new LinkedHashSet<>();
+        private final com.maxlananas.fawebim.core.util.IntSet states = new com.maxlananas.fawebim.core.util.IntSet();
         private final Set<String> tags = new LinkedHashSet<>();
         private final Set<String> categories = new LinkedHashSet<>();
         private final Set<String> names = new LinkedHashSet<>();
@@ -90,7 +90,8 @@ public final class Masks {
             return raw;
         }
 
-        public Set<Integer> getStates() {
+        /** The states this mask accepts without asking a tag or a name. */
+        public com.maxlananas.fawebim.core.util.IntSet getStates() {
             return states;
         }
 

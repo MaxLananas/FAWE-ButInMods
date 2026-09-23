@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-400%20passing-3fb950?style=flat-square)](docs/STATUS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-406%20passing-3fb950?style=flat-square)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-266%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](docs/COMMANDS.md)
@@ -43,7 +43,7 @@ placeholder commands.
 | [Install](#install) | Requirements and setup |
 | [Quick tour](#quick-tour) | The commands you will type first |
 | [Feature matrix](#feature-matrix) | Everything the mod covers, group by group |
-| [How it works](#how-it-works) | The engine, and why it is fast |
+| [How it works](#how-it-works) | The engine, why it is fast, and the measured throughput |
 | [Status](#status) | Live numbers, always generated from the registry |
 | [Known platform limits](#known-platform-limits) | What a mod cannot do that a plugin can |
 | [Development](#development) | Build, test, regenerate the docs, continuous integration |
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 400-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 406-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -176,11 +176,32 @@ Three ideas do most of the work:
 | **Packed sections** | History and clipboards store a 16³ section as parallel `int[]` arrays plus a palette, so a million-block edit costs megabytes, not a list of boxed objects. |
 | **Deferred side effects** | Lighting and neighbour updates are collected per changed position and applied once, on the server thread, after the edit. |
 
+### Measured throughput
+
+`./gradlew :core:bench` prints the same table on your machine: an in-JVM world of
+256x256x128 blocks, single-threaded, best of seven runs after warm-up. The numbers below are one
+run of it, on one machine, and are only meant as a floor and as a way to see what a change costs.
+
+| Operation | Rate |
+|---|---|
+| Block writes, engine with history | **10.6 M blocks/s** |
+| `//set` over 64x64x64 | **27.8 M blocks/s** |
+| `//copy` over 64x64x64 | **59.6 M blocks/s** |
+| `//paste` over 64x64x64 | **30.1 M blocks/s** |
+| `//replace` over 64x64x64 | **7.1 M blocks/s** |
+| `//sphere` radius 40 | **12.6 M blocks/s** |
+
+The shape of that came from measuring rather than guessing: a palette lookup used to walk the
+palette entry by entry (487 ns per block on a build with four thousand block states, now 3.7), the
+history looked a chunk up through a boxed `Long` for every block, masks held their states in a
+`Set<Integer>`, and every brush built a list of positions before touching one. Each is a plain
+array or a primitive-keyed table now.
+
 ## Status
 
 | | |
 |---|---|
-| Engine tests | **400 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **406 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **267** |
 | Implemented | **247** |
 | Aliases of an implemented command | **20** |

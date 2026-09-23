@@ -24,6 +24,14 @@ val selfTest by tasks.registering(JavaExec::class) {
     mainClass.set("com.maxlananas.fawebim.core.test.SelfTestMain")
 }
 
+val bench by tasks.registering(JavaExec::class) {
+    description = "Prints the throughput of the engine's write path (informational)."
+    group = "verification"
+    dependsOn("selfTestClasses")
+    classpath = sourceSets["selfTest"].runtimeClasspath
+    mainClass.set("com.maxlananas.fawebim.core.test.BenchMain")
+}
+
 val genDocs by tasks.registering(JavaExec::class) {
     description = "Regenerates docs/COMMANDS.md from the command registry."
     group = "documentation"

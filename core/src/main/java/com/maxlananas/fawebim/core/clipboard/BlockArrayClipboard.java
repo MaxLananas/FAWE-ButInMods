@@ -23,7 +23,8 @@ public final class BlockArrayClipboard implements Extent {
     private BlockVector3 origin;
     private final List<EntityData> entities = new ArrayList<>();
     private String name = "";
-    private final java.util.Map<Long, int[]> sections = new java.util.HashMap<>();
+    private final com.maxlananas.fawebim.core.util.LongObjectMap<int[]> sections =
+            new com.maxlananas.fawebim.core.util.LongObjectMap<>();
     private final java.util.Map<BlockVector3, com.maxlananas.fawebim.core.util.NbtCompound> blockEntities =
             new java.util.LinkedHashMap<>();
     private int minY = Integer.MAX_VALUE;
@@ -175,7 +176,12 @@ public final class BlockArrayClipboard implements Extent {
 
     @Override
     public boolean setBlock(int x, int y, int z, int stateId) {
-        int[] section = sections.computeIfAbsent(sectionKey(x, y, z), k -> new int[4096]);
+        long key = sectionKey(x, y, z);
+        int[] section = sections.get(key);
+        if (section == null) {
+            section = new int[4096];
+            sections.put(key, section);
+        }
         section[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)] = stateId;
         box.set(
                 Math.min(box.minX(), x), Math.min(box.minY(), y), Math.min(box.minZ(), z),

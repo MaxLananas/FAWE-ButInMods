@@ -41,7 +41,8 @@ public final class EditSession implements Extent {
     private final History.Record record;
     private final BlockStateRegistry registry;
 
-    private final java.util.Map<Long, ChunkSet> chunks = new java.util.LinkedHashMap<>();
+    private final com.maxlananas.fawebim.core.util.LongObjectMap<ChunkSet> chunks =
+            new com.maxlananas.fawebim.core.util.LongObjectMap<>();
     private final Set<BlockVector2> dirtyChunks = new LinkedHashSet<>();
 
     private Mask mask;
@@ -318,7 +319,7 @@ public final class EditSession implements Extent {
         if (chunks.isEmpty()) {
             return;
         }
-        List<ChunkSet> pending = new ArrayList<>(chunks.values());
+        List<ChunkSet> pending = chunks.values();
         chunks.clear();
         for (ChunkSet chunk : pending) {
             if (!chunk.isEmpty()) {
