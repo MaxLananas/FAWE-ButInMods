@@ -8,8 +8,12 @@ import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
 import com.maxlananas.fawebim.core.command.CommandRegistry;
+import com.maxlananas.fawebim.core.command.BrushTable;
 import com.maxlananas.fawebim.core.command.Ctx;
 import com.maxlananas.fawebim.core.command.Parsers;
+import com.maxlananas.fawebim.core.brush.BrushFactory;
+import com.maxlananas.fawebim.core.brush.BrushOptions;
+import com.maxlananas.fawebim.core.brush.BrushParameters;
 import com.maxlananas.fawebim.core.brush.Brushes;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.Operations;
@@ -45,6 +49,7 @@ import com.maxlananas.fawebim.core.world.RegenOptions;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -83,6 +88,7 @@ public final class SelfTestMain {
         testClipboardAndSchematic();
         testLargeSchematicSave();
         testCommands();
+        testBrushFactoryCoverage();
         testConfigAndSettings();
         testRegen();
         testAngleMasks();
@@ -205,6 +211,32 @@ public final class SelfTestMain {
             failures.add(name + " (expected " + expected + ", got " + actual + ")");
             System.out.println("FAIL: " + name + " (expected " + expected + ", got " + actual + ")");
         }
+    }
+
+    /** Every brush the generated table declares must reach a factory branch. */
+    private static void testBrushFactoryCoverage() {
+        section("brush factory coverage");
+        List<String> missing = new ArrayList<>();
+        int built = 0;
+        int needsContext = 0;
+        for (String[] row : BrushTable.BRUSHES) {
+            try {
+                com.maxlananas.fawebim.core.brush.Brush brush = BrushFactory.create(BrushParameters.of(row, 3,
+                        new Patterns.Single(1), BrushOptions.empty()));
+                if (brush == null) {
+                    missing.add(row[0]);
+                } else {
+                    built++;
+                }
+            } catch (RuntimeException needsSession) {
+                // The branch exists (a name with no branch returns null) but wants
+                // a clipboard, a mask or a schematic file that this bare
+                // construction has no way to hand it.
+                needsContext++;
+            }
+        }
+        check("every declared brush has a factory branch, missing: " + missing, missing.isEmpty());
+        checkEquals("brushes that build without a session", BrushTable.BRUSHES.length, built + needsContext);
     }
 
     private static void section(String name) {

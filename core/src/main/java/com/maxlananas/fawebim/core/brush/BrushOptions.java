@@ -27,7 +27,7 @@ public final class BrushOptions {
     }
 
     /** The flags of a command line that has none, used by the saved presets. */
-    static BrushOptions empty() {
+    public static BrushOptions empty() {
         return new BrushOptions();
     }
 
