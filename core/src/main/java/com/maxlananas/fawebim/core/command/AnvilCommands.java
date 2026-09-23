@@ -260,6 +260,9 @@ final class AnvilCommands {
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
+        // -m reads <from> as a comma separated map of sources and pairs each of
+        // them with the matching entry of <to>.
+        entry.booleanFlags.add("m");
         entry.arguments.add("from");
         entry.arguments.add("to");
         entry.handler = ctx -> replaceInSelection(ctx, ctx.mask(0), ctx.pattern(1));
@@ -276,6 +279,7 @@ final class AnvilCommands {
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
+        entry.booleanFlags.add("m");
         entry.arguments.add("from");
         entry.arguments.add("pattern");
         entry.handler = ctx -> replaceInSelection(ctx, ctx.mask(0), ctx.pattern(1));
@@ -522,15 +526,52 @@ final class AnvilCommands {
 
     private void replaceInSelection(Ctx ctx, Mask mask, Pattern pattern) {
         EditSession session = ctx.editSession("anvil replace");
+        Map<String, Pattern> mapped = ctx.hasFlag("m") ? mapOf(ctx, mask) : null;
+        BlockStateRegistry registry = BlockState.registry();
         int changed = 0;
         for (BlockVector3 position : ctx.selection()) {
             if (!mask.test(position)) {
                 continue;
             }
+            Pattern target = pattern;
+            if (mapped != null) {
+                target = mapped.get(registry.name(session.getBlock(position.x(), position.y(), position.z())));
+                if (target == null) {
+                    continue;
+                }
+            }
             changed += session.setBlock(position.x(), position.y(), position.z(),
-                    pattern.apply(position)) ? 1 : 0;
+                    target.apply(position)) ? 1 : 0;
         }
         flush(ctx, session, "Replaced " + Msg.formatNumber(changed) + " block(s)");
+    }
+
+    /**
+     * Reads {@code -m}: the two arguments are comma separated lists, each source
+     * of the first list is replaced by the pattern at the same position of the
+     * second one. A single source may map to several patterns, which then act as
+     * a random pattern.
+     */
+    private Map<String, Pattern> mapOf(Ctx ctx, Mask mask) {
+        List<String> sources = com.maxlananas.fawebim.core.util.Str.splitTopLevel(ctx.arg(0), ',');
+        List<String> targets = com.maxlananas.fawebim.core.util.Str.splitTopLevel(ctx.arg(1), ',');
+        if (sources.isEmpty() || targets.isEmpty()) {
+            throw CommandRegistry.error("The map needs at least one source and one target");
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        Map<String, List<String>> grouped = new LinkedHashMap<>();
+        for (int index = 0; index < sources.size(); index++) {
+            String target = targets.get(index < targets.size() ? index : targets.size() - 1).trim();
+            String source = sources.get(index < sources.size() ? index : sources.size() - 1).trim();
+            String name = registry.name(registry.parse(source) < 0 ? registry.defaultState(source)
+                    : registry.parse(source));
+            grouped.computeIfAbsent(name, key -> new ArrayList<>()).add(target);
+        }
+        Map<String, Pattern> mapped = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> entry : grouped.entrySet()) {
+            mapped.put(entry.getKey(), Parsers.pattern(String.join(",", entry.getValue()), ctx));
+        }
+        return mapped;
     }
 
     private Map<String, Long> countSelection(Ctx ctx, Mask mask) {

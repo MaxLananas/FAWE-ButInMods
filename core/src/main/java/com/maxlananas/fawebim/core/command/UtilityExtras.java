@@ -1,6 +1,10 @@
 package com.maxlananas.fawebim.core.command;
 
 import com.maxlananas.fawebim.core.expression.Expression;
+import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.history.EditLog;
+import com.maxlananas.fawebim.core.history.History;
+import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -316,11 +320,26 @@ final class UtilityExtras {
         }
         entry.description = "Show the size of the block and biome registries";
         entry.group = "infos";
+        entry.valueFlags.add("p");
+        entry.arguments.add("[-p <page>]");
         entry.handler = ctx -> {
             BlockStateRegistry states = BlockState.registry();
             ctx.actor().message(Msg.info("Block states: " + states.stateCount()
                     + " | biomes: " + states.biomeNames().size()
                     + " | block tags: " + states.blockTags().size()));
+            // -p walks the block tags a page at a time, which is what FAWE uses
+            // the page argument for once the summary above is printed.
+            List<String> tags = states.blockTags();
+            int pageSize = 20;
+            if (tags.isEmpty()) {
+                return;
+            }
+            int pages = Math.max(1, (tags.size() + pageSize - 1) / pageSize);
+            int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
+            int from = (page - 1) * pageSize;
+            int to = Math.min(tags.size(), from + pageSize);
+            ctx.actor().message(Msg.info("Block tags (" + tags.size() + ", page " + page + "/" + pages + "): "
+                    + String.join(", ", tags.subList(from, to))));
         };
     }
 
@@ -393,65 +412,182 @@ final class UtilityExtras {
         };
     }
 
-    /**
-     * {@code //history} — the sub-commands that inspect the local history. The
-     * database backed variants (rollback, restore, import, find) work on the
-     * current session's history instead of a SQL database.
-     */
+    /** {@code //history} — the edits of this server and what they changed. */
     private void historySearch() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("/history");
         if (entry == null) {
             return;
         }
-        entry.description = "Inspect your edit history";
+        entry.description = "Inspect the edits of this server";
         entry.group = "history";
-        entry.arguments.add("list|info|summary|summarize|distr|distribution|find|inspect|search|near|rollback|restore|rerun|import|clear");
+        entry.valueFlags.add("p");
+        entry.valueFlags.add("u");
+        entry.valueFlags.add("t");
+        entry.valueFlags.add("r");
+        // -f restores instead of rolling back, exactly as FAWE's flag does.
+        entry.booleanFlags.add("f");
+        entry.arguments.add("list|info|summary|summarize|distr|distribution|find|inspect|search|near"
+                + "|rollback|restore|rerun|import|clear");
+        entry.arguments.add("[-u <user>]");
+        entry.arguments.add("[-t <time>]");
+        entry.arguments.add("[-r <radius>]");
+        entry.arguments.add("[-p <page>]");
         entry.handler = ctx -> {
             LocalSession session = ctx.session();
             String action = ctx.arg(0, "list").toLowerCase(Locale.ROOT);
             switch (action) {
-                case "list" -> {
-                    ctx.actor().message(Msg.info("History entries: " + session.getHistory().size()
-                            + " (current index " + session.getHistory().currentIndex() + ")"));
-                }
+                case "list" -> list(ctx);
                 case "info", "summary", "summarize" -> {
-                    var current = session.getHistory().getCurrent();
+                    History.Record current = session.getHistory().getCurrent();
                     ctx.actor().message(current == null ? Msg.info("No edit recorded yet")
-                            : Msg.info("Last edit: " + current.description + " (" + current.changeCount() + " block(s))"));
+                            : Msg.info("Last edit: " + current.description
+                            + " (" + current.changeCount() + " block(s))"));
                 }
-                case "distr", "distribution" -> {
-                    var current = session.getHistory().getCurrent();
-                    if (current == null) {
-                        throw CommandRegistry.error("No edit recorded yet");
-                    }
-                    Map<String, Integer> counts = new LinkedHashMap<>();
-                    for (var sets : current.changes().values()) {
-                        for (var set : sets) {
-                            for (int i = 0; i < set.size(); i++) {
-                                String name = BlockState.registry().name(set.before()[i]);
-                                counts.merge(name, 1, Integer::sum);
-                            }
-                        }
-                    }
-                    ctx.actor().message(Msg.info("Blocks changed by the last edit (before state):"));
-                    counts.entrySet().stream()
-                            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                            .limit(20)
-                            .forEach(e -> ctx.actor().message(Msg.of("§7" + e.getKey() + "§r: §f" + e.getValue())));
-                }
-                case "find", "inspect", "search", "near" -> ctx.actor().message(Msg.info(
-                        "Snapshot search needs the database backend, which the standalone mod does not ship; "
-                                + "use //undo to step through your edits"));
-                case "rollback", "restore", "rerun", "import" -> ctx.actor().message(Msg.info(
-                        "Rolling back other players' edits needs the database backend; "
-                                + "use //undo <number> to revert your own edits"));
+                case "distr", "distribution" -> distribution(ctx);
+                case "find", "inspect", "search", "near" -> find(ctx);
+                case "rollback" -> applyMatches(ctx, !ctx.hasFlag("f"));
+                case "restore", "rerun" -> applyMatches(ctx, false);
+                case "import" -> ctx.actor().message(Msg.info(
+                        "Importing a database history needs a database, which the standalone mod does not ship"));
                 case "clear" -> {
                     session.getHistory().clear();
+                    EditLog.clear();
                     ctx.actor().message(Msg.success("History cleared"));
                 }
-                default -> throw CommandRegistry.error("Usage: //history list|info|distr|find|rollback|restore|clear");
+                default -> throw CommandRegistry.error(
+                        "Usage: //history list|info|distr|find|rollback|restore|clear");
             }
         };
+    }
+
+    /** {@code //history list [-p <page>]} — the edits of this server, newest first. */
+    private void list(Ctx ctx) {
+        List<EditLog.Entry> entries = EditLog.entries();
+        if (entries.isEmpty()) {
+            ctx.actor().message(Msg.info("No edit recorded yet"));
+            return;
+        }
+        Page page = Page.of(ctx, entries.size());
+        ctx.actor().message(Msg.info("Edits (" + entries.size() + ", page " + page.number + "/" + page.pages + "):"));
+        for (EditLog.Entry entry : entries.subList(page.from, page.to)) {
+            ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
+                    + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+        }
+        page.hint(ctx, "//history list");
+    }
+
+    /** {@code //history distr [-p <page>]} — what the last edit changed, by block. */
+    private void distribution(Ctx ctx) {
+        History.Record current = ctx.session().getHistory().getCurrent();
+        if (current == null) {
+            throw CommandRegistry.error("No edit recorded yet");
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (var sets : current.changes().values()) {
+            for (var set : sets) {
+                for (int i = 0; i < set.size(); i++) {
+                    counts.merge(BlockState.registry().name(set.before()[i]), 1, Integer::sum);
+                }
+            }
+        }
+        List<Map.Entry<String, Integer>> sorted = new ArrayList<>(counts.entrySet());
+        sorted.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
+        Page page = Page.of(ctx, sorted.size());
+        ctx.actor().message(Msg.info("Blocks changed by the last edit (before state, page " + page.number
+                + "/" + page.pages + "):"));
+        for (Map.Entry<String, Integer> counted : sorted.subList(page.from, page.to)) {
+            ctx.actor().message(Msg.of("§7" + counted.getKey() + "§r: §f" + counted.getValue()));
+        }
+        page.hint(ctx, "//history distr");
+    }
+
+    /** {@code //history find [-u <user>] [-t <time>] [-r <radius>] [-p <page>]}. */
+    private void find(Ctx ctx) {
+        List<EditLog.Entry> matches = matches(ctx);
+        if (matches.isEmpty()) {
+            ctx.actor().message(Msg.info("No edit matches those filters"));
+            return;
+        }
+        Page page = Page.of(ctx, matches.size());
+        ctx.actor().message(Msg.info("Matching edits (" + matches.size() + ", page " + page.number
+                + "/" + page.pages + "):"));
+        for (EditLog.Entry entry : matches.subList(page.from, page.to)) {
+            ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
+                    + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+        }
+        page.hint(ctx, "//history find");
+    }
+
+    /**
+     * {@code //history rollback [-u] [-t] [-r] [-f]} and {@code //history restore}:
+     * every matching edit is applied again, either as its before state (rollback)
+     * or as its after state (restore, which is what {@code -f} asks for).
+     */
+    private void applyMatches(Ctx ctx, boolean undo) {
+        List<EditLog.Entry> matches = matches(ctx);
+        if (matches.isEmpty()) {
+            ctx.actor().message(Msg.error("No edit matches those filters"));
+            return;
+        }
+        EditSession session = new EditSession(ctx.world(), ctx.session(), "history", false);
+        int changed = 0;
+        for (EditLog.Entry entry : matches) {
+            for (var sets : entry.record.changes().values()) {
+                for (var set : sets) {
+                    changed += session.applyChangeSet(set, undo);
+                }
+            }
+        }
+        session.flushQueue();
+        ctx.actor().message(Msg.success((undo ? "Rolled back " : "Restored ") + Msg.formatNumber(changed)
+                + " block change(s) from " + matches.size() + " edit(s)"));
+    }
+
+    /** Applies the {@code -u}, {@code -t} and {@code -r} filters of the command line. */
+    private List<EditLog.Entry> matches(Ctx ctx) {
+        String user = ctx.hasFlag("u") ? ctx.flagValue("u", "") : null;
+        long since = ctx.hasFlag("t")
+                ? System.currentTimeMillis() - Commands.parseDuration(ctx.flagValue("t", "")) : -1;
+        double radius = ctx.hasFlag("r") ? ctx.flagDouble("r", -1) : -1;
+        BlockVector3 origin = radius >= 0 ? ctx.actor().position() : null;
+        return EditLog.find(user, ctx.world().name(), radius, since, origin);
+    }
+
+    private static String time(Ctx ctx, EditLog.Entry entry) {
+        return java.time.ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(entry.time),
+                        ctx.session().getTimezone())
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+    }
+
+    /** One page of a result list; the page size matches the other listings. */
+    private static final class Page {
+
+        private static final int SIZE = 20;
+
+        private final int number;
+        private final int pages;
+        private final int from;
+        private final int to;
+
+        private Page(int number, int pages, int from, int to) {
+            this.number = number;
+            this.pages = pages;
+            this.from = from;
+            this.to = to;
+        }
+
+        static Page of(Ctx ctx, int total) {
+            int pages = Math.max(1, (total + SIZE - 1) / SIZE);
+            int number = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
+            int from = (number - 1) * SIZE;
+            return new Page(number, pages, from, Math.min(total, from + SIZE));
+        }
+
+        void hint(Ctx ctx, String command) {
+            if (pages > 1) {
+                ctx.actor().message(Msg.info("Next page: " + command + " -p <page>"));
+            }
+        }
     }
 
 }

@@ -1,5 +1,6 @@
 package com.maxlananas.fawebim.core.command;
 
+import com.maxlananas.fawebim.core.brush.Creatures;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
@@ -12,12 +13,12 @@ import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.noise.Noise;
 import com.maxlananas.fawebim.core.world.BlockState;
+import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Region commands, mirroring WorldEdit's {@code RegionCommands}.
@@ -291,13 +292,40 @@ final class RegionCommands {
         entry.description = "Smooth the terrain, only considering snow blocks";
         entry.group = "region";
         entry.requiresSelection = true;
+        // -l is the snow height to place back, -m restricts the pass to a mask.
+        entry.valueFlags.add("l");
+        entry.valueFlags.add("m");
         entry.arguments.add("[iterations]");
+        entry.arguments.add("[-l <snowBlockCount>]");
+        entry.arguments.add("[-m <mask>]");
         entry.handler = ctx -> {
             Region region = ctx.selection();
             int iterations = Math.max(1, ctx.intArg(0, 1));
             EditSession session = ctx.editSession("snowsmooth");
-            session.setMask(new Masks.BlockMask(session, List.of("minecraft:snow", "minecraft:snow_block")));
+            Mask snowMask = new Masks.BlockMask(session, List.of("minecraft:snow", "minecraft:snow_block"));
+            session.setMask(ctx.hasFlag("m")
+                    ? new Masks.IntersectionMask(List.of(snowMask, Parsers.mask(ctx.flagValue("m", ""), ctx)))
+                    : snowMask);
             int changed = Operations.smooth(ctx.world(), session, region, iterations);
+            int layers = ctx.flagInt("l", 0);
+            if (layers > 0) {
+                // -l lays the given number of snow layers on every smoothed column.
+                BlockStateRegistry states = BlockState.registry();
+                int snow = states.parse("minecraft:snow[layers=" + Math.min(8, layers) + "]");
+                World world = ctx.world();
+                for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
+                    for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
+                        int y = world.getHighestBlockY(x, z);
+                        if (!states.isAirLike(session.getBlock(x, y + 1, z))) {
+                            continue;
+                        }
+                        if (session.setBlock(x, y + 1, z, snow)) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+            session.flushQueue();
             session.flushQueue();
             ctx.actor().message(Msg.success("Smoothed " + changed + " snow block(s)"));
         };
@@ -391,10 +419,13 @@ final class RegionCommands {
     }
 
     /**
-     * {@code //butcher} — kills the entities in a radius, with WorldEdit's flag
-     * set ({@code -p} pets, {@code -n} NPCs, {@code -f} friendly, {@code -g}
-     * golems, {@code -a} animals, {@code -m} monsters, {@code -t} toggles for
-     * named entities and {@code -l} leaves tamed animals alone).
+     * {@code //butcher} — kills the entities matching the flags within a radius.
+     *
+     * <p>Without a flag only the hostile mobs are killed, which is the default
+     * FAWE documents; {@code -p} adds pets, {@code -n} NPCs, {@code -g} golems,
+     * {@code -a} animals, {@code -b} ambient mobs, {@code -t} named entities,
+     * {@code -r} armor stands and {@code -w} water mobs. {@code -f} is the
+     * shortcut for <code>-abgnpt</code>.</p>
      */
     private void butcher() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("butcher");
@@ -404,7 +435,7 @@ final class RegionCommands {
         entry.description = "Kill all or matching entities within a radius";
         entry.group = "region";
         entry.arguments.add("[radius]");
-        entry.booleanFlags.addAll(List.of("p", "n", "f", "g", "a", "m", "t", "l", "e"));
+        entry.booleanFlags.addAll(List.of("p", "n", "g", "a", "b", "t", "f", "r", "w"));
         entry.handler = ctx -> {
             int radius = ctx.args().isEmpty() || ctx.arg(0).startsWith("-")
                     ? com.maxlananas.fawebim.core.platform.Config.get().butcherDefaultRadius
@@ -419,10 +450,13 @@ final class RegionCommands {
             Extent.Region3i box = new Extent.Region3i(
                     origin.x() - radius, world.minY(), origin.z() - radius,
                     origin.x() + radius, world.maxY(), origin.z() + radius);
-            List<EntityData> entities = world.getEntities(box);
+            java.util.Set<Creatures.Category> categories = ctx.hasFlag("f")
+                    ? Creatures.of(true, true, true, true, true, true, ctx.hasFlag("r"), true)
+                    : Creatures.of(ctx.hasFlag("p"), ctx.hasFlag("n"), ctx.hasFlag("g"), ctx.hasFlag("a"),
+                    ctx.hasFlag("b"), ctx.hasFlag("t"), ctx.hasFlag("r"), ctx.hasFlag("w"));
             int killed = 0;
-            for (EntityData entity : entities) {
-                if (!butcherMatches(entity, ctx)) {
+            for (EntityData entity : world.getEntities(box)) {
+                if (!entity.isSpawnable() || !Creatures.matches(entity, categories)) {
                     continue;
                 }
                 world.removeEntity(entity);
@@ -430,46 +464,6 @@ final class RegionCommands {
             }
             ctx.actor().message(Msg.success(killed + " entit(y/ies) removed within " + radius + " block(s)"));
         };
-    }
-
-    /**
-     * Entity filtering for {@code //butcher}. Without flags every entity is
-     * removed, which is what FAWE does; with flags only the requested families
-     * are touched.
-     */
-    private boolean butcherMatches(EntityData entity, Ctx ctx) {
-        String type = entity.type() == null ? "" : entity.type().toLowerCase(Locale.ROOT);
-        boolean anyFlag = ctx.hasFlag("p") || ctx.hasFlag("n") || ctx.hasFlag("f")
-                || ctx.hasFlag("g") || ctx.hasFlag("a") || ctx.hasFlag("m") || ctx.hasFlag("e");
-        if (!anyFlag) {
-            return true;
-        }
-        boolean pet = type.contains("wolf") || type.contains("cat") || type.contains("parrot")
-                || type.contains("horse") || type.contains("llama") || type.contains("fox")
-                || type.contains("axolotl") || type.contains("camel") || type.contains("frog");
-        boolean npc = type.contains("villager") || type.contains("wandering_trader");
-        boolean friendly = type.contains("sheep") || type.contains("cow") || type.contains("pig")
-                || type.contains("chicken") || type.contains("rabbit") || type.contains("bee");
-        boolean golem = type.contains("golem");
-        boolean animal = pet || friendly || type.contains("animal");
-        boolean monster = type.contains("zombie") || type.contains("skeleton") || type.contains("creeper")
-                || type.contains("spider") || type.contains("witch") || type.contains("slime")
-                || type.contains("enderman") || type.contains("blaze") || type.contains("phantom")
-                || type.contains("raider") || type.contains("pillager") || type.contains("illager");
-        if (ctx.hasFlag("l") && entity.nbt() != null
-                && entity.nbt().contains("owner")) {
-            return false;
-        }
-        if (ctx.hasFlag("t") && !entity.nbt().contains("custom_name")) {
-            return false;
-        }
-        return ctx.hasFlag("p") && pet
-                || ctx.hasFlag("n") && npc
-                || ctx.hasFlag("f") && friendly
-                || ctx.hasFlag("g") && golem
-                || ctx.hasFlag("a") && animal
-                || ctx.hasFlag("m") && monster
-                || ctx.hasFlag("e") && !(pet || npc || friendly || golem || animal || monster);
     }
 
     /**

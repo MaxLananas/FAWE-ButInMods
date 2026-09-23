@@ -79,6 +79,67 @@ public final class Schematics {
         return names;
     }
 
+    /** The format a listed name was written in, derived from its extension. */
+    public static String formatOf(String name) {
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".schem")) {
+            return "sponge.3";
+        }
+        if (lower.endsWith(".schematic")) {
+            return "mcedit";
+        }
+        if (lower.endsWith(".nbt")) {
+            return "structure";
+        }
+        return "unknown";
+    }
+
+    /** True when a schematic of that name already exists in the directory. */
+    public static boolean exists(String name, String format) {
+        Path folder = directory();
+        for (String candidate : List.of(name, name + suffixOf(format))) {
+            if (Files.isRegularFile(folder.resolve(candidate))) {
+                return true;
+            }
+        }
+        for (String listed : list()) {
+            if (listed.equalsIgnoreCase(name) || listed.toLowerCase(java.util.Locale.ROOT)
+                    .startsWith(name.toLowerCase(java.util.Locale.ROOT) + ".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The file suffix of a format name, {@code .schem} for {@code sponge.3}. */
+    public static String suffixOf(String format) {
+        String key = format == null ? "" : format.toLowerCase(java.util.Locale.ROOT);
+        return switch (key) {
+            case "mcedit", "schematic", "mcedit2" -> ".schematic";
+            case "structure", "nbt" -> ".nbt";
+            case "sponge.2" -> ".schem";
+            default -> ".schem";
+        };
+    }
+
+    /** When the file behind a listed schematic was last written. */
+    public static String lastModified(String name) {
+        for (Path folder : List.of(directory(), directory().resolve("global"))) {
+            Path file = folder.resolve(name);
+            if (!Files.isRegularFile(file)) {
+                continue;
+            }
+            try {
+                return java.time.Instant.ofEpochMilli(Files.getLastModifiedTime(file).toMillis())
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            } catch (IOException e) {
+                return "unknown";
+            }
+        }
+        return "unknown";
+    }
+
     private static void collect(Path folder, List<String> names) {
         if (!Files.isDirectory(folder)) {
             return;

@@ -28,9 +28,13 @@ public final class History {
     public static final class Record {
 
         public final String description;
+        /** The world the record belongs to, so the edit log can filter by it. */
+        public String world;
         final Map<Long, List<ChangeSet>> changes = new LinkedHashMap<>();
+        final Map<Long, List<BiomeChangeSet>> biomes = new LinkedHashMap<>();
         final List<EntityChange> entities = new ArrayList<>();
         int changeCount;
+        int biomeChangeCount;
 
         public Record(String description) {
             this.description = description;
@@ -64,6 +68,37 @@ public final class History {
             entities.add(change);
         }
 
+        /** Records one biome change, creating the section's set on demand. */
+        public void addBiome(int x, int y, int z, int previous, int current) {
+            if (previous == current) {
+                return;
+            }
+            int sectionY = y >> 4;
+            List<BiomeChangeSet> sets = biomes.computeIfAbsent(key(x >> 4, z >> 4),
+                    k -> new ArrayList<>());
+            BiomeChangeSet set = null;
+            for (BiomeChangeSet candidate : sets) {
+                if (candidate.sectionY() == sectionY) {
+                    set = candidate;
+                    break;
+                }
+            }
+            if (set == null) {
+                set = new BiomeChangeSet(x >> 4, z >> 4, sectionY);
+                sets.add(set);
+            }
+            set.add(x, y, z, previous, current);
+            biomeChangeCount++;
+        }
+
+        public Map<Long, List<BiomeChangeSet>> biomeChanges() {
+            return biomes;
+        }
+
+        public int biomeChangeCount() {
+            return biomeChangeCount;
+        }
+
         public int changeCount() {
             return changeCount;
         }
@@ -77,7 +112,39 @@ public final class History {
         }
 
         public boolean isEmpty() {
-            return changeCount == 0 && entities.isEmpty();
+            return changeCount == 0 && biomeChangeCount == 0 && entities.isEmpty();
+        }
+
+        /**
+         * The box the edit touched, as {@code {x1, y1, z1, x2, y2, z2}}, or null
+         * when it recorded no block. Used by the history filters.
+         */
+        public int[] bounds() {
+            int[] box = null;
+            for (List<ChangeSet> sets : changes.values()) {
+                for (ChangeSet set : sets) {
+                    if (set.size() == 0) {
+                        continue;
+                    }
+                    int minX = set.chunkX() << 4;
+                    int minZ = set.chunkZ() << 4;
+                    int minY = set.minY();
+                    int maxX = minX + 15;
+                    int maxZ = minZ + 15;
+                    int maxY = set.maxY();
+                    if (box == null) {
+                        box = new int[]{minX, minY, minZ, maxX, maxY, maxZ};
+                        continue;
+                    }
+                    box[0] = Math.min(box[0], minX);
+                    box[1] = Math.min(box[1], minY);
+                    box[2] = Math.min(box[2], minZ);
+                    box[3] = Math.max(box[3], maxX);
+                    box[4] = Math.max(box[4], maxY);
+                    box[5] = Math.max(box[5], maxZ);
+                }
+            }
+            return box;
         }
     }
 
@@ -115,6 +182,15 @@ public final class History {
 
     /** Starts a new record and drops any redo history, like FAWE does. */
     public Record newRecord(String description) {
+        return newRecord(description, null);
+    }
+
+    /**
+     * Starts a new record in a known world.
+     *
+     * @param world the world the edit happens in, or null when unknown
+     */
+    public Record newRecord(String description, String world) {
         Record completed = getCurrent();
         if (recordListener != null && completed != null && !completed.isEmpty()) {
             recordListener.accept(completed);
@@ -123,6 +199,7 @@ public final class History {
             records.remove(records.size() - 1);
         }
         Record record = new Record(description);
+        record.world = world;
         records.add(record);
         currentIndex = records.size() - 1;
         trim();

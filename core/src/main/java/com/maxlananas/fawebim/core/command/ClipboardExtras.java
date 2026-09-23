@@ -4,6 +4,7 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
@@ -45,16 +46,21 @@ final class ClipboardExtras {
         entry.description = "Copy the selection to the clipboard without reading it";
         entry.group = "clipboard";
         entry.requiresSelection = true;
+        // -e skips the entities, which is the opposite of //copy -e.
         entry.booleanFlags.add("e");
+        entry.booleanFlags.add("b");
         entry.handler = ctx -> {
             Region region = ctx.selection();
-            if (ctx.hasFlag("e")) {
-                throw CommandRegistry.error("Entities cannot be captured by a lazy copy; use //copy -e");
-            }
             BlockArrayClipboard clipboard = BlockArrayClipboard.lazy(ctx.world(), region, "lazy");
+            if (ctx.hasFlag("b")) {
+                for (BlockVector3 position : region) {
+                    clipboard.setBiome(position.x(), position.y(), position.z(),
+                            ctx.world().getBiome(position.x(), position.y(), position.z()));
+                }
+            }
             ctx.session().setClipboard(clipboard);
             ctx.actor().message(Msg.success("Lazily copied " + Msg.formatNumber(clipboard.volume())
-                    + " block(s) to the clipboard"));
+                    + " block(s) to the clipboard" + (ctx.hasFlag("e") ? " without entities" : "")));
         };
     }
 
@@ -70,12 +76,16 @@ final class ClipboardExtras {
         entry.group = "clipboard";
         entry.requiresSelection = true;
         entry.booleanFlags.add("e");
+        entry.booleanFlags.add("b");
         entry.handler = ctx -> {
             Region region = ctx.selection();
-            if (ctx.hasFlag("e")) {
-                throw CommandRegistry.error("Entities cannot be captured by a lazy cut; use //cut -e");
-            }
             BlockArrayClipboard clipboard = BlockArrayClipboard.lazy(ctx.world(), region, "lazy");
+            if (ctx.hasFlag("b")) {
+                for (BlockVector3 position : region) {
+                    clipboard.setBiome(position.x(), position.y(), position.z(),
+                            ctx.world().getBiome(position.x(), position.y(), position.z()));
+                }
+            }
             ctx.session().setClipboard(clipboard);
             EditSession session = ctx.editSession("lazycut");
             int air = BlockState.registry().air();
@@ -128,22 +138,46 @@ final class ClipboardExtras {
         if (entry == null) {
             return;
         }
-        entry.description = "Place your clipboard at your position";
+        entry.description = "Place the clipboard's contents without applying transformations";
         entry.group = "clipboard";
         entry.requiresPlayer = true;
         entry.booleanFlags.add("a");
+        entry.booleanFlags.add("o");
+        entry.booleanFlags.add("s");
+        entry.booleanFlags.add("n");
+        entry.booleanFlags.add("e");
+        entry.booleanFlags.add("b");
+        entry.booleanFlags.add("x");
         entry.handler = ctx -> {
             ClipboardHolder holder = ctx.session().getClipboard();
             if (holder == null) {
                 throw CommandRegistry.error("No clipboard: copy something first");
             }
             BlockArrayClipboard clipboard = holder.getClipboard();
-            BlockVector3 destination = ctx.actor().position();
+            BlockVector3 destination = ctx.hasFlag("o") ? clipboard.getOrigin() : ctx.actor().position();
             EditSession session = ctx.editSession("place");
-            int changed = Clipboards.paste(clipboard, destination, session, holder.getTransform(),
-                    !ctx.hasFlag("a"), true, false);
+            Masks.ExtentHolder.set(session);
+            boolean onlySelect = ctx.hasFlag("n");
+            int changed = 0;
+            if (!onlySelect) {
+                changed = Clipboards.paste(clipboard, destination, session,
+                        com.maxlananas.fawebim.core.transform.Transform.identity(), !ctx.hasFlag("a"),
+                        session.getMask(), ctx.hasFlag("e"), ctx.hasFlag("b"), ctx.hasFlag("x"), false);
+            }
+            if (ctx.hasFlag("s") || onlySelect) {
+                var selector = ctx.session().getSelector(ctx.world());
+                var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
+                BlockVector3 max = destination.add(clipboard.getWidth(), clipboard.getHeight(),
+                        clipboard.getLength());
+                selector.selectPrimary(destination, limits);
+                selector.selectSecondary(max, limits);
+            }
             session.flushQueue();
-            ctx.actor().message(Msg.success("Placed " + changed + " block(s) at " + destination));
+            if (onlySelect) {
+                ctx.actor().message(Msg.success("Selected the clipboard region at " + destination));
+            } else {
+                ctx.actor().message(Msg.success("Placed " + changed + " block(s) at " + destination));
+            }
         };
     }
 

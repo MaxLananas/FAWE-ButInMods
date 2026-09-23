@@ -74,6 +74,15 @@ public interface World extends Extent {
         return false;
     }
 
+    /**
+     * The last time a chunk was written to disk, in milliseconds since the epoch,
+     * or {@code -1} when the platform cannot tell. {@code //delchunks -o} uses it
+     * to leave recently edited chunks alone.
+     */
+    default long chunkLastModified(int chunkX, int chunkZ) {
+        return -1;
+    }
+
     boolean generateTree(BlockVector3 pos, String treeType, Random random);
 
     boolean generateFeature(BlockVector3 pos, String featureType, Random random);

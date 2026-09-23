@@ -66,8 +66,9 @@ public final class EditSession implements Extent {
     public EditSession(World world, LocalSession session, String description, boolean recordHistory) {
         this.world = world;
         this.session = session;
+        session.setLastWorldName(world.name());
         this.registry = BlockStateRegistryHolder.registry();
-        this.record = recordHistory ? session.getHistory().newRecord(description) : null;
+        this.record = recordHistory ? session.getHistory().newRecord(description, world.name()) : null;
         this.limiter = new TimeLimiter(session.getTimeout() * 1000L);
         this.changeLimit = session.hasBlockChangeLimit() ? session.getMaxBlocksChanged() : -1;
         this.mask = session.getMask();
@@ -200,8 +201,26 @@ public final class EditSession implements Extent {
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
         ChunkSet chunk = chunkFor(x, z, true);
+        // The previous value must be read before the buffer takes the new one,
+        // or /snapshot restore -b would restore what the edit just wrote.
+        int previous = chunk.getBiome(x, y, z);
+        if (previous < 0) {
+            previous = world.getBiome(x, y, z);
+        }
+        if (record != null) {
+            record.addBiome(x, y, z, previous, biomeId);
+        }
         chunk.setBiome(x, y, z, biomeId, world.minY());
         return true;
+    }
+
+    /** Re-applies a recorded run of biome changes, the block equivalent of {@link #applyChangeSet}. */
+    public int applyBiomeChangeSet(com.maxlananas.fawebim.core.history.BiomeChangeSet set, boolean undo) {
+        int[] values = undo ? set.before() : set.after();
+        for (int i = 0; i < set.size(); i++) {
+            setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+        }
+        return set.size();
     }
 
     @Override
@@ -300,11 +319,22 @@ public final class EditSession implements Extent {
 
     @Override
     public void addEntity(com.maxlananas.fawebim.core.world.EntityData data) {
+        recordEntity(data, false);
         world.addEntity(data);
+    }
+
+    /** Remembers an entity change so undo and {@code /snapshot restore -e} can replay it. */
+    private void recordEntity(com.maxlananas.fawebim.core.world.EntityData data, boolean removed) {
+        if (record == null) {
+            return;
+        }
+        record.addEntity(new History.EntityChange(data.type(), data.nbt(), data.position().x(),
+                data.position().y(), data.position().z(), removed));
     }
 
     @Override
     public void removeEntity(com.maxlananas.fawebim.core.world.EntityData data) {
+        recordEntity(data, true);
         world.removeEntity(data);
     }
 

@@ -50,14 +50,22 @@ final class SnapshotCommands {
         }
         entry.description = "List your snapshots";
         entry.group = "snapshot";
+        entry.valueFlags.add("p");
+        entry.arguments.add("[-p <page>]");
         entry.handler = ctx -> {
             List<Path> snapshots = Snapshots.list(ctx.actor().name());
             if (snapshots.isEmpty()) {
                 ctx.actor().message(Msg.info("No snapshots yet"));
                 return;
             }
-            ctx.actor().message(Msg.info("Snapshots (" + snapshots.size() + "):"));
-            for (Path path : snapshots) {
+            int pageSize = 20;
+            int pages = Math.max(1, (snapshots.size() + pageSize - 1) / pageSize);
+            int page = Math.max(1, Math.min(pages, ctx.flagInt("p", 1)));
+            int from = (page - 1) * pageSize;
+            int to = Math.min(snapshots.size(), from + pageSize);
+            ctx.actor().message(Msg.info("Snapshots (" + snapshots.size() + ", page " + page + "/"
+                    + pages + "):"));
+            for (Path path : snapshots.subList(from, to)) {
                 long time = Snapshots.timestampOf(path);
                 ctx.actor().message(Msg.of("§7 - §f" + path.getFileName() + "§7 "
                         + (time < 0 ? "?" : ZonedDateTime.ofInstant(Instant.ofEpochMilli(time),
@@ -182,13 +190,21 @@ final class SnapshotCommands {
         }
         entry.description = "Restore a snapshot";
         entry.group = "snapshot";
+        // -b also puts the recorded biomes back, -e the recorded entities.
+        entry.booleanFlags.add("b");
+        entry.booleanFlags.add("e");
         entry.arguments.add("[name]");
         entry.handler = ctx -> {
             Path path = ctx.args().isEmpty() ? requireSnapshot(ctx) : resolve(ctx);
             EditSession session = ctx.editSession("snapshot restore");
-            int restored = Snapshots.restore(session, read(ctx, path));
+            var snapshot = read(ctx, path);
+            int restored = Snapshots.restore(session, snapshot);
+            int biomes = ctx.hasFlag("b") ? Snapshots.restoreBiomes(session, snapshot) : 0;
+            int entities = ctx.hasFlag("e") ? Snapshots.restoreEntities(session, snapshot) : 0;
             session.flushQueue();
-            ctx.actor().message(Msg.success("Restored " + restored + " block(s) from " + path.getFileName()));
+            ctx.actor().message(Msg.success("Restored " + restored + " block(s) from " + path.getFileName()
+                    + (ctx.hasFlag("b") ? ", " + biomes + " biome cell(s)" : "")
+                    + (ctx.hasFlag("e") ? ", " + entities + " entit(ies)" : "")));
         };
     }
 

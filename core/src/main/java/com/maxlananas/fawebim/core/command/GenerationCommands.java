@@ -203,6 +203,12 @@ final class GenerationCommands {
         entry.description = "Sets the biome according to a formula";
         entry.group = "generation";
         entry.requiresSelection = true;
+        // -c evaluates the formula around the centre of the selection, -h keeps
+        // it hollow, -r uses the game origin and -o the player's position.
+        entry.booleanFlags.add("c");
+        entry.booleanFlags.add("h");
+        entry.booleanFlags.add("r");
+        entry.booleanFlags.add("o");
         entry.arguments.add("formula");
         entry.handler = ctx -> {
             Region region = ctx.selection();
@@ -213,12 +219,24 @@ final class GenerationCommands {
             Expression.Variables variables = new Expression.Variables();
             variables.set("miny", world.minY());
             variables.set("maxy", world.maxY());
+            double centerX = (region.getMinimumPoint().x() + region.getMaximumPoint().x()) / 2.0;
+            double centerZ = (region.getMinimumPoint().z() + region.getMaximumPoint().z()) / 2.0;
+            BlockVector3 placement = ctx.actor().position() == null ? region.getMinimumPoint()
+                    : ctx.actor().position();
             int changed = 0;
             for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
                 for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
                     session.checkTimeout();
-                    variables.set("x", x);
-                    variables.set("z", z);
+                    if (ctx.hasFlag("o")) {
+                        variables.set("x", x - placement.x());
+                        variables.set("z", z - placement.z());
+                    } else if (ctx.hasFlag("c")) {
+                        variables.set("x", x - centerX);
+                        variables.set("z", z - centerZ);
+                    } else {
+                        variables.set("x", x);
+                        variables.set("z", z);
+                    }
                     int biomeId = (int) Math.floor(expression.evaluate(variables));
                     if (states.biomeName(biomeId) == null) {
                         continue;

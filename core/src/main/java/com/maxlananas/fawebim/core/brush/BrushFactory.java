@@ -1,14 +1,15 @@
 package com.maxlananas.fawebim.core.brush;
 
 import com.maxlananas.fawebim.core.actor.Actor;
-import com.maxlananas.fawebim.core.command.Ctx;
-import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.session.LocalSession;
+import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -54,146 +55,283 @@ public final class BrushFactory {
     }
 
     /**
-     * Builds a brush by name. Returns null when the name is unknown.
+     * Builds a brush from the values of a {@code /brush} command line.
      *
-     * @param pattern the fill pattern (null for the clipboard brush)
+     * <p>Every FAWE brush name and alias maps onto exactly one construction here,
+     * so the argument list and the switches of the generated {@code BrushTable}
+     * are the whole surface of the command.</p>
      */
-    public static Brush create(String name, double radius, Pattern pattern, Ctx ctx) {
-        String key = name.toLowerCase(Locale.ROOT);
-        BrushSettings settings = new BrushSettings();
-        settings.setSize((int) Math.max(1, Math.round(radius)));
-        settings.setFill(pattern);
-        if (ctx != null) {
-            settings.setRange((int) ctx.session().getMaxBrushRange());
-        }
-        Mask mask = ctx == null ? null : ctx.session().getMask();
-        Brush brush = switch (key) {
-            case "sphere", "ball" -> new Brushes.SphereBrush(radius, pattern, mask);
-            case "cylinder", "sphere2d", "cylinderbrush" -> new Brushes.CylinderBrush(radius, pattern, mask);
-            case "smooth" -> new Brushes.SmoothBrush(radius, mask);
-            case "blendball" -> new Brushes.BlendBallBrush(radius, mask);
-            case "flatten" -> new Brushes.FlattenBrush(radius, pattern, mask);
-            case "height" -> new Brushes.HeightmapBrush(radius, pattern, mask, false, 1);
-            case "heightmap" -> createHeightmapBrush(radius, pattern, mask, ctx);
-            case "cliff" -> new Brushes.HeightmapBrush(radius, pattern, mask, true, 1);
-            case "circle" -> new Brushes.CircleBrush(radius, pattern, mask, true);
-            case "raise", "lower" -> new Brushes.RaiseLowerBrush(radius, pattern, key.equals("lower"), mask);
-            case "layer" -> new Brushes.LayerBrush(radius, pattern, mask);
-            case "line" -> new Brushes.LineBrush(radius, pattern, mask);
-            case "spline" -> new Brushes.SplineBrush(radius, pattern, mask, false);
-            case "surfacespline" -> new Brushes.SplineBrush(radius, pattern, mask, true);
-            case "catenary" -> new Brushes.CatenaryBrush(radius, pattern, mask);
-            case "scatter" -> new Brushes.ScatterBrush(radius, pattern, mask);
-            case "shatter" -> new Brushes.ShatterBrush(radius, pattern, mask);
-            case "splatter" -> new Brushes.SplatterBrush(radius, pattern, mask);
-            case "rock" -> new Brushes.RockBrush(radius, pattern, mask);
-            case "blob" -> new Brushes.BlobBrush(radius, pattern, mask);
-            case "pull" -> new Brushes.PullBrush(radius, pattern, mask);
-            case "stencil" -> new Brushes.StencilBrush(radius, pattern, mask);
-            case "gravity" -> new Brushes.GravityBrush(radius, mask);
-            case "clipboard", "copypaste" -> new Brushes.ClipboardBrush(radius, mask,
-                    ctx != null && ctx.hasFlag("o"));
-            case "biome" -> new Brushes.BiomeBrush(radius, mask);
-            case "butcher" -> new Brushes.ButcherBrush(radius);
-            case "forest" -> new Brushes.ForestBrush(radius, mask);
-            case "command" -> new Brushes.CommandBrush(radius, ctx == null ? "" : ctx.joined(2));
-            case "scattercommand" -> new Brushes.ScatterCommandBrush(radius, ctx == null ? "" : ctx.joined(2));
-            case "populateschematic" -> new Brushes.PopulateSchematicBrush(radius);
-            case "surface" -> new Brushes.SurfaceBrush(radius, pattern, mask);
-            case "sweep" -> new Brushes.SweepBrush(radius, pattern, mask);
-            case "deform" -> new Brushes.DeformBrush(radius, ctx == null ? "" : ctx.joined(2));
-            case "erode", "dilate", "morph" -> new Brushes.ErodeDilateBrush(radius, key, mask);
-            case "extinguish" -> new Brushes.ExtinguishBrush(radius);
-            case "snow", "snowsmooth" -> new Brushes.SnowBrush(radius, key.equals("snowsmooth"), mask);
-            case "item" -> new Brushes.SphereBrush(radius, pattern, mask);
-            case "recurse" -> new Brushes.RecurseBrush(radius, pattern, mask);
-            case "feature", "structure" -> new Brushes.FeatureBrush(radius, key, mask);
-            case "set" -> new Brushes.SphereBrush(radius, pattern, mask);
-            case "image" -> new Brushes.SphereBrush(radius, pattern, mask);
+    public static Brush create(BrushParameters parameters) {
+        String key = canonical(parameters.name());
+        return switch (key) {
+            case "sphere" -> {
+                Brushes.SphereBrush brush = parameters.flag("f")
+                        ? new Brushes.FallingSphereBrush(parameters.radius(), parameters.pattern(), parameters.mask())
+                        : new Brushes.SphereBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+                brush.setHollow(parameters.flag("h"));
+                yield brush;
+            }
+            case "cylinder" -> {
+                Brushes.CylinderBrush brush = new Brushes.CylinderBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask(), parameters.integer("height", 1), parameters.number("thickness", 0));
+                brush.setHollow(parameters.flag("h"));
+                yield brush;
+            }
+            case "smooth" -> {
+                Brushes.SmoothBrush brush = new Brushes.SmoothBrush(parameters.radius(), parameters.mask());
+                brush.setIterations(parameters.integer("iterations", 4));
+                yield brush;
+            }
+            case "blendball" -> new Brushes.BlendBallBrush(parameters.radius(), parameters.mask(),
+                    parameters.flag("a"), parameters.integer("minFreqDiff", 1), parameters.flagMask());
+            case "height" -> terrain(parameters, false, false);
+            case "cliff" -> terrain(parameters, true, false);
+            case "flatten" -> terrain(parameters, false, true);
+            case "heightmap" -> createHeightmapBrush(parameters);
+            case "circle" -> new Brushes.CircleBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
+                    !parameters.string("filled", "false").equals("false"));
+            case "raise", "lower" -> new Brushes.RaiseLowerBrush(parameters.radius(), parameters.pattern(),
+                    key.equals("lower"), parameters.mask());
+            case "layer" -> new Brushes.LayerBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "line" -> {
+                Brushes.LineBrush brush = new Brushes.LineBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask());
+                brush.setShell(parameters.flag("h"));
+                brush.setSelect(parameters.flag("s"));
+                brush.setFlat(parameters.flag("f"));
+                yield brush;
+            }
+            case "spline" -> new Brushes.SplineBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
+                    false);
+            case "surfacespline" -> {
+                Brushes.SurfaceSplineBrush brush = new Brushes.SurfaceSplineBrush(parameters.radius(),
+                        parameters.pattern(), parameters.mask());
+                brush.setCurve(parameters.number("tension", 0), parameters.number("bias", 0),
+                        parameters.number("continuity", 0), parameters.integer("quality", 10));
+                yield brush;
+            }
+            case "catenary" -> {
+                Brushes.CatenaryBrush brush = new Brushes.CatenaryBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask());
+                brush.setLengthFactor(parameters.number("lengthFactor", 1.2));
+                brush.setShell(parameters.flag("h"));
+                brush.setSelect(parameters.flag("s"));
+                brush.setFacingDirection(parameters.flag("d"));
+                yield brush;
+            }
+            case "scatter" -> new Brushes.ScatterBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
+                    parameters.integer("points", 5), parameters.integer("distance", 1), parameters.flag("o"));
+            case "shatter" -> new Brushes.ShatterBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "splatter" -> {
+                Brushes.SplatterBrush brush = new Brushes.SplatterBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask());
+                brush.setPoints(parameters.integer("points", 1));
+                yield brush;
+            }
+            case "rock" -> {
+                Brushes.RockBrush brush = new Brushes.RockBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask());
+                brush.setShape(parameters.number("sphericity", 100), parameters.number("frequency", 30),
+                        parameters.number("amplitude", 50));
+                yield brush;
+            }
+            case "pull" -> {
+                Brushes.PullBrush brush = new Brushes.PullBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask());
+                brush.setShape(parameters.integer("erodefaces", 6), parameters.integer("erodeRec", 0),
+                        parameters.integer("fillFaces", 1), parameters.integer("fillRec", 1));
+                yield brush;
+            }
+            case "stencil" -> {
+                Brushes.StencilBrush brush = new Brushes.StencilBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask(), loadImage(parameters.string("image", "")),
+                        parameters.integer("rotation", 0), parameters.number("yscale", 1),
+                        parameters.flag("w"), parameters.flag("r"));
+                yield brush;
+            }
+            case "gravity" -> {
+                Brushes.GravityBrush brush = new Brushes.GravityBrush(parameters.radius(), parameters.mask());
+                brush.setFromY(parameters.integer("h", Integer.MIN_VALUE));
+                yield brush;
+            }
+            case "clipboard", "copypaste" -> new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),
+                    parameters.flag("o"));
+            case "biome" -> {
+                Brushes.BiomeBrush brush = new Brushes.BiomeBrush(parameters.radius(), parameters.mask());
+                brush.setFullColumn(parameters.flag("c"));
+                yield brush;
+            }
+            case "butcher" -> new Brushes.ButcherBrush(parameters.radius(), categories(parameters));
+            case "forest", "structure", "feature" -> {
+                Brushes.FeatureBrush brush = new Brushes.FeatureBrush(parameters.radius(), key, parameters.mask());
+                brush.setFeature(parameters.string("type", ""));
+                brush.setDensity(parameters.integer("density", 5));
+                yield brush;
+            }
+            case "command" -> new Brushes.CommandBrush(parameters.radius(), parameters.string("input", ""),
+                    parameters.flag("h"));
+            case "scattercommand" -> new Brushes.ScatterCommandBrush(parameters.radius(),
+                    parameters.string("commandStr", ""), parameters.flag("p"));
+            case "populateschematic" -> {
+                Brushes.PopulateSchematicBrush brush = new Brushes.PopulateSchematicBrush(parameters.radius());
+                brush.setSchematic(parameters.string("clipboardStr", ""));
+                brush.setDensity(parameters.integer("density", 50));
+                brush.setRandomRotation(parameters.flag("r"));
+                yield brush;
+            }
+            case "surface" -> new Brushes.SurfaceBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "sweep" -> new Brushes.SweepBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "deform" -> {
+                Brushes.DeformBrush brush = new Brushes.DeformBrush(parameters.radius(),
+                        parameters.string("expression", ""));
+                brush.setGameOrigin(parameters.flag("r"));
+                brush.setPlacementOrigin(parameters.flag("o"));
+                yield brush;
+            }
+            case "erode", "dilate", "morph" -> new Brushes.ErodeDilateBrush(parameters.radius(), key,
+                    parameters.mask());
+            case "extinguish" -> new Brushes.ExtinguishBrush(parameters.radius());
+            case "snow" -> {
+                Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), false, parameters.mask());
+                brush.setStack(parameters.flag("s"));
+                yield brush;
+            }
+            case "snowsmooth" -> {
+                Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), true, parameters.mask());
+                brush.setLayers(parameters.integer("snowBlockCount", 1));
+                brush.setHeightMask(parameters.flagMask());
+                yield brush;
+            }
+            case "item" -> new Brushes.ItemBrush(parameters.radius(), parameters.string("item", ""),
+                    parameters.string("direction", "up"));
+            case "recurse", "recursive" -> {
+                Brushes.RecurseBrush brush = new Brushes.RecurseBrush(parameters.radius(), parameters.pattern(),
+                        parameters.mask());
+                brush.setDepthFirst(parameters.flag("d"));
+                yield brush;
+            }
+            case "set", "image" -> new Brushes.SphereBrush(parameters.radius(), parameters.pattern(),
+                    parameters.mask());
             default -> null;
         };
+    }
+
+    /** {@code /brush height|cliff|flatten <radius> [image] [rotation] [yscale]}. */
+    private static Brush terrain(BrushParameters parameters, boolean cylinder, boolean flatten) {
+        Brushes.HeightmapBrush brush = new Brushes.HeightmapBrush(parameters.radius(), parameters.pattern(),
+                parameters.mask(), cylinder, parameters.number("yscale", 1));
+        brush.setFlatten(flatten);
+        brush.setImage(loadImage(parameters.string("image", "")));
+        brush.setRotation(parameters.integer("rotation", 0));
+        brush.setRandomRotation(parameters.flag("r"));
+        brush.setLayers(parameters.flag("l"));
+        // -s disables the smoothing pass FAWE runs on the raised terrain.
+        brush.setSmooth(!parameters.flag("s"));
         return brush;
     }
 
-    /** {@code /brush heightmap <image> [yscale]} needs the image file to exist. */
-    private static Brush createHeightmapBrush(double radius, Pattern pattern, Mask mask, Ctx ctx) {
-        if (ctx == null) {
-            return null;
-        }
-        // /brush heightmap <radius> <pattern> <image> [yscale].
-        String file = ctx.arg(2, "");
-        com.maxlananas.fawebim.core.util.Images.PixelSource image =
-                com.maxlananas.fawebim.core.util.Images.load(
-                        com.maxlananas.fawebim.core.clipboard.Schematics.directory().resolve(file));
+    /** {@code /brush heightmap <image> [radius] [intensity] [-e] [-f] [-r]}. */
+    private static Brush createHeightmapBrush(BrushParameters parameters) {
+        String file = parameters.string("imageName", "");
+        Images.PixelSource image = loadImage(file);
         if (image == null) {
-            throw com.maxlananas.fawebim.core.command.CommandRegistry.error(
-                    "Image '" + file + "' not found in " + com.maxlananas.fawebim.core.clipboard.Schematics.directory());
+            throw CommandRegistry.error("Image '" + file + "' not found in "
+                    + com.maxlananas.fawebim.core.clipboard.Schematics.directory());
         }
-        return new Brushes.ImageHeightmapBrush(radius, pattern, mask, image, ctx.doubleArg(3, 1));
+        // -e erases instead of filling, so the brush places air.
+        Pattern fill = parameters.flag("e")
+                ? new com.maxlananas.fawebim.core.pattern.Patterns.Single(
+                        com.maxlananas.fawebim.core.world.BlockState.registry().air())
+                : parameters.pattern();
+        Brushes.ImageHeightmapBrush brush = new Brushes.ImageHeightmapBrush(parameters.radius(), fill,
+                parameters.mask(), image, 1);
+        brush.setIntensity(parameters.integer("intensity", 5));
+        brush.setFlatten(parameters.flag("f"));
+        brush.setRandomize(parameters.flag("r"));
+        return brush;
     }
 
-    /** Creates a brush from a name only, used by saved brush presets. */
+    /** Loads a brush image from the schematic directory, or null when unnamed. */
+    private static Images.PixelSource loadImage(String file) {
+        if (file == null || file.isEmpty()) {
+            return null;
+        }
+        Images.PixelSource image = Images.load(
+                com.maxlananas.fawebim.core.clipboard.Schematics.directory().resolve(file));
+        if (image == null) {
+            throw CommandRegistry.error("Image '" + file + "' not found in "
+                    + com.maxlananas.fawebim.core.clipboard.Schematics.directory());
+        }
+        return image;
+    }
+
+    /** The creature categories {@code /brush butcher} flags selected. */
+    private static java.util.Set<Creatures.Category> categories(BrushParameters parameters) {
+        if (parameters.flag("f")) {
+            // -f is the shortcut for "-abgnpt": every category but the armor
+            // stands, which upstream keeps behind -r so they survive.
+            return Creatures.of(true, true, true, true, true, true, parameters.flag("r"), true);
+        }
+        return Creatures.of(parameters.flag("p"), parameters.flag("n"), parameters.flag("g"), parameters.flag("a"),
+                parameters.flag("b"), parameters.flag("t"), parameters.flag("r"), parameters.flag("w"));
+    }
+
+    /** Maps every FAWE brush name or alias onto the key this factory switches on. */
+    public static String canonical(String name) {
+        String key = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return switch (key) {
+            case "ball" -> "sphere";
+            case "sphere2d", "cylinderbrush" -> "cylinder";
+            case "flatcylinder" -> "cliff";
+            case "blob" -> "rock";
+            case "kill" -> "butcher";
+            case "cat", "gravityline", "saggedline" -> "catenary";
+            case "bb", "blend" -> "blendball";
+            case "flatmap", "flat" -> "flatten";
+            case "cyl" -> "cylinder";
+            case "grav" -> "gravity";
+            case "cp", "copypasta" -> "copypaste";
+            case "splat" -> "splatter";
+            case "spl", "curve" -> "spline";
+            case "sspline", "sspl" -> "surfacespline";
+            case "surf" -> "surface";
+            case "sw", "vaesweep" -> "sweep";
+            case "ex" -> "extinguish";
+            case "partition", "split" -> "shatter";
+            case "cmd" -> "command";
+            case "scattercmd", "scmd", "scommand" -> "scattercommand";
+            case "popschem", "populateschem", "pschem", "ps" -> "populateschematic";
+            case "recursive" -> "recurse";
+            default -> key;
+        };
+    }
+
+    /** Creates a brush from a name and a radius only, used by the saved presets. */
     public static Brush preset(String name, double radius, Pattern fill) {
-        return create(name, radius, fill, null);
+        String[] row = com.maxlananas.fawebim.core.command.BrushTable.byName(canonical(name));
+        if (row == null) {
+            return null;
+        }
+        return create(BrushParameters.of(row, radius, fill, BrushOptions.empty()));
     }
 
     /**
-     * Every brush {@code /brush <name>} accepts, paired with the key the factory
-     * uses. The command registration iterates this list, so a brush cannot exist
-     * without being reachable from the command line.
+     * Every brush {@code /brush <name>} accepts, paired with the name the
+     * factory is asked for. Derived from the generated signatures, so a brush
+     * cannot exist without a command line.
      */
-    public static final List<String[]> COMMANDS = List.of(
-            new String[]{"sphere", "sphere"},
-            new String[]{"ball", "sphere"},
-            new String[]{"smooth", "smooth"},
-            new String[]{"blendball", "blendball"},
-            new String[]{"flatten", "flatten"},
-            new String[]{"height", "height"},
-            new String[]{"heightmap", "heightmap"},
-            new String[]{"raise", "raise"},
-            new String[]{"lower", "lower"},
-            new String[]{"layer", "layer"},
-            new String[]{"line", "line"},
-            new String[]{"spline", "spline"},
-            new String[]{"surfacespline", "surfacespline"},
-            new String[]{"catenary", "catenary"},
-            new String[]{"scatter", "scatter"},
-            new String[]{"shatter", "shatter"},
-            new String[]{"splatter", "splatter"},
-            new String[]{"rock", "rock"},
-            new String[]{"blob", "blob"},
-            new String[]{"pull", "pull"},
-            new String[]{"stencil", "stencil"},
-            new String[]{"gravity", "gravity"},
-            new String[]{"cylinder", "cylinder"},
-            new String[]{"circle", "circle"},
-            new String[]{"clipboard", "clipboard"},
-            new String[]{"copypaste", "copypaste"},
-            new String[]{"biome", "biome"},
-            new String[]{"butcher", "butcher"},
-            new String[]{"forest", "forest"},
-            new String[]{"command", "command"},
-            new String[]{"scattercommand", "scattercommand"},
-            new String[]{"populateschematic", "populateschematic"},
-            new String[]{"surface", "surface"},
-            new String[]{"sweep", "sweep"},
-            new String[]{"deform", "deform"},
-            new String[]{"erode", "erode"},
-            new String[]{"dilate", "dilate"},
-            new String[]{"morph", "morph"},
-            new String[]{"extinguish", "extinguish"},
-            new String[]{"snow", "snow"},
-            new String[]{"snowsmooth", "snowsmooth"},
-            new String[]{"item", "item"},
-            new String[]{"recurse", "recurse"},
-            new String[]{"recursive", "recurse"},
-            new String[]{"feature", "feature"},
-            new String[]{"structure", "structure"},
-            new String[]{"cliff", "cliff"},
-            new String[]{"flatcylinder", "cliff"},
-            new String[]{"set", "set"},
-            new String[]{"image", "image"},
-            new String[]{"stencil", "stencil"});
+    public static List<String[]> commands() {
+        List<String[]> commands = new ArrayList<>();
+        for (String[] row : com.maxlananas.fawebim.core.command.BrushTable.BRUSHES) {
+            commands.add(new String[]{row[0], row[0]});
+            for (String alias : BrushParameters.aliases(row)) {
+                if (canonical(alias).equals(canonical(row[0]))) {
+                    commands.add(new String[]{alias, row[0]});
+                }
+            }
+        }
+        return commands;
+    }
 
     /** The pattern used when a brush command omits it. */
     public static Pattern defaultPattern() {

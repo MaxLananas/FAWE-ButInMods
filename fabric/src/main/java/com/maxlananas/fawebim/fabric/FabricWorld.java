@@ -31,6 +31,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.io.IOException;
 import java.util.Random;
 
 /**
@@ -304,6 +307,25 @@ public final class FabricWorld implements World {
     public void queueBlockUpdate(int x, int y, int z) {
         BlockPos pos = new BlockPos(x, y, z);
         level.updateNeighborsAt(pos, level.getBlockState(pos).getBlock());
+    }
+
+    @Override
+    public long chunkLastModified(int chunkX, int chunkZ) {
+        // Vanilla keeps every chunk of a 32x32 area in one region file, whose
+        // timestamp is the best signal available without reading the file's
+        // header, which would mean loading the chunk from disk.
+        Path root = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT);
+        Path region = net.minecraft.world.level.dimension.DimensionType.getStorageFolder(level.dimension(), root)
+                .resolve("region")
+                .resolve("r." + (chunkX >> 5) + "." + (chunkZ >> 5) + ".mca");
+        if (!Files.isRegularFile(region)) {
+            return -1;
+        }
+        try {
+            return Files.getLastModifiedTime(region).toMillis();
+        } catch (IOException e) {
+            return -1;
+        }
     }
 
     @Override

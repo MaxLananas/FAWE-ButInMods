@@ -193,7 +193,7 @@ public final class FabricInteractions {
 
     private static boolean applyBrush(FabricActor actor, Brush brush, BlockVector3 position) {
         EditSession session = new EditSession(actor.world(), actor.session(), "brush");
-        int changed = brush.apply(session, position, actor);
+        int changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, position, actor);
         session.flushQueue();
         if (changed > 0 && actor.player() != null) {
             markHandled(actor.player());

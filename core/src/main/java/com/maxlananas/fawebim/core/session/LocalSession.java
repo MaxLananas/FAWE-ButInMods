@@ -19,6 +19,7 @@ import com.maxlananas.fawebim.core.world.World;
 public final class LocalSession {
 
     private RegionSelector selector;
+    private String defaultSelectorType = "cuboid";
     private TransformSet transformSet = new TransformSet();
     private ClipboardHolder clipboard;
     private final History history;
@@ -91,6 +92,10 @@ public final class LocalSession {
      */
     public void enableSnapshots() {
         history.setRecordListener(record -> {
+            // Every finished edit goes into the shared log, which is what
+            // /history find, rollback and restore search.
+            com.maxlananas.fawebim.core.history.EditLog.add(ownerName,
+                    record.world == null ? lastWorldName : record.world, record);
             if (!com.maxlananas.fawebim.core.platform.Config.get().snapshotsEnabled) {
                 return;
             }
@@ -100,6 +105,15 @@ public final class LocalSession {
                 // A failing snapshot must never take an edit down with it.
             }
         });
+    }
+
+    /** Name of the world the session is editing, kept for the history log. */
+    public String getLastWorldName() {
+        return lastWorldName;
+    }
+
+    public void setLastWorldName(String value) {
+        this.lastWorldName = value;
     }
 
     /** Which schematics {@code //schem list} shows; set by {@code /list}. */
@@ -233,9 +247,18 @@ public final class LocalSession {
 
     public RegionSelector getSelector(World world) {
         if (selector == null) {
-            selector = newSelectors(world, "cuboid");
+            selector = newSelectors(world, defaultSelectorType);
         }
         return selector;
+    }
+
+    /** The selection shape a fresh session starts with, set by {@code //sel -d}. */
+    public String getDefaultSelectorType() {
+        return defaultSelectorType;
+    }
+
+    public void setDefaultSelectorType(String type) {
+        this.defaultSelectorType = type == null || type.isEmpty() ? "cuboid" : type;
     }
 
     public void setSelector(RegionSelector selector) {
@@ -292,6 +315,9 @@ public final class LocalSession {
     }
 
     private com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard anvilClipboard;
+    private boolean clipboardRandomRotation;
+    private String lastWorldName = "world";
+    private boolean clipboardDynamicRotation;
 
     /**
      * The clipboards {@code //schem loadall} collected. While it holds more than
@@ -312,6 +338,24 @@ public final class LocalSession {
 
     public void clearClipboardPool() {
         this.clipboardPool.clear();
+    }
+
+    /** True when {@code //schem load -r} asked for a random rotation. */
+    public boolean isClipboardRandomRotation() {
+        return clipboardRandomRotation;
+    }
+
+    public void setClipboardRandomRotation(boolean random) {
+        this.clipboardRandomRotation = random;
+    }
+
+    /** True when {@code //schem load -d} wants the rotation re-rolled per paste. */
+    public boolean isClipboardDynamicRotation() {
+        return clipboardDynamicRotation;
+    }
+
+    public void setClipboardDynamicRotation(boolean dynamic) {
+        this.clipboardDynamicRotation = dynamic;
     }
 
     /** True when {@code loadall -r} asked for a fresh random rotation per paste. */

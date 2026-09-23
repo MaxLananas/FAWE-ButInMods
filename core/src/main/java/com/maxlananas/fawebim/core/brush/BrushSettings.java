@@ -24,11 +24,21 @@ public final class BrushSettings {
     private int smoothCycles = 1;
     private boolean oneshot;
     private Mask traceMask;
+    private Mask sourceMask;
     private int targetMode;
     private int targetOffset;
     private Transform transform;
     private com.maxlananas.fawebim.core.tool.Scroll scrollAction;
     private String scrollActionName = "";
+
+    /** The mask this tool reads through, or null to use the session's. */
+    public Mask getSourceMask() {
+        return sourceMask;
+    }
+
+    public void setSourceMask(Mask sourceMask) {
+        this.sourceMask = sourceMask;
+    }
 
     /** The mask a tool trace stops at, or null for "any solid block". */
     public Mask getTraceMask() {

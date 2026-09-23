@@ -130,6 +130,11 @@ public final class Ctx {
         return flags.containsKey(flag);
     }
 
+    /** Every flag of the command line, with the values of the value flags. */
+    public Map<String, List<String>> flags() {
+        return flags;
+    }
+
     public String flagValue(String flag, String fallback) {
         List<String> values = flags.get(flag);
         return values == null || values.isEmpty() ? fallback : values.get(0);

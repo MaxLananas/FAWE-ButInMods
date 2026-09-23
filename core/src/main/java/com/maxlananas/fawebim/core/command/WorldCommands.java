@@ -8,6 +8,7 @@ import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -145,10 +146,13 @@ final class WorldCommands {
         }
         entry.description = "Write a report about this installation";
         entry.group = "worldedit";
+        // -p adds the registered command list, one page per report entry.
+        entry.valueFlags.add("p");
+        entry.arguments.add("[-p <page>]");
         entry.handler = ctx -> {
             Path file = Config.get().resolveDirectory("fawe-reports")
                     .resolve("report-" + System.currentTimeMillis() + ".txt");
-            List<String> lines = List.of(
+            List<String> lines = new ArrayList<>(List.of(
                     "FAWE-BIM " + Config.VERSION + " (Minecraft " + Config.MINECRAFT_VERSION + ")",
                     "Author: MaxLananas",
                     "Based on WorldEdit 7.3.17 and FastAsyncWorldEdit",
@@ -160,7 +164,22 @@ final class WorldCommands {
                     "Threads: " + ManagementFactory.getThreadMXBean().getThreadCount(),
                     "Registered commands: " + registry.all().size(),
                     "World: " + ctx.world().name() + " (" + ctx.world().minY() + ".." + ctx.world().maxY() + ")",
-                    "Configured threads: " + Config.get().threads);
+                    "Configured threads: " + Config.get().threads));
+            // -p appends the command list of one page, which is what FAWE's
+            // report does once the summary is written.
+            int page = ctx.flagInt("p", 0);
+            if (page > 0) {
+                lines.add("");
+                lines.add("Registered commands (page " + page + "):");
+                List<CommandRegistry.Entry> entries = new ArrayList<>(registry.all());
+                entries.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
+                int pageSize = 50;
+                int from = Math.min(entries.size(), (page - 1) * pageSize);
+                int to = Math.min(entries.size(), from + pageSize);
+                for (CommandRegistry.Entry registered : entries.subList(from, to)) {
+                    lines.add("  " + registered.usage() + " - " + registered.description);
+                }
+            }
             try {
                 Files.createDirectories(file.getParent());
                 Files.write(file, lines);

@@ -68,6 +68,22 @@ public final class Images {
             return pixels[clampedZ * width + clampedX] & 0xFFFFFF;
         }
 
+        /** The perceived brightness of a pixel, {@code 0} to {@code 255}. */
+        public int luminance(int x, int z) {
+            int rgb = rgb(x, z);
+            int red = (rgb >> 16) & 0xFF;
+            int green = (rgb >> 8) & 0xFF;
+            int blue = rgb & 0xFF;
+            return (red * 299 + green * 587 + blue * 114) / 1000;
+        }
+
+        /** The alpha channel of a pixel, {@code 0} (clear) to {@code 255} (solid). */
+        public int opacity(int x, int z) {
+            int clampedX = Math.max(0, Math.min(width - 1, x));
+            int clampedZ = Math.max(0, Math.min(height - 1, z));
+            return pixels[clampedZ * width + clampedX] >>> 24;
+        }
+
         /** True when every pixel is fully transparent, i.e. the tile is empty. */
         public boolean transparent(int x, int z) {
             int clampedX = Math.max(0, Math.min(width - 1, x));

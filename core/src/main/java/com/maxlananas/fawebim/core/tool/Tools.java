@@ -416,7 +416,8 @@ public final class Tools {
                 return false;
             }
             EditSession session = new EditSession(context.actor.world(), context.actor.session(), "brush");
-            int changed = brush.apply(session, context.position, context.actor);
+            int changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, context.position,
+                    context.actor);
             session.flushQueue();
             context.message(Msg.success("Brush changed " + Msg.formatNumber(changed) + " block(s)"));
             return true;

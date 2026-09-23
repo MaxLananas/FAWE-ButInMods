@@ -105,6 +105,51 @@ public final class BlockArrayClipboard implements Extent {
         return blockEntities;
     }
 
+    // ------------------------------------------------------------------ biomes
+
+    private final java.util.Map<Long, Integer> biomes = new java.util.HashMap<>();
+
+    /** Stores the biome of a position, filled by {@code //copy -b}. */
+    @Override
+    public boolean setBiome(int x, int y, int z, int biomeId) {
+        biomes.put(positionKey(x, y, z), biomeId);
+        return true;
+    }
+
+    /** The stored biome of a position, or {@code -1} when there is none. */
+    public int getBiome(int x, int y, int z) {
+        return biomes.getOrDefault(positionKey(x, y, z), -1);
+    }
+
+    public boolean hasBiomes() {
+        return !biomes.isEmpty();
+    }
+
+    /** Every stored biome, keyed by {@link #positionKey(int, int, int)}. */
+    public java.util.Set<java.util.Map.Entry<Long, Integer>> biomeEntries() {
+        return biomes.entrySet();
+    }
+
+    /** Packs the coordinates of a biome cell the way Minecraft packs a block position. */
+    public static long positionKey(int x, int y, int z) {
+        return ((long) x & 0x3FFFFFF) << 38 | ((long) y & 0xFFF) << 26 | ((long) z & 0x3FFFFFF);
+    }
+
+    /** Unpacks the X coordinate of a {@link #positionKey(int, int, int)}. */
+    public static int keyX(long key) {
+        return (int) (key << 0 >> 38);
+    }
+
+    /** Unpacks the Y coordinate of a {@link #positionKey(int, int, int)}. */
+    public static int keyY(long key) {
+        return (int) (key << 26 >> 52);
+    }
+
+    /** Unpacks the Z coordinate of a {@link #positionKey(int, int, int)}. */
+    public static int keyZ(long key) {
+        return (int) (key << 38 >> 38);
+    }
+
     public static long sectionKey(int x, int y, int z) {
         return ((long) (x >> 4) << 40) ^ ((long) (y >> 4) << 20) ^ (z >> 4);
     }

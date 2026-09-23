@@ -49,7 +49,7 @@ public final class Snapshots {
         Files.createDirectories(folder);
         Path file = folder.resolve(timestamp() + ".snap");
         try (OutputStream out = Files.newOutputStream(file)) {
-            NbtIo.write(gzip(record, owner), out, true, true);
+            NbtIo.write(of(record, owner), out, true, true);
         }
         return file;
     }
@@ -156,6 +156,62 @@ public final class Snapshots {
                 new BlockVector3(max[0], max[1], max[2]));
     }
 
+    /**
+     * Puts the biomes a snapshot recorded back into the world, which is what
+     * {@code /snapshot restore -b} does.
+     *
+     * @return the number of biome cells restored
+     */
+    public static int restoreBiomes(EditSession session, NbtCompound snapshot) {
+        int restored = 0;
+        for (NbtCompound section : snapshot.getCompoundList("biomes")) {
+            com.maxlananas.fawebim.core.history.BiomeChangeSet set =
+                    new com.maxlananas.fawebim.core.history.BiomeChangeSet(
+                            section.getInt("x", 0), section.getInt("z", 0), section.getInt("y", 0));
+            int[] cells = section.getIntArray("i");
+            int[] before = section.getIntArray("b");
+            if (cells == null || before == null) {
+                continue;
+            }
+            for (int i = 0; i < cells.length && i < before.length; i++) {
+                set.restore(cells[i], before[i]);
+            }
+            restored += session.applyBiomeChangeSet(set, true);
+        }
+        return restored;
+    }
+
+    /**
+     * Puts the entities a snapshot recorded back into the world, which is what
+     * {@code /snapshot restore -e} does. Entities the edit removed are spawned
+     * again; entities the edit added are removed, so the region ends up in the
+     * state the snapshot describes.
+     *
+     * @return the number of entities restored
+     */
+    public static int restoreEntities(EditSession session, NbtCompound snapshot) {
+        int restored = 0;
+        for (NbtCompound entity : snapshot.getCompoundList("entities")) {
+            com.maxlananas.fawebim.core.math.Vector3 position = new com.maxlananas.fawebim.core.math.Vector3(
+                    entity.getDouble("x", 0), entity.getDouble("y", 0), entity.getDouble("z", 0));
+            com.maxlananas.fawebim.core.world.EntityData data = new com.maxlananas.fawebim.core.world.EntityData(
+                    entity.getString("type", "minecraft:pig"), entity.getCompound("nbt"), position);
+            // A change recorded as "removed" was undone by putting the entity
+            // back; one recorded as added is taken away again.
+            session.getWorld().getEntities(com.maxlananas.fawebim.core.world.Extent.Region3i.of(
+                            position.toBlockPoint(), position.toBlockPoint().add(1, 1, 1)))
+                    .stream()
+                    .filter(existing -> existing.type().equals(data.type()))
+                    .findFirst()
+                    .ifPresent(existing -> session.getWorld().removeEntity(existing));
+            if (entity.getBoolean("removed", false)) {
+                session.addEntity(data);
+                restored++;
+            }
+        }
+        return restored;
+    }
+
     /** Turns a snapshot back into a history record, for {@code /history import}. */
     public static History.Record toRecord(NbtCompound snapshot) {
         History.Record record = new History.Record(snapshot.getString("description", "imported snapshot"));
@@ -179,10 +235,31 @@ public final class Snapshots {
                 record.addChange(x, y, z, previous, current);
             }
         }
+        for (NbtCompound section : snapshot.getCompoundList("biomes")) {
+            int chunkX = section.getInt("x", 0);
+            int chunkZ = section.getInt("z", 0);
+            int sectionY = section.getInt("y", 0);
+            int[] cells = section.getIntArray("i");
+            int[] before = section.getIntArray("b");
+            int[] after = section.getIntArray("a");
+            if (cells == null) {
+                continue;
+            }
+            for (int i = 0; i < cells.length; i++) {
+                int cell = cells[i];
+                int x = (chunkX << 4) + ((cell & 3) << 2);
+                int y = (sectionY << 4) + (((cell >> 4) & 3) << 2);
+                int z = (chunkZ << 4) + (((cell >> 2) & 3) << 2);
+                int previous = before != null && i < before.length ? before[i] : 0;
+                int current = after != null && i < after.length ? after[i] : previous;
+                record.addBiome(x, y, z, previous, current);
+            }
+        }
         return record;
     }
 
-    private static NbtCompound gzip(History.Record record, String owner) {
+    /** The snapshot form of a record, as it is written to disk. */
+    public static NbtCompound of(History.Record record, String owner) {
         List<NbtCompound> sections = new ArrayList<>();
         int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] max = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
@@ -218,6 +295,41 @@ public final class Snapshots {
         root.putIntArray("min", min[0] == Integer.MAX_VALUE ? new int[]{0, 0, 0} : min);
         root.putIntArray("max", max[0] == Integer.MIN_VALUE ? new int[]{0, 0, 0} : max);
         root.putList("sections", sections);
+        List<NbtCompound> biomes = new ArrayList<>();
+        for (List<com.maxlananas.fawebim.core.history.BiomeChangeSet> sets : record.biomeChanges().values()) {
+            for (com.maxlananas.fawebim.core.history.BiomeChangeSet set : sets) {
+                NbtCompound section = new NbtCompound();
+                section.putInt("x", set.chunkX());
+                section.putInt("z", set.chunkZ());
+                section.putInt("y", set.sectionY());
+                section.putIntArray("i", shrink(set.cells(), set.size()));
+                section.putIntArray("b", shrink(set.before(), set.size()));
+                section.putIntArray("a", shrink(set.after(), set.size()));
+                biomes.add(section);
+            }
+        }
+        // Biome and entity restore are opt-in on /snapshot restore (-b, -e), so
+        // both are written only when the record actually holds them.
+        if (!biomes.isEmpty()) {
+            root.putList("biomes", biomes);
+            root.putInt("biomeChanges", record.biomeChangeCount());
+        }
+        List<NbtCompound> entities = new ArrayList<>();
+        for (History.EntityChange change : record.entities()) {
+            NbtCompound entity = new NbtCompound();
+            entity.putString("type", change.type);
+            entity.putDouble("x", change.x);
+            entity.putDouble("y", change.y);
+            entity.putDouble("z", change.z);
+            entity.putBoolean("removed", change.removed);
+            if (change.nbt != null) {
+                entity.putCompound("nbt", change.nbt);
+            }
+            entities.add(entity);
+        }
+        if (!entities.isEmpty()) {
+            root.putList("entities", entities);
+        }
         return root;
     }
 

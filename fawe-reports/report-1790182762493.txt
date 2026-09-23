@@ -1,0 +1,11 @@
+FAWE-BIM 1.0.0 (Minecraft 1.21.10)
+Author: MaxLananas
+Based on WorldEdit 7.3.17 and FastAsyncWorldEdit
+Java: 25.0.2 (Eclipse Adoptium)
+OS: Linux amd64
+Available processors: 2
+Memory: 147 MiB total, 96 MiB free
+Threads: 6
+Registered commands: 266
+World: inventory (-64..319)
+Configured threads: 2

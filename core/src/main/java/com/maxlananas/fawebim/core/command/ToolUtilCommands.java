@@ -56,7 +56,23 @@ final class ToolUtilCommands {
         structurePlacer();
     }
 
-    /** {@code /tool mask [mask]} — the mask the brush writes through. */
+    /**
+     * The tool a {@code /tool} sub-command acts on: the one in the player's main
+     * hand, or with {@code -h} the offhand one, which is FAWE's second set of
+     * brush settings and the tool the left click fires here.
+     */
+    private static Brush targetBrush(Ctx ctx) {
+        if (!ctx.hasFlag("h")) {
+            return requireBrush(ctx);
+        }
+        Brush offhand = BrushFactory.currentSecondary(ctx.session());
+        if (offhand == null) {
+            throw CommandRegistry.error("No tool in the offhand: bind one with /tool secondary <type> first");
+        }
+        return offhand;
+    }
+
+    /** {@code /tool mask [mask] [-h]} — the mask the brush writes through. */
     private void mask() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool mask");
         if (entry == null) {
@@ -64,9 +80,11 @@ final class ToolUtilCommands {
         }
         entry.description = "Set the brush destination mask";
         entry.group = "tool";
+        entry.booleanFlags.add("h");
         entry.arguments.add("[mask]");
+        entry.arguments.add("[-h]");
         entry.handler = ctx -> {
-            Brush brush = requireBrush(ctx);
+            Brush brush = targetBrush(ctx);
             if (ctx.args().isEmpty()) {
                 brush.setMask(null);
                 ctx.actor().message(Msg.success("Brush mask disabled"));
@@ -85,9 +103,11 @@ final class ToolUtilCommands {
         }
         entry.description = "Set the brush material";
         entry.group = "tool";
+        entry.booleanFlags.add("h");
         entry.arguments.add("pattern");
+        entry.arguments.add("[-h]");
         entry.handler = ctx -> {
-            Brush brush = requireBrush(ctx);
+            Brush brush = targetBrush(ctx);
             Pattern pattern = ctx.pattern(0);
             brush.setFill(pattern);
             ctx.actor().message(Msg.success("Brush material set to " + ctx.joined(0)));
@@ -163,10 +183,12 @@ final class ToolUtilCommands {
         }
         entry.description = "Set the transform applied to what the brush places";
         entry.group = "tool";
+        entry.booleanFlags.add("h");
         entry.arguments.add("[transform]");
         entry.arguments.add("[args...]");
+        entry.arguments.add("[-h]");
         entry.handler = ctx -> {
-            BrushSettings settings = requireBrush(ctx).settings();
+            BrushSettings settings = targetBrush(ctx).settings();
             if (ctx.args().isEmpty()) {
                 settings.setTransform(null);
                 ctx.session().getTransformSet().clear();
@@ -384,14 +406,20 @@ final class ToolUtilCommands {
         }
         entry.description = "Set the brush source mask";
         entry.group = "tool";
+        entry.booleanFlags.add("h");
         entry.arguments.add("[mask]");
+        entry.arguments.add("[-h]");
         entry.handler = ctx -> {
             if (ctx.args().isEmpty()) {
                 ctx.session().setSourceMask(null);
                 ctx.actor().message(Msg.success("Brush source mask cleared"));
                 return;
             }
-            ctx.session().setSourceMask(Parsers.mask(ctx.joined(0), ctx));
+            Mask mask = Parsers.mask(ctx.joined(0), ctx);
+            // A tool's own source mask stays with that tool; the shared session
+            // mask is what a tool with no mask of its own reads through.
+            targetBrush(ctx).settings().setSourceMask(mask);
+            ctx.session().setSourceMask(mask);
             ctx.actor().message(Msg.success("Brush source mask set to " + ctx.joined(0)));
         };
     }

@@ -1,0 +1,4 @@
+version: 1.0.0 for Minecraft 1.21.10
+java: 25.0.2
+players-world: inventory @ (0, 71, 0)
+commands: 266

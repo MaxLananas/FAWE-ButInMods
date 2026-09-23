@@ -8,6 +8,9 @@ import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.history.EditLog;
+import com.maxlananas.fawebim.core.history.History;
+import com.maxlananas.fawebim.core.history.Snapshots;
 import com.maxlananas.fawebim.core.expression.Expression;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
@@ -60,6 +63,8 @@ public final class SelfTestMain {
         testPatterns();
         testExpressions();
         testEditSessionAndHistory();
+        testEditLog();
+        testSnapshotRoundTrip();
         testClipboardAndSchematic();
         testCommands();
         testRegen();
@@ -449,9 +454,101 @@ public final class SelfTestMain {
         nbtSession.setBlockEntity(1, 71, 1, nbt);
         check("block entity stored", world.getBlockEntity(1, 71, 1) != null);
         EditSession biomeSession = new EditSession(world, session, "biome");
-        check("biome set", biomeSession.setBiome(1, 71, 1, 5));
+        check("biome set", biomeSession.setBiome(4, 68, 4, 5));
         biomeSession.flushQueue();
-        checkEquals("biome stored", 5, world.getBiome(1, 71, 1));
+        checkEquals("biome stored", 5, world.getBiome(4, 68, 4));
+
+        // A biome change is part of the history, so undo can put it back.
+        int recorded = 0;
+        for (var sets : session.getHistory().getCurrent().biomeChanges().values()) {
+            for (var set : sets) {
+                recorded += set.size();
+            }
+        }
+        check("biome change recorded", recorded == 1);
+        var biomeRecord = session.getHistory().undo();
+        EditSession biomeUndo = new EditSession(world, session, "undo", false);
+        for (var sets : biomeRecord.biomeChanges().values()) {
+            for (var set : sets) {
+                biomeUndo.applyBiomeChangeSet(set, true);
+            }
+        }
+        biomeUndo.flushQueue();
+        check("biome undo restores the previous biome", world.getBiome(4, 68, 4) != 5);
+        session.getHistory().redo();
+    }
+
+    private static void testEditLog() {
+        section("edit log");
+        TestWorld world = new TestWorld("log");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        LocalSession session = actor.session();
+        session.setOwnerName("Alice");
+        session.enableSnapshots();
+        session.setMaxBlocksChanged(100000);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        EditSession edit = new EditSession(world, session, "//set stone");
+        edit.setBlock(4, 70, 4, stone);
+        edit.flushQueue();
+        EditSession far = new EditSession(world, session, "//set far");
+        far.setBlock(400, 70, 400, stone);
+        far.flushQueue();
+        session.getHistory().newRecord("after");
+
+        List<EditLog.Entry> logged = EditLog.find(null, "log", -1, -1, null);
+        checkEquals("log recorded both edits", 2, logged.size());
+        EditLog.Entry newest = logged.get(0);
+        checkEquals("log keeps the actor", "Alice", newest.actor);
+        checkEquals("log keeps the world", "log", newest.world);
+        check("log knows the bounds", newest.distanceTo(new BlockVector3(400, 70, 400)) == 0
+                && newest.distanceTo(new BlockVector3(4, 70, 4)) > 300);
+        checkEquals("log filters by radius", 1,
+                EditLog.find(null, "log", 64, -1, new BlockVector3(4, 70, 4)).size());
+        check("log filters by world", EditLog.find(null, "other", -1, -1, null).isEmpty());
+        checkEquals("log filters by user", 2, EditLog.find("alice", "log", -1, -1, null).size());
+        check("log filters by unknown user", EditLog.find("Bob", "log", -1, -1, null).isEmpty());
+        checkEquals("log filters by time", 2,
+                EditLog.find(null, "log", -1, System.currentTimeMillis() - 60_000, null).size());
+        check("log filters by a future time", EditLog.find(null, "log", -1,
+                System.currentTimeMillis() + 60_000, null).isEmpty());
+        EditLog.clear();
+        check("log cleared", EditLog.entries().isEmpty());
+    }
+
+    private static void testSnapshotRoundTrip() {
+        section("snapshot data");
+        TestWorld world = new TestWorld("snapshot");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        LocalSession session = actor.session();
+        session.setMaxBlocksChanged(100000);
+        History.Record[] completed = new History.Record[1];
+        session.getHistory().setRecordListener(record -> completed[0] = record);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        EditSession edit = new EditSession(world, session, "//set");
+        edit.setBlock(3, 70, 3, stone);
+        edit.setBiome(4, 68, 4, 7);
+        edit.addEntity(new com.maxlananas.fawebim.core.world.EntityData("minecraft:pig",
+                new NbtCompound(), new com.maxlananas.fawebim.core.math.Vector3(1.5, 72, 1.5)));
+        edit.flushQueue();
+        session.getHistory().newRecord("after");
+        check("record captured", completed[0] != null);
+        History.Record record = completed[0];
+        checkEquals("record holds the block", 1, record.changeCount());
+        checkEquals("record holds the biome", 1, record.biomeChangeCount());
+        checkEquals("record holds the entity", 1, record.entities().size());
+        check("record bounds cover the block", record.bounds() != null && record.bounds()[0] <= 3);
+
+        NbtCompound snapshot = Snapshots.of(record, "Alice");
+        checkEquals("snapshot holds the edited biome", 7, world.getBiome(4, 68, 4));
+        EditSession restore = new EditSession(world, session, "restore", false);
+        check("snapshot restores the biome", Snapshots.restoreBiomes(restore, snapshot) == 1);
+        restore.flushQueue();
+        checkEquals("biome is back to what it was before the edit", 1, world.getBiome(4, 68, 4));
+        EditSession entityRestore = new EditSession(world, session, "restore entities", false);
+        check("snapshot reads the entities", Snapshots.restoreEntities(entityRestore, snapshot) == 0);
+        entityRestore.flushQueue();
     }
 
     private static void testClipboardAndSchematic() throws Exception {
@@ -612,7 +709,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//desel");
         check("//desel responded", actor.messages().size() > 0);
         actor.clearMessages();
-        CommandManager.get().dispatch(actor, "/brush sphere 5 stone");
+        CommandManager.get().dispatch(actor, "/brush sphere stone 5");
         check("brush bound", com.maxlananas.fawebim.core.brush.BrushFactory.current(actor.session()) != null);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/tool tree");
