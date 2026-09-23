@@ -15,8 +15,11 @@ run/
 .classpath
 .project
 
-# Local test worlds / schematics produced by the test-suite
+# Local test worlds / schematics / reports produced by the test-suite
 /testrun/
+/schematics/
+/fawe-reports/
+/fawe-report.txt
 *.class
 
 # Python bytecode from the doc generators
