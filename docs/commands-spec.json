@@ -1126,8 +1126,8 @@
       "status": "implemented",
       "aliases": ["//schematic"],
       "arguments": ["list|ls|all|save|load|loadall|delete|d|formats|listformats|f|move|m|share|clear|unload", "[name]", "[format]", "[-p <page>]"],
-      "booleanFlags": ["o", "r", "d", "f", "n"],
-      "valueFlags": ["p"],
+      "booleanFlags": ["o", "r", "d", "n"],
+      "valueFlags": ["f", "p"],
       "requiresSelection": false,
       "requiresPlayer": false,
       "requiresWorld": true

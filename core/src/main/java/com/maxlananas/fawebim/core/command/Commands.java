@@ -1749,9 +1749,9 @@ public final class Commands {
         e65.booleanFlags.add("o");
         e65.booleanFlags.add("r");
         e65.booleanFlags.add("d");
-        // list: -d dates, -f file names only, -n names only, -p page.
-        e65.booleanFlags.add("f");
+        // list: -p <page>, -d oldest first, -n newest first, -f <format>.
         e65.booleanFlags.add("n");
+        e65.valueFlags.add("f");
         e65.valueFlags.add("p");
         e65.arguments.add("list|ls|all|save|load|loadall|delete|d|formats|listformats|f|move|m|share|clear|unload");
         e65.arguments.add("[name]");
@@ -1764,24 +1764,39 @@ public final class Commands {
                     }
                     switch (action) {
                         case "list" -> {
-                            List<String> names = Schematics.list(ctx.session().getListFilter(),
+                            // //schem list [filter] overrides the filter /list set.
+                            com.maxlananas.fawebim.core.clipboard.ListFilter filter =
+                                    com.maxlananas.fawebim.core.clipboard.ListFilter.parse(ctx.arg(1, ""));
+                            if (filter == null) {
+                                filter = ctx.session().getListFilter();
+                            }
+                            List<String> names = Schematics.list(filter,
                                     ctx.actor().isPlayer() ? ctx.actor().name() : null);
+                            // -f <format> keeps one format, -d and -n sort by
+                            // write time instead of by name.
+                            String format = ctx.hasFlag("f")
+                                    ? ctx.flagValue("f", "").toLowerCase(Locale.ROOT) : null;
+                            if (format != null) {
+                                List<String> kept = new ArrayList<>();
+                                for (String name : names) {
+                                    if (Schematics.formatOf(name).toLowerCase(Locale.ROOT).contains(format)) {
+                                        kept.add(name);
+                                    }
+                                }
+                                names = kept;
+                            }
+                            if (ctx.hasFlag("d") || ctx.hasFlag("n")) {
+                                boolean oldestFirst = ctx.hasFlag("d");
+                                names.sort((a, b) -> oldestFirst
+                                        ? Long.compare(Schematics.timeOf(a), Schematics.timeOf(b))
+                                        : Long.compare(Schematics.timeOf(b), Schematics.timeOf(a)));
+                            }
                             Page page = Page.of(ctx, names.size());
                             ctx.actor().message(Msg.info("Schematics (" + names.size() + ", page " + page.number()
-                                    + "/" + page.pages() + ", " + ctx.session().getListFilter().describe() + "):"));
+                                    + "/" + page.pages() + ", " + filter.describe() + "):"));
                             for (String name : names.subList(page.from(), page.to())) {
-                                // -d stamps the file date, -f keeps the file name
-                                // with its format, -n hides the format.
-                                if (ctx.hasFlag("d")) {
-                                    ctx.actor().message(Msg.of("§7 - §f" + name + " §7("
-                                            + Schematics.lastModified(name) + ")"));
-                                } else if (ctx.hasFlag("f")) {
-                                    ctx.actor().message(Msg.of("§7 - §f" + name + "." + Schematics.formatOf(name)));
-                                } else {
-                                    String shown = ctx.hasFlag("n") ? name : name + " §7("
-                                            + Schematics.formatOf(name) + ")";
-                                    ctx.actor().message(Msg.of("§7 - §f" + shown));
-                                }
+                                ctx.actor().message(Msg.of("§7 - §f" + name + " §7("
+                                        + Schematics.formatOf(name) + ")"));
                             }
                             page.hint(ctx, "//schem list");
                         }

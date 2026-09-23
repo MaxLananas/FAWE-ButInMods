@@ -122,22 +122,28 @@ public final class Schematics {
         };
     }
 
-    /** When the file behind a listed schematic was last written. */
-    public static String lastModified(String name) {
+    /** When the file behind a listed schematic was last written, or -1. */
+    public static long timeOf(String name) {
         for (Path folder : List.of(directory(), directory().resolve("global"))) {
             Path file = folder.resolve(name);
             if (!Files.isRegularFile(file)) {
                 continue;
             }
             try {
-                return java.time.Instant.ofEpochMilli(Files.getLastModifiedTime(file).toMillis())
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+                return Files.getLastModifiedTime(file).toMillis();
             } catch (IOException e) {
-                return "unknown";
+                return -1;
             }
         }
-        return "unknown";
+        return -1;
+    }
+
+    /** The write time of a listed schematic, formatted for {@code //schem list -d}. */
+    public static String lastModified(String name) {
+        long time = timeOf(name);
+        return time < 0 ? "unknown" : java.time.Instant.ofEpochMilli(time)
+                .atZone(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
     private static void collect(Path folder, List<String> names) {
