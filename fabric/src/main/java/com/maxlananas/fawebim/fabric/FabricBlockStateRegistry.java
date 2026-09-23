@@ -245,6 +245,20 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     }
 
     @Override
+    public List<Integer> statesOf(String blockName) {
+        ResourceLocation key = ResourceLocation.tryParse(blockName);
+        Block block = key == null ? null : BuiltInRegistries.BLOCK.getValue(key);
+        if (block == null) {
+            return List.of();
+        }
+        List<Integer> states = new ArrayList<>();
+        for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+            states.add(idOf(state));
+        }
+        return List.copyOf(states);
+    }
+
+    @Override
     public int legacyId(int stateId) {
         Integer id = LEGACY_IDS.get(name(stateId));
         return id == null ? -1 : id;

@@ -226,7 +226,14 @@ public final class CommandRegistry {
      *
      * @return true when a command handled the input
      */
-    public boolean dispatch(Actor actor, String line) {
+    /**
+     * Builds the context of a command line without running it: the same lookup and
+     * token split {@link #dispatch} uses, for callers that parse arguments of a
+     * command rather than run it.
+     *
+     * @return the context, or {@code null} when no command answers to that name
+     */
+    public Ctx context(Actor actor, String line) {
         String trimmed = line.trim();
         if (trimmed.startsWith("/")) {
             // Accept "/fast", "//set" and "/we" through one entry point.
@@ -236,7 +243,7 @@ public final class CommandRegistry {
         }
         List<String> tokens = Str.split(trimmed);
         if (tokens.isEmpty()) {
-            return false;
+            return null;
         }
         Entry entry = lookup(tokens.get(0));
         if (tokens.size() > 1) {
@@ -250,12 +257,17 @@ public final class CommandRegistry {
                 tokens = shifted;
             }
         }
-        if (entry == null) {
-            actor.message(Msg.error("Unknown command: " + trimmed));
+        return entry == null ? null : new Ctx(entry, actor, tokens);
+    }
+
+    public boolean dispatch(Actor actor, String line) {
+        Ctx context = context(actor, line);
+        if (context == null) {
+            actor.message(Msg.error("Unknown command: " + line.trim()));
             return false;
         }
+        Entry entry = context.entry();
         try {
-            Ctx context = new Ctx(entry, actor, tokens);
             if (entry.handler == null) {
                 actor.message(Msg.warn("Command '" + entry.name
                         + "' is registered but not implemented in this build (see docs/STATUS.md)."));

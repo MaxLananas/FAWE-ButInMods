@@ -152,6 +152,89 @@ public final class Patterns {
     }
 
     /** {@code #existing} — keeps whatever block is already there. */
+    /**
+     * {@code #nx}/{@code #ny}/{@code #nz}: the inner pattern is asked about the
+     * point without that coordinate, so noise and random patterns come out as
+     * stripes along that axis, exactly as FAWE's {@code NoXPattern} does.
+     */
+    public static final class NoAxis implements Pattern {
+
+        private final Pattern inner;
+        private final int axis;
+
+        public NoAxis(Pattern inner, int axis) {
+            this.inner = inner;
+            this.axis = axis;
+        }
+
+        @Override
+        public int apply(int x, int y, int z) {
+            return switch (axis) {
+                case 0 -> inner.apply(0, y, z);
+                case 1 -> inner.apply(x, 0, z);
+                default -> inner.apply(x, y, 0);
+            };
+        }
+    }
+
+    /** {@code #mask[mask][pattern][pattern]}: one pattern where the mask matches. */
+    public static final class Masked implements Pattern {
+
+        private final com.maxlananas.fawebim.core.mask.Mask mask;
+        private final Pattern matched;
+        private final Pattern otherwise;
+
+        public Masked(com.maxlananas.fawebim.core.mask.Mask mask, Pattern matched, Pattern otherwise) {
+            this.mask = mask;
+            this.matched = matched;
+            this.otherwise = otherwise;
+        }
+
+        @Override
+        public int apply(int x, int y, int z) {
+            return mask.test(x, y, z) ? matched.apply(x, y, z) : otherwise.apply(x, y, z);
+        }
+    }
+
+    /**
+     * {@code #buffer[pattern][size]}: remembers the last results, so a pattern that
+     * draws randomly gives neighbouring blocks the same result, FAWE's buffered
+     * patterns. {@code #buffer2d} keys the cache on the two horizontal axes only.
+     */
+    public static final class Buffered implements Pattern {
+
+        private final Pattern inner;
+        private final int size;
+        private final boolean twoDimensional;
+        private final java.util.LinkedHashMap<Long, Integer> cache;
+
+        public Buffered(Pattern inner, int size, boolean twoDimensional) {
+            this.inner = inner;
+            this.size = Math.max(1, size);
+            this.twoDimensional = twoDimensional;
+            this.cache = new java.util.LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<Long, Integer> eldest) {
+                    return size() > Buffered.this.size;
+                }
+            };
+        }
+
+        @Override
+        public int apply(int x, int y, int z) {
+            long key = twoDimensional
+                    ? ((long) (x & 0x3FFFFFF) << 26) | (z & 0x3FFFFFF)
+                    : ((long) (x & 0x3FFFFFF) << 38) | ((long) (y & 0xFFF) << 26) | (z & 0x3FFFFFF);
+            Integer cached = cache.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            int state = inner.apply(x, y, z);
+            cache.put(key, state);
+            return state;
+        }
+    }
+
     public static final class Existing implements Pattern {
 
         private final Extent extent;

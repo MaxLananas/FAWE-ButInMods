@@ -60,6 +60,17 @@ public final class Parsers {
         if (trimmed.isEmpty()) {
             throw CommandRegistry.error("Empty pattern");
         }
+        if (trimmed.startsWith("*")) {
+            // "*oak_log": a random state of the block, the way WorldEdit parses it.
+            List<Integer> states = BlockState.registry().statesOf(trimmed.substring(1).trim());
+            if (states.isEmpty()) {
+                throw CommandRegistry.error("Unknown block '" + trimmed.substring(1) + "'");
+            }
+            return new Patterns.RandomState(states);
+        }
+        if (trimmed.startsWith("$")) {
+            return biomePattern(trimmed.substring(1).trim(), ctx);
+        }
         if (trimmed.startsWith("#")) {
             return hashPattern(trimmed, ctx);
         }
@@ -126,11 +137,41 @@ public final class Parsers {
                 return new Patterns.Existing(extent);
             }
             case "biome" -> {
-                int biomeId = args.isEmpty() ? 0 : BlockState.registry().biome(args);
-                if (biomeId < 0) {
-                    throw CommandRegistry.error("Unknown biome '" + args + "'");
+                return biomePattern(args, ctx);
+            }
+            case "hotbar" -> {
+                List<Integer> blocks = ctx.actor().hotbarBlocks();
+                if (blocks.isEmpty()) {
+                    throw CommandRegistry.error("#hotbar needs blocks in the hotbar");
                 }
-                return new Patterns.Biome(biomeId, extent);
+                return new Patterns.RandomState(blocks);
+            }
+            case "mask" -> {
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 3) {
+                    throw CommandRegistry.error("Syntax: #mask[mask][pattern][pattern]");
+                }
+                return new Patterns.Masked(mask(parts.get(0), ctx), pattern(parts.get(1), ctx),
+                        pattern(parts.get(2), ctx));
+            }
+            case "buffer", "buffer2d" -> {
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.isEmpty()) {
+                    throw CommandRegistry.error(id.equals("buffer2d")
+                            ? "Syntax: #buffer2d[pattern][size]"
+                            : "Syntax: #buffer[pattern][size]");
+                }
+                Pattern inner = pattern(parts.get(0), ctx);
+                int size = parts.size() > 1 ? Integer.parseInt(parts.get(1).trim()) : 128;
+                return new Patterns.Buffered(inner, size, id.equals("buffer2d"));
+            }
+            case "nx", "nox", "!x", "ny", "noy", "!y", "nz", "noz", "!z" -> {
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 1) {
+                    throw CommandRegistry.error("Syntax: #" + id + "[pattern]");
+                }
+                int axis = id.endsWith("x") ? 0 : id.endsWith("y") ? 1 : 2;
+                return new Patterns.NoAxis(pattern(parts.get(0), ctx), axis);
             }
             case "offset" -> {
                 String[] parts = args.isEmpty() ? new String[]{"0", "0", "0"} : args.split(",");
@@ -174,7 +215,7 @@ public final class Parsers {
             case "swaptype", "ts", "typeswap" -> {
                 return new Patterns.TypeSwap();
             }
-            case "rel", "r", "relative" -> {
+            case "rel", "r", "relative", "~" -> {
                 BlockVector3 origin = ctx.actor().position() == null ? BlockVector3.ZERO : ctx.actor().position();
                 return new Patterns.Relative(pattern(args, ctx), origin);
             }
@@ -200,6 +241,31 @@ public final class Parsers {
             }
             default -> throw CommandRegistry.error("Unknown pattern '" + input + "'");
         }
+    }
+
+    /**
+     * FAWE's wall mask, written as {@code #beside[mask][min][max]} or
+     * {@code |[mask][min][max]}: how many of the four horizontal neighbours the
+     * sub-mask accepts. Without arguments it is the default of one to eight.
+     */
+    private static Mask besideMask(String input, Ctx ctx) {
+        List<String> parts = Str.bracketGroups(input);
+        if (parts.isEmpty()) {
+            throw CommandRegistry.error("Syntax: #beside[mask][min][max]");
+        }
+        Mask source = mask(parts.get(0), ctx);
+        int min = parts.size() > 1 ? Integer.parseInt(parts.get(1).trim()) : 1;
+        int max = parts.size() > 2 ? Integer.parseInt(parts.get(2).trim()) : 8;
+        return new Masks.WallMask(source, min, max);
+    }
+
+    /** The biome pattern, written as {@code #biome[<biome>]} or {@code $<biome>}. */
+    private static Pattern biomePattern(String biome, Ctx ctx) {
+        int biomeId = biome.isEmpty() ? 0 : BlockState.registry().biome(biome);
+        if (biomeId < 0) {
+            throw CommandRegistry.error("Unknown biome '" + biome + "'");
+        }
+        return new Patterns.Biome(biomeId, extOf(ctx));
     }
 
     private static Extent extOf(Ctx ctx) {
@@ -235,9 +301,19 @@ public final class Parsers {
             return new Masks.NegateMask(mask(trimmed.substring(1), ctx));
         }
         if (trimmed.startsWith("%")) {
-            // "%stone,dirt" and "%stone[x=1]" — block masks with a leading percent.
-            List<String> blocks = Str.splitCommas(trimmed.substring(1));
-            return new Masks.BlockMask(extOf(ctx), new ArrayList<>(blocks));
+            // WorldEdit's noise mask: "%50", or "%[50]" in FAWE's richer syntax.
+            String percentage = trimmed.substring(1).trim();
+            if (percentage.startsWith("[") && percentage.endsWith("]")) {
+                percentage = percentage.substring(1, percentage.length() - 1).trim();
+            }
+            int value;
+            try {
+                value = Integer.parseInt(percentage);
+            } catch (NumberFormatException e) {
+                throw CommandRegistry.error("Invalid noise percentage '" + percentage
+                        + "'; write for example %50");
+            }
+            return new Masks.RandomMask(value / 100.0);
         }
         if (trimmed.startsWith("=")) {
             return new Masks.ExpressionMask(trimmed.substring(1), extOf(ctx), new Random());
@@ -247,6 +323,35 @@ public final class Parsers {
         }
         if (trimmed.startsWith("#")) {
             return hashMask(trimmed, ctx);
+        }
+        if (trimmed.startsWith("~")) {
+            // FAWE's adjacent mask: ~[mask][min][max], ~2d[...] for the flat variant.
+            boolean flat = trimmed.startsWith("~2d");
+            List<String> parts = Str.bracketGroups(trimmed);
+            if (parts.isEmpty()) {
+                throw CommandRegistry.error("Syntax: ~[mask][min][max]");
+            }
+            Mask source = mask(parts.get(0), ctx);
+            int min = parts.size() > 1 ? Integer.parseInt(parts.get(1).trim()) : 1;
+            int max = parts.size() > 2 ? Integer.parseInt(parts.get(2).trim()) : flat ? 4 : 8;
+            if (min == 1 && max >= (flat ? 4 : 8)) {
+                return flat ? new Masks.AdjacentAny2DMask(source) : new Masks.AdjacentAnyMask(source);
+            }
+            return flat ? new Masks.Adjacent2DMask(source, min, max) : new Masks.AdjacentMask(source, min, max);
+        }
+        if (trimmed.startsWith("|")) {
+            return besideMask(trimmed, ctx);
+        }
+        if (trimmed.startsWith("{")) {
+            List<String> parts = Str.bracketGroups(trimmed);
+            if (parts.size() != 2) {
+                throw CommandRegistry.error("Syntax: {[min][max]");
+            }
+            return new Masks.RadiusShellMask(Integer.parseInt(parts.get(0).trim()),
+                    Integer.parseInt(parts.get(1).trim()));
+        }
+        if (trimmed.startsWith("/")) {
+            return angleMask("angle", trimmed.substring(1), extOf(ctx));
         }
         if (trimmed.startsWith("^")) {
             return angleMask("angle", trimmed.substring(1), extOf(ctx));
@@ -264,7 +369,8 @@ public final class Parsers {
      * {@code o} flag to keep only the blocks with air next to them.</p>
      */
     private static Mask angleMask(String id, String args, Extent extent) {
-        String[] tokens = args.replace("-", "").split("[,\\s]+");
+        // FAWE writes the limits as [min][max], older documentation as min,max.
+        String[] tokens = args.replace("[", ",").replace("]", ",").replace("-", "").split("[,\\s]+");
         java.util.List<String> values = new java.util.ArrayList<>();
         boolean overlay = false;
         for (String token : tokens) {
@@ -323,7 +429,9 @@ public final class Parsers {
                 return new Masks.FullCubeMask(extent);
             }
             case "wall" -> {
-                return new Masks.WallMask(extent);
+                // FAWE's #wall: a block that exists and has a horizontal air side.
+                return new Masks.IntersectionMask(List.of(new Masks.ExistingMask(extent, false),
+                        new Masks.WallMask(new Masks.AirMask(extent, false), 1, 8)));
             }
             case "surface" -> {
                 int offset = args.isEmpty() ? 1 : Integer.parseInt(args);
@@ -333,7 +441,7 @@ public final class Parsers {
                 return angleMask(id, args, extent);
             }
             case "beside" -> {
-                return new Masks.BesideMask(extent, new Masks.AirMask(extent, false));
+                return besideMask(input, ctx);
             }
             case "extrema" -> {
                 String[] parts = args.split(",");

@@ -383,29 +383,77 @@ public final class Masks {
     /** {@code #wall}: matches blocks that have air on two opposite horizontal sides. */
     public static final class WallMask implements Mask {
 
-        private final Extent extent;
+        private final Mask source;
+        private final int min;
+        private final int max;
 
-        public WallMask(Extent extent) {
-            this.extent = extent;
+        public WallMask(Mask source, int min, int max) {
+            this.source = source;
+            this.min = min;
+            this.max = Math.max(max, min);
         }
 
         @Override
         public boolean test(int x, int y, int z) {
-            Extent ext = resolve(extent);
-            if (ext == null) {
-                return false;
+            // The four horizontal neighbours, counted the way FAWE counts them,
+            // including its short circuit: from a minimum of one the first match
+            // decides as soon as the maximum reaches eight.
+            int count = 0;
+            if (source.test(x + 1, y, z) && ++count == min && max >= 8) {
+                return true;
             }
-            BlockStateRegistry registry = BlockState.registry();
-            boolean northSouth = !registry.isAirLike(ext.getBlock(x, y, z - 1))
-                    && !registry.isAirLike(ext.getBlock(x, y, z + 1));
-            boolean eastWest = !registry.isAirLike(ext.getBlock(x - 1, y, z))
-                    && !registry.isAirLike(ext.getBlock(x + 1, y, z));
-            return northSouth ^ eastWest;
+            if (source.test(x - 1, y, z) && ++count == min && max >= 8) {
+                return true;
+            }
+            if (source.test(x, y, z + 1) && ++count == min && max >= 8) {
+                return true;
+            }
+            if (source.test(x, y, z - 1) && ++count == min && max >= 8) {
+                return true;
+            }
+            return count >= min && count <= max;
+        }
+    }
+
+    /**
+     * {@code {[min][max]}}: a shell around the position the mask was first asked
+     * about, which is where the operation started.
+     */
+    public static final class RadiusShellMask implements Mask {
+
+        private final int minSquared;
+        private final int maxSquared;
+        private int[] origin;
+
+        public RadiusShellMask(int min, int max) {
+            int limit = Math.max(max, min);
+            this.minSquared = min * min;
+            this.maxSquared = limit * limit;
         }
 
         @Override
-        public Extent extent() {
-            return extent;
+        public boolean test(int x, int y, int z) {
+            if (origin == null) {
+                origin = new int[]{x, y, z};
+            }
+            int dx = origin[0] - x;
+            int distance = dx * dx;
+            if (distance > maxSquared) {
+                return false;
+            }
+            int dz = origin[2] - z;
+            distance += dz * dz;
+            if (distance > maxSquared) {
+                return false;
+            }
+            int dy = origin[1] - y;
+            distance += dy * dy;
+            return distance >= minSquared && distance <= maxSquared;
+        }
+
+        @Override
+        public boolean isRegion() {
+            return true;
         }
     }
 
@@ -743,6 +791,30 @@ public final class Masks {
         }
     }
 
+    /**
+     * {@code %<percentage>}: passes on a fraction of the positions, each one
+     * decided by its own random draw, which is WorldEdit's random noise filter.
+     */
+    public static final class RandomMask implements Mask {
+
+        private final double density;
+        private final java.util.Random random = new java.util.Random();
+
+        public RandomMask(double density) {
+            this.density = density;
+        }
+
+        @Override
+        public boolean test(int x, int y, int z) {
+            return random.nextDouble() > density;
+        }
+
+        @Override
+        public boolean isRegion() {
+            return true;
+        }
+    }
+
     /** {@code #true} / {@code #false}. */
     public static final class ConstantMask implements Mask {
 
@@ -852,43 +924,99 @@ public final class Masks {
         }
     }
 
+    /** {@code ~[mask][min][max]}: how many of the six faces match the sub-mask. */
     public static final class AdjacentMask implements Mask {
 
-        private final Extent extent;
         private final Mask source;
         private final int min;
         private final int max;
 
-        public AdjacentMask(Extent extent, Mask source, int min, int max) {
-            this.extent = extent;
+        public AdjacentMask(Mask source, int min, int max) {
             this.source = source;
             this.min = min;
-            this.max = max;
+            this.max = Math.max(max, min);
         }
 
         @Override
         public boolean test(int x, int y, int z) {
             int count = 0;
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        if (dx == 0 && dy == 0 && dz == 0) {
-                            continue;
-                        }
-                        if (source.test(x + dx, y + dy, z + dz)) {
-                            count++;
-                        }
-                    }
+            for (int[] face : FACES) {
+                if (source.test(x + face[0], y + face[1], z + face[2]) && ++count > max) {
+                    return false;
                 }
             }
-            return count >= min && count <= max;
+            return count >= min;
+        }
+    }
+
+    /** {@code ~[mask]}: true as soon as one of the six faces matches. */
+    public static final class AdjacentAnyMask implements Mask {
+
+        private final Mask source;
+
+        public AdjacentAnyMask(Mask source) {
+            this.source = source;
         }
 
         @Override
-        public Extent extent() {
-            return extent;
+        public boolean test(int x, int y, int z) {
+            for (int[] face : FACES) {
+                if (source.test(x + face[0], y + face[1], z + face[2])) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
+
+    /** {@code ~2d[mask][min][max]}: the same count over the four horizontal sides. */
+    public static final class Adjacent2DMask implements Mask {
+
+        private final Mask source;
+        private final int min;
+        private final int max;
+
+        public Adjacent2DMask(Mask source, int min, int max) {
+            this.source = source;
+            this.min = min;
+            this.max = Math.max(max, min);
+        }
+
+        @Override
+        public boolean test(int x, int y, int z) {
+            int count = 0;
+            for (int[] side : SIDES) {
+                if (source.test(x + side[0], y, z + side[1]) && ++count > max) {
+                    return false;
+                }
+            }
+            return count >= min;
+        }
+    }
+
+    /** {@code ~2d[mask]}: true as soon as one horizontal side matches. */
+    public static final class AdjacentAny2DMask implements Mask {
+
+        private final Mask source;
+
+        public AdjacentAny2DMask(Mask source) {
+            this.source = source;
+        }
+
+        @Override
+        public boolean test(int x, int y, int z) {
+            for (int[] side : SIDES) {
+                if (source.test(x + side[0], y, z + side[1])) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static final int[][] FACES =
+            {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    private static final int[][] SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /** {@code #exposed}: faces the sky (WorldEdit's "exposed to air" surface). */
     public static final class ExposedMask implements Mask {

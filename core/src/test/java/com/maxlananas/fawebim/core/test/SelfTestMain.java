@@ -8,6 +8,8 @@ import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
 import com.maxlananas.fawebim.core.command.CommandRegistry;
+import com.maxlananas.fawebim.core.command.Ctx;
+import com.maxlananas.fawebim.core.command.Parsers;
 import com.maxlananas.fawebim.core.brush.Brushes;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.Operations;
@@ -63,6 +65,7 @@ public final class SelfTestMain {
         testBlockStateRegistry();
         testRegions();
         testMasks();
+        testMaskAndPatternSyntax();
         testPatterns();
         testExpressions();
         testEditSessionAndHistory();
@@ -330,7 +333,7 @@ public final class SelfTestMain {
         check("negate mask", new Masks.NegateMask(solid).test(3, 80, 3));
         check("union mask", new Masks.UnionMask(List.of(solid, airMask)).test(3, 80, 3));
         check("intersection mask", !new Masks.IntersectionMask(List.of(solid, airMask)).test(3, 71, 3));
-        check("wall mask", new Masks.WallMask(session) != null);
+        check("wall mask", new Masks.WallMask(new Masks.AirMask(session, false), 1, 8) != null);
         check("surface mask", new Masks.SurfaceMask(session, 1, false).test(0, 70, 0));
         check("biome mask", new Masks.BiomeMask(session, world.getBiome(0, 0, 0)) != null);
         check("region mask", new Masks.RegionMask(new com.maxlananas.fawebim.core.region.CuboidRegion(
@@ -343,8 +346,83 @@ public final class SelfTestMain {
         check("extrema mask", new Masks.ExtremaMask(session, 0, 100) != null);
         check("offset mask", new Masks.OffsetMask(session, solid, 0, 1, 0) != null);
         check("exposed mask", new Masks.ExposedMask(session).test(0, 70, 0));
-        check("adjacent mask", new Masks.AdjacentMask(session, new Masks.SolidMask(session), 2, 4) != null);
+        check("adjacent mask", new Masks.AdjacentMask(new Masks.SolidMask(session), 2, 4) != null);
         Masks.ExtentHolder.clear();
+    }
+
+    /**
+     * The mask and pattern syntax FAWE parses beyond the plain block list, which
+     * is what the command lines in the documentation use.
+     */
+    private static void testMaskAndPatternSyntax() {
+        section("mask and pattern syntax");
+        TestWorld world = new TestWorld("syntax");
+        world.fillFlat(70);
+        EditSession session = new EditSession(world, SessionManager.get().of(java.util.UUID.randomUUID()), "syntax");
+        Masks.ExtentHolder.set(session);
+        CommandManager.get().initialise();
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(0, 71, 0));
+        actor.session().setMaxBlocksChanged(100000);
+        Ctx ctx = CommandManager.get().registry().context(actor, "/gmask");
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+
+        // %<percentage> is WorldEdit's random noise mask, not a block list.
+        Mask noise = Parsers.mask("%50", ctx);
+        int hits = 0;
+        for (int i = 0; i < 4000; i++) {
+            if (noise.test(i, 71, 0)) {
+                hits++;
+            }
+        }
+        check("noise mask passes about half the positions", hits > 1700 && hits < 2300);
+        check("%[50] is the same mask", Parsers.mask("%[50]", ctx) instanceof Masks.RandomMask);
+        check("noise mask rejects a block list", throwsParse(() -> Parsers.mask("%stone", ctx)));
+
+        // A mask that a neighbour satisfies: the four horizontal sides and the six faces.
+        Mask beside = Parsers.mask("#beside[#air]", ctx);
+        check("#beside matches a block with air next to it", beside.test(0, 70, 0));
+        check("#beside rejects a covered block", !beside.test(0, 40, 0));
+        check("| is #beside", Parsers.mask("|[#air]", ctx) != null);
+        check("~ counts faces", Parsers.mask("~[#air][2]", ctx) != null);
+        check("~2d counts sides", Parsers.mask("~2d[#air]", ctx) != null);
+        check("{ is the radius shell", Parsers.mask("{[1][16]", ctx) != null);
+        check("/ is the angle mask", Parsers.mask("/[0d][90d]", ctx) instanceof Masks.AngleMask);
+        check("#angle takes the same limits", Parsers.mask("#angle[0d][90d]", ctx) instanceof Masks.AngleMask);
+
+        // Patterns: a random state, a biome, a per-axis pattern and the buffer.
+        check("*oak_log picks a state", Parsers.pattern("*oak_log", ctx) instanceof Patterns.RandomState);
+        check("$plains is the biome pattern", Parsers.pattern("$plains", ctx) instanceof Patterns.Biome);
+        check("#biome[plains] is the biome pattern", Parsers.pattern("#biome[plains]", ctx) instanceof Patterns.Biome);
+        check("#nx wraps a pattern", Parsers.pattern("#nx[stone]", ctx) instanceof Patterns.NoAxis);
+        check("#~[stone] is the relative pattern", Parsers.pattern("#~[stone]", ctx) instanceof Patterns.Relative);
+        check("#buffer wraps a pattern", Parsers.pattern("#buffer[stone][4]", ctx) instanceof Patterns.Buffered);
+        check("#mask[mask][p][p]", Parsers.pattern("#mask[#air][stone][dirt]", ctx) instanceof Patterns.Masked);
+
+        // The buffered pattern hands the same position the same block back.
+        Patterns.Weighted random = new Patterns.Weighted();
+        random.add(1, new Patterns.Single(stone));
+        random.add(1, new Patterns.Single(BlockState.registry().defaultState("minecraft:dirt")));
+        Patterns.Buffered buffered = new Patterns.Buffered(random, 64, false);
+        int first = buffered.apply(5, 71, 5);
+        check("buffered pattern is stable per position", first == buffered.apply(5, 71, 5));
+
+        // Whatever the syntax, the dispatcher has to accept it end to end.
+        actor.clearMessages();
+        check("//gmask accepts the noise mask", CommandManager.get().dispatch(actor, "//gmask %25"));
+        actor.clearMessages();
+        check("//replace accepts #nx[stone]", CommandManager.get().dispatch(actor, "//replace #existing #nx[stone]"));
+        actor.clearMessages();
+        Masks.ExtentHolder.clear();
+    }
+
+    /** True when the parser refuses the input, used for the syntax that must fail. */
+    private static boolean throwsParse(Runnable action) {
+        try {
+            action.run();
+            return false;
+        } catch (RuntimeException e) {
+            return true;
+        }
     }
 
     private static void testPatterns() {

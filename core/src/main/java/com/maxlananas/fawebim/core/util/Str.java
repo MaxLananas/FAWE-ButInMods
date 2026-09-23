@@ -103,6 +103,41 @@ public final class Str {
         return out;
     }
 
+    /**
+     * The {@code [a][b][c]} argument groups of a rich parser input, e.g. FAWE's
+     * {@code #mask[mask][pattern][pattern]}. An input without brackets yields no
+     * group, which the callers treat as a missing argument.
+     */
+    public static List<String> bracketGroups(String input) {
+        List<String> out = new ArrayList<>();
+        int start = input.indexOf('[');
+        if (start < 0) {
+            return out;
+        }
+        int depth = 0;
+        StringBuilder current = new StringBuilder();
+        for (int i = start; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (c == '[') {
+                depth++;
+                if (depth == 1) {
+                    current.setLength(0);
+                    continue;
+                }
+            } else if (c == ']') {
+                depth--;
+                if (depth == 0) {
+                    out.add(current.toString());
+                    continue;
+                }
+            }
+            if (depth > 0) {
+                current.append(c);
+            }
+        }
+        return out;
+    }
+
     public static String join(List<String> parts, String separator) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < parts.size(); i++) {

@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-294%20passing-3fb950?style=flat-square)](docs/STATUS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-315%20passing-3fb950?style=flat-square)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-266%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](docs/COMMANDS.md)
@@ -59,7 +59,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 |---|---|
 | **Commands** | The full `//` and `/` namespaces: `//set`, `//copy`, `//paste`, `//brush`, `/tool`, `/schem`, `/snapshot`, `/we`, `/anvil`, and 255 of 255 upstream names |
 | **Selections** | Cuboid, polygon, ellipsoid, sphere, cylinder, convex polyhedron, extend, fuzzy — plus the wand and position limits |
-| **Masks & patterns** | `#`/`%`/`##` parsers, `//gmask`, `//gsmask`, angle masks, expression masks, biome and block-tag patterns |
+| **Masks & patterns** | `#`/`%`/`##`/`|`/`~`/`{`/`/` mask parsers, `#nx`/`*`/`$`/`#mask`/`#buffer` patterns, `//gmask`, `//gsmask`, angle and expression masks |
 | **Clipboards** | Sponge v1/v2/v3, MCEdit `.schematic`, structure `.nbt`; entities, biomes and structure voids survive a copy |
 | **Brushes** | 46 brushes with FAWE's arguments and switches, saved as presets, bound per hand |
 | **Tools** | Tools, super-pickaxe modes, feature/structure placers, mouse-wheel scroll bindings |
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 294-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 315-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -169,7 +169,7 @@ Three ideas do most of the work:
 
 | | |
 |---|---|
-| Engine tests | **294 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **315 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **266** |
 | Implemented | **246** |
 | Aliases of an implemented command | **20** |

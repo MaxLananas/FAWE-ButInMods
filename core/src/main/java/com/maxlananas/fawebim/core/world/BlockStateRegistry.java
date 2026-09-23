@@ -33,6 +33,15 @@ public interface BlockStateRegistry {
     int defaultState(String blockName);
 
     /**
+     * Every state a block can take, which is what {@code *oak_log} draws from.
+     * Implementations that cannot enumerate the states return the default one.
+     */
+    default List<Integer> statesOf(String blockName) {
+        int state = defaultState(blockName);
+        return state < 0 ? List.of() : List.of(state);
+    }
+
+    /**
      * Maps a legacy numeric id/metadata pair (MCEdit {@code .schematic} files)
      * to a modern state id. Implementations that cannot flatten legacy ids may
      * return {@link #air()}.
