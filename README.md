@@ -7,7 +7,7 @@ server platform required.
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE.txt)
 [![Minecraft](https://img.shields.io/badge/minecraft-1.21.10-brightgreen.svg)](https://www.minecraft.net/)
 [![Fabric](https://img.shields.io/badge/loader-Fabric%200.17.3%2B-dbb69c.svg)](https://fabricmc.net/)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-247%20passing-success.svg)](docs/STATUS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-257%20passing-success.svg)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-266%20registered-informational.svg)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/WorldEdit%2BFAWE%20names-255%2F255-success.svg)](docs/COMMANDS.md)
 
@@ -47,7 +47,7 @@ whole editing engine, including its test suite, runs without launching Minecraft
 
 | | |
 |---|---|
-| Engine tests | **247 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **257 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **266** |
 | Implemented | **246** |
 | Aliases of an implemented command | **20** |

@@ -8,6 +8,7 @@ import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.history.EditLog;
 import com.maxlananas.fawebim.core.history.History;
 import com.maxlananas.fawebim.core.history.Snapshots;
@@ -65,6 +66,7 @@ public final class SelfTestMain {
         testEditSessionAndHistory();
         testEditLog();
         testSnapshotRoundTrip();
+        testFallAndRegionHelpers();
         testClipboardAndSchematic();
         testCommands();
         testRegen();
@@ -617,6 +619,53 @@ public final class SelfTestMain {
         world.addEntity(entity);
         BlockArrayClipboard withEntities = Clipboards.copy(world, region, edit, true);
         check("clipboard copied entity", withEntities.entities().size() == 1);
+    }
+
+    private static void testFallAndRegionHelpers() {
+        section("operations helpers");
+        TestWorld world = new TestWorld("fall");
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int air = BlockState.registry().air();
+        TestActor actor = new TestActor("Alice", world, new BlockVector3(10, 71, 10));
+        LocalSession session = actor.session();
+        session.setMaxBlocksChanged(100000);
+        // A selection with nothing under it: the world floor is far below.
+        Region region = new com.maxlananas.fawebim.core.region.CuboidRegion(
+                new BlockVector3(8, 70, 8), new BlockVector3(15, 90, 15));
+
+        world.setBlock(10, 85, 10, stone);
+        EditSession free = new EditSession(world, session, "fall");
+        Operations.fall(world, free, region);
+        free.flushQueue();
+        check("//fall drops the block out of the selection", world.getBlock(10, 85, 10) == air
+                && world.getBlock(10, 70, 10) == air);
+        check("//fall lands it on the world floor", world.getBlock(10, world.minY(), 10) == stone);
+
+        // -m stops the column at the bottom of the selection instead.
+        world.setBlock(10, 85, 10, stone);
+        EditSession clamped = new EditSession(world, session, "fall -m");
+        Operations.fall(world, clamped, region, true);
+        clamped.flushQueue();
+        check("//fall -m keeps the block in the selection", world.getBlock(10, 70, 10) == stone
+                && world.getBlock(10, 85, 10) == air);
+        check("//fall -m leaves the world floor alone", world.getBlock(10, world.minY(), 10) == stone);
+
+        // A block that sits on something does not move at all.
+        world.setBlock(10, 70, 10, stone);
+        EditSession settled = new EditSession(world, session, "fall -m settled");
+        Operations.fall(world, settled, region, true);
+        settled.flushQueue();
+        check("//fall -m leaves a resting block where it is", world.getBlock(10, 70, 10) == stone);
+
+        checkEquals("schematic format of .schem", "sponge.3",
+                com.maxlananas.fawebim.core.clipboard.Schematics.formatOf("house.schem"));
+        checkEquals("schematic format of .schematic", "mcedit",
+                com.maxlananas.fawebim.core.clipboard.Schematics.formatOf("house.schematic"));
+        checkEquals("schematic format of .nbt", "structure",
+                com.maxlananas.fawebim.core.clipboard.Schematics.formatOf("house.nbt"));
+        checkEquals("schematic suffix of sponge.3", ".schem",
+                com.maxlananas.fawebim.core.clipboard.Schematics.suffixOf("sponge.3"));
+        check("unknown schematic time", com.maxlananas.fawebim.core.clipboard.Schematics.timeOf("nothing.schem") < 0);
     }
 
     private static void testCommands() {

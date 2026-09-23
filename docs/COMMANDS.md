@@ -293,7 +293,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//hpos2` | — | Set position 2 to the block you are looking at | implemented |
 | `//inset <amount>` | — | Inset the selection area | implemented |
 | `//outset <[amount]>` | `//expand-out` | Outset the selection area in every direction | implemented |
-| `//pos <[-s <selector>]>` | — | Set both positions to your position | implemented |
+| `//pos <[coordinates]> <[secondary coordinates]> <[-s <selector>]>` | — | Set positions | implemented |
 | `//pos1 <[coordinates]>` | `//p1` | Set position 1 to your position or the given coordinates | implemented |
 | `//pos2 <[coordinates]>` | `//p2` | Set position 2 to your position or the given coordinates | implemented |
 | `//sel <type>` | — | Choose the selection type: cuboid, extend, poly, ellipsoid, sphere, cyl, convex | implemented |
@@ -380,7 +380,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/we cui` | `/cui` | Complete the CUI handshake | implemented |
 | `/we debugpaste` | `/debugpaste` | Write the debug information a paste would contain | implemented |
 | `/we reload` | — | Reload the FAWE-BIM configuration | implemented |
-| `/we report <[-p <page>]>` | `/report` | Write a report about this installation | implemented |
+| `/we report <[-p]>` | `/report` | Write a report about this installation | implemented |
 | `/we threads` | `/threads` | Print all thread stacks | implemented |
 | `/we trace` | `/trace` | Toggle the trace hook for your edits | implemented |
 | `/we tz <[timezone]>` | `/tz` | Set your timezone for snapshots | implemented |
