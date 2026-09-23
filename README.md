@@ -7,9 +7,9 @@ server platform required.
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE.txt)
 [![Minecraft](https://img.shields.io/badge/minecraft-1.21.10-brightgreen.svg)](https://www.minecraft.net/)
 [![Fabric](https://img.shields.io/badge/loader-Fabric%200.17.3%2B-dbb69c.svg)](https://fabricmc.net/)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-225%20passing-success.svg)](docs/STATUS.md)
-[![Commands](https://img.shields.io/badge/commands-304%20registered-informational.svg)](docs/COMMANDS.md)
-[![Coverage](https://img.shields.io/badge/WorldEdit%2BFAWE%20names-259%2F259-success.svg)](docs/COMMANDS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-247%20passing-success.svg)](docs/STATUS.md)
+[![Commands](https://img.shields.io/badge/commands-266%20registered-informational.svg)](docs/COMMANDS.md)
+[![Coverage](https://img.shields.io/badge/WorldEdit%2BFAWE%20names-255%2F255-success.svg)](docs/COMMANDS.md)
 
 ---
 
@@ -43,21 +43,22 @@ whole editing engine, including its test suite, runs without launching Minecraft
 
 | | |
 |---|---|
-| Engine tests | **225 passing, 0 failing** (`./gradlew :core:selfTest`) |
-| Commands registered | **304** |
-| Implemented | **250** |
-| Aliases of an implemented command | **54** |
+| Engine tests | **247 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Commands registered | **266** |
+| Implemented | **246** |
+| Aliases of an implemented command | **20** |
 | Still to port | **0** |
-| WorldEdit + FAWE command names that resolve | **259 / 259** |
+| WorldEdit + FAWE command names that resolve | **255 / 255** |
 
 The exact list of every command, its aliases, arguments and status is generated from the live
 registry into [`docs/COMMANDS.md`](docs/COMMANDS.md) and [`docs/STATUS.md`](docs/STATUS.md); the
 machine-readable form is [`docs/commands-spec.json`](docs/commands-spec.json).
 
 Every name WorldEdit 7.3.17 and FastAsyncWorldEdit declare is registered and resolves, with no stub
-left in the registry. `./gradlew :core:verify` runs the self-tests and then feeds the 259 declared
-commands and their 201 aliases (460 spellings in total) to the same lookup the dispatcher uses, so a
-name cannot quietly stop working.
+left in the registry. `./gradlew :core:verify` runs the self-tests and then feeds the 255 declared
+commands and their 201 aliases (457 spellings in total) to the same lookup the dispatcher uses, so a
+name cannot quietly stop working. Every command switch that upstream declares is declared here too:
+the flag audit in `scripts/flag_audit.py` compares the two and currently reports 0 missing.
 
 ## Known platform limits
 

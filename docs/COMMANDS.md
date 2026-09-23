@@ -178,7 +178,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//tree <[type]>` | — | Create a tree at your position | implemented |
 | `blob <pattern> <[radius]>` | — | Create a distorted sphere | implemented |
 | `feature <feature> <[position]>` | — | Generate a feature at your position | implemented |
-| `generatebiome <formula>` | `/genbiome`, `/gb` | Sets the biome according to a formula | implemented |
+| `generatebiome <biome> <formula>` | `/genbiome`, `/gb` | Sets biome according to a formula | implemented |
 | `img <image> <[pattern]>` | `/image` | Build terrain from a heightmap image | implemented |
 | `placefeature` | — | Generate a feature at your position | alias |
 | `rock` | — | Create a distorted sphere | alias |
