@@ -55,8 +55,9 @@ registry into [`docs/COMMANDS.md`](docs/COMMANDS.md) and [`docs/STATUS.md`](docs
 machine-readable form is [`docs/commands-spec.json`](docs/commands-spec.json).
 
 Every name WorldEdit 7.3.17 and FastAsyncWorldEdit declare is registered and resolves, with no stub
-left in the registry. `./gradlew :core:verify` runs the self-tests and then resolves all 460 command
-names through the same lookup the dispatcher uses, so a name cannot quietly stop working.
+left in the registry. `./gradlew :core:verify` runs the self-tests and then feeds the 259 declared
+commands and their 201 aliases (460 spellings in total) to the same lookup the dispatcher uses, so a
+name cannot quietly stop working.
 
 ## Known platform limits
 
