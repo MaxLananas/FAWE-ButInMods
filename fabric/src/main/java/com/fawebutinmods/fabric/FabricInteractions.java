@@ -231,6 +231,31 @@ public final class FabricInteractions {
         return true;
     }
 
+    /**
+     * The client's hotbar moves when the player scrolls the mouse wheel, which is
+     * the only scroll signal a vanilla server gets: FAWE turns it into one step
+     * for whatever {@code /tool scroll} installed. Returning true means the
+     * binding used the scroll, so the adapter puts the held slot back.
+     */
+    public static boolean onSlotChange(ServerPlayer player, int newSlot, int oldSlot) {
+        if (player.isShiftKeyDown()) {
+            return false;
+        }
+        FabricActor actor = new FabricActor(player);
+        LocalSession session = actor.session();
+        Brush brush = BrushFactory.current(session);
+        if (brush == null || !bound(session, "brush-item", FabricMessages.heldItem(player))) {
+            return false;
+        }
+        com.fawebutinmods.core.tool.Scroll scroll = brush.settings().getScrollAction();
+        if (scroll == null) {
+            return false;
+        }
+        int delta = newSlot - oldSlot;
+        int amount = ((delta <= 4 && delta > 0) || delta < -4) ? 1 : -1;
+        return scroll.increment(amount);
+    }
+
     /** Used by {@code /brush command} and the tool bindings. */
     public static void tick(ServerPlayer player) {
         FabricActor actor = new FabricActor(player);

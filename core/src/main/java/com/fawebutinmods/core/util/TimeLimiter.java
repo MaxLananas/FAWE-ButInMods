@@ -46,6 +46,8 @@ public final class TimeLimiter {
 
     /** Thrown when an edit exceeds the configured timeout. */
     public static final class OperationTimeoutException extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
         private final long elapsedMillis;
         private final long processed;
 

@@ -53,18 +53,72 @@ public final class Schematics {
         return directory;
     }
 
+    /** The schematic formats that can be read and written. */
+    public static List<String> formats() {
+        return List.of("sponge.3", "sponge.2", "mcedit", "schem", "structure");
+    }
+
     public static List<String> list() {
+        return list(ListFilter.ALL, null);
+    }
+
+    /**
+     * Lists schematics, optionally only the shared ones or only the player's own.
+     *
+     * @param owner the player whose directory {@link ListFilter#LOCAL} reads
+     */
+    public static List<String> list(ListFilter filter, String owner) {
         List<String> names = new ArrayList<>();
-        try (Stream<Path> files = Files.list(directory())) {
+        if (filter != ListFilter.LOCAL) {
+            collect(directory(), names);
+        }
+        if (filter != ListFilter.GLOBAL && owner != null) {
+            collect(directory().resolve(owner.toLowerCase(java.util.Locale.ROOT)), names);
+        }
+        names.sort(String::compareToIgnoreCase);
+        return names;
+    }
+
+    private static void collect(Path folder, List<String> names) {
+        if (!Files.isDirectory(folder)) {
+            return;
+        }
+        try (Stream<Path> files = Files.list(folder)) {
             files.filter(Files::isRegularFile)
                     .map(path -> path.getFileName().toString())
-                    .filter(name -> name.endsWith(".schem") || name.endsWith(".schematic") || name.endsWith(".nbt"))
-                    .sorted()
+                    .filter(Schematics::isSchematic)
                     .forEach(names::add);
         } catch (IOException e) {
-            return List.of();
+            // An unreadable directory simply lists nothing.
         }
-        return names;
+    }
+
+    private static boolean isSchematic(String name) {
+        return name.endsWith(".schem") || name.endsWith(".schematic") || name.endsWith(".nbt");
+    }
+
+    /**
+     * Loads every schematic of the folder matching a glob, as {@code /schem loadall}
+     * does; the pool it fills is what {@code //paste} then picks from at random.
+     *
+     * @param format the format name the command was given, kept for the message
+     * @param glob   a file name pattern, {@code *} for everything
+     */
+    public static List<BlockArrayClipboard> loadAll(String format, String glob) {
+        java.nio.file.PathMatcher matcher = java.nio.file.FileSystems.getDefault()
+                .getPathMatcher("glob:" + (glob == null || glob.isBlank() ? "*" : glob));
+        List<BlockArrayClipboard> loaded = new ArrayList<>();
+        for (String name : list(ListFilter.ALL, null)) {
+            if (!matcher.matches(java.nio.file.Path.of(name))) {
+                continue;
+            }
+            try {
+                loaded.add(load(name));
+            } catch (RuntimeException e) {
+                // A file that is not a readable schematic is skipped, like FAWE does.
+            }
+        }
+        return loaded;
     }
 
     public static void delete(String name) {
@@ -457,7 +511,6 @@ public final class Schematics {
                         return paletteIds.size();
                     });
                     NbtCompound block = new NbtCompound();
-                    java.util.List<Integer> pos = java.util.List.of(x, y, z);
                     block.putIntArray("pos", new int[]{x, y, z});
                     block.putInt("state", paletteIndex);
                     blocks.add(block);
@@ -473,10 +526,6 @@ public final class Schematics {
     }
 
     private static BlockArrayClipboard readStructure(NbtCompound root) {
-        java.util.List<Object> size = root.getList("size");
-        int width = size.size() > 0 ? Integer.parseInt(String.valueOf(size.get(0))) : 0;
-        int height = size.size() > 1 ? Integer.parseInt(String.valueOf(size.get(1))) : 0;
-        int length = size.size() > 2 ? Integer.parseInt(String.valueOf(size.get(2))) : 0;
         java.util.List<Object> palette = root.getList("palette");
         List<Integer> states = new ArrayList<>();
         for (Object entry : palette) {

@@ -34,8 +34,17 @@ val genDocs by tasks.registering(JavaExec::class) {
          layout.projectDirectory.file("../docs/commands-spec.json").asFile.absolutePath)
 }
 
+val checkInventory by tasks.registering(JavaExec::class) {
+    description = "Checks every WorldEdit and FAWE command name against the dispatcher's own lookup."
+    group = "verification"
+    dependsOn("selfTestClasses")
+    classpath = sourceSets["selfTest"].runtimeClasspath
+    mainClass.set("com.fawebutinmods.core.test.StrictInventoryCheck")
+    args(layout.projectDirectory.file("../docs/commands-inventory.json").asFile.absolutePath)
+}
+
 tasks.register("verify") {
     group = "verification"
-    description = "Compiles and runs the engine self-tests."
-    dependsOn(selfTest)
+    description = "Compiles the engine, runs the self-tests and checks the command inventory."
+    dependsOn(selfTest, checkInventory)
 }

@@ -177,7 +177,7 @@ public final class Parsers {
                             | (Integer.parseInt(parts.get(1).trim()) << 8)
                             | Integer.parseInt(parts.get(2).trim());
                 }
-                return new Patterns.Color(rgb, extOf(ctx), MapColors.palette(BlockState.registry()));
+                return new Patterns.Color(rgb, MapColors.palette(BlockState.registry()));
             }
             case "lighten", "darken", "saturate", "desaturate" -> {
                 double amount = args.isEmpty() ? 0.1 : Double.parseDouble(args);

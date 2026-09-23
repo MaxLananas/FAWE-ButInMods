@@ -71,6 +71,8 @@ public final class Patterns {
         private final boolean fullCopy;
         private final boolean randomRotation;
         private final Random random = new Random();
+        /** Cached per-apply rotation, refreshed for every rotation step. */
+        private int rotation;
 
         public ClipboardPattern(Extent clipboard, BlockVector3 origin, boolean fullCopy, boolean randomRotation) {
             this.clipboard = clipboard;
@@ -84,6 +86,37 @@ public final class Patterns {
             int x = position.x() - origin.x();
             int y = position.y() - origin.y();
             int z = position.z() - origin.z();
+            if (randomRotation && (x == 0 && z == 0)) {
+                // The rotation is picked once per block column, so a tower of
+                // blocks coming from one clipboard cell stays coherent.
+                rotation = random.nextInt(4);
+            }
+            if (randomRotation && rotation != 0) {
+                int w = Math.max(1, clipboardWidth());
+                int l = Math.max(1, clipboardLength());
+                int wrappedX = Math.floorMod(x, w);
+                int wrappedZ = Math.floorMod(z, l);
+                switch (rotation) {
+                    case 1 -> {
+                        x = origin.x() + wrappedZ;
+                        z = origin.z() + (w - 1 - wrappedX);
+                    }
+                    case 2 -> {
+                        x = origin.x() + (w - 1 - wrappedX);
+                        z = origin.z() + (l - 1 - wrappedZ);
+                    }
+                    case 3 -> {
+                        x = origin.x() + (l - 1 - wrappedZ);
+                        z = origin.z() + wrappedX;
+                    }
+                    default -> {
+                        x = origin.x() + wrappedX;
+                        z = origin.z() + wrappedZ;
+                    }
+                }
+                x -= origin.x();
+                z -= origin.z();
+            }
             if (fullCopy) {
                 // Wrap into the clipboard bounds, FAWE's "#fullcopy" behaviour.
                 int w = Math.max(1, clipboardWidth());
@@ -157,13 +190,24 @@ public final class Patterns {
             if (ext == null) {
                 return 0;
             }
-            // Approximate FAWE: biome surface is grass on dirt on stone; pick by depth.
-            for (int dy = 1; dy <= 5; dy++) {
-                if (!BlockState.registry().isAirLike(ext.getBlock(position.x(), position.y() + dy, position.z()))) {
-                    return BlockState.registry().defaultState("minecraft:grass_block");
-                }
+            // FAWE paints the biome's own surface: grass-like biomes get grass,
+            // dry ones sand, cold ones snow, everything else keeps the terrain.
+            String biome = BlockState.registry().biomeName(biomeId);
+            boolean exposed = BlockState.registry().isAirLike(
+                    ext.getBlock(position.x(), position.y() + 1, position.z()));
+            if (!exposed) {
+                return BlockState.registry().defaultState("minecraft:stone");
             }
-            return BlockState.registry().defaultState("minecraft:stone");
+            if (biome == null) {
+                return BlockState.registry().defaultState("minecraft:grass_block");
+            }
+            if (biome.contains("desert") || biome.contains("beach") || biome.contains("badlands")) {
+                return BlockState.registry().defaultState("minecraft:sand");
+            }
+            if (biome.contains("snow") || biome.contains("frozen") || biome.contains("ice")) {
+                return BlockState.registry().defaultState("minecraft:snow_block");
+            }
+            return BlockState.registry().defaultState("minecraft:grass_block");
         }
     }
 
@@ -212,7 +256,17 @@ public final class Patterns {
             int ox = dx == 0 ? 0 : random.nextInt(dx * 2 + 1) - dx;
             int oy = dy == 0 ? 0 : random.nextInt(dy * 2 + 1) - dy;
             int oz = dz == 0 ? 0 : random.nextInt(dz * 2 + 1) - dz;
-            return delegate.apply(position.add(ox, oy, oz));
+            BlockVector3 target = position.add(ox, oy, oz);
+            if (solid) {
+                // "#spread" with the solid flag: never carve into the terrain,
+                // only fill where the offset landed on an existing block.
+                Extent ext = delegate.extent();
+                if (ext != null && BlockState.registry().isAirLike(
+                        ext.getBlock(target.x(), target.y(), target.z()))) {
+                    return BlockState.registry().air();
+                }
+            }
+            return delegate.apply(target);
         }
 
         @Override
@@ -316,8 +370,12 @@ public final class Patterns {
         public int apply(BlockVector3 position) {
             Expression.Variables vars = new Expression.Variables();
             vars.set("x", position.x()).set("y", position.y()).set("z", position.z());
-            int value = (int) Math.floor(expression.evaluate(vars));
-            return value;
+            return (int) Math.floor(expression.evaluate(vars));
+        }
+
+        @Override
+        public String describe() {
+            return "=" + input;
         }
     }
 
@@ -389,12 +447,10 @@ public final class Patterns {
     public static final class Color implements Pattern {
 
         private final int argb;
-        private final Extent extent;
         private final List<Integer> palette = new ArrayList<>();
 
-        public Color(int argb, Extent extent, List<Integer> palette) {
+        public Color(int argb, List<Integer> palette) {
             this.argb = argb;
-            this.extent = extent;
             this.palette.addAll(palette);
         }
 
@@ -404,7 +460,6 @@ public final class Patterns {
         }
 
         public int closest() {
-            Extent ext = extent != null ? extent : com.fawebutinmods.core.mask.Masks.ExtentHolder.get();
             BlockStateRegistry registry = BlockState.registry();
             int best = 0;
             double bestDistance = Double.MAX_VALUE;
@@ -462,7 +517,7 @@ public final class Patterns {
                 }
             }
             int rgb = java.awt.Color.HSBtoRGB(hsb[0], hsb[1], hsb[2]) & 0xFFFFFF;
-            return new Color(rgb, ext, MapColors.palette(registry)).closest();
+            return new Color(rgb, MapColors.palette(registry)).closest();
         }
     }
 

@@ -231,11 +231,8 @@ public abstract class Noise {
     /** Worley/voronoi noise, used by {@code #voronoi} and rock/flora generation. */
     public static final class Voronoi extends Noise {
 
-        private final Random random;
-
         public Voronoi(long seed) {
             super(seed);
-            this.random = new Random(seed);
         }
 
         @Override

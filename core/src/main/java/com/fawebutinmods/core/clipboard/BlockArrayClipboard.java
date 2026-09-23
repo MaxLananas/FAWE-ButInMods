@@ -5,6 +5,7 @@ import com.fawebutinmods.core.math.BlockVector3;
 import com.fawebutinmods.core.world.BlockStateRegistry;
 import com.fawebutinmods.core.world.EntityData;
 import com.fawebutinmods.core.world.Extent;
+import com.fawebutinmods.core.world.World;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,13 +26,34 @@ public final class BlockArrayClipboard implements Extent {
     private final java.util.Map<Long, int[]> sections = new java.util.HashMap<>();
     private final java.util.Map<BlockVector3, com.fawebutinmods.core.util.NbtCompound> blockEntities =
             new java.util.LinkedHashMap<>();
-    private final java.util.Map<Long, int[]> paletteCache = new java.util.HashMap<>();
     private int minY = Integer.MAX_VALUE;
     private int maxY = Integer.MIN_VALUE;
+    private World lazyWorld;
 
     public BlockArrayClipboard(BlockVector3 origin) {
         this.origin = origin;
         box.set(origin.x(), origin.y(), origin.z(), origin.x(), origin.y(), origin.z());
+    }
+
+    /**
+     * A clipboard that keeps the region instead of its blocks, like FAWE's
+     * {@code //lazycopy}: nothing is read until the clipboard is pasted, so
+     * copying a huge selection costs no memory.
+     */
+    public static BlockArrayClipboard lazy(World world, com.fawebutinmods.core.region.Region region, String name) {
+        BlockArrayClipboard clipboard = new BlockArrayClipboard(region.getMinimumPoint());
+        clipboard.box.set(region.getMinimumPoint().x(), region.getMinimumPoint().y(), region.getMinimumPoint().z(),
+                region.getMaximumPoint().x(), region.getMaximumPoint().y(), region.getMaximumPoint().z());
+        clipboard.minY = region.getMinimumPoint().y();
+        clipboard.maxY = region.getMaximumPoint().y();
+        clipboard.lazyWorld = world;
+        clipboard.name = name;
+        return clipboard;
+    }
+
+    /** True when the blocks are still in the world rather than in this clipboard. */
+    public boolean isLazy() {
+        return lazyWorld != null;
     }
 
     public BlockVector3 getOrigin() {
@@ -91,6 +113,9 @@ public final class BlockArrayClipboard implements Extent {
     public int getBlock(int x, int y, int z) {
         if (!box.contains(x, y, z)) {
             return 0;
+        }
+        if (lazyWorld != null) {
+            return lazyWorld.getBlock(x, y, z);
         }
         int[] section = sections.get(sectionKey(x, y, z));
         if (section == null) {

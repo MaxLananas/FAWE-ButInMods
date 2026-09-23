@@ -30,4 +30,9 @@ public interface Pattern {
     default boolean isDeterministic() {
         return true;
     }
+
+    /** Short human readable form, used by {@code /brush info} and friends. */
+    default String describe() {
+        return getClass().getSimpleName();
+    }
 }

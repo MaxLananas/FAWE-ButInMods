@@ -18,6 +18,7 @@ public final class History {
     private final int maxRecords;
     private final List<Record> records = new ArrayList<>();
     private int currentIndex = -1;
+    private java.util.function.Consumer<Record> recordListener;
 
     public History(int maxRecords) {
         this.maxRecords = Math.max(1, maxRecords);
@@ -104,8 +105,20 @@ public final class History {
         return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
     }
 
+    /**
+     * Called with a record once the edit that produced it is over, i.e. when the
+     * next record starts. Used to write snapshots to disk.
+     */
+    public void setRecordListener(java.util.function.Consumer<Record> listener) {
+        this.recordListener = listener;
+    }
+
     /** Starts a new record and drops any redo history, like FAWE does. */
     public Record newRecord(String description) {
+        Record completed = getCurrent();
+        if (recordListener != null && completed != null && !completed.isEmpty()) {
+            recordListener.accept(completed);
+        }
         while (records.size() > currentIndex + 1) {
             records.remove(records.size() - 1);
         }

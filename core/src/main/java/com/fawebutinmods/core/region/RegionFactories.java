@@ -1,6 +1,5 @@
 package com.fawebutinmods.core.region;
 
-import com.fawebutinmods.core.math.BlockVector3;
 import com.fawebutinmods.core.math.Vector2;
 
 /**

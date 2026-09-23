@@ -84,6 +84,16 @@ public interface Actor {
         return false;
     }
 
+    /** Whether the player is flying; {@code /ceil} and {@code /up} keep them there. */
+    default boolean isFlying() {
+        return false;
+    }
+
+    /** Enables flight, used when a ceiling warp cannot place a platform. */
+    default boolean setFlying(boolean flying) {
+        return false;
+    }
+
     /** Extra reach used by {@code /farwand}. */
     default double reachDistance() {
         return 5.0;

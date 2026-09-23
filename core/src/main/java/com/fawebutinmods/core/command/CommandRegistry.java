@@ -97,6 +97,27 @@ public final class CommandRegistry {
     }
 
     /**
+     * Registers a command unless another entry already answers to the name, so
+     * that a command class never duplicates behaviour another one implements.
+     *
+     * @return the new entry, or null when the name is already taken
+     */
+    public Entry registerUnlessPresent(String name, String... aliases) {
+        if (contains(name)) {
+            return null;
+        }
+        return register(name, aliases);
+    }
+
+    /**
+     * True when any spelling of the name is already registered, in either
+     * namespace ({@code //set}, {@code /set} or {@code set}).
+     */
+    public boolean contains(String name) {
+        return lookup(name) != null;
+    }
+
+    /**
      * Looks a name up in every spelling the platform can hand us.
      *
      * <p>WorldEdit names carry a slash ({@code //set}, {@code /fast}), and
@@ -212,7 +233,7 @@ public final class CommandRegistry {
             return false;
         }
         try {
-            Ctx context = new Ctx(this, entry, actor, tokens);
+            Ctx context = new Ctx(entry, actor, tokens);
             if (entry.handler == null) {
                 actor.message(Msg.warn("Command '" + entry.name
                         + "' is registered but not implemented in this build (see docs/STATUS.md)."));
@@ -237,6 +258,8 @@ public final class CommandRegistry {
 
     /** Thrown by command implementations for user-facing failures. */
     public static final class CommandException extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
 
         public CommandException(String message) {
             super(message);

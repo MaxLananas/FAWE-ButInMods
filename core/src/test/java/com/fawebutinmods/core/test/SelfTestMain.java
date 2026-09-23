@@ -1,5 +1,8 @@
 package com.fawebutinmods.core.test;
 
+import com.fawebutinmods.core.actor.Navigation;
+import com.fawebutinmods.core.anvil.ChunkData;
+import com.fawebutinmods.core.anvil.RegionFiles;
 import com.fawebutinmods.core.clipboard.BlockArrayClipboard;
 import com.fawebutinmods.core.clipboard.Clipboards;
 import com.fawebutinmods.core.clipboard.Schematics;
@@ -26,7 +29,6 @@ import com.fawebutinmods.core.util.TimeLimiter;
 import com.fawebutinmods.core.world.BlockState;
 import com.fawebutinmods.core.world.EntityData;
 import com.fawebutinmods.core.world.RegenOptions;
-import com.fawebutinmods.core.world.World;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -60,8 +62,10 @@ public final class SelfTestMain {
         testEditSessionAndHistory();
         testClipboardAndSchematic();
         testCommands();
+        testNavigation();
         testTimeLimiter();
         testUtil();
+        testAnvilRegionFiles();
 
         System.out.println();
         System.out.println("Self-tests: " + passed + " passed, " + failed + " failed");
@@ -73,6 +77,88 @@ public final class SelfTestMain {
             }
             System.exit(1);
         }
+    }
+
+    /**
+     * The anvil tools read region files directly, so the reader is tested against a
+     * region file written by the test itself: header, chunk payload and the packed
+     * block data of a section.
+     */
+    private static void testAnvilRegionFiles() throws Exception {
+        section("anvil");
+
+        NbtCompound chunk = new NbtCompound();
+        chunk.putInt("xPos", 0);
+        chunk.putInt("zPos", 0);
+        chunk.putLong("InhabitedTime", 40);
+
+        NbtCompound air = new NbtCompound().putString("Name", "minecraft:air");
+        NbtCompound stone = new NbtCompound().putString("Name", "minecraft:stone");
+        NbtCompound sectionCompound = new NbtCompound();
+        sectionCompound.putByte("Y", 0);
+        NbtCompound blockStates = new NbtCompound();
+        blockStates.putList("palette", List.of(air, stone));
+        // Two palette entries need 4 bits per block, 16 blocks per long.
+        long[] data = new long[256];
+        for (int index = 0; index < 4096; index++) {
+            data[index / 16] |= 1L << ((index % 16) * 4);
+        }
+        blockStates.putLongArray("data", data);
+        sectionCompound.putCompound("block_states", blockStates);
+
+        NbtCompound biomes = new NbtCompound();
+        biomes.putList("palette", List.of("minecraft:plains"));
+        sectionCompound.putCompound("biomes", biomes);
+        chunk.putList("sections", List.of(sectionCompound));
+
+        java.util.Map<String, Long> counts = new java.util.HashMap<>();
+        ChunkData.count(chunk, counts);
+        checkEquals("anvil block count", 4096L, counts.getOrDefault("minecraft:stone", 0L));
+        check("anvil chunk is not air only", !ChunkData.isAirOnly(chunk));
+        check("anvil biome", ChunkData.biomes(chunk).contains("minecraft:plains"));
+        checkEquals("anvil inhabited ticks", 40L, ChunkData.inhabitedTicks(chunk));
+
+        NbtCompound empty = new NbtCompound();
+        NbtCompound emptySection = new NbtCompound();
+        NbtCompound emptyStates = new NbtCompound();
+        emptyStates.putList("palette", List.of(air));
+        emptySection.putCompound("block_states", emptyStates);
+        empty.putList("sections", List.of(emptySection));
+        check("anvil air only chunk", ChunkData.isAirOnly(empty));
+
+        Path directory = Files.createTempDirectory("fawe-bim-anvil");
+        Path regionFile = directory.resolve("r.0.0.mca");
+        byte[] payload = com.fawebutinmods.core.util.NbtIo.write(chunk, false);
+        java.io.ByteArrayOutputStream compressed = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.DeflaterOutputStream deflater =
+                     new java.util.zip.DeflaterOutputStream(compressed)) {
+            deflater.write(payload);
+        }
+        byte[] header = new byte[8192];
+        int offset = (2 << 8) | ((compressed.size() + 5 + 4095) / 4096);
+        java.nio.ByteBuffer.wrap(header, 0, 4).putInt(offset);
+        java.nio.ByteBuffer.wrap(header, 4096, 4).putInt(1600000000);
+        byte[] file = new byte[8192 + 4096 * ((compressed.size() + 5 + 4095) / 4096)];
+        System.arraycopy(header, 0, file, 0, header.length);
+        java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(file);
+        buffer.position(8192);
+        buffer.putInt(compressed.size() + 1);
+        file[8196] = 2;
+        System.arraycopy(compressed.toByteArray(), 0, file, 8197, compressed.size());
+        Files.write(regionFile, file);
+
+        checkEquals("anvil region files", 1, RegionFiles.files(directory).size());
+        int[] visited = {0};
+        RegionFiles.forEach(List.of(regionFile), stored -> {
+            visited[0]++;
+            checkEquals("anvil stored chunk x", 0, stored.chunkX());
+            checkEquals("anvil stored chunk timestamp", 1600000000L, stored.modifiedSeconds());
+            check("anvil stored chunk data", stored.data() != null
+                    && !stored.data().getCompoundList("sections").isEmpty());
+            return true;
+        });
+        checkEquals("anvil visited chunks", 1, visited[0]);
+        checkEquals("anvil duration", 8L * 3_600_000 + 5L * 60_000 + 12_000, Str.parseDuration("8h5m12s"));
     }
 
     // ------------------------------------------------------------------ helpers
@@ -211,7 +297,6 @@ public final class SelfTestMain {
         EditSession session = new EditSession(world, SessionManager.get().of(java.util.UUID.randomUUID()), "masks");
         Masks.ExtentHolder.set(session);
         int stone = BlockState.registry().defaultState("minecraft:stone");
-        int air = BlockState.registry().air();
         world.setBlock(3, 71, 3, stone);
 
         Mask solid = new Masks.SolidMask(session);
@@ -536,6 +621,60 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//definitelynotacommand");
         check("unknown command handled", actor.lastMessage().contains("Unknown command"));
+    }
+
+    /**
+     * The navigation commands move the player through {@code Actor}, so they can be
+     * exercised head-less: ascend and descend search for a floor, {@code /ceil}
+     * builds its glass platform and {@code /thru} walks the view ray through a wall.
+     */
+    private static void testNavigation() {
+        section("navigation");
+        TestWorld world = new TestWorld("navigation");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Dave", world, new BlockVector3(5, 71, 5));
+
+        int air = BlockState.registry().air();
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+
+        world.setBlock(5, 74, 5, stone);
+        check("ascend finds the platform", Navigation.ascendLevel(actor));
+        checkEquals("ascend lands on the platform", 75, actor.position().y());
+
+        check("descend finds the floor", Navigation.descendLevel(actor));
+        checkEquals("descend lands on the floor", 70, actor.position().y());
+
+        world.setBlock(5, 71, 5, stone);
+        world.setBlock(5, 72, 5, stone);
+        world.setBlock(5, 73, 5, stone);
+        check("unstuck finds free space", Navigation.findFreePosition(actor));
+        check("unstuck moved the player up", actor.position().y() > 71);
+
+        for (int y = 72; y <= 79; y++) {
+            world.setBlock(5, y, 5, air);
+        }
+        world.setBlock(5, 71, 5, air);
+        actor.setPosition(new BlockVector3(5, 71, 5));
+        world.setBlock(5, 80, 5, stone);
+        check("ceil climbs to the ceiling", Navigation.ascendToCeiling(actor, 0, false));
+        checkEquals("ceil stopped under the ceiling", 78, actor.position().y());
+        checkEquals("ceil placed a platform", BlockState.registry().defaultState("minecraft:glass"),
+                world.getBlock(5, 77, 5));
+
+        actor.setPosition(new BlockVector3(5, 71, 5));
+        check("up rises the distance asked for", Navigation.ascendUpwards(actor, 4, false));
+        checkEquals("up lands at the requested height", 75, actor.position().y());
+        check("up is blocked by the ceiling", !Navigation.ascendUpwards(actor, 100, false));
+
+        world.fillFlat(70);
+        for (int y = 71; y <= 73; y++) {
+            world.setBlock(5, y, 7, stone);
+            world.setBlock(5, y, 8, stone);
+        }
+        actor.setPosition(new BlockVector3(5, 71, 5));
+        actor.setYaw(0);
+        check("thru passes the wall", Navigation.passThroughForwardWall(actor, 8));
+        checkEquals("thru landed behind the wall", 9, actor.position().z());
     }
 
     private static void testTimeLimiter() {

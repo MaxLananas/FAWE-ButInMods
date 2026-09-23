@@ -4,7 +4,6 @@ import com.fawebutinmods.core.actor.Actor;
 import com.fawebutinmods.core.extent.EditSession;
 import com.fawebutinmods.core.function.Operations;
 import com.fawebutinmods.core.mask.Mask;
-import com.fawebutinmods.core.mask.Masks;
 import com.fawebutinmods.core.math.BlockVector3;
 import com.fawebutinmods.core.pattern.Pattern;
 import com.fawebutinmods.core.util.Msg;
@@ -28,8 +27,8 @@ public final class Brushes {
     /** Shared base: holds radius, fill, mask and the settings object. */
     public abstract static class BaseBrush implements Brush {
 
-        protected final double radius;
-        protected final Pattern fill;
+        protected double radius;
+        protected Pattern fill;
         protected Mask mask;
         protected boolean hollow;
         protected final BrushSettings settings = new BrushSettings();
@@ -46,6 +45,18 @@ public final class Brushes {
         @Override
         public double radius() {
             return radius;
+        }
+
+        @Override
+        public void setRadius(double radius) {
+            this.radius = radius;
+            this.settings.setSize((int) Math.round(radius));
+        }
+
+        @Override
+        public void setFill(Pattern fill) {
+            this.fill = fill;
+            this.settings.setFill(fill);
         }
 
         @Override
@@ -227,16 +238,53 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush height [radius] [height]}. */
-    public static final class HeightBrush extends BaseBrush {
+    /**
+     * {@code /brush height} and {@code /brush cliff}.
+     *
+     * <p>FAWE drives these two from a height map whose value is scaled by the
+     * brush size: a cone for the height brush (it raises a rounded hill) and a
+     * flat cylinder for the cliff brush (it raises a plateau, which is what makes
+     * the sharp edge). The terrain is moved towards the target height, so the
+     * brush both fills and clears.</p>
+     */
+    public static final class HeightmapBrush extends BaseBrush {
 
-        public HeightBrush(double radius, Pattern fill, Mask mask) {
+        private final boolean cylinder;
+        private final double yScale;
+
+        public HeightmapBrush(double radius, Pattern fill, Mask mask, boolean cylinder, double yScale) {
             super(radius, fill, mask);
+            this.cylinder = cylinder;
+            this.yScale = yScale;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return new FlattenBrush(radius, fill, mask, position.y()).apply(session, position, actor);
+            BlockStateRegistry registry = BlockState.registry();
+            int changed = 0;
+            for (int z = -(int) radius - 1; z <= radius + 1; z++) {
+                for (int x = -(int) radius - 1; x <= radius + 1; x++) {
+                    double distance = Math.sqrt(x * x + z * z);
+                    if (distance > radius) {
+                        continue;
+                    }
+                    double profile = cylinder ? 1 : Math.sqrt(Math.max(0, 1 - (distance / radius) * (distance / radius)));
+                    int target = position.y() + (int) Math.round(profile * radius * yScale);
+                    int columnX = position.x() + x;
+                    int columnZ = position.z() + z;
+                    for (int y = session.getWorld().getHighestBlockY(columnX, columnZ); y > target; y--) {
+                        if (session.setBlock(columnX, y, columnZ, registry.air())) {
+                            changed++;
+                        }
+                    }
+                    for (int y = target; y > session.getWorld().getHighestBlockY(columnX, columnZ); y--) {
+                        if (place(session, columnX, y, columnZ)) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+            return changed;
         }
     }
 
@@ -314,7 +362,6 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
             int changed = 0;
             for (int z = -(int) radius; z <= radius; z++) {
                 for (int x = -(int) radius; x <= radius; x++) {
@@ -496,6 +543,126 @@ public final class Brushes {
         }
     }
 
+    /**
+     * {@code /brush heightmap <image>} — raises or lowers the terrain to the
+     * heightmap of an image: the brighter the pixel, the higher the terrain.
+     */
+    public static final class ImageHeightmapBrush extends BaseBrush {
+
+        private final com.fawebutinmods.core.util.Images.PixelSource image;
+        private final double yScale;
+
+        public ImageHeightmapBrush(double radius, Pattern fill, Mask mask,
+                                   com.fawebutinmods.core.util.Images.PixelSource image, double yScale) {
+            super(radius, fill, mask);
+            this.image = image;
+            this.yScale = yScale;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            com.fawebutinmods.core.world.BlockStateRegistry registry =
+                    com.fawebutinmods.core.world.BlockState.registry();
+            int r = (int) Math.ceil(radius);
+            int changed = 0;
+            int originX = position.x() - r;
+            int originZ = position.z() - r;
+            int span = 2 * r + 1;
+            for (int z = 0; z < span; z++) {
+                for (int x = 0; x < span; x++) {
+                    double dx = x - r;
+                    double dz = z - r;
+                    if (Math.sqrt(dx * dx + dz * dz) > radius) {
+                        continue;
+                    }
+                    int px = (int) Math.round((double) x / span * (image.width() - 1));
+                    int pz = (int) Math.round((double) z / span * (image.height() - 1));
+                    if (image.transparent(px, pz)) {
+                        continue;
+                    }
+                    int height = (int) Math.round(image.rgb(px, pz) / 255.0 * radius * yScale);
+                    int columnX = originX + x;
+                    int columnZ = originZ + z;
+                    int target = position.y() + height;
+                    for (int y = session.getWorld().getHighestBlockY(columnX, columnZ); y > target; y--) {
+                        if (session.setBlock(columnX, y, columnZ, registry.air())) {
+                            changed++;
+                        }
+                    }
+                    for (int y = target; y > session.getWorld().getHighestBlockY(columnX, columnZ); y--) {
+                        if (place(session, columnX, y, columnZ)) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+            return changed;
+        }
+
+        @Override
+        public String describe() {
+            return "heightmap " + image.width() + "x" + image.height() + " (yscale " + yScale + ")";
+        }
+    }
+
+    /**
+     * {@code /brush circle} — a disc facing the player, which is how FAWE builds
+     * it: the plane normal is the vector from the player to the target.
+     */
+    public static final class CircleBrush extends BaseBrush {
+
+        private final boolean filled;
+
+        public CircleBrush(double radius, Pattern fill, Mask mask, boolean filled) {
+            super(radius, fill, mask);
+            this.filled = filled;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            com.fawebutinmods.core.math.Vector3 normal = new com.fawebutinmods.core.math.Vector3(
+                    position.x() - actor.position().x(),
+                    position.y() - actor.position().y(),
+                    position.z() - actor.position().z());
+            if (normal.lengthSq() == 0) {
+                normal = actor.direction();
+            }
+            normal = normal.normalize();
+            com.fawebutinmods.core.math.Vector3 axisU = orthogonal(normal);
+            com.fawebutinmods.core.math.Vector3 axisV = normal.cross(axisU).normalize();
+            int steps = Math.max(8, (int) (2 * Math.PI * radius));
+            int changed = 0;
+            for (int step = 0; step < steps; step++) {
+                double angle = 2 * Math.PI * step / steps;
+                double cos = Math.cos(angle);
+                double sin = Math.sin(angle);
+                int rings = filled ? (int) radius + 1 : 1;
+                for (int ring = 0; ring < rings; ring++) {
+                    double scale = filled ? ring : radius;
+                    double px = position.x() + (axisU.x() * cos + axisV.x() * sin) * scale;
+                    double py = position.y() + (axisU.y() * cos + axisV.y() * sin) * scale;
+                    double pz = position.z() + (axisU.z() * cos + axisV.z() * sin) * scale;
+                    int x = (int) Math.floor(px);
+                    int y = (int) Math.floor(py);
+                    int z = (int) Math.floor(pz);
+                    if (place(session, x, y, z)) {
+                        changed++;
+                    }
+                }
+            }
+            return changed;
+        }
+
+        /** Any unit vector perpendicular to the given one. */
+        private static com.fawebutinmods.core.math.Vector3 orthogonal(com.fawebutinmods.core.math.Vector3 normal) {
+            com.fawebutinmods.core.math.Vector3 candidate =
+                    Math.abs(normal.y()) < 0.9
+                            ? new com.fawebutinmods.core.math.Vector3(0, 1, 0)
+                            : new com.fawebutinmods.core.math.Vector3(1, 0, 0);
+            return normal.cross(candidate).normalize();
+        }
+    }
+
     /** {@code /brush blob} — a smooth blob, the inverse of the smooth brush. */
     public static final class BlobBrush extends BaseBrush {
 
@@ -600,10 +767,12 @@ public final class Brushes {
     /** {@code /brush clipboard} — pastes the clipboard at the click. */
     public static final class ClipboardBrush extends BaseBrush {
 
-        private final boolean pasteOnTop = true;
+        /** {@code -o}: place the clipboard's origin on the click instead of centring it. */
+        private final boolean pasteOnTop;
 
-        public ClipboardBrush(double radius, Mask mask) {
+        public ClipboardBrush(double radius, Mask mask, boolean pasteOnTop) {
             super(radius, null, mask);
+            this.pasteOnTop = pasteOnTop;
         }
 
         @Override
@@ -613,11 +782,54 @@ public final class Brushes {
                 return 0;
             }
             var clipboard = actor.session().getClipboard().getClipboard();
-            BlockVector3 origin = clipboard.getOrigin();
-            BlockVector3 destination = position.add(
+            BlockVector3 destination = pasteOnTop ? position : position.add(
                     -clipboard.getWidth() / 2, -clipboard.getHeight() / 2, -clipboard.getLength() / 2);
             return com.fawebutinmods.core.clipboard.Clipboards.paste(clipboard, destination, session,
                     actor.session().getClipboard().getTransform(), false, mask != null, false);
+        }
+    }
+
+    /**
+     * {@code /brush scattercommand} — runs a command at random positions inside
+     * the brush, which is FAWE's brush for scattering the result of another
+     * command over an area. The amount is what its setting holds, defaulting to
+     * one command per block of radius.
+     */
+    public static final class ScatterCommandBrush extends BaseBrush {
+
+        private final String command;
+
+        public ScatterCommandBrush(double radius, String command) {
+            super(radius, null, null);
+            this.command = command == null ? "" : command;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            if (command.isEmpty()) {
+                actor.message(Msg.error("No command set: /brush scattercommand <radius> <command>"));
+                return 0;
+            }
+            int count = Math.max(1, (int) Math.round(radius));
+            int executed = 0;
+            for (int i = 0; i < count; i++) {
+                int x = position.x() + random.nextInt((int) radius * 2 + 1) - (int) radius;
+                int y = position.y() + random.nextInt((int) radius * 2 + 1) - (int) radius;
+                int z = position.z() + random.nextInt((int) radius * 2 + 1) - (int) radius;
+                String parsed = command
+                        .replace("%x%", String.valueOf(x))
+                        .replace("%y%", String.valueOf(y))
+                        .replace("%z%", String.valueOf(z));
+                if (com.fawebutinmods.core.command.BrushCommands.run(actor, parsed)) {
+                    executed++;
+                }
+            }
+            return executed;
+        }
+
+        @Override
+        public String describe() {
+            return "scattercommand=" + command;
         }
     }
 
@@ -852,7 +1064,6 @@ public final class Brushes {
                     }
                 }
                 boolean solid = registry.isSolid(session.getBlock(target.x(), target.y(), target.z()));
-                int state = session.getBlock(target.x(), target.y(), target.z());
                 switch (mode) {
                     case "erode" -> {
                         if (solid && solidNeighbours < 3

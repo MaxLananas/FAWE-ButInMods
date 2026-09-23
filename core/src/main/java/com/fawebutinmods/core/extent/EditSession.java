@@ -5,7 +5,6 @@ import com.fawebutinmods.core.history.History;
 import com.fawebutinmods.core.mask.Mask;
 import com.fawebutinmods.core.math.BlockVector2;
 import com.fawebutinmods.core.math.BlockVector3;
-import com.fawebutinmods.core.math.Vector3;
 import com.fawebutinmods.core.session.LocalSession;
 import com.fawebutinmods.core.transform.Transform;
 import com.fawebutinmods.core.util.Msg;
@@ -15,10 +14,8 @@ import com.fawebutinmods.core.world.ChunkSet;
 import com.fawebutinmods.core.world.Extent;
 import com.fawebutinmods.core.world.World;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -45,7 +42,6 @@ public final class EditSession implements Extent {
     private final BlockStateRegistry registry;
 
     private final java.util.Map<Long, ChunkSet> chunks = new java.util.LinkedHashMap<>();
-    private final Deque<BlockVector3> blockUpdates = new ArrayDeque<>();
     private final Set<BlockVector2> dirtyChunks = new LinkedHashSet<>();
 
     private Mask mask;
@@ -188,7 +184,7 @@ public final class EditSession implements Extent {
                 return state;
             }
         }
-        return world.getBlock(x, y, z);
+        return readMasked(x, y, z);
     }
 
     /** Reads straight from the world, ignoring queued changes. */
@@ -350,8 +346,38 @@ public final class EditSession implements Extent {
     }
 
     public void checkTimeout() {
-        if (limiter.isExpired()) {
+        if (session.isCancelled()) {
+            session.clearCancel();
+            throw new CancelledException();
+        }
+        if (session.isWatchdogEnabled() && limiter.isExpired()) {
             throw new TimeLimiter.OperationTimeoutException(limiter.elapsedMillis(), limiter.processed());
+        }
+    }
+
+    /**
+     * The session's source mask, applied to reads: an operation only sees the
+     * blocks the mask accepts, which is what {@code //gsmask} is for.
+     */
+    public Mask sourceMask() {
+        return session.getSourceMask();
+    }
+
+    private int readMasked(int x, int y, int z) {
+        Mask source = session.getSourceMask();
+        if (source != null && !source.test(x, y, z)) {
+            return com.fawebutinmods.core.world.BlockState.registry().air();
+        }
+        return world.getBlock(x, y, z);
+    }
+
+    /** Thrown when {@code /cancel} is used while an edit is running. */
+    public static final class CancelledException extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
+
+        public CancelledException() {
+            super("Operation cancelled");
         }
     }
 
@@ -362,6 +388,8 @@ public final class EditSession implements Extent {
 
     /** Thrown when the session's block change limit is hit. */
     public static final class MaxChangedBlocksException extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
 
         private final int limit;
 

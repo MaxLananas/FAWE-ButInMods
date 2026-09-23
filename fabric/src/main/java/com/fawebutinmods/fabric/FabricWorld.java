@@ -55,7 +55,7 @@ public final class FabricWorld implements World {
             java.util.concurrent.Executors.newFixedThreadPool(
                     Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
                     runnable -> {
-                        Thread thread = new Thread(runnable, "FAWE-ButInMods worker");
+                        Thread thread = new Thread(runnable, "FAWE-BIM worker");
                         thread.setDaemon(true);
                         return thread;
                     });
@@ -428,4 +428,31 @@ public final class FabricWorld implements World {
     public java.util.concurrent.ExecutorService executor() {
         return EXECUTOR;
     }
+    /**
+     * The dimension's {@code region} folder, so {@code /anvil} can inspect chunks
+     * the server has not loaded. Vanilla keeps the overworld at the world root and
+     * the other dimensions in their own folder.
+     */
+    @Override
+    public java.nio.file.Path regionDirectory() {
+        try {
+            java.nio.file.Path root = level.getServer()
+                    .getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT);
+            if (level.dimension().equals(net.minecraft.world.level.Level.OVERWORLD)) {
+                return root.resolve("region");
+            }
+            if (level.dimension().equals(net.minecraft.world.level.Level.NETHER)) {
+                return root.resolve("DIM-1").resolve("region");
+            }
+            if (level.dimension().equals(net.minecraft.world.level.Level.END)) {
+                return root.resolve("DIM1").resolve("region");
+            }
+            net.minecraft.resources.ResourceLocation location = level.dimension().location();
+            return root.resolve("dimensions").resolve(location.getNamespace())
+                    .resolve(location.getPath()).resolve("region");
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
 }

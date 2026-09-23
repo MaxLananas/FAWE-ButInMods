@@ -181,4 +181,44 @@ public final class Str {
     public static String limit(String value, int max) {
         return value.length() <= max ? value : value.substring(0, max - 3) + "...";
     }
+
+    /**
+     * Parses a {@code 8h5m12s} style duration into milliseconds; units are
+     * seconds, minutes, hours, days, weeks and years.
+     */
+    public static long parseDuration(String text) {
+        long total = 0;
+        long value = 0;
+        boolean digits = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isDigit(c)) {
+                value = value * 10 + (c - '0');
+                digits = true;
+                continue;
+            }
+            if (!digits) {
+                throw new IllegalArgumentException("Expected a duration such as 8h5m12s, got '" + text + "'");
+            }
+            total += value * unitMillis(c, text);
+            value = 0;
+            digits = false;
+        }
+        if (digits) {
+            total += value;
+        }
+        return total;
+    }
+
+    private static long unitMillis(char unit, String text) {
+        return switch (Character.toLowerCase(unit)) {
+            case 's' -> 1000L;
+            case 'm' -> 60_000L;
+            case 'h' -> 3_600_000L;
+            case 'd' -> 86_400_000L;
+            case 'w' -> 604_800_000L;
+            case 'y' -> 31_536_000_000L;
+            default -> throw new IllegalArgumentException("Unknown time unit '" + unit + "' in '" + text + "'");
+        };
+    }
 }

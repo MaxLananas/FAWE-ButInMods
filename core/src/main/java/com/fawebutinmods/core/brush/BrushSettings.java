@@ -1,6 +1,8 @@
 package com.fawebutinmods.core.brush;
 
+import com.fawebutinmods.core.mask.Mask;
 import com.fawebutinmods.core.pattern.Pattern;
+import com.fawebutinmods.core.transform.Transform;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,6 +23,64 @@ public final class BrushSettings {
     private double height = 1;
     private int smoothCycles = 1;
     private boolean oneshot;
+    private Mask traceMask;
+    private int targetMode;
+    private int targetOffset;
+    private Transform transform;
+    private com.fawebutinmods.core.tool.Scroll scrollAction;
+    private String scrollActionName = "";
+
+    /** The mask a tool trace stops at, or null for "any solid block". */
+    public Mask getTraceMask() {
+        return traceMask;
+    }
+
+    public void setTraceMask(Mask traceMask) {
+        this.traceMask = traceMask;
+    }
+
+    /** See {@code ToolTarget.Mode} for the values. */
+    public int getTargetMode() {
+        return targetMode;
+    }
+
+    public void setTargetMode(int targetMode) {
+        this.targetMode = targetMode;
+    }
+
+    public int getTargetOffset() {
+        return targetOffset;
+    }
+
+    public void setTargetOffset(int targetOffset) {
+        this.targetOffset = targetOffset;
+    }
+
+    public Transform getTransform() {
+        return transform;
+    }
+
+    public void setTransform(Transform transform) {
+        this.transform = transform;
+    }
+
+    /** What the mouse wheel changes while this brush is held. */
+    public com.fawebutinmods.core.tool.Scroll getScrollAction() {
+        return scrollAction;
+    }
+
+    public void setScrollAction(com.fawebutinmods.core.tool.Scroll scrollAction) {
+        this.scrollAction = scrollAction;
+    }
+
+    /** The command line that built the scroll action, kept for brush presets. */
+    public String getScrollActionName() {
+        return scrollActionName;
+    }
+
+    public void setScrollActionName(String name) {
+        this.scrollActionName = name == null ? "" : name;
+    }
 
     public Pattern getFill() {
         return fill;

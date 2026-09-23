@@ -1,6 +1,6 @@
 package com.fawebutinmods.core.command;
 
-import com.fawebutinmods.core.actor.Actor;
+import com.fawebutinmods.core.actor.Navigation;
 import com.fawebutinmods.core.clipboard.BlockArrayClipboard;
 import com.fawebutinmods.core.clipboard.Schematics;
 import com.fawebutinmods.core.extent.EditSession;
@@ -8,21 +8,19 @@ import com.fawebutinmods.core.mask.Mask;
 import com.fawebutinmods.core.mask.Masks;
 import com.fawebutinmods.core.math.BlockVector2;
 import com.fawebutinmods.core.math.BlockVector3;
+import com.fawebutinmods.core.math.Vector3;
 import com.fawebutinmods.core.pattern.Pattern;
 import com.fawebutinmods.core.pattern.Patterns;
 import com.fawebutinmods.core.region.Region;
 import com.fawebutinmods.core.region.RegionSelector;
 import com.fawebutinmods.core.session.LocalSession;
+import com.fawebutinmods.core.transform.Transforms;
 import com.fawebutinmods.core.util.Msg;
 import com.fawebutinmods.core.util.Str;
 import com.fawebutinmods.core.world.BlockState;
 import com.fawebutinmods.core.world.BlockStateRegistry;
 import com.fawebutinmods.core.world.Direction;
-import com.fawebutinmods.core.world.EntityData;
-import com.fawebutinmods.core.world.Extent;
-import com.fawebutinmods.core.world.World;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -82,6 +80,17 @@ public final class Commands {
         registerMasksAndPatterns();
         registerBrushes();
         registerTools();
+        // The command classes below take over the names the previous groups do not
+        // implement, so the port can grow a class at a time.
+        new RegionCommands(registry).register();
+        new GenerationCommands(registry).register();
+        new ClipboardExtras(registry).register();
+        new AnvilCommands(registry).register();
+        new ScriptCommands(registry).register();
+        new SnapshotCommands(registry).register();
+        new UtilityExtras(registry).register();
+        new ToolUtilCommands(registry).register();
+        new WorldCommands(registry).register();
         Stubs.register(registry);
     }
 
@@ -434,12 +443,13 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     Region region = ctx.selection();
-                    int changed = 0;
+                    // FAWE overlays the top block of every column: walk down from
+                    // the selection's ceiling and stop at the first block.
                     for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
                         for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
                             for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
                                 if (!BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    changed += session.setBlock(x, y, z, pattern.apply(x, y, z)) ? 1 : 0;
+                                    session.setBlock(x, y, z, pattern.apply(x, y, z));
                                     break;
                                 }
                             }
@@ -517,11 +527,19 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     Region region = ctx.selection();
-                    BlockVector3 center = region.getMaximumPoint().add(region.getMinimumPoint()).multiply(1);
-                    int x = (region.getMinimumPoint().x() + region.getMaximumPoint().x()) / 2;
-                    int z = (region.getMinimumPoint().z() + region.getMaximumPoint().z()) / 2;
-                    for (int y = region.getMinimumPoint().y(); y <= region.getMaximumPoint().y(); y++) {
-                        session.setBlock(x, y, z, pattern.apply(x, y, z));
+                    Vector3 center = region.getCenter();
+                    int minX = (int) Math.floor(center.x());
+                    int minY = (int) Math.floor(center.y());
+                    int minZ = (int) Math.floor(center.z());
+                    int maxX = (int) Math.round(center.x());
+                    int maxY = (int) Math.round(center.y());
+                    int maxZ = (int) Math.round(center.z());
+                    for (int x = minX; x <= maxX; x++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            for (int z = minZ; z <= maxZ; z++) {
+                                session.setBlock(x, y, z, pattern.apply(x, y, z));
+                            }
+                        }
                     }
                     flush(ctx, session);
                 };
@@ -847,7 +865,6 @@ public final class Commands {
         e38.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Mask snow = Parsers.mask("#air", ctx);
                     int changed = 0;
                     BlockStateRegistry blockRegistry = BlockState.registry();
                     for (BlockVector3 position : ctx.selection()) {
@@ -1356,6 +1373,17 @@ public final class Commands {
                         throw CommandRegistry.error("No clipboard: use //copy first");
                     }
                     var holder = ctx.session().getClipboard();
+                    java.util.List<BlockArrayClipboard> pool = ctx.session().getClipboardPool();
+                    if (pool.size() > 1) {
+                        // //schem loadall: a multi clipboard pastes a random member.
+                        BlockArrayClipboard pick = pool.get(java.util.concurrent.ThreadLocalRandom.current()
+                                .nextInt(pool.size()));
+                        holder = new com.fawebutinmods.core.session.ClipboardHolder(pick);
+                        if (ctx.session().isClipboardPoolRandomRotation()) {
+                            holder.setTransform(Transforms.rotate(pick.getOrigin(), java.util.concurrent.ThreadLocalRandom
+                                    .current().nextInt(4) * 90.0));
+                        }
+                    }
                     BlockArrayClipboard clipboard = holder.getClipboard();
                     BlockVector3 destination = ctx.args().isEmpty()
                             ? (ctx.session().shouldPlaceAtPos1()
@@ -1430,15 +1458,23 @@ public final class Commands {
         CommandRegistry.Entry e65 = registry.register("//schem", "//schematic");
         e65.description = "Save/load/list schematics";
         e65.group = "schematic";
-        e65.arguments.add("list|save|load|delete");
+        e65.booleanFlags.add("o");
+        e65.booleanFlags.add("r");
+        e65.booleanFlags.add("d");
+        e65.arguments.add("list|ls|all|save|load|loadall|delete|d|formats|listformats|f|move|m|share|clear|unload");
         e65.arguments.add("[name]");
         e65.arguments.add("[format]");
         e65.handler = ctx -> {
                     String action = ctx.arg(0).toLowerCase(Locale.ROOT);
+                    if (action.equals("ls") || action.equals("all")) {
+                        action = "list";
+                    }
                     switch (action) {
                         case "list" -> {
-                            List<String> names = Schematics.list();
-                            ctx.actor().message(Msg.info("Schematics (" + names.size() + "):"));
+                            List<String> names = Schematics.list(ctx.session().getListFilter(),
+                                    ctx.actor().isPlayer() ? ctx.actor().name() : null);
+                            ctx.actor().message(Msg.info("Schematics (" + names.size() + ", "
+                                    + ctx.session().getListFilter().describe() + "):"));
                             for (String name : names) {
                                 ctx.actor().message(Msg.of("§7 - §f" + name));
                             }
@@ -1459,9 +1495,61 @@ public final class Commands {
                             ctx.actor().message(Msg.success("Loaded schematic '" + name + "' ("
                                     + Msg.formatNumber(clipboard.volume()) + " blocks)"));
                         }
-                        case "delete" -> {
+                        case "delete", "d" -> {
                             Schematics.delete(ctx.arg(1));
                             ctx.actor().message(Msg.success("Deleted schematic '" + ctx.arg(1) + "'"));
+                        }
+                        case "unload" -> {
+                            ctx.session().setClipboard(null);
+                            ctx.actor().message(Msg.success("Clipboard unloaded"));
+                        }
+                        case "move", "m" -> {
+                            String name = ctx.arg(1);
+                            String format = ctx.arg(2, com.fawebutinmods.core.platform.Config.get().defaultSchematicFormat);
+                            com.fawebutinmods.core.clipboard.BlockArrayClipboard converted = Schematics.load(name);
+                            Schematics.delete(name);
+                            Schematics.save(converted, name, format);
+                            ctx.actor().message(Msg.success("Schematic '" + name + "' converted to " + format));
+                        }
+                        case "share" -> {
+                            if (!ctx.session().hasClipboard()) {
+                                throw CommandRegistry.error("No clipboard: copy something first");
+                            }
+                            String name = ctx.arg(1, "shared-" + System.currentTimeMillis());
+                            Schematics.save(ctx.session().getClipboard().getClipboard(), name,
+                                    com.fawebutinmods.core.platform.Config.get().defaultSchematicFormat);
+                            ctx.actor().message(Msg.success("Schematic shared as '" + name
+                                    + "' in " + Schematics.directory()
+                                    + " (uploading needs a web service, which the mod does not ship)"));
+                        }
+                        case "clear" -> {
+                            ctx.session().setClipboard(null);
+                            ctx.session().clearClipboardPool();
+                            ctx.actor().message(Msg.success("Clipboard cleared"));
+                        }
+                        case "loadall" -> {
+                            String format = ctx.arg(1, com.fawebutinmods.core.platform.Config.get()
+                                    .defaultSchematicFormat);
+                            String filter = ctx.arg(2, "*");
+                            java.util.List<com.fawebutinmods.core.clipboard.BlockArrayClipboard> loaded =
+                                    Schematics.loadAll(format, filter);
+                            if (loaded.isEmpty()) {
+                                throw CommandRegistry.error("No schematic matched '" + filter + "'");
+                            }
+                            if (ctx.hasFlag("o")) {
+                                ctx.session().setClipboardPool(loaded);
+                            } else {
+                                ctx.session().addToClipboardPool(loaded);
+                            }
+                            ctx.session().setClipboardPoolRandomRotation(ctx.hasFlag("r") || ctx.hasFlag("d"));
+                            ctx.session().setClipboardPoolDynamicRotation(ctx.hasFlag("d"));
+                            ctx.session().setClipboard(loaded.get(0));
+                            ctx.actor().message(Msg.success("Loaded " + loaded.size() + " clipboard(s); "
+                                    + "//paste picks one at random"));
+                        }
+                        case "formats", "listformats", "f" -> {
+                            ctx.actor().message(Msg.info("Formats: " + String.join(", ", Schematics.formats())
+                                    + " (default: " + com.fawebutinmods.core.platform.Config.get().defaultSchematicFormat + ")"));
                         }
                         default -> throw CommandRegistry.error("Usage: //schem list|save <name>|load <name>|delete <name>");
                     }
@@ -1656,83 +1744,115 @@ public final class Commands {
 
     private void registerNavigation() {
         CommandRegistry.Entry e76 = registry.register("//jumpto", "//j");
-        e76.description = "Teleport to the block you are looking at";
+        e76.description = "Teleport to a location";
         e76.group = "navigation";
         e76.requiresPlayer = true;
+        e76.arguments.add("[location]");
+        e76.booleanFlags.add("f");
         e76.handler = ctx -> {
-                    BlockVector3 target = ctx.world().getTargetBlock(ctx.actor(), 100);
-                    if (ctx.actor().teleport(target.x() + 0.5, target.y() + 1, target.z() + 0.5)) {
-                        ctx.actor().message(Msg.success("Teleported to " + target));
+                    BlockVector3 target = ctx.args().isEmpty()
+                            ? ctx.world().getTargetBlock(ctx.actor(), 300)
+                            : ctx.parseBlockVector(ctx.joined(0));
+                    if (target == null) {
+                        throw CommandRegistry.error("No block in sight");
                     }
+                    Navigation.setOnGround(ctx.actor(), target);
+                    ctx.actor().message(Msg.success("Teleported to " + target));
                 };
 
 
         CommandRegistry.Entry e77 = registry.register("//thru");
-        e77.description = "Teleport through the wall you are looking at";
+        e77.description = "Pass through walls";
         e77.group = "navigation";
         e77.requiresPlayer = true;
         e77.handler = ctx -> {
-                    BlockVector3 target = ctx.world().getTargetBlock(ctx.actor(), 100);
-                    Direction facing = ctx.actor().facing();
-                    BlockVector3 dest = target;
-                    for (int i = 0; i < 64; i++) {
-                        dest = dest.add(facing.toVector());
-                        if (BlockState.registry().isAirLike(ctx.world().getBlock(dest.x(), dest.y(), dest.z()))
-                                && BlockState.registry().isAirLike(
-                                ctx.world().getBlock(dest.x(), dest.y() + 1, dest.z()))) {
-                            break;
-                        }
+                    if (!Navigation.passThroughForwardWall(ctx.actor(), 6)) {
+                        throw CommandRegistry.error("No wall in front of you");
                     }
-                    if (ctx.actor().teleport(dest.x() + 0.5, dest.y(), dest.z() + 0.5)) {
-                        ctx.actor().message(Msg.success("Went through to " + dest));
-                    }
+                    ctx.actor().message(Msg.success("Went through the wall"));
                 };
 
 
         CommandRegistry.Entry e78 = registry.register("//unstuck");
-        e78.description = "Move you out of blocks";
+        e78.description = "Escape from being stuck inside a block";
         e78.group = "navigation";
         e78.requiresPlayer = true;
         e78.handler = ctx -> {
-                    BlockVector3 pos = ctx.actor().position();
-                    for (int dy = 0; dy < 128; dy++) {
-                        BlockVector3 candidate = pos.up(dy);
-                        if (BlockState.registry().isAirLike(ctx.world().getBlock(candidate.x(), candidate.y(),
-                                candidate.z()))) {
-                            ctx.actor().teleport(candidate.x() + 0.5, candidate.y(), candidate.z() + 0.5);
-                            ctx.actor().message(Msg.success("Moved you to " + candidate));
-                            return;
-                        }
+                    if (!Navigation.findFreePosition(ctx.actor())) {
+                        throw CommandRegistry.error("Could not find a free spot");
                     }
-                    throw CommandRegistry.error("Could not find a free spot");
+                    ctx.actor().message(Msg.success("Moved you to a free spot"));
                 };
 
 
-        CommandRegistry.Entry e79 = registry.register("//ascend", "//descend", "//up", "//ceil", "//thru-up");
-        e79.description = "Move vertically to the next free spot";
+        CommandRegistry.Entry e79 = registry.register("//ascend", "//asc");
+        e79.description = "Go up a floor";
         e79.group = "navigation";
         e79.requiresPlayer = true;
+        e79.arguments.add("[levels]");
         e79.handler = ctx -> {
-                    boolean up = !ctx.entry().name.equals("//descend");
-                    BlockVector3 pos = ctx.actor().position();
-                    for (int i = 1; i < 256; i++) {
-                        BlockVector3 candidate = up ? pos.up(i) : pos.down(i);
-                        if (candidate.y() < ctx.world().minY() || candidate.y() > ctx.world().maxY()) {
-                            break;
-                        }
-                        boolean free = BlockState.registry().isAirLike(
-                                ctx.world().getBlock(candidate.x(), candidate.y(), candidate.z()))
-                                && BlockState.registry().isAirLike(
-                                ctx.world().getBlock(candidate.x(), candidate.y() + 1, candidate.z()));
-                        boolean floor = !BlockState.registry().isAirLike(
-                                ctx.world().getBlock(candidate.x(), candidate.y() - 1, candidate.z()));
-                        if (free && floor) {
-                            ctx.actor().teleport(candidate.x() + 0.5, candidate.y(), candidate.z() + 0.5);
-                            ctx.actor().message(Msg.success("Moved to " + candidate));
-                            return;
-                        }
+                    int levels = ctx.args().isEmpty() ? 1 : Math.max(1, ctx.intArg(0));
+                    int moved = 0;
+                    while (moved < levels && Navigation.ascendLevel(ctx.actor())) {
+                        ++moved;
                     }
-                    throw CommandRegistry.error("No free spot found");
+                    if (moved == 0) {
+                        throw CommandRegistry.error("You would hit something above you");
+                    }
+                    ctx.actor().message(Msg.success("Ascended " + moved + " level(s)"));
+                };
+
+
+        CommandRegistry.Entry e79b = registry.register("//descend", "//desc");
+        e79b.description = "Go down a floor";
+        e79b.group = "navigation";
+        e79b.requiresPlayer = true;
+        e79b.arguments.add("[levels]");
+        e79b.handler = ctx -> {
+                    int levels = ctx.args().isEmpty() ? 1 : Math.max(1, ctx.intArg(0));
+                    int moved = 0;
+                    while (moved < levels && Navigation.descendLevel(ctx.actor())) {
+                        ++moved;
+                    }
+                    if (moved == 0) {
+                        throw CommandRegistry.error("You would hit something below you");
+                    }
+                    ctx.actor().message(Msg.success("Descended " + moved + " level(s)"));
+                };
+
+
+        CommandRegistry.Entry e79c = registry.register("//ceil", "//ceiling");
+        e79c.description = "Go to the ceiling";
+        e79c.group = "navigation";
+        e79c.requiresPlayer = true;
+        e79c.arguments.add("[clearance]");
+        e79c.booleanFlags.add("f");
+        e79c.booleanFlags.add("g");
+        e79c.handler = ctx -> {
+                    int clearance = Math.max(0, ctx.args().isEmpty() ? 0 : ctx.intArg(0));
+                    if (!Navigation.ascendToCeiling(ctx.actor(), clearance, alwaysGlass(ctx))) {
+                        throw CommandRegistry.error("You would hit something above you");
+                    }
+                    ctx.actor().message(Msg.success("Moved to the ceiling"));
+                };
+
+
+        CommandRegistry.Entry e79d = registry.register("//up");
+        e79d.description = "Go upwards some distance";
+        e79d.group = "navigation";
+        e79d.requiresPlayer = true;
+        e79d.arguments.add("distance");
+        e79d.booleanFlags.add("f");
+        e79d.booleanFlags.add("g");
+        e79d.handler = ctx -> {
+                    int distance = ctx.intArg(0);
+                    if (distance < 1) {
+                        throw CommandRegistry.error("Distance must be positive");
+                    }
+                    if (!Navigation.ascendUpwards(ctx.actor(), distance, alwaysGlass(ctx))) {
+                        throw CommandRegistry.error("You are obstructed above");
+                    }
+                    ctx.actor().message(Msg.success("Moved up " + distance + " block(s)"));
                 };
 
 
@@ -1748,6 +1868,21 @@ public final class Commands {
                     }
                 };
 
+    }
+
+    /**
+     * WorldEdit's {@code getAlwaysGlass}: {@code -g} forces a glass platform,
+     * {@code -f} forces flight instead, and with neither a player who is not
+     * already flying gets a platform.
+     */
+    private static boolean alwaysGlass(Ctx ctx) {
+        if (ctx.hasFlag("g")) {
+            return true;
+        }
+        if (ctx.hasFlag("f")) {
+            return false;
+        }
+        return !ctx.actor().isFlying();
     }
 
     // ------------------------------------------------------------------ utility
@@ -1914,7 +2049,7 @@ public final class Commands {
         e94.handler = ctx -> {
                     String action = ctx.arg(0, "version").toLowerCase(Locale.ROOT);
                     switch (action) {
-                        case "version" -> ctx.actor().message(Msg.info("FAWE-ButInMods "
+                        case "version" -> ctx.actor().message(Msg.info("FAWE-BIM "
                                 + com.fawebutinmods.core.platform.Config.VERSION
                                 + " for Minecraft " + com.fawebutinmods.core.platform.Config.MINECRAFT_VERSION
                                 + " (WorldEdit/FAWE command surface 7.3.17)"));
@@ -1959,57 +2094,42 @@ public final class Commands {
         CommandRegistry.Entry e96 = registry.register("//version");
         e96.description = "Show the mod version";
         e96.group = "utility";
-        e96.handler = ctx -> ctx.actor().message(Msg.info("FAWE-ButInMods " + com.fawebutinmods.core.platform.Config.VERSION + " — " + registry.all().size() + " commands registered"));
+        e96.handler = ctx -> ctx.actor().message(Msg.info("FAWE-BIM " + com.fawebutinmods.core.platform.Config.VERSION
+                + " \u2014 " + registry.all().size() + " commands registered"));
 
     }
 
     private void registerMasksAndPatterns() {
         CommandRegistry.Entry e97 = registry.register("/masks-list");
-        e97.description = "Alias listing every mask id";
+        e97.description = "List every available mask";
         e97.group = "utility";
-        e97.status = "stub";
-        e97.handler = ctx -> ctx.actor().message(Msg.info("See //masks"));
+        e97.status = "alias";
+        e97.handler = ctx -> registry.dispatch(ctx.actor(), "//masks");
 
     }
 
     private void registerBrushes() {
-        Object[][] brushes = {
-                {"sphere", "sphere"}, {"ball", "sphere"}, {"smooth", "smooth"}, {"blendball", "blendball"},
-                {"flatten", "flatten"}, {"height", "height"}, {"raise", "raise"}, {"lower", "lower"},
-                {"layer", "layer"}, {"line", "line"}, {"spline", "spline"}, {"catenary", "catenary"},
-                {"scatter", "scatter"}, {"shatter", "shatter"}, {"splatter", "splatter"}, {"rock", "rock"},
-                {"blob", "blob"}, {"pull", "pull"}, {"stencil", "stencil"}, {"gravity", "gravity"},
-                {"cylinder", "cylinder"}, {"clipboard", "clipboard"}, {"copypaste", "copypaste"},
-                {"biome", "biome"}, {"butcher", "butcher"}, {"forest", "forest"}, {"command", "command"},
-                {"populateschematic", "populateschematic"}, {"surface", "surface"},
-                {"surfacespline", "surfacespline"}, {"sweep", "sweep"},
-        };
-        for (Object[] brush : brushes) {
-                    CommandRegistry.Entry e98 = registry.register("/brush " + brush[0], "//brush " + brush[0]);
-        e98.description = "Brush: " + brush[0];
-        e98.group = "brush";
-        e98.requiresPlayer = true;
-        e98.arguments.add("radius");
-        e98.arguments.add("[pattern]");
-        e98.handler = ctx -> {
-                        LocalSession session = ctx.session();
-                        double radius = ctx.doubleArg(0, 5);
-                        if (radius > session.getMaxBrushRadius()) {
-                            throw CommandRegistry.error("Maximum brush radius is " + session.getMaxBrushRadius());
-                        }
-                        String patternArg = ctx.arg(1, "#clipboard");
-                        Pattern pattern = patternArg.startsWith("#clipboard")
-                                ? null : Parsers.pattern(patternArg, ctx);
-                        com.fawebutinmods.core.brush.Brush built = com.fawebutinmods.core.brush.BrushFactory.create(
-                                (String) brush[1], radius, pattern, ctx);
-                        if (built == null) {
-                            throw CommandRegistry.error("Brush '" + brush[0] + "' could not be created");
-                        }
-                        com.fawebutinmods.core.brush.BrushFactory.bind(session, built, ctx.actor());
-                        ctx.actor().message(Msg.success("Brush '" + brush[0] + "' equipped (radius " + radius + ")"));
-                    };
-
+        // The brush list lives next to the factory that builds the brushes, so a
+        // brush is registered as soon as it can be created.
+        for (String[] brush : com.fawebutinmods.core.brush.BrushFactory.COMMANDS) {
+            CommandRegistry.Entry entry = registry.registerUnlessPresent("/brush " + brush[0], "//brush " + brush[0]);
+            if (entry == null) {
+                continue;
+            }
+            entry.description = "Brush: " + brush[0];
+            entry.group = "brush";
+            entry.requiresPlayer = true;
+            entry.arguments.add("radius");
+            entry.arguments.add("[pattern]");
+            if (brush[0].equals("heightmap")) {
+                entry.arguments.add("image");
+                entry.arguments.add("[yscale]");
+            }
+            entry.handler = ctx -> bindBrush(ctx, brush);
         }
+
+        registerBrushPresets();
+        registerBrushNone();
 
         CommandRegistry.Entry e99 = registry.register("/brush", "//brush", "/br");
         e99.description = "Show the current brush";
@@ -2030,7 +2150,7 @@ public final class Commands {
         e100.description = "Bind a tool to an item: none, tree, repl, cycler, flood-fill, brush, info, farwand, "
                         + "navwand, lrbuild, stacker, deltree";
         e100.group = "tool";
-        e100.arguments.add("[none|tree|repl|cycler|floodfill|info|farwand|navwand|lrbuild|stacker]");
+        e100.arguments.add("[" + String.join("|", com.fawebutinmods.core.tool.Tools.NAMES) + "]");
         e100.arguments.add("[target]");
         e100.handler = ctx -> {
                     String type = ctx.arg(0, "none").toLowerCase(Locale.ROOT);
@@ -2051,7 +2171,7 @@ public final class Commands {
         CommandRegistry.Entry e101 = registry.register("/superpickaxe", "/sp", "//sp");
         e101.description = "Super-pickaxe: single, area <radius>, recursive";
         e101.group = "tool";
-        e101.arguments.add("[single|area|recursive]");
+        e101.arguments.add("[single|area|recursive|recur|off]");
         e101.arguments.add("[radius]");
         e101.handler = ctx -> {
                     String mode = ctx.arg(0, "area").toLowerCase(Locale.ROOT);
@@ -2061,7 +2181,7 @@ public final class Commands {
                             session.setSuperPickaxeEnabled(true);
                             session.setSuperPickaxeMode(0);
                         }
-                        case "recursive" -> {
+                        case "recursive", "recur" -> {
                             session.setSuperPickaxeEnabled(true);
                             session.setSuperPickaxeMode(2);
                         }
@@ -2083,5 +2203,112 @@ public final class Commands {
         e102.arguments.add("[arguments]");
         e102.handler = ctx -> ctx.actor().message(Msg.info("Tool configuration: " + ctx.entry().name));
 
+    }
+
+    /** {@code /brush none} — unbinds the brush from the held item. */
+    private void registerBrushNone() {
+        CommandRegistry.Entry none = registry.registerUnlessPresent("/brush none", "/brush unbind");
+        if (none == null) {
+            return;
+        }
+        none.description = "Unbind the brush from your current item";
+        none.group = "brush";
+        none.handler = ctx -> {
+            com.fawebutinmods.core.brush.BrushFactory.unbind(ctx.session());
+            ctx.session().getBindings().remove("brush-command");
+            ctx.actor().message(Msg.success("Brush unbound"));
+        };
+    }
+
+    /**
+     * {@code /brush savebrush}, {@code /brush loadbrush} and {@code /brush
+     * listbrush}: the presets that reload a brush without retyping its settings.
+     */
+    private void registerBrushPresets() {
+        CommandRegistry.Entry save = registry.registerUnlessPresent("/brush savebrush", "/brush save");
+        if (save != null) {
+            save.description = "Save the current brush as a preset";
+            save.group = "brush";
+            save.arguments.add("name");
+            save.handler = ctx -> {
+                java.nio.file.Path file;
+                try {
+                    file = com.fawebutinmods.core.brush.BrushPresets.save(ctx.session(), ctx.arg(0));
+                } catch (java.io.IOException e) {
+                    throw CommandRegistry.error("Could not save the preset: " + e.getMessage());
+                }
+                if (file == null) {
+                    throw CommandRegistry.error("No brush bound: use /brush <type> first");
+                }
+                ctx.actor().message(Msg.success("Brush preset saved as " + file.getFileName()));
+            };
+        }
+
+        CommandRegistry.Entry load = registry.registerUnlessPresent("/brush loadbrush", "/brush load");
+        if (load != null) {
+            load.description = "Load a saved brush preset";
+            load.group = "brush";
+            load.arguments.add("name");
+            load.handler = ctx -> {
+                String line;
+                try {
+                    line = com.fawebutinmods.core.brush.BrushPresets.load(ctx.arg(0));
+                } catch (java.io.IOException e) {
+                    throw CommandRegistry.error("Could not read the preset: " + e.getMessage());
+                }
+                if (line == null) {
+                    throw CommandRegistry.error("No brush preset named '" + ctx.arg(0) + "'");
+                }
+                registry.dispatch(ctx.actor(), line);
+            };
+        }
+
+        CommandRegistry.Entry list = registry.registerUnlessPresent("/brush listbrush", "/brush list");
+        if (list != null) {
+            list.description = "List the saved brush presets";
+            list.group = "brush";
+            list.handler = ctx -> {
+                java.util.List<String> presets = com.fawebutinmods.core.brush.BrushPresets.list();
+                if (presets.isEmpty()) {
+                    ctx.actor().message(Msg.info("No brush preset saved yet"));
+                    return;
+                }
+                ctx.actor().message(Msg.info("Brush presets (" + presets.size() + "):"));
+                for (String preset : presets) {
+                    ctx.actor().message(Msg.of("\u00a77 - \u00a7f" + preset));
+                }
+            };
+        }
+    }
+
+    /**
+     * Binds the brush a {@code /brush <name>} sub-command built, with the radius
+     * and pattern the player gave.
+     */
+    private static void bindBrush(Ctx ctx, String[] brush) {
+        LocalSession session = ctx.session();
+        double radius = ctx.doubleArg(0, 5);
+        if (radius > session.getMaxBrushRadius()) {
+            throw CommandRegistry.error("Maximum brush radius is " + session.getMaxBrushRadius());
+        }
+        String patternArg = ctx.arg(1, "#clipboard");
+        Pattern pattern = patternArg.startsWith("#clipboard") ? null : Parsers.pattern(patternArg, ctx);
+        com.fawebutinmods.core.brush.Brush built =
+                com.fawebutinmods.core.brush.BrushFactory.create(brush[1], radius, pattern, ctx);
+        if (built == null) {
+            throw CommandRegistry.error("Brush '" + brush[0] + "' could not be created");
+        }
+        com.fawebutinmods.core.brush.BrushFactory.bind(session, built, ctx.actor());
+        // Remembered so the preset commands can save and reload it.
+        session.getBindings().put("brush-command", buildBrushLine(ctx));
+        ctx.actor().message(Msg.success("Brush '" + brush[0] + "' equipped (radius " + radius + ")"));
+    }
+
+    private static String buildBrushLine(Ctx ctx) {
+        StringBuilder line = new StringBuilder("brush ").append(ctx.arg(0));
+        for (int i = 1; i < ctx.args().size(); i++) {
+            line.append(' ').append(ctx.arg(i));
+        }
+        return line.toString();
     }
 }

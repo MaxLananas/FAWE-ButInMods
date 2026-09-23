@@ -9,11 +9,9 @@ import com.fawebutinmods.core.math.BlockVector3;
 import com.fawebutinmods.core.pattern.Pattern;
 import com.fawebutinmods.core.pattern.Patterns;
 import com.fawebutinmods.core.session.LocalSession;
-import com.fawebutinmods.core.tool.Tool.ToolContext;
 import com.fawebutinmods.core.util.Msg;
 import com.fawebutinmods.core.world.BlockState;
 import com.fawebutinmods.core.world.BlockStateRegistry;
-import com.fawebutinmods.core.world.Direction;
 
 import java.util.List;
 import java.util.Locale;
@@ -32,15 +30,24 @@ public final class Tools {
     private Tools() {
     }
 
+    /**
+     * The names {@code /tool} accepts, in the order they are offered. A name is
+     * only listed when {@link #create} can build it.
+     */
+    public static final java.util.List<String> NAMES = java.util.List.of(
+            "none", "tree", "repl", "cycler", "floodfill", "info", "farwand", "navwand", "lrbuild",
+            "stacker", "deltree", "brush", "selwand", "featureplacer", "structureplacer", "command",
+            "flood", "warwand");
+
     public static Tool create(String name, Ctx ctx) {
         String key = name.toLowerCase(Locale.ROOT);
         return switch (key) {
             case "tree" -> new TreeTool();
             case "repl", "replace" -> new ReplaceTool();
             case "cycler" -> new CyclerTool();
-            case "floodfill", "flood-fill" -> new FloodFillTool();
-            case "info" -> new InfoTool();
-            case "farwand" -> new FarWandTool();
+            case "floodfill", "flood-fill", "flood" -> new FloodFillTool();
+            case "info", "inspect" -> new InfoTool();
+            case "farwand", "warwand" -> new FarWandTool();
             case "navwand", "navigation" -> new NavigationWandTool();
             case "lrbuild", "lr-build" -> new LRBuildTool();
             case "stacker" -> new StackerTool();
@@ -48,6 +55,8 @@ public final class Tools {
             case "brush" -> new BrushTool();
             case "selwand" -> new SelectWandTool(false);
             case "navigationwand" -> new SelectWandTool(true);
+            case "featureplacer", "featuretool" -> new FeaturePlacerTool(null);
+            case "structureplacer", "structuretool" -> new StructurePlacerTool(null);
             default -> null;
         };
     }
@@ -486,6 +495,80 @@ public final class Tools {
         @Override
         public String describe() {
             return "command";
+        }
+    }
+
+    /**
+     * {@code /tool featureplacer} — places a worldgen feature (a tree, an ore
+     * vein, a geode...) where the player clicks.
+     */
+    public static final class FeaturePlacerTool implements Tool {
+
+        private final String feature;
+
+        public FeaturePlacerTool(String feature) {
+            this.feature = feature;
+        }
+
+        @Override
+        public String name() {
+            return "featureplacer";
+        }
+
+        @Override
+        public boolean onRightClick(ToolContext context) {
+            if (feature == null || feature.isEmpty()) {
+                context.message(Msg.error("No feature set: use /tool featureplacer <feature>"));
+                return false;
+            }
+            if (!context.actor.world().generateFeature(context.position, feature, new java.util.Random())) {
+                context.message(Msg.error("Unknown feature '" + feature + "'"));
+                return false;
+            }
+            context.message(Msg.success("Placed feature " + feature));
+            return true;
+        }
+
+        @Override
+        public String describe() {
+            return "feature placer (" + (feature == null ? "unset" : feature) + ")";
+        }
+    }
+
+    /**
+     * {@code /tool structureplacer} — generates a worldgen structure (a village,
+     * a shipwreck...) where the player clicks.
+     */
+    public static final class StructurePlacerTool implements Tool {
+
+        private final String structure;
+
+        public StructurePlacerTool(String structure) {
+            this.structure = structure;
+        }
+
+        @Override
+        public String name() {
+            return "structureplacer";
+        }
+
+        @Override
+        public boolean onRightClick(ToolContext context) {
+            if (structure == null || structure.isEmpty()) {
+                context.message(Msg.error("No structure set: use /tool structureplacer <structure>"));
+                return false;
+            }
+            if (!context.actor.world().generateStructure(structure, context.position, new java.util.Random())) {
+                context.message(Msg.error("Unknown structure '" + structure + "'"));
+                return false;
+            }
+            context.message(Msg.success("Generated structure " + structure));
+            return true;
+        }
+
+        @Override
+        public String describe() {
+            return "structure placer (" + (structure == null ? "unset" : structure) + ")";
         }
     }
 }

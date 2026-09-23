@@ -482,7 +482,6 @@ public final class Masks {
             if (overlay && !BlockState.registry().isAirLike(ext.getBlock(x, y + 1, z))) {
                 return false;
             }
-            double height = ext.getBlock(x, y, z);
             double north = sample(ext, x, y, z - 1);
             double south = sample(ext, x, y, z + 1);
             double east = sample(ext, x + 1, y, z);

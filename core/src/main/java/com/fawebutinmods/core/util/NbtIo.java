@@ -336,7 +336,7 @@ public final class NbtIo {
             if (value instanceof long[]) {
                 return TAG_LONG_ARRAY;
             }
-            if (value instanceof Boolean b) {
+            if (value instanceof Boolean) {
                 return TAG_BYTE;
             }
             throw new IllegalArgumentException("Unsupported NBT value: " + value.getClass());

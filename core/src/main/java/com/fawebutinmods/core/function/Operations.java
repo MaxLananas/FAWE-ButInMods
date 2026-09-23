@@ -554,25 +554,36 @@ public final class Operations {
         return changed;
     }
 
-    /** {@code //ore} — scatters ore veins through the selection. */
-    public static int ore(World world, EditSession session, Region region, Pattern ore, Random random) {
-        BlockStateRegistry registry = BlockState.registry();
+    /**
+     * {@code //ores} — scatters ore veins through the selection.
+     *
+     * @param mask      blocks a vein may replace
+     * @param size      blocks per vein
+     * @param frequency one vein per this many blocks
+     * @param rarity    1 in {@code rarity} veins is actually placed
+     */
+    public static int ore(World world, EditSession session, Region region, Mask mask, Pattern ore, int size,
+                          double frequency, double rarity, Random random) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int veins = (int) Math.max(1, region.getVolume() / Math.max(1, frequency));
         int changed = 0;
-        long volume = region.getVolume();
-        int veins = (int) Math.max(1, volume / 500);
         for (int i = 0; i < veins; i++) {
-            BlockVector3 min = region.getMinimumPoint();
-            BlockVector3 max = region.getMaximumPoint();
+            if (rarity > 1 && random.nextDouble() * rarity > 1) {
+                continue;
+            }
+            session.checkTimeout();
             int x = min.x() + random.nextInt(Math.max(1, max.x() - min.x() + 1));
             int y = min.y() + random.nextInt(Math.max(1, max.y() - min.y() + 1));
             int z = min.z() + random.nextInt(Math.max(1, max.z() - min.z() + 1));
-            int size = 3 + random.nextInt(6);
             for (int j = 0; j < size; j++) {
                 int bx = x + random.nextInt(3) - 1;
                 int by = y + random.nextInt(3) - 1;
                 int bz = z + random.nextInt(3) - 1;
-                if (registry.isSolid(world.getBlock(bx, by, bz))
-                        && session.setBlock(bx, by, bz, ore.apply(bx, by, bz))) {
+                if (!region.contains(bx, by, bz) || mask == null || !mask.test(bx, by, bz)) {
+                    continue;
+                }
+                if (session.setBlock(bx, by, bz, ore.apply(bx, by, bz))) {
                     changed++;
                 }
             }
@@ -580,18 +591,30 @@ public final class Operations {
         return changed;
     }
 
-    /** {@code //caves} — carves caves/worms through the selection. */
-    public static int caves(World world, EditSession session, Region region, Random random, int frequency,
+    /** {@code //ore} with the defaults FAWE uses when only a pattern is given. */
+    public static int ore(World world, EditSession session, Region region, Pattern ore, Random random) {
+        return ore(world, session, region, null, ore, 6, 500, 1, random);
+    }
+
+    /**
+     * {@code //caves} — carves caves/worms through the selection.
+     *
+     * @param frequency chance in percent that a cave is started per 1000 blocks
+     * @param rarity    chance a started cave carves anything at all (0-1)
+     * @param size      radius factor of the carved tunnel
+     */
+    public static int caves(World world, EditSession session, Region region, Random random, double frequency,
                             double rarity, int size) {
         int air = BlockState.registry().air();
         int changed = 0;
-        int count = Math.max(1, (int) (region.getVolume() / Math.max(1, frequency * 1000L)));
+        int candidates = Math.max(1, (int) (region.getVolume() / 1000));
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        for (int i = 0; i < count; i++) {
-            if (random.nextDouble() < rarity) {
+        for (int i = 0; i < candidates; i++) {
+            if (random.nextDouble() * 100 > frequency || random.nextDouble() > rarity) {
                 continue;
             }
+            session.checkTimeout();
             int x = min.x() + random.nextInt(Math.max(1, max.x() - min.x() + 1));
             int y = min.y() + random.nextInt(Math.max(1, max.y() - min.y() + 1));
             int z = min.z() + random.nextInt(Math.max(1, max.z() - min.z() + 1));

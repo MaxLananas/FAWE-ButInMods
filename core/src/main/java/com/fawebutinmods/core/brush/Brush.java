@@ -5,9 +5,6 @@ import com.fawebutinmods.core.extent.EditSession;
 import com.fawebutinmods.core.mask.Mask;
 import com.fawebutinmods.core.math.BlockVector3;
 import com.fawebutinmods.core.pattern.Pattern;
-import com.fawebutinmods.core.util.Msg;
-import com.fawebutinmods.core.world.Extent;
-import com.fawebutinmods.core.world.World;
 
 /**
  * A brush: a shape plus a behaviour, applied where the player right-clicks.
@@ -19,6 +16,14 @@ public interface Brush extends Cloneable {
 
     /** Radius of the brush shape. */
     double radius();
+
+    /** Changes the brush size, as {@code /tool size} does. */
+    default void setRadius(double radius) {
+    }
+
+    /** Changes the material the brush places, as {@code /tool material} does. */
+    default void setFill(Pattern fill) {
+    }
 
     /** The mask limiting which blocks the brush may touch, or null. */
     Mask mask();

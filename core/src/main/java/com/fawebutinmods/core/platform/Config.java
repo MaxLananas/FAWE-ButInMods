@@ -50,6 +50,11 @@ public final class Config {
     public int maxHistorySize = 500;
     public boolean enableDiskHistory = true;
     public String schematicSaveDirectory = "schematics";
+    public String snapshotDirectory = "snapshots";
+    public String macroDirectory = "macros";
+    public String brushPresetDirectory = "brushes";
+    public String scriptDirectory = "craftscripts";
+    public boolean snapshotsEnabled = true;
     public String defaultSchematicFormat = "sponge.3";
     public boolean allowSymlinks = false;
     public int maxSchematicSize = 0;
@@ -66,7 +71,7 @@ public final class Config {
     public boolean debug = false;
 
     private Path file;
-    private Map<String, Object> raw;
+    private Path gameDirectory;
 
     private Config() {
     }
@@ -76,19 +81,23 @@ public final class Config {
     }
 
     /** Loads {@code config/fawe.yml} from the given game directory if present. */
+    /** Resolves a directory name against the game directory. */
+    public Path resolveDirectory(String name) {
+        Path base = gameDirectory == null ? Path.of(".") : gameDirectory;
+        return base.resolve(name);
+    }
+
     public void load(Path gameDirectory) {
+        this.gameDirectory = gameDirectory;
         this.file = gameDirectory.resolve("config").resolve("fawe.yml");
         if (!Files.exists(file)) {
             save();
             return;
         }
         try {
-            Map<String, Object> map = MiniYaml.parse(Files.readString(file));
-            this.raw = map;
-            apply(map);
+            apply(MiniYaml.parse(Files.readString(file)));
         } catch (IOException e) {
             // A broken config must never stop the mod from loading.
-            this.raw = Map.of();
         }
     }
 
@@ -108,6 +117,11 @@ public final class Config {
         defaultVerticalHeight = integer(map, "extent.default-vertical-height", defaultVerticalHeight);
         regenerateBiomes = bool(map, "regen.biomes", regenerateBiomes);
         schematicSaveDirectory = string(map, "saving.dir", schematicSaveDirectory);
+        snapshotDirectory = string(map, "history.snapshots.dir", snapshotDirectory);
+        snapshotsEnabled = bool(map, "history.snapshots.enabled", snapshotsEnabled);
+        macroDirectory = string(map, "macros.dir", macroDirectory);
+        brushPresetDirectory = string(map, "brushes.dir", brushPresetDirectory);
+        scriptDirectory = string(map, "scripts.dir", scriptDirectory);
         defaultSchematicFormat = string(map, "saving.format", defaultSchematicFormat);
         queueTargetSize = integer(map, "queue.target-size", queueTargetSize);
         queueMaxWait = integer(map, "queue.max-wait-ms", queueMaxWait);

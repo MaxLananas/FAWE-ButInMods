@@ -2,15 +2,15 @@
     "schemaVersion": 1,
     "id": "fawe",
     "version": "${version}",
-
-    "name": "FAWE ButInMods",
-    "description": "FastAsyncWorldEdit as a Fabric mod for singleplayer and servers: complete WorldEdit 7.3 + FAWE command set, FAWE's engine (bulk chunk queue, palette-packed sections, deferred side effects, history), brushes, tools, masks, patterns, transforms and schematics — no WorldEdit/FAWE plugin required.",
+    "name": "FAWE-BIM",
+    "description": "FastAsyncWorldEdit as a Fabric mod for singleplayer and servers: complete WorldEdit 7.3 + FAWE command set, FAWE's engine (bulk chunk queue, palette-packed sections, deferred side effects, history), brushes, tools, masks, patterns, transforms and schematics - no WorldEdit/FAWE plugin required.",
     "authors": [
-        "FAWE-ButInMods contributors"
+        "MaxLananas"
     ],
     "contact": {
-        "homepage": "https://github.com/MaxLananas/FAWE-ButInMods",
-        "sources": "https://github.com/MaxLananas/FAWE-ButInMods"
+        "homepage": "https://github.com/MaxLananas/FAWE-BIM",
+        "sources": "https://github.com/MaxLananas/FAWE-BIM",
+        "issues": "https://github.com/MaxLananas/FAWE-BIM/issues"
     },
     "license": "GPL-3.0",
     "environment": "*",

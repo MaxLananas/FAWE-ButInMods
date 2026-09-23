@@ -46,11 +46,189 @@ public final class LocalSession {
     private boolean drawSelection = false;
     private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
     private String toolBindingName;
+    private Mask sourceMask;
+    private int placementMode = PLACEMENT_FIRST;
+    private int reorderMode = REORDER_NONE;
+    private boolean cancelled;
+    private boolean tips;
+    private boolean watchdog = true;
+    private java.time.ZoneId timezone = java.time.ZoneId.systemDefault();
+    private String ownerName = "console";
+    private java.nio.file.Path activeSnapshot;
+    private com.fawebutinmods.core.clipboard.ListFilter listFilter =
+            com.fawebutinmods.core.clipboard.ListFilter.ALL;
+    private Runnable pendingCommand;
+    private String pendingDescription;
     private BlockVector3 lastClickedPosition;
     private com.fawebutinmods.core.world.Direction lastClickedFace = com.fawebutinmods.core.world.Direction.NORTH;
 
+    /** Placement modes of {@code //placement}, matching WorldEdit's names. */
+    public static final int PLACEMENT_FIRST = 0;
+    public static final int PLACEMENT_LAST = 1;
+    public static final int PLACEMENT_ORIGIN = 2;
+
+    /** Reordering modes of {@code //reorder}. */
+    public static final int REORDER_NONE = 0;
+    public static final int REORDER_MULTI = 1;
+    public static final int REORDER_FULL = 2;
+
     public LocalSession() {
         this.history = new History(20);
+    }
+
+    /** Name of the player this session belongs to, used for snapshots. */
+    public String ownerName() {
+        return ownerName;
+    }
+
+    public void setOwnerName(String ownerName) {
+        this.ownerName = ownerName == null || ownerName.isBlank() ? "console" : ownerName;
+    }
+
+    /**
+     * Writes finished edits to the snapshot folder so they survive a restart.
+     * Enabled by the session manager once the owner name is known.
+     */
+    public void enableSnapshots() {
+        history.setRecordListener(record -> {
+            if (!com.fawebutinmods.core.platform.Config.get().snapshotsEnabled) {
+                return;
+            }
+            try {
+                com.fawebutinmods.core.history.Snapshots.save(record, ownerName);
+            } catch (java.io.IOException | RuntimeException e) {
+                // A failing snapshot must never take an edit down with it.
+            }
+        });
+    }
+
+    /** Which schematics {@code //schem list} shows; set by {@code /list}. */
+    public com.fawebutinmods.core.clipboard.ListFilter getListFilter() {
+        return listFilter;
+    }
+
+    public void setListFilter(com.fawebutinmods.core.clipboard.ListFilter listFilter) {
+        this.listFilter = listFilter == null ? com.fawebutinmods.core.clipboard.ListFilter.ALL : listFilter;
+    }
+
+    /** Snapshot the {@code /snapshot} sub-commands act on when none is named. */
+    public java.nio.file.Path getActiveSnapshot() {
+        return activeSnapshot;
+    }
+
+    public void setActiveSnapshot(java.nio.file.Path activeSnapshot) {
+        this.activeSnapshot = activeSnapshot;
+    }
+
+    /** The mask {@code //replace} and friends apply to the blocks they read. */
+    public Mask getSourceMask() {
+        return sourceMask;
+    }
+
+    public void setSourceMask(Mask sourceMask) {
+        this.sourceMask = sourceMask;
+    }
+
+    public int getPlacementMode() {
+        return placementMode;
+    }
+
+    public void setPlacementMode(int placementMode) {
+        this.placementMode = placementMode;
+    }
+
+    public String placementModeName() {
+        return switch (placementMode) {
+            case PLACEMENT_LAST -> "last";
+            case PLACEMENT_ORIGIN -> "origin";
+            default -> "first";
+        };
+    }
+
+    public int getReorderMode() {
+        return reorderMode;
+    }
+
+    public void setReorderMode(int reorderMode) {
+        this.reorderMode = reorderMode;
+    }
+
+    public String reorderModeName() {
+        return switch (reorderMode) {
+            case REORDER_MULTI -> "multi";
+            case REORDER_FULL -> "full";
+            default -> "none";
+        };
+    }
+
+    /** {@code /cancel}: abort the next edit that checks the session state. */
+    public void cancel() {
+        cancelled = true;
+    }
+
+    public void clearCancel() {
+        cancelled = false;
+    }
+
+    public boolean isCancelled() {
+        return cancelled;
+    }
+
+    /** The timezone used when snapshot dates are displayed. */
+    public java.time.ZoneId getTimezone() {
+        return timezone;
+    }
+
+    public void setTimezone(java.time.ZoneId timezone) {
+        this.timezone = timezone == null ? java.time.ZoneId.systemDefault() : timezone;
+    }
+
+    public boolean isTips() {
+        return tips;
+    }
+
+    public void setTips(boolean tips) {
+        this.tips = tips;
+    }
+
+    /** {@code /watchdog}: whether edits are stopped when they run too long. */
+    public boolean isWatchdogEnabled() {
+        return watchdog;
+    }
+
+    public void setWatchdogEnabled(boolean watchdog) {
+        this.watchdog = watchdog;
+    }
+
+    /** Commands that need {@code /confirm} before running. */
+    public void setPendingCommand(Runnable command, String description) {
+        this.pendingCommand = command;
+        this.pendingDescription = description;
+    }
+
+    public boolean hasPendingCommand() {
+        return pendingCommand != null;
+    }
+
+    public String pendingDescription() {
+        return pendingDescription;
+    }
+
+    /** Runs the pending command, or returns false when there is none. */
+    public boolean confirmPending() {
+        Runnable command = pendingCommand;
+        pendingCommand = null;
+        pendingDescription = null;
+        if (command == null) {
+            return false;
+        }
+        command.run();
+        return true;
+    }
+
+    public void clearPending() {
+        pendingCommand = null;
+        pendingDescription = null;
     }
 
     public RegionSelector getSelector(World world) {
@@ -96,6 +274,15 @@ public final class LocalSession {
         return transformSet;
     }
 
+    /** The chunk clipboard {@code /anvil copy} fills; not the normal clipboard. */
+    public com.fawebutinmods.core.clipboard.BlockArrayClipboard getAnvilClipboard() {
+        return anvilClipboard;
+    }
+
+    public void setAnvilClipboard(com.fawebutinmods.core.clipboard.BlockArrayClipboard clipboard) {
+        this.anvilClipboard = clipboard;
+    }
+
     public ClipboardHolder getClipboard() {
         return clipboard;
     }
@@ -103,6 +290,62 @@ public final class LocalSession {
     public void setClipboard(BlockArrayClipboard clipboard) {
         this.clipboard = new ClipboardHolder(clipboard);
     }
+
+    private com.fawebutinmods.core.clipboard.BlockArrayClipboard anvilClipboard;
+
+    /**
+     * The clipboards {@code //schem loadall} collected. While it holds more than
+     * one, pasting picks one at random, which is how FAWE's multi clipboard works.
+     */
+    public java.util.List<com.fawebutinmods.core.clipboard.BlockArrayClipboard> getClipboardPool() {
+        return clipboardPool;
+    }
+
+    public void setClipboardPool(java.util.List<com.fawebutinmods.core.clipboard.BlockArrayClipboard> pool) {
+        this.clipboardPool.clear();
+        this.clipboardPool.addAll(pool);
+    }
+
+    public void addToClipboardPool(java.util.List<com.fawebutinmods.core.clipboard.BlockArrayClipboard> pool) {
+        this.clipboardPool.addAll(pool);
+    }
+
+    public void clearClipboardPool() {
+        this.clipboardPool.clear();
+    }
+
+    /** True when {@code loadall -r} asked for a fresh random rotation per paste. */
+    public boolean isClipboardPoolDynamicRotation() {
+        return poolDynamicRotation;
+    }
+
+    public void setClipboardPoolDynamicRotation(boolean dynamic) {
+        this.poolDynamicRotation = dynamic;
+    }
+
+    public boolean isClipboardPoolRandomRotation() {
+        return poolRandomRotation;
+    }
+
+    public void setClipboardPoolRandomRotation(boolean random) {
+        this.poolRandomRotation = random;
+    }
+
+    /** The CraftScript {@code //.s} re-runs. */
+    public String getLastScript() {
+        return lastScript;
+    }
+
+    public void setLastScript(String script) {
+        this.lastScript = script;
+    }
+
+    private String lastScript;
+
+    private final java.util.List<com.fawebutinmods.core.clipboard.BlockArrayClipboard> clipboardPool =
+            new java.util.ArrayList<>();
+    private boolean poolRandomRotation;
+    private boolean poolDynamicRotation;
 
     public boolean hasClipboard() {
         return clipboard != null;

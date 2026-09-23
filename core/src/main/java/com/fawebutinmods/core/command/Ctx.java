@@ -24,7 +24,6 @@ import java.util.Map;
  */
 public final class Ctx {
 
-    private final CommandRegistry registry;
     private final CommandRegistry.Entry entry;
     private final Actor actor;
     private final List<String> tokens;
@@ -33,8 +32,7 @@ public final class Ctx {
     private EditSession editSession;
     private Region selection;
 
-    Ctx(CommandRegistry registry, CommandRegistry.Entry entry, Actor actor, List<String> tokens) {
-        this.registry = registry;
+    Ctx(CommandRegistry.Entry entry, Actor actor, List<String> tokens) {
         this.entry = entry;
         this.actor = actor;
         this.tokens = tokens;
@@ -205,7 +203,6 @@ public final class Ctx {
 
     private double parseCoordinate(String token, int axis, BlockVector3 origin, Vector3 direction) {
         double base = origin == null ? 0 : (axis == 0 ? origin.x() : axis == 1 ? origin.y() : origin.z());
-        double dir = axis == 0 ? direction.x() : axis == 1 ? direction.y() : direction.z();
         if (token.startsWith("~")) {
             String rest = token.substring(1);
             return rest.isEmpty() ? base : base + Double.parseDouble(rest);

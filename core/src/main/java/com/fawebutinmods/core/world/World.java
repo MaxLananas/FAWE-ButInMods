@@ -33,6 +33,14 @@ public interface World extends Extent {
     /** True when the chunk is currently resident; the engine loads chunks on demand. */
     boolean isChunkLoaded(int chunkX, int chunkZ);
 
+    /**
+     * The dimension's {@code region} folder, used by {@code /anvil} to inspect
+     * chunks the server has not loaded. Null when the platform has no world files.
+     */
+    default java.nio.file.Path regionDirectory() {
+        return null;
+    }
+
     void loadChunk(int chunkX, int chunkZ);
 
     /**
@@ -59,6 +67,16 @@ public interface World extends Extent {
     boolean generateTree(BlockVector3 pos, String treeType, Random random);
 
     boolean generateFeature(BlockVector3 pos, String featureType, Random random);
+
+    /**
+     * Generates a worldgen structure (a village, a shipwreck, a stronghold...) at
+     * the given position.
+     *
+     * @return false when the structure id is unknown to the server
+     */
+    default boolean generateStructure(String structureId, BlockVector3 pos, Random random) {
+        return false;
+    }
 
     /**
      * The first non-air block along the actor's view direction, used by

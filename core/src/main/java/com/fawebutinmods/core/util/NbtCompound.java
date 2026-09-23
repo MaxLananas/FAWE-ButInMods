@@ -241,7 +241,6 @@ public class NbtCompound implements Cloneable {
         return copy;
     }
 
-    @SuppressWarnings("unchecked")
     private static Object copyValue(Object value) {
         if (value instanceof NbtCompound c) {
             return c.clone();

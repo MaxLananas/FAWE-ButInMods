@@ -48,7 +48,7 @@ import static net.minecraft.commands.Commands.literal;
 public final class FaweMod implements ModInitializer {
 
     public static final String MOD_ID = "fawe";
-    private static final Logger LOGGER = LoggerFactory.getLogger("FAWE-ButInMods");
+    private static final Logger LOGGER = LoggerFactory.getLogger("FAWE-BIM");
 
     private static FabricBlockStateRegistry registry;
 
@@ -67,10 +67,10 @@ public final class FaweMod implements ModInitializer {
                 Schematics.setDirectory(server.getServerDirectory()
                         .resolve(Config.get().schematicSaveDirectory));
                 CommandManager.get().initialise();
-                LOGGER.info("FAWE-ButInMods ready: {} commands registered, {} block states known",
+                LOGGER.info("FAWE-BIM ready: {} commands registered, {} block states known",
                         CommandManager.get().size(), registry.stateCount());
             } catch (Throwable throwable) {
-                LOGGER.error("FAWE-ButInMods failed to start", throwable);
+                LOGGER.error("FAWE-BIM failed to start", throwable);
             }
         });
 
@@ -118,7 +118,7 @@ public final class FaweMod implements ModInitializer {
             FabricInteractions.forget(handler.getPlayer().getUUID());
         });
 
-        LOGGER.info("FAWE-ButInMods initialised");
+        LOGGER.info("FAWE-BIM initialised");
     }
 
     /**

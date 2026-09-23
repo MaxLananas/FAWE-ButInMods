@@ -13,6 +13,7 @@ public final class SessionManager {
     private final LocalSession consoleSession = new LocalSession();
 
     private SessionManager() {
+        consoleSession.enableSnapshots();
     }
 
     public static SessionManager get() {
@@ -20,10 +21,26 @@ public final class SessionManager {
     }
 
     public LocalSession of(UUID uuid) {
+        return of(uuid, null);
+    }
+
+    /** The session of a player, snapshots included, created on first use. */
+    public LocalSession of(UUID uuid, String ownerName) {
         if (uuid == null) {
             return consoleSession;
         }
-        return sessions.computeIfAbsent(uuid, k -> new LocalSession());
+        LocalSession session = sessions.computeIfAbsent(uuid, k -> newSession(ownerName));
+        if (ownerName != null) {
+            session.setOwnerName(ownerName);
+        }
+        return session;
+    }
+
+    private static LocalSession newSession(String ownerName) {
+        LocalSession session = new LocalSession();
+        session.setOwnerName(ownerName);
+        session.enableSnapshots();
+        return session;
     }
 
     public LocalSession console() {

@@ -3,13 +3,13 @@ package com.fawebutinmods.core.brush;
 import com.fawebutinmods.core.actor.Actor;
 import com.fawebutinmods.core.command.Ctx;
 import com.fawebutinmods.core.mask.Mask;
-import com.fawebutinmods.core.math.BlockVector3;
 import com.fawebutinmods.core.pattern.Pattern;
 import com.fawebutinmods.core.pattern.Patterns;
 import com.fawebutinmods.core.session.LocalSession;
 import com.fawebutinmods.core.util.Msg;
 import com.fawebutinmods.core.world.BlockState;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -34,6 +34,18 @@ public final class BrushFactory {
     public static void bind(LocalSession session, Brush brush, Actor actor) {
         session.getBindings().put("brush", brush);
         session.getBindings().put("brush-item", actor.heldItem());
+    }
+
+    /** The brush bound to the left click of the held item, if any. */
+    public static Brush currentSecondary(LocalSession session) {
+        Object bound = session.getBindings().get("secondary-brush");
+        return bound instanceof Brush brush ? brush : null;
+    }
+
+    /** Binds a brush to the left click, which is what {@code /tool secondary} does. */
+    public static void bindSecondary(LocalSession session, Brush brush, Actor actor) {
+        session.getBindings().put("secondary-brush", brush);
+        session.getBindings().put("secondary-brush-item", actor.heldItem());
     }
 
     public static void unbind(LocalSession session) {
@@ -61,7 +73,10 @@ public final class BrushFactory {
             case "smooth" -> new Brushes.SmoothBrush(radius, mask);
             case "blendball" -> new Brushes.BlendBallBrush(radius, mask);
             case "flatten" -> new Brushes.FlattenBrush(radius, pattern, mask);
-            case "height" -> new Brushes.HeightBrush(radius, pattern, mask);
+            case "height" -> new Brushes.HeightmapBrush(radius, pattern, mask, false, 1);
+            case "heightmap" -> createHeightmapBrush(radius, pattern, mask, ctx);
+            case "cliff" -> new Brushes.HeightmapBrush(radius, pattern, mask, true, 1);
+            case "circle" -> new Brushes.CircleBrush(radius, pattern, mask, true);
             case "raise", "lower" -> new Brushes.RaiseLowerBrush(radius, pattern, key.equals("lower"), mask);
             case "layer" -> new Brushes.LayerBrush(radius, pattern, mask);
             case "line" -> new Brushes.LineBrush(radius, pattern, mask);
@@ -76,11 +91,13 @@ public final class BrushFactory {
             case "pull" -> new Brushes.PullBrush(radius, pattern, mask);
             case "stencil" -> new Brushes.StencilBrush(radius, pattern, mask);
             case "gravity" -> new Brushes.GravityBrush(radius, mask);
-            case "clipboard", "copypaste" -> new Brushes.ClipboardBrush(radius, mask);
+            case "clipboard", "copypaste" -> new Brushes.ClipboardBrush(radius, mask,
+                    ctx != null && ctx.hasFlag("o"));
             case "biome" -> new Brushes.BiomeBrush(radius, mask);
             case "butcher" -> new Brushes.ButcherBrush(radius);
             case "forest" -> new Brushes.ForestBrush(radius, mask);
             case "command" -> new Brushes.CommandBrush(radius, ctx == null ? "" : ctx.joined(2));
+            case "scattercommand" -> new Brushes.ScatterCommandBrush(radius, ctx == null ? "" : ctx.joined(2));
             case "populateschematic" -> new Brushes.PopulateSchematicBrush(radius);
             case "surface" -> new Brushes.SurfaceBrush(radius, pattern, mask);
             case "sweep" -> new Brushes.SweepBrush(radius, pattern, mask);
@@ -91,16 +108,92 @@ public final class BrushFactory {
             case "item" -> new Brushes.SphereBrush(radius, pattern, mask);
             case "recurse" -> new Brushes.RecurseBrush(radius, pattern, mask);
             case "feature", "structure" -> new Brushes.FeatureBrush(radius, key, mask);
-            case "cliff", "set" -> new Brushes.SphereBrush(radius, pattern, mask);
+            case "set" -> new Brushes.SphereBrush(radius, pattern, mask);
+            case "image" -> new Brushes.SphereBrush(radius, pattern, mask);
             default -> null;
         };
         return brush;
+    }
+
+    /** {@code /brush heightmap <image> [yscale]} needs the image file to exist. */
+    private static Brush createHeightmapBrush(double radius, Pattern pattern, Mask mask, Ctx ctx) {
+        if (ctx == null) {
+            return null;
+        }
+        // /brush heightmap <radius> <pattern> <image> [yscale].
+        String file = ctx.arg(2, "");
+        com.fawebutinmods.core.util.Images.PixelSource image =
+                com.fawebutinmods.core.util.Images.load(
+                        com.fawebutinmods.core.clipboard.Schematics.directory().resolve(file));
+        if (image == null) {
+            throw com.fawebutinmods.core.command.CommandRegistry.error(
+                    "Image '" + file + "' not found in " + com.fawebutinmods.core.clipboard.Schematics.directory());
+        }
+        return new Brushes.ImageHeightmapBrush(radius, pattern, mask, image, ctx.doubleArg(3, 1));
     }
 
     /** Creates a brush from a name only, used by saved brush presets. */
     public static Brush preset(String name, double radius, Pattern fill) {
         return create(name, radius, fill, null);
     }
+
+    /**
+     * Every brush {@code /brush <name>} accepts, paired with the key the factory
+     * uses. The command registration iterates this list, so a brush cannot exist
+     * without being reachable from the command line.
+     */
+    public static final List<String[]> COMMANDS = List.of(
+            new String[]{"sphere", "sphere"},
+            new String[]{"ball", "sphere"},
+            new String[]{"smooth", "smooth"},
+            new String[]{"blendball", "blendball"},
+            new String[]{"flatten", "flatten"},
+            new String[]{"height", "height"},
+            new String[]{"heightmap", "heightmap"},
+            new String[]{"raise", "raise"},
+            new String[]{"lower", "lower"},
+            new String[]{"layer", "layer"},
+            new String[]{"line", "line"},
+            new String[]{"spline", "spline"},
+            new String[]{"surfacespline", "surfacespline"},
+            new String[]{"catenary", "catenary"},
+            new String[]{"scatter", "scatter"},
+            new String[]{"shatter", "shatter"},
+            new String[]{"splatter", "splatter"},
+            new String[]{"rock", "rock"},
+            new String[]{"blob", "blob"},
+            new String[]{"pull", "pull"},
+            new String[]{"stencil", "stencil"},
+            new String[]{"gravity", "gravity"},
+            new String[]{"cylinder", "cylinder"},
+            new String[]{"circle", "circle"},
+            new String[]{"clipboard", "clipboard"},
+            new String[]{"copypaste", "copypaste"},
+            new String[]{"biome", "biome"},
+            new String[]{"butcher", "butcher"},
+            new String[]{"forest", "forest"},
+            new String[]{"command", "command"},
+            new String[]{"scattercommand", "scattercommand"},
+            new String[]{"populateschematic", "populateschematic"},
+            new String[]{"surface", "surface"},
+            new String[]{"sweep", "sweep"},
+            new String[]{"deform", "deform"},
+            new String[]{"erode", "erode"},
+            new String[]{"dilate", "dilate"},
+            new String[]{"morph", "morph"},
+            new String[]{"extinguish", "extinguish"},
+            new String[]{"snow", "snow"},
+            new String[]{"snowsmooth", "snowsmooth"},
+            new String[]{"item", "item"},
+            new String[]{"recurse", "recurse"},
+            new String[]{"recursive", "recurse"},
+            new String[]{"feature", "feature"},
+            new String[]{"structure", "structure"},
+            new String[]{"cliff", "cliff"},
+            new String[]{"flatcylinder", "cliff"},
+            new String[]{"set", "set"},
+            new String[]{"image", "image"},
+            new String[]{"stencil", "stencil"});
 
     /** The pattern used when a brush command omits it. */
     public static Pattern defaultPattern() {

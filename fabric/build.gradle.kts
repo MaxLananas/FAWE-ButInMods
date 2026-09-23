@@ -3,7 +3,7 @@ plugins {
     `java-library`
 }
 
-description = "FAWE-ButInMods — Fabric platform adapter for Minecraft 1.21.10."
+description = "FAWE-BIM — Fabric platform adapter for Minecraft 1.21.10."
 
 val minecraftVersion = property("minecraft_version") as String
 val loaderVersion = property("fabric_loader_version") as String
@@ -50,7 +50,7 @@ tasks.withType<ProcessResources> {
 }
 
 tasks.withType<Jar> {
-    archiveBaseName.set("FAWE-ButInMods")
+    archiveBaseName.set("FAWE-BIM")
     from(rootProject.file("LICENSE.txt")) { into("META-INF") }
     from(rootProject.file("NOTICE")) { into("META-INF") }
 }
