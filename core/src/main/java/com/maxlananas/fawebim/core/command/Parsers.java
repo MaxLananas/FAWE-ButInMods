@@ -43,6 +43,15 @@ public final class Parsers {
         return id;
     }
 
+    /** Parses a biome name, failing with the message FAWE uses. */
+    public static int biome(String input) {
+        int id = BlockState.registry().biome(input);
+        if (id < 0) {
+            throw CommandRegistry.error("Unknown biome '" + input + "'");
+        }
+        return id;
+    }
+
     // ---------------------------------------------------------------- patterns
 
     /** Parses a pattern: blocks, weighted lists, {@code #clipboard}, {@code ^} ... */

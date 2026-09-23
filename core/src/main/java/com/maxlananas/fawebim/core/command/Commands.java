@@ -880,10 +880,7 @@ public final class Commands {
                     String biome = ctx.args().size() > 1 ? ctx.arg(1) : null;
                     int biomeId = -1;
                     if (biome != null) {
-                        biomeId = BlockState.registry().biome(biome);
-                        if (biomeId < 0) {
-                            throw CommandRegistry.error("Unknown biome '" + biome + "'");
-                        }
+                        biomeId = Parsers.biome(biome);
                     }
                     // FAWE clears the masks for the duration of the regeneration:
                     // a region the mask excludes must not survive a //regen.
@@ -1985,10 +1982,7 @@ public final class Commands {
         e69.arguments.add("biome");
         e69.handler = ctx -> {
                     if (ctx.hasFlag("p")) {
-                        int biomeId = BlockState.registry().biome(ctx.arg(0));
-                        if (biomeId < 0) {
-                            throw CommandRegistry.error("Unknown biome '" + ctx.arg(0) + "'");
-                        }
+                        int biomeId = Parsers.biome(ctx.arg(0));
                         BlockVector3 pos = ctx.actor().position();
                         EditSession session = ctx.editSession();
                         session.setBiome(pos.x(), pos.y(), pos.z(), biomeId);
@@ -1996,10 +1990,7 @@ public final class Commands {
                         ctx.actor().message(Msg.success("Changed biome at " + pos + " to " + ctx.arg(0)));
                         return;
                     }
-                    int biomeId = BlockState.registry().biome(ctx.arg(0));
-                    if (biomeId < 0) {
-                        throw CommandRegistry.error("Unknown biome '" + ctx.arg(0) + "'");
-                    }
+                    int biomeId = Parsers.biome(ctx.arg(0));
                     EditSession session = ctx.editSession();
                     // A biome cell covers 4x4x4 blocks, so each column is asked
                     // once per cell instead of once per block.

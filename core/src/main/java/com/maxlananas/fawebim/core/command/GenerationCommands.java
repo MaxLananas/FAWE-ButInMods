@@ -214,10 +214,7 @@ final class GenerationCommands {
         entry.arguments.add("formula");
         entry.handler = ctx -> {
             Region region = ctx.selection();
-            int biomeId = BlockState.registry().biome(ctx.arg(0));
-            if (biomeId < 0) {
-                throw CommandRegistry.error("Unknown biome '" + ctx.arg(0) + "'");
-            }
+            int biomeId = Parsers.biome(ctx.arg(0));
             // The formula is everything after the biome, so it may be one
             // argument or several.
             Expression expression = Expression.compile(ctx.joined(1));
