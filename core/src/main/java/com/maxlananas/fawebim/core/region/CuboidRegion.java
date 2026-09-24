@@ -162,14 +162,36 @@ public class CuboidRegion implements Region {
         return minZ == maxZ;
     }
 
+    /**
+     * Walks the region one chunk section at a time, in section index order.
+     *
+     * <p>An edit writes into a buffer keyed by chunk and section, so an order
+     * that crosses a chunk every sixteen blocks looks the buffer up again and
+     * again: the whole region is walked here a section at a time, which is what
+     * WorldEdit's region iterator does as well. Inside a section the walk is x
+     * first, then z, then y, which is the order the section stores its cells in,
+     * so the writes of a section are sequential.</p>
+     */
     @Override
     public int forEachPosition(BlockVisitor visitor) {
         int visited = 0;
-        for (int y = minY; y <= maxY; y++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                for (int x = minX; x <= maxX; x++) {
-                    if (visitor.visit(x, y, z)) {
-                        visited++;
+        for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
+            int xStart = Math.max(minX, chunkX << 4);
+            int xEnd = Math.min(maxX, (chunkX << 4) + 15);
+            for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
+                int zStart = Math.max(minZ, chunkZ << 4);
+                int zEnd = Math.min(maxZ, (chunkZ << 4) + 15);
+                for (int sectionY = minY >> 4; sectionY <= maxY >> 4; sectionY++) {
+                    int yStart = Math.max(minY, sectionY << 4);
+                    int yEnd = Math.min(maxY, (sectionY << 4) + 15);
+                    for (int y = yStart; y <= yEnd; y++) {
+                        for (int z = zStart; z <= zEnd; z++) {
+                            for (int x = xStart; x <= xEnd; x++) {
+                                if (visitor.visit(x, y, z)) {
+                                    visited++;
+                                }
+                            }
+                        }
                     }
                 }
             }
