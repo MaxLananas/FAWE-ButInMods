@@ -57,6 +57,17 @@ CHECKS = [
     ("//count minecraft:dirt", "count: 256"),
     ("//undo", "undid 256 block change(s)"),
     ("//count minecraft:dirt", "count: 0"),
+    # The clipboard and the schematic file, through a real save and load: the
+    # region holds stone at this point, and it is cleared before the load so the
+    # count afterwards can only come from the file.
+    ("//copy", "copied 256 block(s)"),
+    ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke'"),
+    ("//set minecraft:air", "256 block(s) affected"),
+    ("//count minecraft:stone", "count: 0"),
+    ("//schem load fawebim-smoke", "loaded schematic 'fawebim-smoke'"),
+    ("//paste 0,60,0", "pasted 256 block(s)"),
+    ("//count minecraft:stone", "count: 256"),
+    ("//schem delete fawebim-smoke", "deleted schematic 'fawebim-smoke'"),
 ]
 
 
