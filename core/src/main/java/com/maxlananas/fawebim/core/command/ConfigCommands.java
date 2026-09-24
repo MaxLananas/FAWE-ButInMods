@@ -227,7 +227,9 @@ final class ConfigCommands {
      * player usually wants to change to something else.
      */
     private static void values(List<String> completions, String key, String prefix) {
-        Setting<?> setting = Config.get().find(key);
+        // The same three spellings the set command accepts: the value completion
+        // follows the name that was typed.
+        Setting<?> setting = ui().resolve(key);
         if (setting == null) {
             return;
         }
