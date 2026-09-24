@@ -64,6 +64,7 @@ CHECKS = [
     ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke'"),
     ("//set minecraft:air", "256 block(s) affected"),
     ("//count minecraft:stone", "count: 0"),
+    ("//schem unload", "clipboard unloaded"),
     ("//schem load fawebim-smoke", "loaded schematic 'fawebim-smoke'"),
     ("//paste 0,60,0", "pasted 256 block(s)"),
     ("//count minecraft:stone", "count: 256"),

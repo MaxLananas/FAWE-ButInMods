@@ -190,11 +190,38 @@ public final class Schematics {
 
     public static void delete(String name) {
         try {
-            Files.deleteIfExists(resolve(name));
+            Files.deleteIfExists(resolveExisting(name));
         } catch (IOException e) {
             throw new IllegalStateException("Could not delete schematic '" + name + "'");
         }
     }
+
+    /**
+     * The file a name reads from, whatever extension it was written with.
+     *
+     * <p>{@code //schem save house} writes {@code house.schem}, so
+     * {@code //schem load house} has to find it: the load tries the name as
+     * typed and then the extension of every format the writer can produce, which
+     * is the resolution WorldEdit and FAWE do for the same reason.</p>
+     */
+    private static Path resolveExisting(String name) {
+        Path exact = resolve(name);
+        if (Files.isRegularFile(exact)) {
+            return exact;
+        }
+        Path folder = directory();
+        for (String extension : FILE_EXTENSIONS) {
+            Path candidate = folder.resolve(name + extension);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+        }
+        return exact;
+    }
+
+    /** The extensions a schematic file can carry, in the order a load tries them. */
+    private static final List<String> FILE_EXTENSIONS =
+            List.of(".schem", ".schematic", ".nbt");
 
     private static Path resolve(String name) {
         Path path = directory().resolve(name);
@@ -287,7 +314,7 @@ public final class Schematics {
 
     public static BlockArrayClipboard load(String name) {
         try {
-            BlockArrayClipboard clipboard = readAll(resolve(name), name);
+            BlockArrayClipboard clipboard = readAll(resolveExisting(name), name);
             checkSize(clipboard, name);
             return clipboard;
         } catch (IOException e) {

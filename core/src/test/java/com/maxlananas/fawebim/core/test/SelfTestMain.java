@@ -764,6 +764,14 @@ public final class SelfTestMain {
             checkEquals("schematic round-trip volume " + format, clipboard.volume(), loaded.volume());
         }
         check("schematic list", Schematics.list().size() >= 3);
+        // //schem save writes the name with an extension, so //schem load has to
+        // find the file from the name as typed.
+        Schematics.save(clipboard, "bare-name", "sponge.3");
+        checkEquals("a schematic loads by the name it was saved under",
+                clipboard.volume(), Schematics.load("bare-name").volume());
+        Schematics.delete("bare-name");
+        check("deleting it by that name removes the file",
+                Schematics.list().stream().noneMatch(n -> n.startsWith("bare-name")));
 
         // NBT round-trip of a compound with every tag type
         NbtCompound compound = new NbtCompound();
