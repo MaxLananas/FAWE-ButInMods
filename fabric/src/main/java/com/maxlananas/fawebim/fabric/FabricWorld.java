@@ -133,6 +133,9 @@ public final class FabricWorld implements World {
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
         // The biome palette is a 4x4x4 grid inside each section; sections are
         // 16 blocks tall, so the low bits of Y address the cell directly.
+        // The game hands the biome grid out as a read-only view; it is the
+        // writable palette container in every chunk that exists, which is how
+        // WorldEdit's own Fabric adapter writes biomes on this version too.
         @SuppressWarnings("unchecked")
         PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                 (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) chunk

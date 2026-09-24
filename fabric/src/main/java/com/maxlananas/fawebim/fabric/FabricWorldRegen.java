@@ -2,7 +2,6 @@ package com.maxlananas.fawebim.fabric;
 
 import com.maxlananas.fawebim.core.world.RegenOptions;
 import net.minecraft.core.Holder;
-import net.minecraft.core.PalettedContainer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
@@ -10,6 +9,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
