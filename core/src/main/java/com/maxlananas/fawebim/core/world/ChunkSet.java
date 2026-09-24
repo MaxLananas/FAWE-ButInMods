@@ -146,7 +146,7 @@ public final class ChunkSet {
     }
 
     /** Sets the block straight into the buffer; returns true when the value changed. */
-    public boolean set(int x, int y, int z, int stateId, int airId) {
+    public boolean set(int x, int y, int z, int stateId) {
         PackedBlockArray section = sectionFor(y, true);
         if (section == null) {
             return false;

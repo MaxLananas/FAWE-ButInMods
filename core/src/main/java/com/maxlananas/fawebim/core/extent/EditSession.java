@@ -266,7 +266,7 @@ public final class EditSession implements Extent {
             throw new MaxChangedBlocksException(changeLimit);
         }
         ChunkSet chunk = chunkFor(x, z, true);
-        chunk.set(x, y, z, stateId, registry.air());
+        chunk.set(x, y, z, stateId);
         if (recordChange) {
             record(chunk, x, y, z, previous, stateId);
         }
@@ -404,13 +404,12 @@ public final class EditSession implements Extent {
         int baseY = set.sectionY() << 4;
         int baseZ = set.chunkZ() << 4;
         ChunkSet chunk = chunkFor(baseX, baseZ, true);
-        int air = registry.air();
         for (int i = 0; i < set.size(); i++) {
             int index = indices[i];
             int x = baseX + (index & 15);
             int y = baseY + ((index >> 8) & 15);
             int z = baseZ + ((index >> 4) & 15);
-            chunk.set(x, y, z, values[i], air);
+            chunk.set(x, y, z, values[i]);
         }
         return set.size();
     }

@@ -24,8 +24,6 @@ public final class ChangeSet {
     private final int chunkX;
     private final int chunkZ;
     private final int sectionY;
-    private int minY = Integer.MAX_VALUE;
-    private int maxY = Integer.MIN_VALUE;
 
     public ChangeSet(int chunkX, int chunkZ, int sectionY) {
         this.chunkX = chunkX;
@@ -80,16 +78,24 @@ public final class ChangeSet {
         before[size] = previous;
         after[size] = current;
         size++;
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
     }
 
-    public int minY() {
-        return minY;
-    }
-
-    public int maxY() {
-        return maxY;
+    /**
+     * The layers this set reaches, from the rows it recorded.
+     *
+     * <p>Kept out of {@link #add}: a history filter asks this once, the write path
+     * would have paid two branches for it on every block.</p>
+     */
+    public int[] yRange() {
+        int baseY = sectionY << 4;
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        for (int i = 0; i < size; i++) {
+            int y = baseY + ((indices[i] >> 8) & 15);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+        }
+        return new int[]{minY, maxY};
     }
 
     public List<BlockVector3> positions() {

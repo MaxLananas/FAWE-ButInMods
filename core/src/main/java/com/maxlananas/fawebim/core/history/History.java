@@ -176,10 +176,11 @@ public final class History {
                     }
                     int minX = set.chunkX() << 4;
                     int minZ = set.chunkZ() << 4;
-                    int minY = set.minY();
+                    int[] yRange = set.yRange();
+                    int minY = yRange[0];
+                    int maxY = yRange[1];
                     int maxX = minX + 15;
                     int maxZ = minZ + 15;
-                    int maxY = set.maxY();
                     if (box == null) {
                         box = new int[]{minX, minY, minZ, maxX, maxY, maxZ};
                         continue;

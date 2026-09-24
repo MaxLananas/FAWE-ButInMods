@@ -270,10 +270,10 @@ public final class SelfTestMain {
         // flush can walk them instead of testing all 4096 cells of a section.
         ChunkSet chunk = new ChunkSet(0, 0, 0, 255);
         check("a fresh buffer holds nothing", chunk.size() == 0 && !chunk.isSet(0, 0, 0));
-        check("a write is buffered", chunk.set(1, 2, 3, 7, 0) && chunk.isSet(1, 2, 3));
-        check("writing the same value again is not a change", !chunk.set(1, 2, 3, 7, 0));
-        check("overwriting a buffered cell is a change", chunk.set(1, 2, 3, 8, 0));
-        check("writing air is a change of its own", chunk.set(4, 5, 6, 0, 0) && chunk.isSet(4, 5, 6));
+        check("a write is buffered", chunk.set(1, 2, 3, 7) && chunk.isSet(1, 2, 3));
+        check("writing the same value again is not a change", !chunk.set(1, 2, 3, 7));
+        check("overwriting a buffered cell is a change", chunk.set(1, 2, 3, 8));
+        check("writing air is a change of its own", chunk.set(4, 5, 6, 0) && chunk.isSet(4, 5, 6));
         checkEquals("the buffer counts what it holds", 2, chunk.size());
         List<String> walked = new ArrayList<>();
         chunk.forEachChanged((x, y, z) -> walked.add(x + "," + y + "," + z));

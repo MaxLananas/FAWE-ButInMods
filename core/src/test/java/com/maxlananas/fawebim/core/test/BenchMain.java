@@ -264,8 +264,7 @@ public final class BenchMain {
             for (int y = 0; y < HEIGHT; y++) {
                 for (int z = 0; z < SIDE; z++) {
                     for (int x = 0; x < SIDE; x++) {
-                        chunk.set(x & 15, y, z & 15, (x ^ z) == 0 ? stone : dirt,
-                                BlockState.registry().air());
+                        chunk.set(x & 15, y, z & 15, (x ^ z) == 0 ? stone : dirt);
                     }
                 }
             }
