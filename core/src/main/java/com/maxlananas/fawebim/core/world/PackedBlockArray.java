@@ -97,12 +97,16 @@ public final class PackedBlockArray {
         int word = index >>> 6;
         long bit = 1L << (index & 63);
         boolean wasWritten = (written[word] & bit) != 0;
+        // The palette comes first: adding a state can widen the cells, and a
+        // cell's position in the array depends on that width. A state that is
+        // not in the palette is in no cell either, so the check below cannot
+        // miss anything by running after it.
+        int paletteIndex = paletteIndex(stateId);
         int slot = index / valuesPerLong;
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         if (wasWritten && palette[(int) ((data[slot] >>> offset) & mask)] == stateId) {
             return -1;
         }
-        int paletteIndex = paletteIndex(stateId);
         data[slot] = (data[slot] & ~(mask << offset)) | ((long) paletteIndex << offset);
         if (wasWritten) {
             return 1;

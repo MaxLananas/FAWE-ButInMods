@@ -277,6 +277,29 @@ public final class SelfTestMain {
         checkEquals("the buffer counts what it holds", 2, chunk.size());
         List<String> walked = new ArrayList<>();
         chunk.forEachChanged((x, y, z) -> walked.add(x + "," + y + "," + z));
+        // A section's palette starts at four bits and has to grow: fill one with
+        // 4096 cells holding different states and read every one back, which is
+        // the path a //set of a many-block palette takes.
+        ChunkSet wide = new ChunkSet(0, 0, 0, 255);
+        int[] expectedStates = new int[4096];
+        for (int i = 0; i < expectedStates.length; i++) {
+            int state = 16 * (i % 140);
+            expectedStates[i] = state;
+            wide.set(i & 15, (i >> 8) & 15, i >> 4 & 15, state);
+        }
+        checkEquals("a full section counts every cell", 4096, wide.size());
+        int wrong = 0;
+        for (int i = 0; i < expectedStates.length; i++) {
+            if (wide.getBlock(i & 15, (i >> 8) & 15, i >> 4 & 15) != expectedStates[i]) {
+                wrong++;
+            }
+        }
+        checkEquals("every state of a full section reads back", 0, wrong);
+        // A state that is already in the palette is reused rather than added a
+        // second time, which is what the one-entry cache in front of it assumes.
+        wide.set(0, 0, 0, expectedStates[1]);
+        checkEquals("a repeated state reads back", expectedStates[1], wide.getBlock(0, 0, 0));
+
         check("the walk visits exactly the written cells",
                 walked.equals(List.of("1,2,3", "4,5,6")));
         check("a value never written reads as absent", chunk.getBlock(7, 7, 7) == -1);
