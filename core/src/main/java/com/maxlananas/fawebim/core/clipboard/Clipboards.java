@@ -111,36 +111,55 @@ public final class Clipboards {
     public static int paste(BlockArrayClipboard clipboard, BlockVector3 destination, EditSession session,
                             Transform transform, boolean ignoreAir, Mask mask, boolean pasteEntities,
                             boolean pasteBiomes, boolean removeEntities, boolean keepStructureVoid) {
-        int changed = 0;
-        for (BlockVector3 position : clipboard.positions()) {
-            int state = clipboard.getBlock(position);
-            if (state == BlockStateHolder.air() && ignoreAir) {
-                continue;
+        int air = BlockStateHolder.air();
+        int voidState = keepStructureVoid ? structureVoid() : -1;
+        int originX = clipboard.getOrigin().x();
+        int originY = clipboard.getOrigin().y();
+        int originZ = clipboard.getOrigin().z();
+        // //paste is the command players run the most, on clipboards of millions
+        // of cells. The walk hands the state of each cell over instead of a
+        // position object, and the transform is only asked when there is one:
+        // without /transform the destination is an integer offset.
+        boolean identity = transform.isIdentity();
+        boolean hasBlockEntities = !clipboard.blockEntities().isEmpty();
+        int changed = clipboard.forEachPosition((x, y, z, state) -> {
+            if (state == air && ignoreAir) {
+                return false;
             }
-            if (keepStructureVoid && state == structureVoid()) {
-                continue;
+            if (keepStructureVoid && state == voidState) {
+                return false;
             }
-            var target = transform.apply(position.toVector3());
-            int x = (int) Math.floor(target.x() - clipboard.getOrigin().x() + destination.x());
-            int y = (int) Math.floor(target.y() - clipboard.getOrigin().y() + destination.y());
-            int z = (int) Math.floor(target.z() - clipboard.getOrigin().z() + destination.z());
-            if (mask != null && !mask.test(x, y, z)) {
-                continue;
+            int targetX;
+            int targetY;
+            int targetZ;
+            if (identity) {
+                targetX = x - originX + destination.x();
+                targetY = y - originY + destination.y();
+                targetZ = z - originZ + destination.z();
+            } else {
+                var target = transform.apply(new com.maxlananas.fawebim.core.math.Vector3(x, y, z));
+                targetX = (int) Math.floor(target.x() - originX + destination.x());
+                targetY = (int) Math.floor(target.y() - originY + destination.y());
+                targetZ = (int) Math.floor(target.z() - originZ + destination.z());
             }
-            if (session.setBlock(x, y, z, state)) {
-                changed++;
+            if (mask != null && !mask.test(targetX, targetY, targetZ)) {
+                return false;
             }
-            NbtCompound nbt = clipboard.getBlockEntity(position);
-            if (nbt != null) {
-                session.setBlockEntity(x, y, z, nbt);
+            boolean applied = session.setBlock(targetX, targetY, targetZ, state);
+            if (hasBlockEntities) {
+                NbtCompound nbt = clipboard.getBlockEntity(new BlockVector3(x, y, z));
+                if (nbt != null) {
+                    session.setBlockEntity(targetX, targetY, targetZ, nbt);
+                }
             }
-        }
+            return applied;
+        });
         if (pasteBiomes && clipboard.hasBiomes()) {
             for (java.util.Map.Entry<Long, Integer> biome : clipboard.biomeEntries()) {
                 long key = biome.getKey();
-                int x = (int) Math.floor(BlockArrayClipboard.keyX(key) - clipboard.getOrigin().x() + destination.x());
-                int y = BlockArrayClipboard.keyY(key) - clipboard.getOrigin().y() + destination.y();
-                int z = (int) Math.floor(BlockArrayClipboard.keyZ(key) - clipboard.getOrigin().z() + destination.z());
+                int x = (int) Math.floor(BlockArrayClipboard.keyX(key) - originX + destination.x());
+                int y = BlockArrayClipboard.keyY(key) - originY + destination.y();
+                int z = (int) Math.floor(BlockArrayClipboard.keyZ(key) - originZ + destination.z());
                 session.setBiome(x, y, z, biome.getValue());
             }
         }
