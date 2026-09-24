@@ -1,6 +1,7 @@
 package com.maxlananas.fawebim.fabric;
 
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -443,12 +444,16 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public List<String> blockTags() {
-        List<String> tags = new ArrayList<>();
-        for (TagKey<Block> tag : BuiltInRegistries.BLOCK.getTagNames().toList()) {
-            tags.add(tag.location().toString());
+        RegistryAccess access = FabricRegistries.access();
+        if (access == null) {
+            return List.of();
         }
-        tags.sort(String::compareTo);
-        return tags;
+        // The tags of a registry are bound when a server loads its data packs, so
+        // they are read from the running server rather than from the built-in table.
+        return access.lookupOrThrow(Registries.BLOCK).getTags()
+                .map(tag -> tag.key().location().toString())
+                .sorted()
+                .toList();
     }
 
     @Override
@@ -473,31 +478,18 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public int biome(String name) {
-        ResourceLocation id = ResourceLocation.tryParse(name.contains(":") ? name : "minecraft:" + name);
-        if (id == null) {
-            return -1;
-        }
-        var biome = BuiltInRegistries.BIOME.getValue(id);
-        if (biome == null) {
-            return -1;
-        }
-        return BuiltInRegistries.BIOME.getId(biome);
+        return FabricRegistries.biomeId(name.contains(":") ? name : "minecraft:" + name);
     }
 
     @Override
     public String biomeName(int biomeId) {
-        var biome = BuiltInRegistries.BIOME.byId(biomeId);
-        return biome == null ? "minecraft:plains" : BuiltInRegistries.BIOME.getKey(biome).toString();
+        String name = FabricRegistries.biomeName(biomeId);
+        return name == null ? "minecraft:plains" : name;
     }
 
     @Override
     public List<String> biomeNames() {
-        List<String> names = new ArrayList<>();
-        for (var biome : BuiltInRegistries.BIOME) {
-            names.add(BuiltInRegistries.BIOME.getKey(biome).toString());
-        }
-        names.sort(String::compareTo);
-        return names;
+        return FabricRegistries.biomeNames();
     }
 
     // ------------------------------------------------------------------- items

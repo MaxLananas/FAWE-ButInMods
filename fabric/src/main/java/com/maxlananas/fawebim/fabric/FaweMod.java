@@ -75,6 +75,7 @@ public final class FaweMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             try {
                 Config.get().load(server.getServerDirectory());
+                FabricRegistries.install(server);
                 registry = new FabricBlockStateRegistry();
                 BlockState.setRegistry(registry);
                 EditSession.BlockStateRegistryHolder.set(registry);
@@ -107,6 +108,7 @@ public final class FaweMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             Config.get().save();
             SessionManager.get().clear();
+            FabricRegistries.clear();
         });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -236,7 +238,6 @@ public final class FaweMod implements ModInitializer {
         if (node.entry == null) {
             return builder;
         }
-        builder.suggests((context, suggestions) -> suggest(node.entry, suggestions));
         builder.executes(context -> run(context.getSource(), node.entry.name));
         builder.then(argument("arguments", StringArgumentType.greedyString())
                 .suggests((context, suggestions) -> suggest(node.entry, suggestions))

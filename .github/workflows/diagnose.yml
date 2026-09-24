@@ -32,9 +32,8 @@ jobs:
         run: |
           set +e
           ./gradlew --no-daemon :fabric:compileJava > /tmp/fabric.log 2>&1
-          fabric=$?
-          echo "fabric compile exit: $fabric"
-          python3 -c "import pathlib,sys; t=pathlib.Path('/tmp/fabric.log').read_text(errors='replace')[-20000:]; print('::error title=fabric compile::'+t.replace('%','%25').replace(chr(13),'').replace(chr(10),'%0A'))"
+          echo "fabric compile exit: $?"
+          python3 scripts/ci_errors.py /tmp/fabric.log
           exit 0
 
       - name: Print the API of the mapped game

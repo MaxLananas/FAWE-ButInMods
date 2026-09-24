@@ -14,6 +14,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -110,23 +111,21 @@ public final class FabricWorld implements World {
     @Override
     public int getBiome(int x, int y, int z) {
         BlockPos pos = new BlockPos(x, Math.max(minY(), Math.min(maxY(), y)), z);
-        Holder<net.minecraft.world.level.biome.Biome> biome = level.getBiome(pos);
-        return BuiltInRegistries.BIOME.getId(biome.value());
+        Registry<net.minecraft.world.level.biome.Biome> biomes =
+                level.registryAccess().lookupOrThrow(Registries.BIOME);
+        ResourceLocation key = biomes.getKey(level.getBiome(pos).value());
+        return key == null ? -1 : FabricRegistries.biomeId(key.toString());
     }
 
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
-        var biome = BuiltInRegistries.BIOME.byId(biomeId);
-        if (biome == null || y < minY() || y > maxY()) {
+        ResourceKey<net.minecraft.world.level.biome.Biome> biomeKey = FabricRegistries.biomeKey(biomeId);
+        if (biomeKey == null || y < minY() || y > maxY()) {
             return false;
         }
         LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
         int sectionIndex = chunk.getSectionIndex(y);
         if (sectionIndex < 0 || sectionIndex >= chunk.getSections().length) {
-            return false;
-        }
-        var biomeKey = BuiltInRegistries.BIOME.getResourceKey(biome).orElse(null);
-        if (biomeKey == null) {
             return false;
         }
         Registry<net.minecraft.world.level.biome.Biome> registry =
@@ -284,8 +283,8 @@ public final class FabricWorld implements World {
                         if (biomeId < 0) {
                             continue;
                         }
-                        var biome = BuiltInRegistries.BIOME.byId(biomeId);
-                        var key = biome == null ? null : BuiltInRegistries.BIOME.getResourceKey(biome).orElse(null);
+                        ResourceKey<net.minecraft.world.level.biome.Biome> key =
+                                FabricRegistries.biomeKey(biomeId);
                         if (key == null) {
                             continue;
                         }
@@ -371,12 +370,13 @@ public final class FabricWorld implements World {
         if (location == null) {
             return false;
         }
-        var placement = level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).get(location);
-        if (placement.isEmpty()) {
+        net.minecraft.world.level.levelgen.placement.PlacedFeature placement =
+                level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
+        if (placement == null) {
             return false;
         }
         net.minecraft.util.RandomSource source = net.minecraft.util.RandomSource.create(random.nextLong());
-        return placement.get().place(level, level.getChunkSource().getGenerator(), source,
+        return placement.place(level, level.getChunkSource().getGenerator(), source,
                 new BlockPos(pos.x(), pos.y(), pos.z()));
     }
 
@@ -425,7 +425,8 @@ public final class FabricWorld implements World {
                 direction.y() * maxDistance, direction.z() * maxDistance);
         var hit = level.clip(new net.minecraft.world.level.ClipContext(from, to,
                 net.minecraft.world.level.ClipContext.Block.OUTLINE,
-                net.minecraft.world.level.ClipContext.Fluid.NONE, null));
+                net.minecraft.world.level.ClipContext.Fluid.NONE,
+                net.minecraft.world.phys.shapes.CollisionContext.empty()));
         if (hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS) {
             return origin.add(direction.multiply(maxDistance).toBlockPoint());
         }
