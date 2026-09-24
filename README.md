@@ -194,9 +194,9 @@ what a change costs.
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **32 M blocks/s** |
-| Block writes, engine without history | **53 – 54 M blocks/s** |
-| `//set` over 64x64x64 | **40 M blocks/s** |
+| Block writes, engine with history | **30 – 33 M blocks/s** |
+| Block writes, engine without history | **57 – 59 M blocks/s** |
+| `//set` over 64x64x64 | **42 M blocks/s** |
 | `//copy` over 64x64x64 | **70 – 74 M blocks/s** |
 | `//paste` over 64x64x64 | **31 – 32 M blocks/s** |
 | `//replace` over 64x64x64 | **30 – 31 M blocks/s** |

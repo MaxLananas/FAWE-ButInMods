@@ -297,6 +297,23 @@ public final class SelfTestMain {
             }
         }
         checkEquals("every state of a full section reads back", 0, wrong);
+        // A section's slot arithmetic is a reciprocal multiply, so every width it
+        // can use has to write and read back through it, growth steps included:
+        // a section that starts at one bit grows through all of them.
+        int widthWrong = 0;
+        for (int bits = 1; bits <= 16; bits++) {
+            com.maxlananas.fawebim.core.world.PackedBlockArray packed =
+                    new com.maxlananas.fawebim.core.world.PackedBlockArray(bits);
+            for (int i = 0; i < 4096; i++) {
+                packed.set(i, 16 * (i % 140));
+            }
+            for (int i = 0; i < 4096; i++) {
+                if (packed.get(i) != 16 * (i % 140)) {
+                    widthWrong++;
+                }
+            }
+        }
+        checkEquals("every width of a packed section reads back", 0, widthWrong);
         // A state that is already in the palette is reused rather than added a
         // second time, which is what the one-entry cache in front of it assumes.
         wide.set(0, 0, 0, expectedStates[1]);

@@ -28,6 +28,15 @@ public final class PackedBlockArray {
     private int[] indexValues;
     private int indexMask;
     private int bitsPerBlock;
+    /**
+     * The reciprocal of {@link #valuesPerLong}, so the slot of a cell is a
+     * multiply and a shift instead of a division. The divisor is a field and the
+     * JIT cannot turn it into a multiplication on its own, which the profile of a
+     * region edit showed as a share of every write. It is exact for the widths a
+     * section uses: the divisor is at most 64 and a cell index is below 4096, so
+     * the error of the reciprocal stays under one slot.
+     */
+    private long valuesMagic;
     private long[] data;
     /**
      * One bit per cell, telling whether this buffer holds a value for it. The
@@ -61,13 +70,19 @@ public final class PackedBlockArray {
 
     private void reallocate() {
         this.valuesPerLong = 64 / bitsPerBlock;
+        this.valuesMagic = ((1L << 32) + valuesPerLong - 1) / valuesPerLong;
         this.mask = (1L << bitsPerBlock) - 1;
         int longCount = (VOLUME + valuesPerLong - 1) / valuesPerLong;
         this.data = new long[longCount];
     }
 
+    /** The long a cell lives in. */
+    private int slotOf(int index) {
+        return (int) ((index * valuesMagic) >>> 32);
+    }
+
     public int get(int index) {
-        int slot = index / valuesPerLong;
+        int slot = slotOf(index);
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         int value = (int) ((data[slot] >>> offset) & mask);
         return palette[value];
@@ -75,7 +90,7 @@ public final class PackedBlockArray {
 
     public void set(int index, int stateId) {
         int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId);
-        int slot = index / valuesPerLong;
+        int slot = slotOf(index);
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         long clearMask = ~(mask << offset);
         data[slot] = (data[slot] & clearMask) | ((long) paletteIndex << offset);
@@ -105,7 +120,7 @@ public final class PackedBlockArray {
         // for it: a buffer is filled a run at a time and a run repeats its
         // state, which made the call itself the share the profile showed.
         int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId);
-        int slot = index / valuesPerLong;
+        int slot = slotOf(index);
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         if (wasWritten && palette[(int) ((data[slot] >>> offset) & mask)] == stateId) {
             return -1;
