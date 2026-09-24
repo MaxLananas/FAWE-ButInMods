@@ -194,14 +194,15 @@ what a change costs.
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **16 – 21 M blocks/s** |
-| Block writes, engine without history | **33 – 38 M blocks/s** |
-| `//set` over 64x64x64 | **16 – 24 M blocks/s** |
-| `//copy` over 64x64x64 | **59 – 63 M blocks/s** |
-| `//paste` over 64x64x64 | **16 – 20 M blocks/s** |
-| `//replace` over 64x64x64 | **14 – 20 M blocks/s** |
-| `//sphere` radius 40 | **17 – 23 M blocks/s** |
-| `//undo` and `//redo` of that `//set` | **45 – 59 M blocks/s** |
+| Block writes, engine with history | **17 – 20 M blocks/s** |
+| Block writes, engine without history | **50 – 51 M blocks/s** |
+| `//set` over 64x64x64 | **27 – 34 M blocks/s** |
+| `//copy` over 64x64x64 | **66 – 73 M blocks/s** |
+| `//paste` over 64x64x64 | **26 – 27 M blocks/s** |
+| `//replace` over 64x64x64 | **22 – 26 M blocks/s** |
+| `//sphere` radius 40 | **25 – 36 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **58 – 62 M blocks/s** |
+| A mask asked about a block | **260 – 337 M questions/s** |
 
 The spread between two runs of the same binary is wider than the effect of most
 changes, so a single number would be a claim the benchmark cannot support: what the
@@ -212,7 +213,15 @@ finds the value already there returns before it does anything and a benchmark of
 nothing.
 
 The shape of that came from measuring rather than guessing. A palette lookup used to walk the
-palette entry by entry (487 ns per block on a build with four thousand block states, now 3.7). The
+palette entry by entry (487 ns per block on a build with four thousand block states, now 3.7); the
+buffer now also remembers the state of the previous write, which answers the run of identical
+states a region edit writes without touching the palette table at all. The last profile put a
+fifth of an edit in palette lookups and a tenth in the boxed keys of the history map, so the
+history keys its chunk sections by primitive key, a change set grows in eighths rather than
+halves, and the chunk buffer answers "was this cell written, what did it hold, write it" in one
+call instead of three that each redid the arithmetic. A mask answers a state it has already
+rejected from memory: it is asked about every block of a filtered edit, and a block that matches
+nothing used to pay for a name lookup every time - 13 ns per question, 3.0 now. The
 history looked a chunk up through a boxed `Long` for every block, masks held their states in a
 `Set<Integer>`, and every brush built a list of positions before touching one. The chunk buffer kept
 the positions it held in a hash set, so every single write hashed a position and every flush asked
