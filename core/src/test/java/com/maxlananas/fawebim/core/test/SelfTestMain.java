@@ -727,6 +727,20 @@ public final class SelfTestMain {
         check("paste changed blocks", changed > 0);
         checkEquals("pasted block", clipboard.getBlock(0, 68, 0), world.getBlock(20, 100, 20));
 
+        // Biomes are stored and pasted one sample per 4x4x4 cell, the way the
+        // game stores them, not once per block of the selection.
+        Region biomeRegion = new com.maxlananas.fawebim.core.region.CuboidRegion(
+                new BlockVector3(0, 64, 0), new BlockVector3(7, 71, 7));
+        int sourceBiome = world.getBiome(0, 68, 0);
+        BlockArrayClipboard biomeClipboard = Clipboards.copy(world, biomeRegion, edit, false, true, null, false);
+        checkEquals("a biome copy keeps one entry per cell", 8, biomeClipboard.biomeEntries().size());
+        checkEquals("the copied biome is the one of the world", sourceBiome, biomeClipboard.getBiome(0, 68, 0));
+        EditSession biomePaste = new EditSession(world, actor.session(), "paste biomes");
+        Clipboards.paste(biomeClipboard, new BlockVector3(40, 100, 40), biomePaste,
+                com.maxlananas.fawebim.core.transform.Transform.identity(), true, null,
+                false, true, false, false);
+        checkEquals("the pasted biome reaches the destination", sourceBiome, world.getBiome(40, 104, 40));
+
         // schematics round-trip (Sponge v3, v2 and MCEdit)
         Path dir = Files.createTempDirectory("fawebim-schematics");
         Schematics.setDirectory(dir);

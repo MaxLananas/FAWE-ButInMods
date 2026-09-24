@@ -53,10 +53,7 @@ final class ClipboardExtras {
             Region region = ctx.selection();
             BlockArrayClipboard clipboard = BlockArrayClipboard.lazy(ctx.world(), region, "lazy");
             if (ctx.hasFlag("b")) {
-                for (BlockVector3 position : region) {
-                    clipboard.setBiome(position.x(), position.y(), position.z(),
-                            ctx.world().getBiome(position.x(), position.y(), position.z()));
-                }
+                com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
             }
             ctx.session().setClipboard(clipboard);
             ctx.actor().message(Msg.success("Lazily copied " + Msg.formatNumber(clipboard.volume())
@@ -81,10 +78,7 @@ final class ClipboardExtras {
             Region region = ctx.selection();
             BlockArrayClipboard clipboard = BlockArrayClipboard.lazy(ctx.world(), region, "lazy");
             if (ctx.hasFlag("b")) {
-                for (BlockVector3 position : region) {
-                    clipboard.setBiome(position.x(), position.y(), position.z(),
-                            ctx.world().getBiome(position.x(), position.y(), position.z()));
-                }
+                com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
             }
             ctx.session().setClipboard(clipboard);
             EditSession session = ctx.editSession("lazycut");

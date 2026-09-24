@@ -51,9 +51,6 @@ public final class Clipboards {
                     if (!region.contains(x, y, z)) {
                         continue;
                     }
-                    if (withBiomes) {
-                        clipboard.setBiome(x, y, z, world.getBiome(x, y, z));
-                    }
                     int state = world.getBlock(x, y, z);
                     if (state == BlockStateHolder.air() || (mask != null && !mask.test(x, y, z))) {
                         continue;
@@ -68,6 +65,9 @@ public final class Clipboards {
                     }
                 }
             }
+        }
+        if (withBiomes) {
+            copyBiomes(world, region, clipboard);
         }
         if (withEntities) {
             List<EntityData> entities = world.getEntities(
@@ -95,6 +95,29 @@ public final class Clipboards {
                             Transform transform, boolean ignoreAir, boolean selective, boolean selectPasted) {
         return paste(clipboard, destination, session, transform, ignoreAir,
                 selective ? session.getMask() : null, Config.get().allowNonPlayerEntities, false, false, false);
+    }
+
+    /**
+     * Copies the biomes of a region into a clipboard.
+     *
+     * <p>Minecraft stores a biome per 4x4x4 cell, so one sample per cell is all
+     * there is to read: asking for the biome of every block of a selection read
+     * the same value sixty-four times and filled the clipboard with sixty-four
+     * entries for it.</p>
+     */
+    public static void copyBiomes(World world, Region region, BlockArrayClipboard clipboard) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        for (int y = min.y(); y <= max.y(); y += 4) {
+            for (int z = min.z(); z <= max.z(); z += 4) {
+                for (int x = min.x(); x <= max.x(); x += 4) {
+                    if (!region.contains(x, y, z)) {
+                        continue;
+                    }
+                    clipboard.setBiome(x, y, z, world.getBiome(x, y, z));
+                }
+            }
+        }
     }
 
     /**
