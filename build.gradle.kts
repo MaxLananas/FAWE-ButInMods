@@ -9,6 +9,8 @@ allprojects {
     repositories {
         mavenCentral()
         maven("https://maven.fabricmc.net/") { name = "FabricMC" }
+        // Where the layered Parchment mappings of the Fabric project come from.
+        maven("https://maven.parchmentmc.org") { name = "ParchmentMC" }
     }
 }
 

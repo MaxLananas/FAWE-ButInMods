@@ -40,6 +40,10 @@ public final class EditSession implements Extent {
     private final History.Record record;
     private final BlockStateRegistry registry;
 
+    /** The buffer the previous write used, and the key it was found under. */
+    private ChunkSet currentChunk;
+    private long currentChunkKey;
+
     private final com.maxlananas.fawebim.core.util.LongObjectMap<ChunkSet> chunks =
             new com.maxlananas.fawebim.core.util.LongObjectMap<>();
     private final Set<BlockVector2> dirtyChunks = new LinkedHashSet<>();
@@ -284,13 +288,30 @@ public final class EditSession implements Extent {
         }
     }
 
+    /**
+     * The buffer of the chunk a position belongs to.
+     *
+     * <p>The last one is remembered: a region is walked x first, so sixteen blocks
+     * in a row belong to the same chunk, and without the cache every one of them
+     * hashes its chunk key and searches the map for the buffer it is about to
+     * append to.</p>
+     */
     private ChunkSet chunkFor(int x, int z, boolean create) {
         long key = History.key(x >> 4, z >> 4);
+        ChunkSet cached = currentChunk;
+        if (cached != null && currentChunkKey == key) {
+            return cached;
+        }
         ChunkSet chunk = chunks.get(key);
-        if (chunk == null && create) {
+        if (chunk == null) {
+            if (!create) {
+                return null;
+            }
             chunk = new ChunkSet(x >> 4, z >> 4, world.minY(), world.maxY());
             chunks.put(key, chunk);
         }
+        currentChunk = chunk;
+        currentChunkKey = key;
         return chunk;
     }
 
@@ -320,6 +341,7 @@ public final class EditSession implements Extent {
         }
         List<ChunkSet> pending = chunks.values();
         chunks.clear();
+        currentChunk = null;
         for (ChunkSet chunk : pending) {
             if (!chunk.isEmpty()) {
                 world.loadChunk(chunk.chunkX(), chunk.chunkZ());

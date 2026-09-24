@@ -29,6 +29,13 @@ public final class PackedBlockArray {
     private int indexMask;
     private int bitsPerBlock;
     private long[] data;
+    /**
+     * One bit per cell, telling whether this buffer holds a value for it. The
+     * chunk buffer used a hash set of packed positions for the same question,
+     * which cost a hash per write and per read on the flush path; inside a 16^3
+     * section the answer is a bit.
+     */
+    private final long[] written = new long[VOLUME / 64];
     private int valuesPerLong;
     private long mask;
     private boolean uniform;
@@ -54,6 +61,7 @@ public final class PackedBlockArray {
 
     public void fill(int stateId) {
         Arrays.fill(data, 0L);
+        Arrays.fill(written, 0L);
         palette = new int[1];
         palette[0] = stateId;
         paletteSize = 1;
@@ -89,6 +97,46 @@ public final class PackedBlockArray {
         long clearMask = ~(mask << offset);
         data[slot] = (data[slot] & clearMask) | ((long) paletteIndex << offset);
         uniform = false;
+    }
+
+    /** True when this cell was written into the buffer. */
+    public boolean isWritten(int index) {
+        return (written[index >>> 6] & (1L << (index & 63))) != 0;
+    }
+
+    /** Marks a cell as written; the caller knows it was not written before. */
+    public void markWritten(int index) {
+        written[index >>> 6] |= 1L << (index & 63);
+    }
+
+    /** Receives the index of a cell the buffer holds. */
+    @FunctionalInterface
+    public interface IndexVisitor {
+
+        void visit(int index);
+    }
+
+    /**
+     * Walks the cells this buffer holds, in index order.
+     *
+     * <p>A flush writes the cells that changed, not the whole section, and most
+     * sections of an edit are partly filled, so walking the bits costs a fraction
+     * of walking 4096 cells and asking each one.</p>
+     *
+     * @return how many cells were visited
+     */
+    public int forEachWritten(IndexVisitor visitor) {
+        int visited = 0;
+        for (int word = 0; word < written.length; word++) {
+            long bits = written[word];
+            while (bits != 0L) {
+                int bit = Long.numberOfTrailingZeros(bits);
+                bits &= bits - 1;
+                visitor.visit((word << 6) | bit);
+                visited++;
+            }
+        }
+        return visited;
     }
 
     private int paletteLookup(int stateId) {
@@ -166,16 +214,4 @@ public final class PackedBlockArray {
         }
     }
 
-    public PackedBlockArray copy() {
-        PackedBlockArray copy = new PackedBlockArray(bitsPerBlock);
-        copy.palette = palette.clone();
-        copy.paletteSize = paletteSize;
-        copy.bitsPerBlock = bitsPerBlock;
-        copy.valuesPerLong = valuesPerLong;
-        copy.mask = mask;
-        copy.data = data.clone();
-        copy.uniform = uniform;
-        copy.rehashIndex(Math.max(16, paletteSize * 2));
-        return copy;
-    }
 }

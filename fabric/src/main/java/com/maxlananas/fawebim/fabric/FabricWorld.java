@@ -194,13 +194,13 @@ public final class FabricWorld implements World {
         //    clients can be told. The positions stay in parallel int arrays rather
         //    than in a map keyed by a block vector: a large edit changes millions
         //    of them and this runs on every flush.
-        int count = set.changed().size();
+        int count = set.size();
         int[] previousXs = new int[count];
         int[] previousYs = new int[count];
         int[] previousZs = new int[count];
         BlockState[] previousStates = new BlockState[count];
         int[] slot = {0};
-        set.changed().forEachPosition((x, y, z) -> {
+        set.forEachChanged((x, y, z) -> {
             int index = slot[0]++;
             previousXs[index] = x;
             previousYs[index] = y;
@@ -221,22 +221,12 @@ public final class FabricWorld implements World {
                 continue;
             }
             LevelChunkSection section = chunk.getSection(sectionIndex);
-            boolean touched = false;
-            for (int y = 0; y < 16; y++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int x = 0; x < 16; x++) {
-                        int worldY = sectionY + y;
-                        if (!set.isSet(baseX + x, worldY, baseZ + z)) {
-                            continue;
-                        }
-                        int local = (y << 8) | (z << 4) | x;
-                        section.setBlockState(x, y, z, Block.stateById(buffered.get(local)), false);
-                        applied++;
-                        touched = true;
-                    }
-                }
-            }
-            if (touched) {
+            // Only the cells this buffer holds are written, in one palette update
+            // per section instead of one world.setBlock call per block.
+            int written = buffered.forEachWritten(local -> section.setBlockState(local & 15,
+                    (local >> 8) & 15, (local >> 4) & 15, Block.stateById(buffered.get(local)), false));
+            applied += written;
+            if (written > 0) {
                 chunk.markUnsaved();
             }
         }

@@ -1,7 +1,5 @@
 package com.maxlananas.fawebim.core.world;
 
-import com.maxlananas.fawebim.core.math.BlockVectorSet;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,7 +22,7 @@ public final class ChunkSet {
     private PackedBlockArray[] sections;
     private int[][] biomes;
     private List<EntityData> entities;
-    private BlockVectorSet changed;
+    private int changedCount;
     private boolean dirty;
 
     public ChunkSet(int chunkX, int chunkZ, int minY, int maxY) {
@@ -64,15 +62,34 @@ public final class ChunkSet {
         return !dirty && !hasBiomes() && !hasEntities();
     }
 
+    /** How many blocks this buffer holds, air included. */
     public int size() {
-        return changed == null ? 0 : changed.size();
+        return changedCount;
     }
 
-    public BlockVectorSet changed() {
-        if (changed == null) {
-            changed = new BlockVectorSet(1024);
+    /** Receives a position this buffer holds a value for. */
+    @FunctionalInterface
+    public interface BlockVisitor {
+
+        void visit(int x, int y, int z);
+    }
+
+    /**
+     * Walks the positions this buffer holds, section by section, in index order,
+     * without building a position object per block.
+     */
+    public void forEachChanged(BlockVisitor visitor) {
+        for (int section = 0; section < sections.length; section++) {
+            PackedBlockArray packed = sections[section];
+            if (packed == null) {
+                continue;
+            }
+            int baseX = chunkX << 4;
+            int baseZ = chunkZ << 4;
+            int baseY = (minSection + section) << 4;
+            packed.forEachWritten(index -> visitor.visit(baseX + (index & 15),
+                    baseY + ((index >> 8) & 15), baseZ + ((index >> 4) & 15)));
         }
-        return changed;
     }
 
     public List<EntityData> entities() {
@@ -112,7 +129,8 @@ public final class ChunkSet {
 
     /** True when this position holds a value in the buffer (air included). */
     public boolean isSet(int x, int y, int z) {
-        return changed != null && changed.contains(x, y, z);
+        PackedBlockArray section = sectionFor(y, false);
+        return section != null && section.isWritten(index(x, y, z));
     }
 
     /**
@@ -121,25 +139,28 @@ public final class ChunkSet {
      * could not restore "there was nothing here".
      */
     public int getBlock(int x, int y, int z) {
-        if (changed == null || !changed.contains(x, y, z)) {
-            return -1;
-        }
         PackedBlockArray section = sectionFor(y, false);
-        return section == null ? -1 : section.get(index(x, y, z));
+        int index = index(x, y, z);
+        return section == null || !section.isWritten(index) ? -1 : section.get(index);
     }
 
     /** Sets the block straight into the buffer; returns true when the value changed. */
     public boolean set(int x, int y, int z, int stateId, int airId) {
         PackedBlockArray section = sectionFor(y, true);
+        if (section == null) {
+            return false;
+        }
         int index = index(x, y, z);
-        boolean wasSet = changed != null && changed.contains(x, y, z);
-        int previous = section.get(index);
-        if (wasSet && previous == stateId) {
+        boolean wasSet = section.isWritten(index);
+        if (wasSet && section.get(index) == stateId) {
             return false;
         }
         section.set(index, stateId);
+        if (!wasSet) {
+            section.markWritten(index);
+            changedCount++;
+        }
         dirty = true;
-        changed().add(x, y, z);
         return true;
     }
 

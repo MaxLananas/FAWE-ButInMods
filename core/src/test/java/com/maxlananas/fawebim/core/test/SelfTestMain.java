@@ -26,7 +26,6 @@ import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.platform.ConfigUi;
 import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
-import com.maxlananas.fawebim.core.math.BlockVectorSet;
 import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.platform.Setting;
@@ -44,6 +43,7 @@ import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.util.TimeLimiter;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
+import com.maxlananas.fawebim.core.world.ChunkSet;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.RegenOptions;
 
@@ -266,13 +266,21 @@ public final class SelfTestMain {
         checkEquals("dot", 14.0, new Vector3(1, 2, 3).dot(new Vector3(1, 2, 3)));
         checkEquals("cross", new Vector3(0, 0, 0), new Vector3(1, 0, 0).cross(new Vector3(1, 0, 0)));
         check("lengthSq", a.lengthSq() == 14);
-        BlockVectorSet set = new BlockVectorSet();
-        for (int i = 0; i < 5000; i++) {
-            set.add(new BlockVector3(i % 100, i / 100, i % 37));
-        }
-        check("BlockVectorSet size", set.size() == 5000);
-        check("BlockVectorSet contains", set.contains(new BlockVector3(3, 4, 33)));
-        check("BlockVectorSet rejects", !set.contains(new BlockVector3(999, 999, 999)));
+        // The chunk buffer remembers which cells it holds with a bit each, so a
+        // flush can walk them instead of testing all 4096 cells of a section.
+        ChunkSet chunk = new ChunkSet(0, 0, 0, 255);
+        check("a fresh buffer holds nothing", chunk.size() == 0 && !chunk.isSet(0, 0, 0));
+        check("a write is buffered", chunk.set(1, 2, 3, 7, 0) && chunk.isSet(1, 2, 3));
+        check("writing the same value again is not a change", !chunk.set(1, 2, 3, 7, 0));
+        check("overwriting a buffered cell is a change", chunk.set(1, 2, 3, 8, 0));
+        check("writing air is a change of its own", chunk.set(4, 5, 6, 0, 0) && chunk.isSet(4, 5, 6));
+        checkEquals("the buffer counts what it holds", 2, chunk.size());
+        List<String> walked = new ArrayList<>();
+        chunk.forEachChanged((x, y, z) -> walked.add(x + "," + y + "," + z));
+        check("the walk visits exactly the written cells",
+                walked.equals(List.of("1,2,3", "4,5,6")));
+        check("a value never written reads as absent", chunk.getBlock(7, 7, 7) == -1);
+        checkEquals("a buffered value reads back", 8, chunk.getBlock(1, 2, 3));
     }
 
     private static void testBlockStateRegistry() {
@@ -1627,6 +1635,18 @@ public final class SelfTestMain {
         } catch (TimeLimiter.OperationTimeoutException e) {
             check("timeout exception", e.elapsedMillis() >= 0);
         }
+        // The clock is read once in a while, so a limiter that counts per block
+        // still stops an edit that runs for a minute.
+        boolean thrown = false;
+        for (int i = 0; i < 100_000 && !thrown; i++) {
+            try {
+                expired.check(1);
+            } catch (TimeLimiter.OperationTimeoutException expected) {
+                thrown = true;
+            }
+        }
+        check("a counting check still expires", thrown);
+        check("a counting check counts what it was given", expired.processed() > 100);
     }
 
     private static void testUtil() {

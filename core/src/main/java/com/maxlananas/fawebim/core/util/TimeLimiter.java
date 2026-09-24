@@ -1,16 +1,23 @@
 package com.maxlananas.fawebim.core.util;
 
-import java.util.concurrent.atomic.AtomicLong;
-
 /**
  * Tracks how long an operation has been running so the engine can honour
  * FAWE's {@code /timeout} and {@code /watchdog} settings.
+ *
+ * <p>The counter is a plain field and the clock is read once in a while: an edit
+ * counts every block it touches, so an atomic increment and a {@code nanoTime}
+ * call per block would cost more than the write itself. The limiter belongs to
+ * the thread running the edit.</p>
  */
 public final class TimeLimiter {
 
+    /** How many counts pass between two readings of the clock. */
+    private static final int CLOCK_INTERVAL_MASK = 0x1FF;
+
     private final long limitNanos;
     private final long startNanos;
-    private final AtomicLong processed = new AtomicLong();
+    private long processed;
+    private int checks;
 
     public TimeLimiter(long limitMillis) {
         this.limitNanos = limitMillis <= 0 ? Long.MAX_VALUE : limitMillis * 1_000_000L;
@@ -30,17 +37,20 @@ public final class TimeLimiter {
     }
 
     public void count(long amount) {
-        processed.addAndGet(amount);
+        processed += amount;
     }
 
     public long processed() {
-        return processed.get();
+        return processed;
     }
 
     public void check(long amount) throws OperationTimeoutException {
-        count(amount);
+        processed += amount;
+        if ((++checks & CLOCK_INTERVAL_MASK) != 0) {
+            return;
+        }
         if (isExpired()) {
-            throw new OperationTimeoutException(elapsedMillis(), processed());
+            throw new OperationTimeoutException(elapsedMillis(), processed);
         }
     }
 

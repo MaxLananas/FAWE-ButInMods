@@ -85,7 +85,23 @@ public final class BenchMain {
 
         @Override
         public int applyChunk(ChunkSet set) {
-            return 0;
+            // The bulk write path, without a game: one array store per cell the
+            // buffer holds.
+            int applied = 0;
+            int baseX = set.chunkX() << 4;
+            int baseZ = set.chunkZ() << 4;
+            int baseY = set.minSection() << 4;
+            PackedBlockArray[] sections = set.sections();
+            for (int section = 0; section < sections.length; section++) {
+                PackedBlockArray packed = sections[section];
+                if (packed == null) {
+                    continue;
+                }
+                int sectionY = baseY + section * 16;
+                applied += packed.forEachWritten(local -> blocks[index(baseX + (local & 15),
+                        sectionY + ((local >> 8) & 15), baseZ + ((local >> 4) & 15))] = packed.get(local));
+            }
+            return applied;
         }
 
         @Override
@@ -226,21 +242,23 @@ public final class BenchMain {
 
         timed("the world itself (no engine)", BLOCKS, () -> fill(world, dirt));
 
-        timed("an edit without history", BLOCKS, () -> {
+        // Every row prepares the world with the state the edit is about to write
+        // over, so the measured run really changes those blocks: an edit that
+        // finds the value already there returns before it does anything, and a
+        // benchmark of that measures nothing.
+        timed("an edit without history", BLOCKS, () -> fill(world, stone), () -> {
             EditSession edit = new EditSession(world, session, "bench", false);
             writeAll(edit, dirt);
             edit.flushQueue();
         });
 
-        fill(world, stone);
-        timed("an edit with history", BLOCKS, () -> {
+        timed("an edit with history", BLOCKS, () -> fill(world, stone), () -> {
             EditSession edit = new EditSession(world, session, "bench", true);
             writeAll(edit, dirt);
             edit.flushQueue();
         });
 
-        fill(world, stone);
-        timed("an edit that changes nothing", BLOCKS, () -> {
+        timed("an edit that changes nothing", BLOCKS, () -> fill(world, stone), () -> {
             EditSession edit = new EditSession(world, session, "bench", true);
             writeAll(edit, stone);
             edit.flushQueue();

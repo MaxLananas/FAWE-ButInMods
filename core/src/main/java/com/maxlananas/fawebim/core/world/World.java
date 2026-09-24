@@ -48,9 +48,10 @@ public interface World extends Extent {
      * path: implementations must write packed sections directly (never block by
      * block through the vanilla setBlock cascade) and queue relighting.
      *
-     * <p>The changed positions are read from {@link ChunkSet#changed()}, which
-     * walks them as so many packed longs: a flush of a million-block edit used to
-     * hand the implementation a list of a million position objects.</p>
+     * <p>The positions that changed are read from {@link ChunkSet#forEachChanged},
+     * which walks the bits of the sections the buffer holds: a flush of a
+     * million-block edit used to hand the implementation a list of a million
+     * position objects.</p>
      *
      * @param set the prepared chunk data
      * @return the number of blocks that changed
