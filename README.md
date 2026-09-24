@@ -194,14 +194,18 @@ what a change costs.
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **18 – 21 M blocks/s** |
-| Block writes, engine without history | **37 – 38 M blocks/s** |
-| `//set` over 64x64x64 | **19 – 24 M blocks/s** |
+| Block writes, engine with history | **16 – 21 M blocks/s** |
+| Block writes, engine without history | **33 – 38 M blocks/s** |
+| `//set` over 64x64x64 | **16 – 24 M blocks/s** |
 | `//copy` over 64x64x64 | **59 – 63 M blocks/s** |
-| `//paste` over 64x64x64 | **18 – 19 M blocks/s** |
-| `//replace` over 64x64x64 | **18 – 20 M blocks/s** |
-| `//sphere` radius 40 | **19 – 23 M blocks/s** |
-| `//undo` and `//redo` of that `//set` | **52 M blocks/s** |
+| `//paste` over 64x64x64 | **16 – 20 M blocks/s** |
+| `//replace` over 64x64x64 | **14 – 20 M blocks/s** |
+| `//sphere` radius 40 | **17 – 23 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **45 – 59 M blocks/s** |
+
+The spread between two runs of the same binary is wider than the effect of most
+changes, so a single number would be a claim the benchmark cannot support: what the
+table says is what the operations cost, not what a machine will measure.
 
 Every row prepares the world with the state the edit is about to overwrite, because an edit that
 finds the value already there returns before it does anything and a benchmark of that measures
