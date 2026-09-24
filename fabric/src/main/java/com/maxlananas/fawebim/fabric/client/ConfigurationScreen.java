@@ -8,6 +8,7 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -313,8 +314,10 @@ public final class ConfigurationScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 257 || keyCode == 335) {
+    public boolean keyPressed(KeyEvent event) {
+        // Enter, on the main row of keys or on the numpad, confirms the field
+        // that holds the focus.
+        if (event.key() == 257 || event.key() == 335) {
             for (Row row : rows) {
                 if (row.box != null && row.box.isFocused()) {
                     applyRow(row, null);
@@ -322,7 +325,7 @@ public final class ConfigurationScreen extends Screen {
                 }
             }
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(event);
     }
 
     @Override
