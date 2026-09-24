@@ -14,8 +14,9 @@ import struct
 import sys
 import time
 
-LOGIN = 3
+AUTH = 3
 COMMAND = 2
+AUTH_RESPONSE = 2
 RESPONSE = 0
 
 # (command, text that must appear in the answer)
@@ -51,10 +52,13 @@ class Rcon:
         self.socket = socket.create_connection((host, port), timeout=timeout)
         self.socket.settimeout(timeout)
         self.request_id = 0
-        self.send(LOGIN, password)
+        sent = self.send(AUTH, password)
         answer = self.receive()
-        if answer is None or answer[0] == -1 or answer[1] != RESPONSE:
-            raise RuntimeError("the server refused the rcon password")
+        # The server answers an authentication with the request id it was given,
+        # and with -1 when the password is not the one in server.properties; its
+        # packet type is the authentication response, not the command one.
+        if answer is None or answer[0] != sent or answer[1] != AUTH_RESPONSE:
+            raise RuntimeError("the server refused the rcon password (answer: %s)" % (answer,))
 
     def send(self, kind, body):
         self.request_id += 1
@@ -81,17 +85,23 @@ class Rcon:
         return request_id, kind, payload[8:-2].decode("utf-8", errors="replace")
 
     def run(self, command):
-        """Sends a command and reads its answer, including a follow-up packet."""
+        """Sends a command and reads its answer, including a follow-up packet.
+
+        A vanilla server answers a command with one {@code RESPONSE_VALUE} packet
+        and then an empty one as the end marker; it may also split a long answer
+        in two, which is why anything type 0 is collected until the marker.
+        """
         self.send(COMMAND, command)
         parts = []
         while True:
             answer = self.receive()
             if answer is None:
                 break
-            if answer[1] == RESPONSE and answer[2]:
-                parts.append(answer[2])
+            if answer[1] != RESPONSE:
+                continue
             if not answer[2]:
                 break
+            parts.append(answer[2])
         return "\n".join(parts)
 
 
