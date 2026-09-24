@@ -62,6 +62,7 @@ CHECKS = [
     # count afterwards can only come from the file.
     ("//copy", "copied 256 block(s)"),
     ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke'"),
+    ("//schem list", "fawebim-smoke"),
     ("//set minecraft:air", "256 block(s) affected"),
     ("//count minecraft:stone", "count: 0"),
     ("//schem unload", "clipboard unloaded"),
@@ -69,6 +70,16 @@ CHECKS = [
     ("//paste 0,60,0", "pasted 256 block(s)"),
     ("//count minecraft:stone", "count: 256"),
     ("//schem delete fawebim-smoke", "deleted schematic 'fawebim-smoke'"),
+    # A shape command, checked by its geometry rather than by its message: a
+    # 16x3x16 box holds 768 blocks, the hollow interior of it is 14x1x14 = 196,
+    # and the shell that stays behind is 572.
+    ("//pos2 15,62,15", "position 2 set"),
+    ("//set minecraft:air", "256 block(s) affected"),
+    ("//set minecraft:stone", "768 block(s) affected"),
+    ("//hollow", "196 block(s) affected"),
+    ("//count minecraft:stone", "count: 572"),
+    ("//undo", "undid 196 block change(s)"),
+    ("//count minecraft:stone", "count: 768"),
 ]
 
 
