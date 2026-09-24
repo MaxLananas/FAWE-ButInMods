@@ -201,23 +201,31 @@ public final class Patterns {
      * draws randomly gives neighbouring blocks the same result, FAWE's buffered
      * patterns. {@code #buffer2d} keys the cache on the two horizontal axes only.
      */
+    /**
+     * Answers a position from a cache, so a random inner pattern gives the same
+     * block back for it.
+     *
+     * <p>The cache is a table indexed by the position itself rather than a map:
+     * the pattern is asked about every block of an edit, and a map would box a
+     * key and a value for each of the millions of positions a large one covers.
+     * A position that collides with another takes the slot, which is the same
+     * trade the map made when it dropped its eldest entry.</p>
+     */
     public static final class Buffered implements Pattern {
 
         private final Pattern inner;
-        private final int size;
         private final boolean twoDimensional;
-        private final java.util.LinkedHashMap<Long, Integer> cache;
+        private final long[] keys;
+        private final int[] values;
+        private final int mask;
 
         public Buffered(Pattern inner, int size, boolean twoDimensional) {
             this.inner = inner;
-            this.size = Math.max(1, size);
             this.twoDimensional = twoDimensional;
-            this.cache = new java.util.LinkedHashMap<>(16, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(java.util.Map.Entry<Long, Integer> eldest) {
-                    return size() > Buffered.this.size;
-                }
-            };
+            int slots = Math.max(1, Integer.highestOneBit(Math.max(1, size) - 1) << 1);
+            this.keys = new long[slots];
+            this.values = new int[slots];
+            this.mask = slots - 1;
         }
 
         @Override
@@ -225,12 +233,16 @@ public final class Patterns {
             long key = twoDimensional
                     ? ((long) (x & 0x3FFFFFF) << 26) | (z & 0x3FFFFFF)
                     : ((long) (x & 0x3FFFFFF) << 38) | ((long) (y & 0xFFF) << 26) | (z & 0x3FFFFFF);
-            Integer cached = cache.get(key);
-            if (cached != null) {
-                return cached;
+            // The sign bit marks a filled slot, so a position at the origin is
+            // not mistaken for an empty one.
+            long stored = key | Long.MIN_VALUE;
+            int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> 40) & mask;
+            if (keys[slot] == stored) {
+                return values[slot];
             }
             int state = inner.apply(x, y, z);
-            cache.put(key, state);
+            keys[slot] = stored;
+            values[slot] = state;
             return state;
         }
     }

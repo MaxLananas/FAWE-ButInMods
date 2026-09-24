@@ -453,6 +453,11 @@ public final class SelfTestMain {
         Patterns.Buffered buffered = new Patterns.Buffered(random, 64, false);
         int first = buffered.apply(5, 71, 5);
         check("buffered pattern is stable per position", first == buffered.apply(5, 71, 5));
+        // A cache of one slot is the smallest a user can ask for, and it still
+        // has to answer rather than run off its table.
+        Patterns.Buffered single = new Patterns.Buffered(random, 1, true);
+        check("a one-slot buffer answers twice the same", single.apply(0, 0, 0) == single.apply(0, 0, 0));
+        check("a one-slot buffer answers away from the origin", single.apply(-7, 3, 12) == single.apply(-7, 3, 12));
 
         // Whatever the syntax, the dispatcher has to accept it end to end.
         actor.clearMessages();
