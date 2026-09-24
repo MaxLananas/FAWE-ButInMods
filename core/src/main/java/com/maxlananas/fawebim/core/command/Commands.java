@@ -659,18 +659,15 @@ public final class Commands {
         e25.description = "Hollow out the selection";
         e25.group = "region";
         e25.requiresSelection = true;
-        e25.booleanFlags.add("h");
-        e25.booleanFlags.add("s");
         e25.valueFlags.add("m");
         e25.arguments.add("[thickness]");
-        e25.arguments.add("[-m <mask>]");
         e25.arguments.add("[pattern]");
+        e25.arguments.add("[-m <mask>]");
         e25.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    int thickness = ctx.args().isEmpty() ? (ctx.hasFlag("h") ? 1 : 0) : ctx.intArg(0);
+                    int thickness = ctx.intArg(0, 0);
                     Pattern pattern = ctx.args().size() > 1 ? Parsers.pattern(ctx.joined(1), ctx) : null;
-                    // -m hollows only the blocks the mask selects.
                     Mask hollowMask = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
                     Region region = ctx.selection();
                     // The flood is stopped by solid blocks unless -m names the

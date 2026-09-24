@@ -233,7 +233,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//fixlava [radius]` | — | Fix lava placement in the selection | implemented |
 | `//fixwater [radius]` | — | Fix water placement in the selection | implemented |
 | `//green` | — | Turn dirt into grass | implemented |
-| `//hollow [thickness] [-m <mask>] [pattern]` | — | Hollow out the selection | implemented |
+| `//hollow [thickness] [pattern] [-m <mask>]` | — | Hollow out the selection | implemented |
 | `//lay <pattern>` | — | Lay a pattern on the ground, keeping natural layers below | implemented |
 | `//move <amount> <direction> [pattern] [-m <mask>]` | — | Move the selection's contents in a direction | implemented |
 | `//naturalize` | — | Turn the terrain into grass over dirt over stone | implemented |
