@@ -38,7 +38,6 @@ public final class PackedBlockArray {
     private final long[] written = new long[VOLUME / 64];
     private int valuesPerLong;
     private long mask;
-    private boolean uniform;
     /**
      * The state and palette index of the previous write. A buffer is filled a
      * run at a time - the blocks of one row, the cells of one clipboard column -
@@ -67,24 +66,7 @@ public final class PackedBlockArray {
         this.data = new long[longCount];
     }
 
-    public void fill(int stateId) {
-        Arrays.fill(data, 0L);
-        Arrays.fill(written, 0L);
-        palette = new int[1];
-        palette[0] = stateId;
-        paletteSize = 1;
-        Arrays.fill(indexKeys, 0);
-        indexInsert(stateId, 0);
-        bitsPerBlock = 1;
-        reallocate();
-        lastState = stateId;
-        lastStateIndex = 0;
-        uniform = true;
-    }
     public int get(int index) {
-        if (uniform) {
-            return palette[0];
-        }
         int slot = index / valuesPerLong;
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         int value = (int) ((data[slot] >>> offset) & mask);
@@ -92,15 +74,11 @@ public final class PackedBlockArray {
     }
 
     public void set(int index, int stateId) {
-        if (uniform && palette[0] == stateId) {
-            return;
-        }
         int paletteIndex = paletteIndex(stateId);
         int slot = index / valuesPerLong;
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         long clearMask = ~(mask << offset);
         data[slot] = (data[slot] & clearMask) | ((long) paletteIndex << offset);
-        uniform = false;
     }
 
     /**
@@ -119,13 +97,6 @@ public final class PackedBlockArray {
         int word = index >>> 6;
         long bit = 1L << (index & 63);
         boolean wasWritten = (written[word] & bit) != 0;
-        if (uniform && palette[0] == stateId) {
-            if (wasWritten) {
-                return -1;
-            }
-            written[word] |= bit;
-            return 0;
-        }
         int slot = index / valuesPerLong;
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         if (wasWritten && palette[(int) ((data[slot] >>> offset) & mask)] == stateId) {
@@ -133,7 +104,6 @@ public final class PackedBlockArray {
         }
         int paletteIndex = paletteIndex(stateId);
         data[slot] = (data[slot] & ~(mask << offset)) | ((long) paletteIndex << offset);
-        uniform = false;
         if (wasWritten) {
             return 1;
         }
@@ -161,11 +131,6 @@ public final class PackedBlockArray {
     /** True when this cell was written into the buffer. */
     public boolean isWritten(int index) {
         return (written[index >>> 6] & (1L << (index & 63))) != 0;
-    }
-
-    /** Marks a cell as written; the caller knows it was not written before. */
-    public void markWritten(int index) {
-        written[index >>> 6] |= 1L << (index & 63);
     }
 
     /** Receives the index of a cell the buffer holds. */
