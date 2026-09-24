@@ -52,3 +52,78 @@ jobs:
           name: FAWE-BIM
           path: fabric/build/libs/*.jar
           if-no-files-found: warn
+
+  runtime:
+    name: Running server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The smoke test boots the game with the mod in it and drives the running
+      # server over rcon: it is the only check that the mixin applies, that the
+      # commands are registered with the game, and that a value written from the
+      # chat ends up in the configuration file.
+      - name: Prepare the server directory
+        run: |
+          mkdir -p fabric/run
+          printf '%s\n' 'eula=true' > fabric/run/eula.txt
+          printf '%s\n' \
+            'enable-rcon=true' \
+            'rcon.port=25575' \
+            'rcon.password=fawebim' \
+            'online-mode=false' \
+            'level-type=minecraft:flat' \
+            'level-name=world' \
+            'spawn-protection=0' \
+            'view-distance=3' \
+            'simulation-distance=3' \
+            'max-players=2' \
+            'sync-chunk-writes=false' \
+            'motd=FAWE-BIM smoke test' > fabric/run/server.properties
+
+      - name: Start the dedicated server in the background
+        run: |
+          nohup ./gradlew --no-daemon :fabric:runServer > /tmp/server.log 2>&1 &
+          echo $! > /tmp/server.pid
+          for i in $(seq 1 220); do
+            if grep -q 'Done (' /tmp/server.log; then
+              echo "the server is up after ${i} checks"
+              break
+            fi
+            if ! kill -0 "$(cat /tmp/server.pid)" 2>/dev/null; then
+              echo "the server stopped before it was ready"
+              break
+            fi
+            sleep 2
+          done
+          grep -E 'FAWE-BIM|Done \(|Mixin|Exception|Error' /tmp/server.log | tail -40
+
+      - name: Ask the running server for its settings and its commands
+        run: python3 scripts/rcon_smoke.py
+
+      - name: Read what the mod wrote to the configuration file
+        run: |
+          cat fabric/run/config/fawebim.yml | head -20
+          grep -q 'max-blocks-changed' fabric/run/config/fawebim.yml
+
+      - name: Stop the server
+        if: always()
+        run: |
+          python3 scripts/rcon_smoke.py --only stop || true
+          sleep 5
+          kill "$(cat /tmp/server.pid)" 2>/dev/null || true
+          pkill -f devlaunchinjector 2>/dev/null || true
+
+      - name: Report the server log when something failed
+        if: failure()
+        run: |
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-6000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
