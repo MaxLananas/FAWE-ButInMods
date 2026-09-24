@@ -74,21 +74,23 @@ jobs:
       # chat ends up in the configuration file.
       - name: Prepare the server directory
         run: |
-          mkdir -p fabric/run
-          printf '%s\n' 'eula=true' > fabric/run/eula.txt
-          printf '%s\n' \
-            'enable-rcon=true' \
-            'rcon.port=25575' \
-            'rcon.password=fawebim' \
-            'online-mode=false' \
-            'level-type=minecraft:flat' \
-            'level-name=world' \
-            'spawn-protection=0' \
-            'view-distance=3' \
-            'simulation-distance=3' \
-            'max-players=2' \
-            'sync-chunk-writes=false' \
-            'motd=FAWE-BIM smoke test' > fabric/run/server.properties
+          for dir in fabric/run run; do
+            mkdir -p "$dir"
+            printf '%s\n' 'eula=true' > "$dir/eula.txt"
+            printf '%s\n' \
+              'enable-rcon=true' \
+              'rcon.port=25575' \
+              'rcon.password=fawebim' \
+              'online-mode=false' \
+              'level-type=minecraft:flat' \
+              'level-name=world' \
+              'spawn-protection=0' \
+              'view-distance=3' \
+              'simulation-distance=3' \
+              'max-players=2' \
+              'sync-chunk-writes=false' \
+              'motd=FAWE-BIM smoke test' > "$dir/server.properties"
+          done
 
       - name: Start the dedicated server in the background
         run: |
@@ -108,12 +110,14 @@ jobs:
           grep -E 'FAWE-BIM|Done \(|Mixin|Exception|Error' /tmp/server.log | tail -40
 
       - name: Ask the running server for its settings and its commands
-        run: python3 scripts/rcon_smoke.py
+        run: python3 scripts/rcon_smoke.py --wait 240
 
       - name: Read what the mod wrote to the configuration file
         run: |
-          cat fabric/run/config/fawebim.yml | head -20
-          grep -q 'max-blocks-changed' fabric/run/config/fawebim.yml
+          file=$(find . -name fawebim.yml -path '*config*' | head -1)
+          echo "the mod wrote $file"
+          head -20 "$file"
+          grep -q 'max-blocks-changed' "$file"
 
       - name: Stop the server
         if: always()

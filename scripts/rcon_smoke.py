@@ -8,6 +8,7 @@ in a live server. Every check prints what came back, so a failure says what the
 server said instead of only that a comparison failed.
 """
 import argparse
+import os
 import socket
 import struct
 import sys
@@ -36,8 +37,17 @@ CHECKS = [
 ]
 
 
+def annotate(title, message):
+    """Reports a failure to the workflow, where it can be read."""
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    text = message.replace("%", "%25").replace("\r", "")
+    for index in range(0, max(1, len(text)), 3200):
+        print("::error title=%s::%s" % (title, text[index:index + 3200].replace("\n", "%0A")))
+
+
 class Rcon:
-    def __init__(self, host, port, password, timeout=10.0):
+    def __init__(self, host, port, password, timeout=15.0):
         self.socket = socket.create_connection((host, port), timeout=timeout)
         self.socket.settimeout(timeout)
         self.request_id = 0
@@ -91,22 +101,41 @@ def main():
     parser.add_argument("--port", type=int, default=25575)
     parser.add_argument("--password", default="fawebim")
     parser.add_argument("--only", default=None, help="run one command and print the answer")
+    parser.add_argument("--wait", type=float, default=0.0,
+                        help="seconds to keep trying to reach the server")
     args = parser.parse_args()
 
-    client = Rcon(args.host, args.port, args.password)
+    deadline = time.time() + args.wait
+    while True:
+        try:
+            client = Rcon(args.host, args.port, args.password)
+            break
+        except OSError as error:
+            if time.time() >= deadline:
+                message = "cannot reach the rcon port %s:%s (%s)" % (args.host, args.port, error)
+                print(message)
+                annotate("rcon", message)
+                return 1
+            time.sleep(2)
+
     if args.only:
         print(client.run(args.only))
         return 0
 
     failures = []
+    transcript = []
     for command, expected in CHECKS:
         answer = client.run(command)
         shown = answer.replace("\n", " / ")[:220]
         ok = expected.lower() in answer.lower()
         print("%s  /%s -> %s" % ("ok  " if ok else "FAIL", command, shown))
+        transcript.append("%-45s %s" % ("/" + command, shown))
         if not ok:
             failures.append(command)
+            annotate("command failed: /" + command,
+                     "expected %r\nanswer: %s" % (expected, answer))
         time.sleep(0.15)
+    annotate("rcon transcript", "\n".join(transcript))
 
     # The servers this mod runs on are the point of the smoke test: the world
     # edit itself is checked by the engine tests, what is checked here is that a
