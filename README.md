@@ -193,20 +193,29 @@ run of it, on one machine, and are only meant as a floor and as a way to see wha
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **12.8 M blocks/s** |
-| `//set` over 64x64x64 | **28.6 M blocks/s** |
-| `//copy` over 64x64x64 | **65.3 M blocks/s** |
-| `//paste` over 64x64x64 | **24.5 M blocks/s** |
-| `//replace` over 64x64x64 | **7.9 M blocks/s** |
-| `//sphere` radius 40 | **14.5 M blocks/s** |
-| `//undo` and `//redo` of that `//set` | **25.4 M blocks/s** |
+| Block writes, engine with history | **20.1 M blocks/s** |
+| Block writes, engine without history | **38.1 M blocks/s** |
+| `//set` over 64x64x64 | **24.3 M blocks/s** |
+| `//copy` over 64x64x64 | **63.4 M blocks/s** |
+| `//paste` over 64x64x64 | **13.2 M blocks/s** |
+| `//replace` over 64x64x64 | **17.6 M blocks/s** |
+| `//sphere` radius 40 | **23.5 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **52.3 M blocks/s** |
 
-The shape of that came from measuring rather than guessing: a palette lookup used to walk the
-palette entry by entry (487 ns per block on a build with four thousand block states, now 3.7), the
+Every row prepares the world with the state the edit is about to overwrite, because an edit that
+finds the value already there returns before it does anything and a benchmark of that measures
+nothing.
+
+The shape of that came from measuring rather than guessing. A palette lookup used to walk the
+palette entry by entry (487 ns per block on a build with four thousand block states, now 3.7). The
 history looked a chunk up through a boxed `Long` for every block, masks held their states in a
-`Set<Integer>`, and every brush built a list of positions before touching one. Each is a plain
-array or a primitive-keyed table now, and the same pass took the position objects out of the
-region walks that `//set`, `//paste`, `//move` and the brushes run per block.
+`Set<Integer>`, and every brush built a list of positions before touching one. The chunk buffer kept
+the positions it held in a hash set, so every single write hashed a position and every flush asked
+4096 times per section whether a cell was in that set: it keeps one bit per cell now, and the flush
+walks the bits that are set. The edit timeout counted blocks with an atomic and read the clock on
+every one of them; it reads the clock once every 512 blocks. Each of those is a plain array, a bit
+or a primitive-keyed table today, and the same pass took the position objects out of the region
+walks that `//set`, `//paste`, `//move` and the brushes run per block.
 
 ## Status
 
