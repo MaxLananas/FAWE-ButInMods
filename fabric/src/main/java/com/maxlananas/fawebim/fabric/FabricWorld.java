@@ -60,15 +60,36 @@ public final class FabricWorld implements World {
 
     private final ServerLevel level;
 
-    /** Shared worker pool for the engine's parallel visitors. */
-    private static final java.util.concurrent.ExecutorService EXECUTOR =
-            java.util.concurrent.Executors.newFixedThreadPool(
-                    Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
-                    runnable -> {
-                        Thread thread = new Thread(runnable, "FAWE-BIM worker");
-                        thread.setDaemon(true);
-                        return thread;
-                    });
+    /**
+     * Shared worker pool for the work the engine hands off the server thread.
+     *
+     * <p>Built on first use and sized by {@code threads}, which is the setting
+     * that says how many workers the engine may use: a pool sized from the core
+     * count instead would be a second answer to the same question. The size is
+     * read once, like the setting describes, so a change to it takes effect on
+     * the next start.</p>
+     */
+    private static volatile java.util.concurrent.ExecutorService executor;
+
+    public static java.util.concurrent.ExecutorService workers() {
+        java.util.concurrent.ExecutorService pool = executor;
+        if (pool == null) {
+            synchronized (FabricWorld.class) {
+                pool = executor;
+                if (pool == null) {
+                    pool = java.util.concurrent.Executors.newFixedThreadPool(
+                            Math.max(1, com.maxlananas.fawebim.core.platform.Config.get().threads),
+                            runnable -> {
+                                Thread thread = new Thread(runnable, "FAWE-BIM worker");
+                                thread.setDaemon(true);
+                                return thread;
+                            });
+                    executor = pool;
+                }
+            }
+        }
+        return pool;
+    }
 
     public FabricWorld(ServerLevel level) {
         this.level = level;
@@ -611,12 +632,12 @@ public final class FabricWorld implements World {
 
     @Override
     public void async(Runnable task) {
-        EXECUTOR.execute(task);
+        workers().execute(task);
     }
 
     @Override
     public java.util.concurrent.ExecutorService executor() {
-        return EXECUTOR;
+        return workers();
     }
     /**
      * The dimension's {@code region} folder, so {@code /anvil} can inspect chunks

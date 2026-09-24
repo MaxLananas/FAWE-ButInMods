@@ -104,7 +104,8 @@ public final class Config {
                 "Seconds an operation may run before it is stopped.", () -> timeout,
                 value -> timeout = value);
         integer("threads", "threads", threads,
-                "Worker threads the engine may use.", () -> threads, value -> threads = value);
+                "Worker threads the engine may use; the pool takes its size at start.",
+                () -> threads, value -> threads = value);
         bool("allow-ancient-blocks", "allow-ancient-blocks", allowAncientBlocks,
                 "Accept the numeric block ids of Minecraft 1.12 and older.",
                 () -> allowAncientBlocks, value -> allowAncientBlocks = value);
