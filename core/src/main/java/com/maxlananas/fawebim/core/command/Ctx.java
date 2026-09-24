@@ -43,7 +43,7 @@ public final class Ctx {
         List<String> raw = tokens.size() > 1 ? tokens.subList(1, tokens.size()) : List.of();
         for (int i = 0; i < raw.size(); i++) {
             String token = raw.get(i);
-            if (token.startsWith("-") && token.length() > 1 && !Str.isDouble(token)) {
+            if (isSwitch(token)) {
                 String flag = token.substring(1);
                 boolean valueFlag = entry.valueFlags.contains(flag);
                 if (valueFlag) {
@@ -71,6 +71,27 @@ public final class Ctx {
             }
             positional.add(token);
         }
+    }
+
+    /**
+     * Whether a token is a switch. A command line mixes both kinds of dash -
+     * {@code //pos1 -1,59,-1} is a position and {@code //expand -10} is a count -
+     * so only a dash that opens neither is read as the start of a switch.
+     */
+    private static boolean isSwitch(String token) {
+        if (token.length() < 2 || token.charAt(0) != '-' || Str.isDouble(token)) {
+            return false;
+        }
+        for (String part : token.substring(1).split(",", -1)) {
+            String value = part.trim();
+            if (!value.isEmpty() && (value.charAt(0) == '~' || value.charAt(0) == '^')) {
+                value = value.substring(1);
+            }
+            if (!value.isEmpty() && !Str.isDouble(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Actor actor() {

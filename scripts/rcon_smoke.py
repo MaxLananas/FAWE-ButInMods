@@ -70,18 +70,20 @@ CHECKS = [
     ("//paste 0,60,0", "pasted 256 block(s)"),
     ("//count minecraft:stone", "count: 256"),
     ("//schem delete fawebim-smoke", "deleted schematic 'fawebim-smoke'"),
-    # Shape commands, checked by their geometry rather than by their messages. A
-    # 16x3x16 box holds 768 blocks and its inside is 14x1x14 = 196, so //outline
-    # covers the remaining 572 faces with sand and leaves the 196 stone inside,
-    # and //hollow of a selection one block wider than the box replaces exactly
-    # those 196 cells - the box's surface is what the flood through the margin
-    # reaches, so it stays.
+    # Shape commands, checked by their geometry rather than by their messages. The
+    # margin selection is cleared first, so the 16x3x16 box is built in the air
+    # and the counts only see what the commands below write. The box holds 768
+    # blocks and its inside is 14x1x14 = 196, so //outline covers the remaining
+    # 572 faces with sand and leaves the 196 stone inside, and //hollow of a
+    # selection one block wider than the box replaces exactly those 196 cells -
+    # the box's surface is what the flood through the margin reaches, so it stays.
+    # The margin is a negative position, which must reach //pos1 as a position.
     ("//pos1 -1,59,-1", "position 1 set"),
     ("//pos2 16,63,16", "position 2 set"),
     ("//set minecraft:air", "256 block(s) affected"),
     ("//pos1 0,60,0", "position 1 set"),
     ("//pos2 15,62,15", "position 2 set"),
-    ("//set minecraft:stone", "512 block(s) affected"),
+    ("//set minecraft:stone", "768 block(s) affected"),
     ("//outline minecraft:sand", "572 block(s) affected"),
     ("//count minecraft:sand", "count: 572"),
     ("//count minecraft:stone", "count: 196"),

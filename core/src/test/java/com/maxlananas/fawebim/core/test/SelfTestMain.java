@@ -448,6 +448,30 @@ public final class SelfTestMain {
         checkEquals("the top of the ball is on its surface", gold, world.getBlock(8, 74, 8));
         checkEquals("a corner of the box around it stays out", air, world.getBlock(5, 71, 5));
 
+        // The shape the rcon smoke checks: a 16x3x16 slab of stone with the
+        // selection one block wider on every side, over ground that is out of
+        // reach of the padded selection. The flood covers the whole surface the
+        // same way, so only the 14x1x14 inside of the slab is replaced.
+        for (int y = 71; y <= 73; y++) {
+            for (int z = 100; z <= 115; z++) {
+                for (int x = 100; x <= 115; x++) {
+                    world.setBlock(x, y, z, stone);
+                }
+            }
+        }
+        RegionSelector slab = LocalSession.newSelectors(world, "cuboid");
+        slab.selectPrimary(new BlockVector3(99, 70, 99), SelectorLimits.unlimited());
+        slab.selectSecondary(new BlockVector3(116, 74, 116), SelectorLimits.unlimited());
+        local.setSelector(slab);
+        EditSession slabSession = new EditSession(world, local, "//hollow slab");
+        Masks.ExtentHolder.set(slabSession);
+        int slabChanged = Operations.hollow(slabSession, local.getSelection(world), 1,
+                new Patterns.Single(air), new Masks.SolidMask(slabSession));
+        slabSession.flushQueue();
+        checkEquals("a slab keeps the surface the flood reaches", 196, slabChanged);
+        checkEquals("the middle of the slab is air", air, world.getBlock(107, 72, 107));
+        checkEquals("the skin of the slab stays", stone, world.getBlock(100, 72, 107));
+
         // A selection that hugs solid blocks has no cell to flood from, so the
         // whole of it is replaced - FAWE's own caveat for //hollow.
         RegionSelector tight = LocalSession.newSelectors(world, "cuboid");
@@ -1608,11 +1632,17 @@ public final class SelfTestMain {
         check("//redo registered", registry.get("//redo") != null);
         check("//expand registered", registry.get("//expand") != null);
 
-        // execution
+        // execution - a dash opens a switch only where it cannot be something
+        // else, so a negative position arrives as one.
         TestWorld world = new TestWorld("commands");
         world.fillFlat(70);
         TestActor actor = new TestActor("Carol", world, new BlockVector3(0, 71, 0));
         actor.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(actor, "//pos1 -4,70,-4");
+        CommandManager.get().dispatch(actor, "//pos2 4,74,4");
+        Region negative = actor.session().getSelection(world);
+        checkEquals("a negative position is not a switch", new BlockVector3(-4, 70, -4),
+                negative.getMinimumPoint());
         CommandManager.get().dispatch(actor, "//pos1 0,70,0");
         CommandManager.get().dispatch(actor, "//pos2 4,72,4");
         actor.clearMessages();
