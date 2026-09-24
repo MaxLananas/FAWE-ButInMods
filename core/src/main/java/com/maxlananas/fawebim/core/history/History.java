@@ -4,9 +4,7 @@ import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Per-player undo/redo history. Edits are grouped into {@link Record}s (one per
@@ -46,8 +44,15 @@ public final class History {
         public final String description;
         /** The world the record belongs to, so the edit log can filter by it. */
         public String world;
-        final Map<Long, List<ChangeSet>> changes = new LinkedHashMap<>();
-        final Map<Long, List<BiomeChangeSet>> biomes = new LinkedHashMap<>();
+        /**
+         * The change sets of a record, by packed chunk key. A history map used to
+         * hold boxed keys, and an edit that fills thousands of chunks built a
+         * tree inside it; the primitive key keeps both away from the hot path.
+         */
+        final com.maxlananas.fawebim.core.util.LongObjectMap<List<ChangeSet>> changes =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>();
+        final com.maxlananas.fawebim.core.util.LongObjectMap<List<BiomeChangeSet>> biomes =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>();
         final List<EntityChange> entities = new ArrayList<>();
         int changeCount;
         int biomeChangeCount;
@@ -65,7 +70,7 @@ public final class History {
         }
 
         public void add(ChangeSet set) {
-            changes.computeIfAbsent(key(set.chunkX(), set.chunkZ()), k -> new ArrayList<>()).add(set);
+            sectionsOf(changes, key(set.chunkX(), set.chunkZ())).add(set);
             changeCount += set.size();
         }
 
@@ -81,7 +86,7 @@ public final class History {
                 changeCount++;
                 return;
             }
-            List<ChangeSet> sets = changes.computeIfAbsent(key(chunkX, chunkZ), k -> new ArrayList<>());
+            List<ChangeSet> sets = sectionsOf(changes, key(chunkX, chunkZ));
             ChangeSet set = null;
             for (ChangeSet candidate : sets) {
                 if (candidate.sectionY() == sectionY) {
@@ -117,8 +122,7 @@ public final class History {
                 biomeChangeCount++;
                 return;
             }
-            List<BiomeChangeSet> sets = biomes.computeIfAbsent(key(chunkX, chunkZ),
-                    k -> new ArrayList<>());
+            List<BiomeChangeSet> sets = sectionsOf(biomes, key(chunkX, chunkZ));
             BiomeChangeSet set = null;
             for (BiomeChangeSet candidate : sets) {
                 if (candidate.sectionY() == sectionY) {
@@ -135,7 +139,7 @@ public final class History {
             biomeChangeCount++;
         }
 
-        public Map<Long, List<BiomeChangeSet>> biomeChanges() {
+        public com.maxlananas.fawebim.core.util.LongObjectMap<List<BiomeChangeSet>> biomeChanges() {
             return biomes;
         }
 
@@ -147,7 +151,7 @@ public final class History {
             return changeCount;
         }
 
-        public Map<Long, List<ChangeSet>> changes() {
+        public com.maxlananas.fawebim.core.util.LongObjectMap<List<ChangeSet>> changes() {
             return changes;
         }
 
@@ -210,6 +214,17 @@ public final class History {
             this.z = z;
             this.removed = removed;
         }
+    }
+
+    /** The section list of a chunk, created on first use. */
+    private static <T> List<T> sectionsOf(
+            com.maxlananas.fawebim.core.util.LongObjectMap<List<T>> map, long chunkKey) {
+        List<T> sets = map.get(chunkKey);
+        if (sets == null) {
+            sets = new ArrayList<>(2);
+            map.put(chunkKey, sets);
+        }
+        return sets;
     }
 
     public static long key(int chunkX, int chunkZ) {

@@ -39,6 +39,14 @@ public final class PackedBlockArray {
     private int valuesPerLong;
     private long mask;
     private boolean uniform;
+    /**
+     * The state and palette index of the previous write. A buffer is filled a
+     * run at a time - the blocks of one row, the cells of one clipboard column -
+     * and a run repeats its state, so the one-entry cache answers most writes
+     * without touching the palette table at all.
+     */
+    private int lastState = -1;
+    private int lastStateIndex;
 
     public PackedBlockArray(int initialBits) {
         this.bitsPerBlock = clampBits(initialBits);
@@ -69,6 +77,8 @@ public final class PackedBlockArray {
         indexInsert(stateId, 0);
         bitsPerBlock = 1;
         reallocate();
+        lastState = stateId;
+        lastStateIndex = 0;
         uniform = true;
     }
     public int get(int index) {
@@ -85,18 +95,67 @@ public final class PackedBlockArray {
         if (uniform && palette[0] == stateId) {
             return;
         }
-        int paletteIndex = paletteLookup(stateId);
-        if (paletteIndex < 0) {
-            paletteIndex = paletteAdd(stateId);
-            if (paletteIndex >= (1 << bitsPerBlock)) {
-                growBits();
-            }
-        }
+        int paletteIndex = paletteIndex(stateId);
         int slot = index / valuesPerLong;
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         long clearMask = ~(mask << offset);
         data[slot] = (data[slot] & clearMask) | ((long) paletteIndex << offset);
         uniform = false;
+    }
+
+    /**
+     * Writes a cell and reports what it did: {@code -1} when the cell already
+     * held this state, {@code 0} when it was empty, {@code 1} when it held
+     * something else.
+     *
+     * <p>A chunk buffer write is exactly this question: the caller has to know
+     * whether the cell was empty, because that is what makes the block count and
+     * the dirty flag, and whether the value changed, because an unchanged write
+     * must not be recorded. Asking it here means the index arithmetic, the
+     * written bit and the palette probe happen once per block instead of once
+     * per question.</p>
+     */
+    public int put(int index, int stateId) {
+        int word = index >>> 6;
+        long bit = 1L << (index & 63);
+        boolean wasWritten = (written[word] & bit) != 0;
+        if (uniform && palette[0] == stateId) {
+            if (wasWritten) {
+                return -1;
+            }
+            written[word] |= bit;
+            return 0;
+        }
+        int slot = index / valuesPerLong;
+        int offset = (index - slot * valuesPerLong) * bitsPerBlock;
+        if (wasWritten && palette[(int) ((data[slot] >>> offset) & mask)] == stateId) {
+            return -1;
+        }
+        int paletteIndex = paletteIndex(stateId);
+        data[slot] = (data[slot] & ~(mask << offset)) | ((long) paletteIndex << offset);
+        uniform = false;
+        if (wasWritten) {
+            return 1;
+        }
+        written[word] |= bit;
+        return 0;
+    }
+
+    /** The palette index of a state, adding it - and growing the cells - when new. */
+    private int paletteIndex(int stateId) {
+        if (stateId == lastState) {
+            return lastStateIndex;
+        }
+        int index = paletteLookup(stateId);
+        if (index < 0) {
+            index = paletteAdd(stateId);
+            if (index >= (1 << bitsPerBlock)) {
+                growBits();
+            }
+        }
+        lastState = stateId;
+        lastStateIndex = index;
+        return index;
     }
 
     /** True when this cell was written into the buffer. */

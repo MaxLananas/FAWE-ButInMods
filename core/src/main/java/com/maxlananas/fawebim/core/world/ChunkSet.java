@@ -151,14 +151,11 @@ public final class ChunkSet {
         if (section == null) {
             return false;
         }
-        int index = index(x, y, z);
-        boolean wasSet = section.isWritten(index);
-        if (wasSet && section.get(index) == stateId) {
+        int change = section.put(index(x, y, z), stateId);
+        if (change < 0) {
             return false;
         }
-        section.set(index, stateId);
-        if (!wasSet) {
-            section.markWritten(index);
+        if (change == 0) {
             changedCount++;
         }
         dirty = true;

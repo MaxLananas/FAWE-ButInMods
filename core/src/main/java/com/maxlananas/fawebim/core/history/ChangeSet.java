@@ -14,6 +14,9 @@ import java.util.List;
  */
 public final class ChangeSet {
 
+    /** A section holds this many blocks; a change set never needs more rows. */
+    private static final int VOLUME = com.maxlananas.fawebim.core.world.PackedBlockArray.VOLUME;
+
     private int[] indices = new int[64];
     private int[] before = new int[64];
     private int[] after = new int[64];
@@ -60,7 +63,12 @@ public final class ChangeSet {
 
     public void add(int x, int y, int z, int previous, int current) {
         if (size == indices.length) {
-            int newLength = indices.length * 2;
+            // Growing in bigger steps than doubling: a region edit fills most of
+            // the sections it touches, and the copying of a doubling run was a
+            // measurable share of the edit. Past a few sections' worth of rows -
+            // one section holds VOLUME blocks, and an edit that writes a cell
+            // twice records it twice - doubling keeps the waste bounded.
+            int newLength = indices.length < 8 * VOLUME ? indices.length * 8 : indices.length * 2;
             indices = java.util.Arrays.copyOf(indices, newLength);
             before = java.util.Arrays.copyOf(before, newLength);
             after = java.util.Arrays.copyOf(after, newLength);
