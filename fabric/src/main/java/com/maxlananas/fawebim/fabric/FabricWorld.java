@@ -226,23 +226,27 @@ public final class FabricWorld implements World {
         int baseZ = set.chunkZ() << 4;
         int baseY = set.minSection() << 4;
 
-        // 1. Remember the previous states of the positions that changed, so the
-        //    clients can be told. The positions stay in parallel int arrays rather
-        //    than in a map keyed by a block vector: a large edit changes millions
-        //    of them and this runs on every flush.
+        // 1. Remember the positions that changed, so they can be re-lit once the
+        //    write is done. They stay in parallel int arrays rather than in a map
+        //    keyed by a block vector: a large edit changes millions of them and
+        //    this runs on every flush. A flush that will re-send the chunk needs
+        //    the positions and nothing else - the clients get the chunk, not a
+        //    packet per block - so the states are only collected below that.
         int count = set.size();
+        boolean resend = count >= Math.max(1, Config.get().chunkResendThreshold);
         int[] changedXs = new int[count];
         int[] changedYs = new int[count];
         int[] changedZs = new int[count];
-        BlockState[] before = new BlockState[count];
-        BlockState[] after = new BlockState[count];
+        BlockState[] before = resend ? null : new BlockState[count];
+        BlockState[] after = resend ? null : new BlockState[count];
         int[] slot = {0};
+        var chunkSource = level.getChunkSource();
+        boolean ticking = chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
 
         // 2. Bulk section write: one palette update per section instead of one
-        //    world.setBlock call (with its 6 neighbour updates) per block. The
-        //    state a cell held is read from the section that is about to be
-        //    written, so the flush walks the changed cells once, not twice, and
-        //    the states it hands to the client sync are the ones it wrote.
+        //    world.setBlock call (with its 6 neighbour updates) per block. A cell
+        //    that is about to be written has its old state read out of the section
+        //    in the same walk, which is what the client sync below hands back.
         for (int index = 0; index < sections.length; index++) {
             PackedBlockArray buffered = sections[index];
             if (buffered == null) {
@@ -264,9 +268,12 @@ public final class FabricWorld implements World {
                 changedXs[at] = baseX + localX;
                 changedYs[at] = sectionY + localY;
                 changedZs[at] = baseZ + localZ;
-                before[at] = section.getBlockState(localX, localY, localZ);
-                after[at] = Block.stateById(buffered.get(local));
-                section.setBlockState(localX, localY, localZ, after[at], false);
+                BlockState now = Block.stateById(buffered.get(local));
+                if (before != null) {
+                    before[at] = section.getBlockState(localX, localY, localZ);
+                    after[at] = now;
+                }
+                section.setBlockState(localX, localY, localZ, now, false);
             });
             applied += written;
             if (written > 0) {
@@ -285,28 +292,26 @@ public final class FabricWorld implements World {
             applyBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
         }
 
-        // 4. Lighting and client sync for the changed blocks only. Vanilla would
-        //    have queued 6 neighbour updates per block; the bulk write skips that
-        //    and relies on the light engine plus the block-change packet, the
-        //    same way WorldEdit's native access does it.
-        var chunkSource = level.getChunkSource();
-        boolean ticking = chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
+        // 4. Lighting, and the client sync for the changed blocks only. Vanilla
+        //    would have queued 6 neighbour updates per block; the bulk write skips
+        //    that and relies on the light engine plus the game's own block-change
+        //    bookkeeping, the way WorldEdit's native access does it.
         int changedCount = slot[0];
-        // A big edit is sent as the chunk itself. One packet per block means a
-        // million packets for a fill of a region, which no connection survives;
-        // a chunk that changed this much is re-sent whole instead, which is what
-        // the game itself does when it has to bring a client up to date.
-        boolean resend = changedCount >= Math.max(1, Config.get().chunkResendThreshold);
         for (int index = 0; index < changedCount; index++) {
             BlockPos pos = new BlockPos(changedXs[index], changedYs[index], changedZs[index]);
             chunkSource.getLightEngine().checkBlock(pos);
-            if (ticking && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {
-                cache.blockChanged(pos);
-            }
-            if (!resend) {
+            if (resend) {
+                // The whole chunk is about to be sent, so the section the cell
+                // belongs to does not also have to be marked for a broadcast.
+                if (ticking && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {
+                    cache.blockChanged(pos);
+                }
+            } else {
                 BlockState was = before[index];
                 BlockState now = after[index];
                 if (now != was) {
+                    // Vanilla's own notification: it hands the section to the
+                    // game's next broadcast and tells the mobs the ground moved.
                     level.sendBlockUpdated(pos, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
                 }
             }
