@@ -89,10 +89,33 @@ public final class FabricWorld implements World {
 
     @Override
     public int getBlock(int x, int y, int z) {
+        int air = com.maxlananas.fawebim.core.world.BlockState.registry().air();
         if (y < minY() || y > maxY()) {
-            return com.maxlananas.fawebim.core.world.BlockState.registry().air();
+            return air;
         }
-        return Block.getId(level.getBlockState(new BlockPos(x, y, z)));
+        LevelChunkSection section = sectionAt(x, y, z);
+        if (section == null) {
+            return air;
+        }
+        return Block.getId(section.getBlockState(x & 15, y & 15, z & 15));
+    }
+
+    /**
+     * The section a position lives in, without the position object the game's
+     * own accessor allocates and without its second chunk lookup.
+     *
+     * <p>Every read and every write of an edit goes through here. A region is
+     * walked x first, so sixteen calls in a row ask for the same chunk.</p>
+     *
+     * @return the section, or {@code null} when the position is outside the
+     *         sections of the level
+     */
+    private LevelChunkSection sectionAt(int x, int y, int z) {
+        int index = (y - minY()) >> 4;
+        if (index < 0 || index >= level.getSectionsCount()) {
+            return null;
+        }
+        return level.getChunk(x >> 4, z >> 4).getSection(index);
     }
 
     @Override
@@ -100,11 +123,16 @@ public final class FabricWorld implements World {
         if (y < minY() || y > maxY()) {
             return false;
         }
-        BlockPos pos = new BlockPos(x, y, z);
-        if (Block.getId(level.getBlockState(pos)) == stateId) {
+        LevelChunkSection section = sectionAt(x, y, z);
+        if (section == null) {
             return false;
         }
-        level.setBlock(pos, Block.stateById(stateId), Block.UPDATE_ALL);
+        if (Block.getId(section.getBlockState(x & 15, y & 15, z & 15)) == stateId) {
+            return false;
+        }
+        // Through the level, so the neighbours, the light and the clients hear
+        // about it: this is the path of a single write, not of a bulk edit.
+        level.setBlock(new BlockPos(x, y, z), Block.stateById(stateId), Block.UPDATE_ALL);
         return true;
     }
 
@@ -197,21 +225,18 @@ public final class FabricWorld implements World {
         //    than in a map keyed by a block vector: a large edit changes millions
         //    of them and this runs on every flush.
         int count = set.size();
-        int[] previousXs = new int[count];
-        int[] previousYs = new int[count];
-        int[] previousZs = new int[count];
-        BlockState[] previousStates = new BlockState[count];
+        int[] changedXs = new int[count];
+        int[] changedYs = new int[count];
+        int[] changedZs = new int[count];
+        BlockState[] before = new BlockState[count];
+        BlockState[] after = new BlockState[count];
         int[] slot = {0};
-        set.forEachChanged((x, y, z) -> {
-            int index = slot[0]++;
-            previousXs[index] = x;
-            previousYs[index] = y;
-            previousZs[index] = z;
-            previousStates[index] = level.getBlockState(new BlockPos(x, y, z));
-        });
 
         // 2. Bulk section write: one palette update per section instead of one
-        //    world.setBlock call (with its 6 neighbour updates) per block.
+        //    world.setBlock call (with its 6 neighbour updates) per block. The
+        //    state a cell held is read from the section that is about to be
+        //    written, so the flush walks the changed cells once, not twice, and
+        //    the states it hands to the client sync are the ones it wrote.
         for (int index = 0; index < sections.length; index++) {
             PackedBlockArray buffered = sections[index];
             if (buffered == null) {
@@ -225,8 +250,18 @@ public final class FabricWorld implements World {
             LevelChunkSection section = chunk.getSection(sectionIndex);
             // Only the cells this buffer holds are written, in one palette update
             // per section instead of one world.setBlock call per block.
-            int written = buffered.forEachWritten(local -> section.setBlockState(local & 15,
-                    (local >> 8) & 15, (local >> 4) & 15, Block.stateById(buffered.get(local)), false));
+            int written = buffered.forEachWritten(local -> {
+                int localX = local & 15;
+                int localY = (local >> 8) & 15;
+                int localZ = (local >> 4) & 15;
+                int at = slot[0]++;
+                changedXs[at] = baseX + localX;
+                changedYs[at] = sectionY + localY;
+                changedZs[at] = baseZ + localZ;
+                before[at] = section.getBlockState(localX, localY, localZ);
+                after[at] = Block.stateById(buffered.get(local));
+                section.setBlockState(localX, localY, localZ, after[at], false);
+            });
             applied += written;
             if (written > 0) {
                 chunk.markUnsaved();
@@ -246,11 +281,11 @@ public final class FabricWorld implements World {
         boolean ticking = chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
         int changedCount = slot[0];
         for (int index = 0; index < changedCount; index++) {
-            BlockPos pos = new BlockPos(previousXs[index], previousYs[index], previousZs[index]);
-            BlockState before = previousStates[index];
-            BlockState now = level.getBlockState(pos);
-            if (now != before) {
-                level.sendBlockUpdated(pos, before, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
+            BlockPos pos = new BlockPos(changedXs[index], changedYs[index], changedZs[index]);
+            BlockState was = before[index];
+            BlockState now = after[index];
+            if (now != was) {
+                level.sendBlockUpdated(pos, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
             }
             chunkSource.getLightEngine().checkBlock(pos);
             if (ticking && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {
