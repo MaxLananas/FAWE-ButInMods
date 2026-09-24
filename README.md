@@ -212,19 +212,19 @@ Every row prepares the world with the state the edit is about to overwrite, beca
 finds the value already there returns before it does anything and a benchmark of that measures
 nothing.
 
-The shape of that came from measuring rather than guessing. A palette lookup used to walk the
-palette entry by entry (487 ns per block on a build with four thousand block states, now 3.7); the
-buffer now also remembers the state of the previous write, which answers the run of identical
-states a region edit writes without touching the palette table at all. The last profile put a
-fifth of an edit in palette lookups and a tenth in the boxed keys of the history map, so the
-history keys its chunk sections by primitive key, a change set grows in eighths rather than
-halves, and the chunk buffer answers "was this cell written, what did it hold, write it" in one
-call instead of three that each redid the arithmetic. A mask answers a state it has already
-rejected from memory: it is asked about every block of a filtered edit, and a block that matches
-nothing used to pay for a name lookup every time - 13 ns per question, 3.0 now. The
-masks held their states in a `Set<Integer>`, and every brush built a list of positions before
-touching one. The chunk buffer kept
-the positions it held in a hash set, so every single write hashed a position and every flush asked
+The shape of that came from measuring rather than guessing. A profile of the write path found a
+fifth of an edit inside the palette and a tenth inside the boxed keys of the history map, and both
+are gone: the palette answers a repeated state from the last write, the history keys its chunk
+sections by primitive key, a change set grows in eighths rather than halves, and a chunk buffer
+write asks "was this cell written, what did it hold, write it" in one call instead of three that
+each redid the arithmetic. A mask is asked about every block of a filtered edit, and a block that
+matches nothing used to pay for a name lookup every time; the mask remembers the states it rejected,
+which took a question from 13 ns to 3.0.
+
+The earlier passes were the same kind of work. The palette used to walk its entries one by one
+(487 ns per block on a build with four thousand block states, 3.7 after). Masks held their states in
+a `Set<Integer>`, and every brush built a list of positions before touching one. The chunk buffer
+kept the positions it held in a hash set, so every write hashed a position and every flush asked
 4096 times per section whether a cell was in that set: it keeps one bit per cell now, and the flush
 walks the bits that are set. The edit timeout counted blocks with an atomic and read the clock on
 every one of them; it reads the clock once every 512 blocks. Each of those is a plain array, a bit
