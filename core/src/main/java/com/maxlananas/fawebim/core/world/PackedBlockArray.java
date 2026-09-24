@@ -74,7 +74,7 @@ public final class PackedBlockArray {
     }
 
     public void set(int index, int stateId) {
-        int paletteIndex = paletteIndex(stateId);
+        int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId);
         int slot = index / valuesPerLong;
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         long clearMask = ~(mask << offset);
@@ -100,8 +100,11 @@ public final class PackedBlockArray {
         // The palette comes first: adding a state can widen the cells, and a
         // cell's position in the array depends on that width. A state that is
         // not in the palette is in no cell either, so the check below cannot
-        // miss anything by running after it.
-        int paletteIndex = paletteIndex(stateId);
+        // miss anything by running after it. The cached state cannot widen
+        // anything, so the common write reads the entry here instead of calling
+        // for it: a buffer is filled a run at a time and a run repeats its
+        // state, which made the call itself the share the profile showed.
+        int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId);
         int slot = index / valuesPerLong;
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         if (wasWritten && palette[(int) ((data[slot] >>> offset) & mask)] == stateId) {
@@ -120,6 +123,10 @@ public final class PackedBlockArray {
         if (stateId == lastState) {
             return lastStateIndex;
         }
+        return lookupOrAdd(stateId);
+    }
+
+    private int lookupOrAdd(int stateId) {
         int index = paletteLookup(stateId);
         if (index < 0) {
             index = paletteAdd(stateId);
