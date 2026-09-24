@@ -35,6 +35,8 @@ Useful commands:
 | `./gradlew :core:selfTest` | runs the engine test suite (`SelfTestMain`) without Minecraft |
 | `./gradlew :core:genDocs` | regenerates `docs/COMMANDS.md`, `docs/commands-spec.json`, `docs/STATUS.md` from the live registry |
 | `./gradlew :core:verify` | runs the self-tests and checks every inventory name against the dispatcher |
+| `./gradlew :fabric:runServer` | boots the game with the mod; what the continuous integration job drives |
+| `python3 scripts/rcon_smoke.py` | asks a running server for its settings and its commands, over rcon |
 | `./gradlew build` | builds the engine and the Fabric mod |
 | `./gradlew :fabric:runClient` | launches a development client with the mod |
 

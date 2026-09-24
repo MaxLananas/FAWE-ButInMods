@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-439%20passing-3fb950?style=flat-square)](docs/STATUS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-443%20passing-3fb950?style=flat-square)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-267%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](docs/COMMANDS.md)
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 439-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 443-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -227,7 +227,7 @@ its biomes per 4x4x4 cell; it samples the cells now.
 
 | | |
 |---|---|
-| Engine tests | **439 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **443 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **267** |
 | Implemented | **247** |
 | Aliases of an implemented command | **20** |
@@ -304,9 +304,13 @@ the registry dump — that is how the project tracks which WorldEdit/FAWE comman
 which are still missing.
 
 Continuous integration runs on every push and pull request
-([`.github/workflows/build.yml`](.github/workflows/build.yml)): it builds the engine, runs the
+([`.github/workflows/build.yml`](.github/workflows/build.yml)). One job builds the engine, runs the
 self-tests and the command inventory check, builds the mod jar, and fails when the generated
-documentation or the generated command tables have drifted from the registry.
+documentation, the generated command tables or an audit have drifted. A second job boots the
+dedicated server with the mod in it and drives it over rcon: it is what proves the mixin applies,
+that the commands are registered with the game, and that `/fawebim set` writes the file the server
+reads back. It found two bugs nothing else could - the commands were registered after the game had
+built its command tree, and the gate in front of them hid every one of them from the console.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the porting workflow, the code style and how to verify a
 change, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
