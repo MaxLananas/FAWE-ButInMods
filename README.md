@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-436%20passing-3fb950?style=flat-square)](docs/STATUS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-439%20passing-3fb950?style=flat-square)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-267%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](docs/COMMANDS.md)
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 436-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 439-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -188,19 +188,20 @@ Three ideas do most of the work:
 ### Measured throughput
 
 `./gradlew :core:bench` prints the same table on your machine: an in-JVM world of
-256x256x128 blocks, single-threaded, best of seven runs after warm-up. The numbers below are one
-run of it, on one machine, and are only meant as a floor and as a way to see what a change costs.
+256x256x128 blocks, single-threaded, best of seven runs after warm-up. The numbers below are the
+range several runs of it produced on one machine, and are only meant as a floor and as a way to see
+what a change costs.
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **20.1 M blocks/s** |
-| Block writes, engine without history | **38.1 M blocks/s** |
-| `//set` over 64x64x64 | **24.3 M blocks/s** |
-| `//copy` over 64x64x64 | **63.4 M blocks/s** |
-| `//paste` over 64x64x64 | **13.2 M blocks/s** |
-| `//replace` over 64x64x64 | **17.6 M blocks/s** |
-| `//sphere` radius 40 | **23.5 M blocks/s** |
-| `//undo` and `//redo` of that `//set` | **52.3 M blocks/s** |
+| Block writes, engine with history | **18 – 21 M blocks/s** |
+| Block writes, engine without history | **37 – 38 M blocks/s** |
+| `//set` over 64x64x64 | **19 – 24 M blocks/s** |
+| `//copy` over 64x64x64 | **59 – 63 M blocks/s** |
+| `//paste` over 64x64x64 | **18 – 19 M blocks/s** |
+| `//replace` over 64x64x64 | **18 – 20 M blocks/s** |
+| `//sphere` radius 40 | **19 – 23 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **52 M blocks/s** |
 
 Every row prepares the world with the state the edit is about to overwrite, because an edit that
 finds the value already there returns before it does anything and a benchmark of that measures
@@ -215,13 +216,18 @@ the positions it held in a hash set, so every single write hashed a position and
 walks the bits that are set. The edit timeout counted blocks with an atomic and read the clock on
 every one of them; it reads the clock once every 512 blocks. Each of those is a plain array, a bit
 or a primitive-keyed table today, and the same pass took the position objects out of the region
-walks that `//set`, `//paste`, `//move` and the brushes run per block.
+walks that `//set`, `//paste`, `//move` and the brushes run per block. `//paste` built a position
+object for every cell of the clipboard and looked each one up by position afterwards; it walks the
+clipboard and takes the state of each cell as it goes now, which is why it went from a little over
+half the rate of `//set` to the same rate. Copying with biomes read the biome of every block of the
+selection and stored all of them, sixty-four identical entries for one cell of a world that keeps
+its biomes per 4x4x4 cell; it samples the cells now.
 
 ## Status
 
 | | |
 |---|---|
-| Engine tests | **436 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **439 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **267** |
 | Implemented | **247** |
 | Aliases of an implemented command | **20** |
