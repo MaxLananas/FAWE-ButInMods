@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-472%20passing-3fb950?style=flat-square)](docs/STATUS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-480%20passing-3fb950?style=flat-square)](docs/STATUS.md)
 [![Commands](https://img.shields.io/badge/commands-266%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](docs/COMMANDS.md)
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 472-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 480-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -194,14 +194,14 @@ what a change costs.
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **34 – 35 M blocks/s** |
+| Block writes, engine with history | **34 – 38 M blocks/s** |
 | Block writes, engine without history | **63 – 66 M blocks/s** |
 | `//set` over 64x64x64 | **41 – 43 M blocks/s** |
 | `//copy` over 64x64x64 | **68 – 72 M blocks/s** |
 | `//paste` over 64x64x64 | **31 – 33 M blocks/s** |
 | `//replace` over 64x64x64 | **30 – 33 M blocks/s** |
 | `//sphere` radius 40 | **32 – 43 M blocks/s** |
-| `//undo` and `//redo` of that `//set` | **74 – 82 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **78 – 92 M blocks/s** |
 | A mask asked about a block | **262 – 294 M questions/s** |
 
 The spread between two runs of the same binary is wider than the effect of most

@@ -733,6 +733,24 @@ public final class SelfTestMain {
         checkEquals("every one of the 4096 changes is undone", 4096, restored);
         session.getHistory().redo();
 
+        // A set keeps the state its changes write while they all write it, and
+        // widens to a row per change when one writes another. The rows recorded
+        // before that keep the state they were given.
+        com.maxlananas.fawebim.core.history.ChangeSet widened =
+                new com.maxlananas.fawebim.core.history.ChangeSet(3, 4, 5);
+        widened.add(0, 0, 0, 5, 9);
+        widened.add(1, 0, 0, 6, 9);
+        widened.add(2, 0, 0, 7, 8);
+        widened.add(3, 0, 0, 8, 9);
+        checkEquals("a widened set keeps the shared state", 9, widened.afterAt(0));
+        checkEquals("a widened set keeps the states after it", 8, widened.afterAt(2));
+        checkEquals("a widened set keeps the last state", 9, widened.afterAt(3));
+        checkEquals("a widened set keeps the cells", 2, widened.cellAt(2));
+        checkEquals("a widened set keeps the states before", 7, widened.beforeAt(2));
+        checkEquals("a widened set is as large as its changes", 4, widened.size());
+        checkEquals("a widened set writes four cells", 4, widened.cells().length);
+        checkEquals("a widened set writes four states after", 4, widened.afterStates().length);
+
         // change limit
         session.setMaxBlocksChanged(10);
         EditSession limited = new EditSession(world, session, "//set limit");
