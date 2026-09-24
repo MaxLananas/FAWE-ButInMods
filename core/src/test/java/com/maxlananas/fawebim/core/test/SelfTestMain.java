@@ -581,6 +581,32 @@ public final class SelfTestMain {
                 world.getBlock(0, 69, 0));
         checkEquals("undo restores air", air, world.getBlock(2, 72, 2));
 
+        // The most changes one chunk section can hold, which takes a change set
+        // through every step it grows by, and the undo of all of them.
+        EditSession wide = new EditSession(world, session, "//set wide");
+        for (int i = 0; i < 4096; i++) {
+            wide.setBlock(i & 15, 71, (i >> 4) & 15, stone);
+        }
+        wide.flushQueue();
+        checkEquals("a full section of changes is recorded", 4096, wide.getBlocksChanged());
+        var wideRecord = session.getHistory().undo();
+        checkEquals("the record holds every change", 4096, wideRecord.changeCount());
+        EditSession wideUndo = new EditSession(world, session, "undo", false);
+        for (var sets : wideRecord.changes().values()) {
+            for (var set : sets) {
+                wideUndo.applyChangeSet(set, true);
+            }
+        }
+        wideUndo.flushQueue();
+        int restored = 0;
+        for (int i = 0; i < 4096; i++) {
+            if (world.getBlock(i & 15, 71, (i >> 4) & 15) == air) {
+                restored++;
+            }
+        }
+        checkEquals("every one of the 4096 changes is undone", 4096, restored);
+        session.getHistory().redo();
+
         // change limit
         session.setMaxBlocksChanged(10);
         EditSession limited = new EditSession(world, session, "//set limit");
