@@ -149,6 +149,36 @@ public final class ConfigUi {
     }
 
     /** The setting a key or a file path names, or null when nothing matches. */
+    /**
+     * A setting from what a user typed: its key, the path it has in the file, or
+     * the end of that path. {@code max-blocks-changed.default} and
+     * {@code limits.max-blocks-changed.default} name the same setting, and so
+     * does {@code default-change-limit}.
+     */
+    public Setting<?> resolve(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        String wanted = name.trim();
+        Setting<?> exact = find(wanted);
+        if (exact != null) {
+            return exact;
+        }
+        Setting<?> match = null;
+        for (Setting<?> setting : config.settings()) {
+            String path = setting.path();
+            if (!path.equalsIgnoreCase(wanted) && !path.toLowerCase(java.util.Locale.ROOT)
+                    .endsWith("." + wanted.toLowerCase(java.util.Locale.ROOT))) {
+                continue;
+            }
+            if (match != null) {
+                return null;
+            }
+            match = setting;
+        }
+        return match;
+    }
+
     public Setting<?> find(String key) {
         return key == null ? null : config.find(key);
     }

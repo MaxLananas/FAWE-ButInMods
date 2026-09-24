@@ -236,8 +236,11 @@ public final class Config {
     }
 
     public void load(Path gameDirectory) {
-        this.gameDirectory = gameDirectory;
-        this.file = gameDirectory.resolve("config").resolve("fawebim.yml");
+        // The game hands out a relative directory in a development run; the file
+        // is resolved to an absolute path once, so that looking it up again - to
+        // reload it, or to print it - needs nothing else.
+        this.gameDirectory = gameDirectory == null ? Path.of(".") : gameDirectory.toAbsolutePath().normalize();
+        this.file = this.gameDirectory.resolve("config").resolve("fawebim.yml");
         if (!Files.exists(file)) {
             save();
             return;
@@ -259,8 +262,8 @@ public final class Config {
     }
 
     public void reload() {
-        if (file != null) {
-            load(file.getParent().getParent());
+        if (gameDirectory != null) {
+            load(gameDirectory);
         }
     }
 

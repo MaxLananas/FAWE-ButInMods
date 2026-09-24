@@ -1367,6 +1367,16 @@ public final class SelfTestMain {
         // The model behind the graphical settings screen: the screen draws it, so
         // the grouping, the search and the value checks are testable here.
         ConfigUi ui = new ConfigUi(config);
+
+        // A setting is named by its key, by the path it has in the file, or by
+        // the end of that path: /fawebim set accepts all three spellings.
+        String[] spellings = {"max-brush-radius", "limits.max-brush-radius.maximum",
+                "max-brush-radius.maximum"};
+        for (String spelling : spellings) {
+            Setting<?> bySpelling = ui.resolve(spelling);
+            check("resolve " + spelling, bySpelling != null && bySpelling.key().equals("max-brush-radius"));
+        }
+        check("resolve is not confused by an unknown name", ui.resolve("nothing-like-this") == null);
         int listed = ui.groups().stream().mapToInt(group -> group.settings().size()).sum();
         checkEquals("every setting has a group", config.settings().size(), listed);
         checkEquals("no setting is listed twice", config.settings().size(),

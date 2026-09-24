@@ -40,8 +40,8 @@ CHECKS = [
     ("fawebim settings -s boolean", "Settings ("),
     ("fawebim nonsense", "Usage"),
     # A command that needs a player is still a command the server knows: the
-    # answer must be about the selection, not about the command.
-    ("//wand", "player"),
+    # answer must be about the wand, not about the command.
+    ("//wand", "wand"),
 ]
 
 

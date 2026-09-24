@@ -94,6 +94,11 @@ final class ConfigCommands {
         };
     }
 
+    /** The engine's configuration surface, shared with the screen. */
+    private static com.maxlananas.fawebim.core.platform.ConfigUi ui() {
+        return new com.maxlananas.fawebim.core.platform.ConfigUi(Config.get());
+    }
+
     /** Opens the graphical settings screen when the actor has one. */
     private static boolean screen(Ctx ctx) {
         return ctx.actor().openConfigurationScreen();
@@ -147,23 +152,21 @@ final class ConfigCommands {
             throw CommandRegistry.error("Usage: /fawebim set <key> <value>, for example"
                     + " /fawebim set max-brush-radius 50");
         }
-        String key = ctx.arg(1);
+        String name = ctx.arg(1);
+        Setting<?> setting = ui().resolve(name);
+        if (setting == null) {
+            throw CommandRegistry.error("Unknown setting '" + name
+                    + "'. Use /fawebim settings to list them");
+        }
         if (ctx.args().size() < 3) {
-            Setting<?> current = Config.get().find(key);
-            if (current == null) {
-                throw CommandRegistry.error("Unknown setting '" + key
-                        + "'. Use /fawebim settings to list them");
-            }
-            throw CommandRegistry.error(current.key() + " holds " + current.value()
-                    + " and expects " + current.expected() + ". /fawebim set " + current.key() + " <value>");
+            throw CommandRegistry.error(setting.key() + " holds " + setting.value()
+                    + " and expects " + setting.expected() + ". /fawebim set " + setting.key() + " <value>");
         }
         String value = ctx.joined(2);
-        Setting<?> setting = Config.get().find(key);
-        if (setting == null) {
-            throw CommandRegistry.error("Unknown setting '" + key + "'. Use /fawebim settings to list them");
-        }
         String before = setting.value();
-        String error = Config.get().set(key, value);
+        // Config holds the message a rejected value deserves: what it expected and
+        // what the setting holds now.
+        String error = Config.get().set(setting.key(), value);
         if (error != null) {
             throw CommandRegistry.error(error);
         }
@@ -173,10 +176,10 @@ final class ConfigCommands {
 
     /** {@code /fawebim reset <key>} — puts one value back to the shipped default. */
     private void reset(Ctx ctx) {
-        String key = ctx.arg(1);
-        Setting<?> setting = Config.get().find(key);
+        String name = ctx.arg(1);
+        Setting<?> setting = ui().resolve(name);
         if (setting == null) {
-            throw CommandRegistry.error("Unknown setting '" + key + "'. Use /fawebim settings to list them");
+            throw CommandRegistry.error("Unknown setting '" + name + "'. Use /fawebim settings to list them");
         }
         String before = setting.value();
         setting.reset();
