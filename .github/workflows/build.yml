@@ -48,6 +48,9 @@ jobs:
       - name: Check the annotations javac would refuse
         run: python3 scripts/annotation_check.py
 
+      - name: Check the Fabric adapter imports what it uses
+        run: python3 scripts/adapter_check.py
+
 
       - name: Upload the mod jar
         uses: actions/upload-artifact@v4

@@ -50,7 +50,8 @@ import static net.minecraft.commands.Commands.literal;
 public final class FaweMod implements ModInitializer {
 
     public static final String MOD_ID = "fawebim";
-    private static final Logger LOGGER = LoggerFactory.getLogger("FAWE-BIM");
+    /** The mod's logger, shared by the adapters so all of it lands in one place. */
+    static final Logger LOGGER = LoggerFactory.getLogger("FAWE-BIM");
 
     /**
      * Disk writes of the mod. One thread, so two edits of the same millisecond

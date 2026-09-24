@@ -3,6 +3,7 @@ package com.maxlananas.fawebim.fabric;
 import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.Vector3;
+import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.ChunkSet;
 import com.maxlananas.fawebim.core.world.EntityData;
@@ -20,6 +21,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
@@ -28,6 +30,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
@@ -289,19 +292,41 @@ public final class FabricWorld implements World {
         var chunkSource = level.getChunkSource();
         boolean ticking = chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
         int changedCount = slot[0];
+        // A big edit is sent as the chunk itself. One packet per block means a
+        // million packets for a fill of a region, which no connection survives;
+        // a chunk that changed this much is re-sent whole instead, which is what
+        // the game itself does when it has to bring a client up to date.
+        boolean resend = changedCount >= Math.max(1, Config.get().chunkResendThreshold);
         for (int index = 0; index < changedCount; index++) {
             BlockPos pos = new BlockPos(changedXs[index], changedYs[index], changedZs[index]);
-            BlockState was = before[index];
-            BlockState now = after[index];
-            if (now != was) {
-                level.sendBlockUpdated(pos, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
-            }
             chunkSource.getLightEngine().checkBlock(pos);
             if (ticking && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {
                 cache.blockChanged(pos);
             }
+            if (!resend) {
+                BlockState was = before[index];
+                BlockState now = after[index];
+                if (now != was) {
+                    level.sendBlockUpdated(pos, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
+                }
+            }
+        }
+        if (resend) {
+            sendChunk(chunk, chunkSource.getLightEngine());
         }
         return applied;
+    }
+
+    /** Sends a whole chunk, with its light data, to everyone who can see it. */
+    private void sendChunk(LevelChunk chunk, net.minecraft.world.level.lighting.LevelLightEngine lightEngine) {
+        var packet = new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
+                chunk, lightEngine, null, null);
+        ChunkPos chunkPos = chunk.getPos();
+        for (var player : level.players()) {
+            if (player.getChunkTrackingView().contains(chunkPos)) {
+                player.connection.send(packet);
+            }
+        }
     }
 
     /** Writes the chunk buffer's biomes into the section palettes. */
@@ -492,16 +517,19 @@ public final class FabricWorld implements World {
         // without going through the level. Asking for it here is what creates it.
         var blockEntity = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
         if (blockEntity == null) {
-            LOGGER.debug("No block entity to hold the data at {},{},{}", x, y, z);
+            FaweMod.LOGGER.debug("No block entity to hold the data at {},{},{}", x, y, z);
             return;
         }
         try {
-            blockEntity.loadWithComponents(toTag(nbt), level.registryAccess());
+            // The data is read through the game's own tag reader, which is what
+            // knows how a compound of a saved world becomes a live block entity.
+            blockEntity.loadWithComponents(TagValueInput.create(
+                    ProblemReporter.DISCARDING, level.registryAccess(), toTag(nbt)));
             chunk.markUnsaved();
             level.sendBlockUpdated(pos, blockEntity.getBlockState(), blockEntity.getBlockState(),
                     Block.UPDATE_CLIENTS);
         } catch (Throwable throwable) {
-            LOGGER.warn("Could not load the data of the block entity at {},{},{}", x, y, z, throwable);
+            FaweMod.LOGGER.warn("Could not load the data of the block entity at {},{},{}", x, y, z, throwable);
         }
     }
 

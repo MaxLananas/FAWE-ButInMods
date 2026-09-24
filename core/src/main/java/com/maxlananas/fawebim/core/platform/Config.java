@@ -68,6 +68,7 @@ public final class Config {
     public boolean allowSymlinks = false;
     public int queueTargetSize = 5000000;
     public int queueMaxWait = 500;
+    public int chunkResendThreshold = 128;
     public boolean commandBlockSupport = false;
     public boolean debug = false;
 
@@ -178,6 +179,10 @@ public final class Config {
         integer("queue-max-wait", "queue.max-wait-ms", queueMaxWait,
                 "Longest the queue may wait before it is flushed, in milliseconds.", () -> queueMaxWait,
                 value -> queueMaxWait = value);
+        integer("chunk-resend-threshold", "queue.chunk-resend-threshold", chunkResendThreshold,
+                "Blocks changed in one chunk before the whole chunk is re-sent to nearby players"
+                        + " instead of one update packet per block.",
+                () -> chunkResendThreshold, value -> chunkResendThreshold = value);
         bool("command-block-support", "command-block-support", commandBlockSupport,
                 "Let command blocks run the mod's commands.", () -> commandBlockSupport,
                 value -> commandBlockSupport = value);

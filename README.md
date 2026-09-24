@@ -238,7 +238,7 @@ its biomes per 4x4x4 cell; it samples the cells now.
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
 | Flags declared but never read | **0** |
-| Settings in `config/fawebim.yml` | **38, all read by the code** |
+| Settings in `config/fawebim.yml` | **39, all read by the code** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
 
