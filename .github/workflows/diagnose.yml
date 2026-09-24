@@ -1,8 +1,9 @@
 name: Diagnose
 
 # Temporary workflow: the build logs of the regular run cannot be read from the
-# environment this branch is developed in, so the same two Gradle invocations are
-# repeated here and their output is attached to the check run as annotations.
+# environment this branch is developed in. This run compiles both modules, keeps
+# the full logs as an artifact and prints the API of the mapped game, so the
+# adapter sources can be brought in line with the exact target version.
 
 on:
   push:
@@ -27,14 +28,24 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compile and test, reporting the output as annotations
+      - name: Compile the fabric module and report the errors
         run: |
           set +e
-          ./gradlew --no-daemon :core:verify > /tmp/core.log 2>&1
-          core=$?
           ./gradlew --no-daemon :fabric:compileJava > /tmp/fabric.log 2>&1
           fabric=$?
-          echo "core verify exit: $core, fabric compile exit: $fabric"
-          python3 -c "import pathlib,sys; t=pathlib.Path(sys.argv[1]).read_text(errors='replace')[-28000:]; print('::error title='+sys.argv[2]+'::'+t.replace('%','%25').replace(chr(13),'').replace(chr(10),'%0A'))" /tmp/core.log "core verify"
-          python3 -c "import pathlib,sys; t=pathlib.Path(sys.argv[1]).read_text(errors='replace')[-28000:]; print('::error title='+sys.argv[2]+'::'+t.replace('%','%25').replace(chr(13),'').replace(chr(10),'%0A'))" /tmp/fabric.log "fabric compile"
-          if [ "$core" -ne 0 ] || [ "$fabric" -ne 0 ]; then exit 1; fi
+          echo "fabric compile exit: $fabric"
+          python3 -c "import pathlib,sys; t=pathlib.Path('/tmp/fabric.log').read_text(errors='replace')[-20000:]; print('::error title=fabric compile::'+t.replace('%','%25').replace(chr(13),'').replace(chr(10),'%0A'))"
+          exit 0
+
+      - name: Print the API of the mapped game
+        run: python3 scripts/ci_probe.py
+
+      - name: Keep the logs and the API dump
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnose
+          path: |
+            /tmp/fabric.log
+            probe.txt
+          if-no-files-found: warn

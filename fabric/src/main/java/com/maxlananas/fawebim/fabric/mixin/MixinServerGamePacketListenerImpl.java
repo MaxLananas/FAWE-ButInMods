@@ -1,7 +1,7 @@
 package com.maxlananas.fawebim.fabric.mixin;
 
 import com.maxlananas.fawebim.fabric.FabricInteractions;
-import net.minecraft.network.protocol.game.ClientboundSetCarriedItemPacket;
+import net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.network.protocol.game.ServerboundSwingPacket;
@@ -57,7 +57,7 @@ public abstract class MixinServerGamePacketListenerImpl {
         }
         if (FabricInteractions.onSlotChange(this.player, slot, previous)) {
             this.player.getInventory().selected = previous;
-            this.player.connection.send(new ClientboundSetCarriedItemPacket(previous));
+            this.player.connection.send(new ClientboundSetHeldSlotPacket(previous));
         }
     }
 
