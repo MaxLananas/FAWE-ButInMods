@@ -52,7 +52,7 @@ public final class FabricActor implements Actor {
 
     @Override
     public String name() {
-        return player != null ? player.getGameProfile().getName() : "CONSOLE";
+        return player != null ? player.getGameProfile().name() : "CONSOLE";
     }
 
     @Override
@@ -148,7 +148,7 @@ public final class FabricActor implements Actor {
         if (player == null) {
             return true;
         }
-        return source.hasPermission(2) || !player.getServer().isDedicatedServer();
+        return source.hasPermission(2) || !player.level().getServer().isDedicatedServer();
     }
 
     @Override

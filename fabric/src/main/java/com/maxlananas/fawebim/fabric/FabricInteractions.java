@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Everything that happens when a player clicks: the selection wand, the

@@ -50,13 +50,13 @@ public abstract class MixinServerGamePacketListenerImpl {
      */
     @Inject(method = "handleSetCarriedItem", at = @At("HEAD"))
     private void bim$onSetCarriedItem(ServerboundSetCarriedItemPacket packet, CallbackInfo callback) {
-        int previous = this.player.getInventory().selected;
+        int previous = this.player.getInventory().getSelectedSlot();
         int slot = packet.getSlot();
         if (slot == previous || slot < 0 || slot > 8) {
             return;
         }
         if (FabricInteractions.onSlotChange(this.player, slot, previous)) {
-            this.player.getInventory().selected = previous;
+            this.player.getInventory().setSelectedSlot(previous);
             this.player.connection.send(new ClientboundSetHeldSlotPacket(previous));
         }
     }

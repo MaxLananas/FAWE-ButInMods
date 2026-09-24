@@ -53,7 +53,7 @@ final class FabricWorldRegen {
         if (biomes != null) {
             restoreBiomes(chunk, biomes);
         }
-        chunk.setUnsaved(true);
+        chunk.markUnsaved();
         return true;
     }
 
@@ -205,7 +205,7 @@ final class FabricWorldRegen {
             copyBiomes(source, target);
         }
         // Heightmaps are rebuilt from the copied sections.
-        to.setUnsaved(true);
+        to.markUnsaved();
     }
 
     private static void copyBiomes(LevelChunkSection from, LevelChunkSection to) {
@@ -244,6 +244,6 @@ final class FabricWorldRegen {
                 }
             }
         }
-        chunk.setUnsaved(true);
+        chunk.markUnsaved();
     }
 }

@@ -68,7 +68,7 @@ public final class SelectionPreview {
                     } else {
                         z = min.z() + (max.z() - min.z()) * t;
                     }
-                    level.sendParticles(player, ParticleTypes.END_ROD, true, x, y, z, 1, 0, 0, 0, 0);
+                    level.sendParticles(player, ParticleTypes.END_ROD, true, false, x, y, z, 1, 0, 0, 0, 0);
                 }
             }
         }
