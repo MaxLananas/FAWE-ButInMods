@@ -194,14 +194,14 @@ what a change costs.
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **30 – 33 M blocks/s** |
-| Block writes, engine without history | **57 – 59 M blocks/s** |
-| `//set` over 64x64x64 | **42 M blocks/s** |
-| `//copy` over 64x64x64 | **70 – 74 M blocks/s** |
-| `//paste` over 64x64x64 | **31 – 32 M blocks/s** |
-| `//replace` over 64x64x64 | **30 – 31 M blocks/s** |
-| `//sphere` radius 40 | **41 M blocks/s** |
-| `//undo` and `//redo` of that `//set` | **69 – 79 M blocks/s** |
+| Block writes, engine with history | **34 – 35 M blocks/s** |
+| Block writes, engine without history | **63 – 66 M blocks/s** |
+| `//set` over 64x64x64 | **41 – 43 M blocks/s** |
+| `//copy` over 64x64x64 | **68 – 72 M blocks/s** |
+| `//paste` over 64x64x64 | **31 – 33 M blocks/s** |
+| `//replace` over 64x64x64 | **30 – 33 M blocks/s** |
+| `//sphere` radius 40 | **32 – 43 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **74 – 82 M blocks/s** |
 | A mask asked about a block | **262 – 294 M questions/s** |
 
 The spread between two runs of the same binary is wider than the effect of most

@@ -236,7 +236,7 @@ public final class ChunkSet {
         }
         PackedBlockArray section = sections[si];
         if (section == null && create) {
-            section = new PackedBlockArray(4);
+            section = new PackedBlockArray(1);
             sections[si] = section;
         }
         return section;

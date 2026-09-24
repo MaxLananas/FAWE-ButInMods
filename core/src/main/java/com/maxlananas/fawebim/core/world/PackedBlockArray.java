@@ -243,10 +243,13 @@ public final class PackedBlockArray {
     }
 
     private void growBits() {
-        int newBits = clampBits(bitsPerBlock + 1);
-        if (newBits == bitsPerBlock) {
-            // Palette exhausted at 16 bits; force a dense representation.
-            newBits = 16;
+        // The width the palette needs, and never a single step: a section that
+        // holds more than the two states one bit carries is a section that is
+        // likely to hold a few more, and every step remaps all 4096 cells.
+        int needed = 32 - Integer.numberOfLeadingZeros(paletteSize);
+        int newBits = clampBits(Math.max(needed, 4));
+        if (newBits <= bitsPerBlock) {
+            newBits = clampBits(bitsPerBlock + 1);
         }
         int oldValuesPerLong = valuesPerLong;
         long oldMask = mask;

@@ -191,7 +191,8 @@ public final class BenchMain {
         int stone = BlockState.registry().defaultState("minecraft:stone");
         int dirt = BlockState.registry().defaultState("minecraft:dirt");
 
-        PackedBlockArray narrow = new PackedBlockArray(4);
+        // Two entries need one bit each, which is the width a section starts at.
+        PackedBlockArray narrow = new PackedBlockArray(1);
         timed("a section of two states", BLOCKS, () -> {
             for (int i = 0; i < BLOCKS; i++) {
                 narrow.set((int) (i & 4095), (i & 1) == 0 ? stone : dirt);
@@ -265,6 +266,20 @@ public final class BenchMain {
                 for (int z = 0; z < SIDE; z++) {
                     for (int x = 0; x < SIDE; x++) {
                         chunk.set(x & 15, y, z & 15, (x ^ z) == 0 ? stone : dirt);
+                    }
+                }
+            }
+        });
+
+        // A section that ends up holding many states grows as the palette fills,
+        // and a growth remaps the whole section: this row is what that costs, and
+        // it is the reason the starting width is a trade and not a free win.
+        ChunkSet mixed = new ChunkSet(0, 0, 0, HEIGHT - 1);
+        timed("a chunk buffer of 32 states", BLOCKS, () -> {
+            for (int y = 0; y < HEIGHT; y++) {
+                for (int z = 0; z < SIDE; z++) {
+                    for (int x = 0; x < SIDE; x++) {
+                        mixed.set(x & 15, y, z & 15, 1000 + ((x + z) & 31));
                     }
                 }
             }

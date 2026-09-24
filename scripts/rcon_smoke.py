@@ -52,8 +52,6 @@ CHECKS = [
     ("//count minecraft:stone", "count: 256"),
     ("//undo", "undid 256 block change(s)"),
     ("//count minecraft:stone", "count: 0"),
-
-    ("//count minecraft:stone", "count: 0"),
     ("//set minecraft:stone", "256 block(s) affected"),
     ("//replace minecraft:stone minecraft:dirt", "256 block(s) affected"),
     ("//count minecraft:dirt", "count: 256"),
