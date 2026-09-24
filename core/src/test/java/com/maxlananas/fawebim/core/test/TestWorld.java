@@ -147,8 +147,16 @@ public final class TestWorld implements World {
                 }
             }
         }
+        for (ChunkSet.BlockEntity entity : set.blockEntities()) {
+            setBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
+        }
         setCount += applied;
         return applied;
+    }
+
+    @Override
+    public void applyBlockEntity(int x, int y, int z, NbtCompound nbt) {
+        setBlockEntity(x, y, z, nbt);
     }
 
     private static int minYSection(ChunkSet set) {

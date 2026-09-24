@@ -58,6 +58,17 @@ public interface World extends Extent {
      */
     int applyChunk(ChunkSet set);
 
+    /**
+     * Writes the data of a block entity whose block the buffer just put down.
+     *
+     * <p>A platform takes the matching block entity out of the chunk and loads
+     * this data into it; one that keeps block entities as data replaces what it
+     * holds. It is called after the blocks of the chunk are written, never
+     * before, because the block entity only exists once its block does.</p>
+     */
+    default void applyBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
+    }
+
     /** Ensures the given chunks get relit after a bulk edit. */
     void relight(Collection<BlockVector2> chunks);
 

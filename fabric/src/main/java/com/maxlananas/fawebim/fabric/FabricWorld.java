@@ -10,6 +10,9 @@ import com.maxlananas.fawebim.core.world.PackedBlockArray;
 import com.maxlananas.fawebim.core.world.RegenOptions;
 import com.maxlananas.fawebim.core.world.World;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -273,6 +276,12 @@ public final class FabricWorld implements World {
             applyBiomes(chunk, set);
         }
 
+        // 3b. The data of the block entities the buffer put down, now that their
+        //     blocks exist.
+        for (ChunkSet.BlockEntity entity : set.blockEntities()) {
+            applyBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
+        }
+
         // 4. Lighting and client sync for the changed blocks only. Vanilla would
         //    have queued 6 neighbour updates per block; the bulk write skips that
         //    and relies on the light engine plus the block-change packet, the
@@ -472,6 +481,90 @@ public final class FabricWorld implements World {
     @Override
     public void playEffect(int x, int y, int z, int effectId) {
         level.levelEvent(effectId, new BlockPos(x, y, z), 0);
+    }
+
+    @Override
+    public void applyBlockEntity(int x, int y, int z, NbtCompound nbt) {
+        LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
+        BlockPos pos = new BlockPos(x, y, z);
+        // A chest that was just written does not have its block entity yet: the
+        // game creates it when the block itself changes, which the bulk write did
+        // without going through the level. Asking for it here is what creates it.
+        var blockEntity = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
+        if (blockEntity == null) {
+            LOGGER.debug("No block entity to hold the data at {},{},{}", x, y, z);
+            return;
+        }
+        try {
+            blockEntity.loadWithComponents(toTag(nbt), level.registryAccess());
+            chunk.markUnsaved();
+            level.sendBlockUpdated(pos, blockEntity.getBlockState(), blockEntity.getBlockState(),
+                    Block.UPDATE_CLIENTS);
+        } catch (Throwable throwable) {
+            LOGGER.warn("Could not load the data of the block entity at {},{},{}", x, y, z, throwable);
+        }
+    }
+
+    /** The engine's compound as the game's tag. */
+    private static CompoundTag toTag(NbtCompound nbt) {
+        CompoundTag tag = new CompoundTag();
+        for (Map.Entry<String, Object> entry : nbt.entries().entrySet()) {
+            Tag value = toTag(entry.getValue());
+            if (value != null) {
+                tag.put(entry.getKey(), value);
+            }
+        }
+        return tag;
+    }
+
+    private static Tag toTag(Object value) {
+        if (value instanceof NbtCompound compound) {
+            return toTag(compound);
+        }
+        if (value instanceof byte[] bytes) {
+            return new net.minecraft.nbt.ByteArrayTag(bytes);
+        }
+        if (value instanceof int[] ints) {
+            return new net.minecraft.nbt.IntArrayTag(ints);
+        }
+        if (value instanceof long[] longs) {
+            return new net.minecraft.nbt.LongArrayTag(longs);
+        }
+        if (value instanceof List<?> list) {
+            ListTag tags = new ListTag();
+            for (Object element : list) {
+                Tag tag = toTag(element);
+                if (tag != null) {
+                    tags.add(tag);
+                }
+            }
+            return tags;
+        }
+        if (value instanceof Byte) {
+            return net.minecraft.nbt.ByteTag.valueOf((Byte) value);
+        }
+        if (value instanceof Short) {
+            return net.minecraft.nbt.ShortTag.valueOf((Short) value);
+        }
+        if (value instanceof Integer) {
+            return net.minecraft.nbt.IntTag.valueOf((Integer) value);
+        }
+        if (value instanceof Long) {
+            return net.minecraft.nbt.LongTag.valueOf((Long) value);
+        }
+        if (value instanceof Float) {
+            return net.minecraft.nbt.FloatTag.valueOf((Float) value);
+        }
+        if (value instanceof Double) {
+            return net.minecraft.nbt.DoubleTag.valueOf((Double) value);
+        }
+        if (value instanceof String text) {
+            return net.minecraft.nbt.StringTag.valueOf(text);
+        }
+        if (value instanceof Boolean flag) {
+            return net.minecraft.nbt.ByteTag.valueOf((byte) (flag ? 1 : 0));
+        }
+        return null;
     }
 
     @Override

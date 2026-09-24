@@ -585,7 +585,13 @@ public final class SelfTestMain {
         nbt.putString("id", "minecraft:chest");
         EditSession nbtSession = new EditSession(world, session, "nbt");
         nbtSession.setBlockEntity(1, 71, 1, nbt);
+        // The data waits for the flush, so that it is written once the block it
+        // belongs to is in the world.
+        check("block entity waits for the flush", world.getBlockEntity(1, 71, 1) == null);
+        nbtSession.flushQueue();
         check("block entity stored", world.getBlockEntity(1, 71, 1) != null);
+        check("block entity keeps its data", "minecraft:chest".equals(
+                world.getBlockEntity(1, 71, 1).getString("id", "")));
         EditSession biomeSession = new EditSession(world, session, "biome");
         check("biome set", biomeSession.setBiome(4, 68, 4, 5));
         biomeSession.flushQueue();

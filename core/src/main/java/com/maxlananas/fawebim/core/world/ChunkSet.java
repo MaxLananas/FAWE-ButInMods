@@ -22,6 +22,7 @@ public final class ChunkSet {
     private PackedBlockArray[] sections;
     private int[][] biomes;
     private List<EntityData> entities;
+    private List<BlockEntity> blockEntities;
     private int changedCount;
     private boolean dirty;
 
@@ -192,6 +193,43 @@ public final class ChunkSet {
         }
         int qi = (((y >> 2) & 3) << 4) | (((z >> 2) & 3) << 2) | ((x >> 2) & 3);
         biomes[si][qi] = biomeId;
+    }
+
+    /**
+     * Queues the data of a block entity.
+     *
+     * <p>The blocks themselves are only written when the buffer is flushed, so the
+     * data has to wait as well: putting a chest's contents into the world before
+     * the chest exists writes them onto whatever block was there. FAWE keeps the
+     * same queue for the same reason.</p>
+     */
+    public void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
+        if (blockEntities == null) {
+            blockEntities = new ArrayList<>();
+        }
+        blockEntities.add(new BlockEntity(x, y, z, nbt));
+        dirty = true;
+    }
+
+    /** The queued block entity data, in the order it was set. */
+    public List<BlockEntity> blockEntities() {
+        return blockEntities == null ? List.of() : blockEntities;
+    }
+
+    /** One queued block entity: where it goes and what it holds. */
+    public static final class BlockEntity {
+
+        public final int x;
+        public final int y;
+        public final int z;
+        public final com.maxlananas.fawebim.core.util.NbtCompound nbt;
+
+        BlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.nbt = nbt;
+        }
     }
 
     private PackedBlockArray sectionFor(int y, boolean create) {

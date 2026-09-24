@@ -381,8 +381,19 @@ public final class EditSession implements Extent {
         world.removeEntity(data);
     }
 
+    /**
+     * Queues the data of a block entity, to be written when the blocks of its
+     * chunk are: the platform applies both together, in that order.
+     */
     public void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
-        world.sync(() -> world.setBlockEntity(x, y, z, nbt));
+        if (nbt == null) {
+            return;
+        }
+        ChunkSet chunk = chunkFor(x, z, true);
+        if (chunk == null) {
+            return;
+        }
+        chunk.setBlockEntity(x, y, z, nbt);
     }
 
     /** Applies a change set back to the world (undo/redo). */
