@@ -45,6 +45,9 @@ jobs:
       - name: Check every configuration setting is read
         run: python3 scripts/settings_audit.py
 
+      - name: Check the annotations javac would refuse
+        run: python3 scripts/annotation_check.py
+
 
       - name: Upload the mod jar
         uses: actions/upload-artifact@v4

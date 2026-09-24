@@ -70,7 +70,6 @@ public final class FaweMod implements ModInitializer {
         return registry;
     }
 
-    @Override
     /**
      * Installs the block registry and builds the command registry.
      *
@@ -85,6 +84,7 @@ public final class FaweMod implements ModInitializer {
         CommandManager.get().initialise();
     }
 
+    @Override
     public void onInitialize() {
         // The game builds the command dispatcher while its server object is being
         // constructed, which happens before the starting event reaches the mod.
