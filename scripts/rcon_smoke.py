@@ -43,14 +43,16 @@ CHECKS = [
     # answer must be about the wand, not about the command.
     ("//wand", "wand"),
     # The edit path itself, on a live server: a selection made from the console,
-    # a write into the world, the same write seen by a mask, and the write taken
+    # its size, a write into the world, the write counted, and the write taken
     # back. The region is at y=60, which is air in the flat world the job starts.
     ("//pos1 0,60,0", "position 1 set"),
     ("//pos2 15,60,15", "position 2 set"),
-    ("//count minecraft:stone", "count: 0"),
+    ("//size", "256"),
     ("//set minecraft:stone", "256 block(s) affected"),
     ("//count minecraft:stone", "count: 256"),
     ("//undo", "undid 256 block change(s)"),
+    ("//count minecraft:stone", "count: 0"),
+
     ("//count minecraft:stone", "count: 0"),
     ("//set minecraft:stone", "256 block(s) affected"),
     ("//replace minecraft:stone minecraft:dirt", "256 block(s) affected"),
