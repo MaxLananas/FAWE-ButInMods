@@ -52,6 +52,8 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
             Map.entry("air", new String[]{}));
 
     private final Map<Integer, String> nameCache = new ConcurrentHashMap<>();
+    /** Tags by name, so a mask does not parse and rebuild one for every block. */
+    private final Map<String, java.util.Optional<TagKey<Block>>> tagCache = new ConcurrentHashMap<>();
     private final Map<Integer, Map<String, String>> propertyCache = new ConcurrentHashMap<>();
     private int airId = -1;
     private int stateCount;
@@ -359,12 +361,18 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (state == null) {
             return false;
         }
-        ResourceLocation id = ResourceLocation.tryParse(tag.startsWith("#") ? tag.substring(1) : tag);
-        if (id == null) {
+        java.util.Optional<TagKey<Block>> key = tagCache.computeIfAbsent(
+                tag.startsWith("#") ? tag.substring(1) : tag, name -> {
+                    ResourceLocation id = ResourceLocation.tryParse(name);
+                    return id == null
+                            ? java.util.Optional.empty()
+                            : java.util.Optional.of(TagKey.create(Registries.BLOCK, id));
+                });
+        if (key.isEmpty()) {
             return false;
         }
         try {
-            return state.is(TagKey.create(Registries.BLOCK, id));
+            return state.is(key.get());
         } catch (RuntimeException e) {
             return false;
         }

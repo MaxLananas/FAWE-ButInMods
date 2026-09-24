@@ -60,6 +60,17 @@ public final class Masks {
         private final Set<String> categories = new LinkedHashSet<>();
         private final Set<String> names = new LinkedHashSet<>();
         private final List<String> raw = new ArrayList<>();
+        /**
+         * The states this mask has rejected.
+         *
+         * <p>A mask is asked about every block of the edit, and the answer for a
+         * given state never changes. Without this, a block that matches nothing
+         * pays for a name lookup - a hash of a boxed id and a string comparison -
+         * on every single block; a {@code //replace} over a region has a handful
+         * of distinct states and millions of questions.</p>
+         */
+        private final com.maxlananas.fawebim.core.util.IntSet rejected =
+                new com.maxlananas.fawebim.core.util.IntSet();
 
         public BlockMask(Extent extent, List<String> inputs) {
             this.extent = extent;
@@ -105,6 +116,9 @@ public final class Masks {
             if (states.contains(id)) {
                 return true;
             }
+            if (rejected.contains(id)) {
+                return false;
+            }
             BlockStateRegistry registry = BlockState.registry();
             for (String tag : tags) {
                 if (registry.hasTag(id, tag)) {
@@ -122,6 +136,7 @@ public final class Masks {
                     return true;
                 }
             }
+            rejected.add(id);
             return false;
         }
 

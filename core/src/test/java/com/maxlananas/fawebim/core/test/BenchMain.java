@@ -30,6 +30,9 @@ public final class BenchMain {
     private static final int HEIGHT = 128;
     private static final long BLOCKS = (long) SIDE * SIDE * HEIGHT;
 
+    /** Kept so the JIT cannot delete a loop whose result nobody looks at. */
+    private static long benchSink;
+
     private BenchMain() {
     }
 
@@ -169,6 +172,9 @@ public final class BenchMain {
         section("recording");
         measureRecording();
 
+        section("masks");
+        measureMasks(world);
+
         section("engine");
         measureEngine(world, session);
 
@@ -201,6 +207,44 @@ public final class BenchMain {
             for (int i = 0; i < BLOCKS; i++) {
                 wide.set((int) (i & 4095), 1000 + (int) (i & 4095));
             }
+        });
+    }
+
+    /**
+     * What a mask costs per block.
+     *
+     * <p>A mask answers for every block of an edit, so its test is as hot as the
+     * write itself: the row measures a mask of one name and a mask of a tag, each
+     * asked about the same few states a world holds.</p>
+     */
+    private static void measureMasks(FastWorld world) {
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int dirt = BlockState.registry().defaultState("minecraft:dirt");
+        int[] states = {stone, dirt, BlockState.registry().air()};
+        long questions = 4_000_000L;
+
+        com.maxlananas.fawebim.core.mask.Mask byName =
+                new com.maxlananas.fawebim.core.mask.Masks.BlockMask(world, java.util.List.of("minecraft:dirt"));
+        timed("the mask of one name, 4M blocks", questions, () -> {
+            long hits = 0;
+            for (long i = 0; i < questions; i++) {
+                if (byName.test((int) (i & 255), (int) (i >> 8) & 127, (int) (i >> 15) & 255)) {
+                    hits++;
+                }
+            }
+            benchSink += hits;
+        });
+
+        com.maxlananas.fawebim.core.mask.Mask byTag =
+                new com.maxlananas.fawebim.core.mask.Masks.BlockMask(world, java.util.List.of("#minecraft:dirt"));
+        timed("the mask of one tag, 4M blocks", questions, () -> {
+            long hits = 0;
+            for (long i = 0; i < questions; i++) {
+                if (byTag.test((int) (i & 255), (int) (i >> 8) & 127, (int) (i >> 15) & 255)) {
+                    hits++;
+                }
+            }
+            benchSink += hits;
         });
     }
 
