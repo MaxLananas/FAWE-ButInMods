@@ -110,7 +110,13 @@ jobs:
           grep -E 'FAWE-BIM|Done \(|Mixin|Exception|Error' /tmp/server.log | tail -40
 
       - name: Ask the running server for its settings and its commands
-        run: python3 scripts/rcon_smoke.py --wait 240
+        run: |
+          set +e
+          python3 scripts/rcon_smoke.py --wait 300 > /tmp/smoke.log 2>&1
+          status=$?
+          cat /tmp/smoke.log
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/smoke.log').read_text(errors='replace')[-7000:];print('::error title=rcon smoke::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+          exit $status
 
       - name: Read what the mod wrote to the configuration file
         run: |
@@ -122,7 +128,7 @@ jobs:
       - name: Stop the server
         if: always()
         run: |
-          python3 scripts/rcon_smoke.py --only stop || true
+          python3 scripts/rcon_smoke.py --wait 20 --only stop 2>&1 | tail -3 || true
           sleep 5
           kill "$(cat /tmp/server.pid)" 2>/dev/null || true
           pkill -f devlaunchinjector 2>/dev/null || true

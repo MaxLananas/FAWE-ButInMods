@@ -42,7 +42,8 @@ public final class Tools {
     public static Tool create(String name, Ctx ctx) {
         String key = name.toLowerCase(Locale.ROOT);
         return switch (key) {
-            case "tree" -> new TreeTool();
+            // /tool tree <type> names the tree the tool plants.
+            case "tree" -> new TreeTool(ctx.arg(1, "tree"));
             case "repl", "replace" -> new ReplaceTool();
             case "cycler" -> new CyclerTool();
             case "floodfill", "flood-fill", "flood" -> new FloodFillTool();
@@ -91,10 +92,10 @@ public final class Tools {
     /** {@code /tool tree [tree-type]}. */
     public static final class TreeTool implements Tool {
 
-        private String treeType = "tree";
+        private final String treeType;
 
-        public void setTreeType(String treeType) {
-            this.treeType = treeType;
+        TreeTool(String treeType) {
+            this.treeType = treeType == null || treeType.isEmpty() ? "tree" : treeType;
         }
 
         @Override
