@@ -204,11 +204,14 @@ public final class FaweMod implements ModInitializer {
                 continue;
             }
             LiteralArgumentBuilder<CommandSourceStack> builder = build(child);
-            // A player with operator rights may always run them; a command block
-            // or a function only when the configuration allows it, which is what
-            // WorldEdit's command-block-support decides.
+            // An operator, and anyone on a single-player world, may run them: the
+            // per-command permissions are checked by the engine when a command
+            // actually runs. A command block and a function are automated sources
+            // and are the ones command-block-support governs - they are the
+            // sources that refuse the success messages a console wants.
             builder.requires(source -> (source.hasPermission(2) || !source.getServer().isDedicatedServer())
-                    && (source.getEntity() instanceof ServerPlayer || Config.get().commandBlockSupport));
+                    && (source.getEntity() != null || source.source.acceptsSuccess()
+                        || Config.get().commandBlockSupport));
             dispatcher.register(builder);
         }
     }

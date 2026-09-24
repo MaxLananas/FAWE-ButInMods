@@ -5,6 +5,11 @@ accessWidener v2 named
 # reason WorldEdit's Fabric adapter widens this field).
 accessible field net/minecraft/server/level/ServerPlayerGameMode isDestroyingBlock Z
 
+# The command source behind a command tells a player, a console or an rcon
+# connection apart from a command block and a function: the automated ones are
+# the sources that refuse success messages. WorldEdit widens this same field.
+accessible field net/minecraft/commands/CommandSourceStack source Lnet/minecraft/commands/CommandSource;
+
 # The chunk source's main-thread executor is used when a bulk edit has to hand
 # work back to the server thread.
 accessible class net/minecraft/server/level/ServerChunkCache$MainThreadExecutor
