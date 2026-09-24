@@ -23,6 +23,7 @@ import com.maxlananas.fawebim.core.history.Snapshots;
 import com.maxlananas.fawebim.core.expression.Expression;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
+import com.maxlananas.fawebim.core.platform.ConfigUi;
 import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.BlockVectorSet;
@@ -1341,6 +1342,47 @@ public final class SelfTestMain {
             check("a key that is not a setting offers nothing",
                     entry.suggestions.apply("set nope ").isEmpty());
         }
+        // The model behind the graphical settings screen: the screen draws it, so
+        // the grouping, the search and the value checks are testable here.
+        ConfigUi ui = new ConfigUi(config);
+        int listed = ui.groups().stream().mapToInt(group -> group.settings().size()).sum();
+        checkEquals("every setting has a group", config.settings().size(), listed);
+        checkEquals("no setting is listed twice", config.settings().size(),
+                (int) ui.groups().stream().flatMap(group -> group.settings().stream()).distinct().count());
+        check("the sidebar starts with editing", ui.groups().get(0).name().equals("Editing"));
+        check("the wand item is a tool", ui.settings("Tools", "").stream()
+                .anyMatch(setting -> setting.key().equals("wand-item")));
+        check("the history group holds the history settings", ui.settings("History", "").stream()
+                .anyMatch(setting -> setting.key().equals("history-size")));
+        check("a search narrows the list", ui.settings(null, "brush").size() < config.settings().size()
+                && !ui.settings(null, "brush").isEmpty());
+        check("a search reads the description too", ui.settings(null, "undo").stream()
+                .anyMatch(setting -> setting.key().equals("history-enabled")));
+        checkEquals("an unknown group shows nothing", 0, ui.settings("nope", "").size());
+        check("a bad value is refused", ui.set("max-brush-radius", "abc") != null);
+        check("a good value is stored", ui.set("max-brush-radius", "37") == null
+                && config.maxBrushRadius == 37);
+        check("the value of the model follows the setting",
+                ui.value("max-brush-radius").equals("37"));
+        check("an unknown key is refused", ui.set("nope", "1") != null);
+        String declared = config.find("max-brush-radius").defaultValue();
+        check("a reset puts the default back",
+                ui.reset("max-brush-radius") && ui.value("max-brush-radius").equals(declared));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim gui");
+        check("/fawebim gui says so when there is no screen", actor.messages().stream()
+                .anyMatch(message -> message.contains("no configuration screen")));
+        actor.setScreenAvailable(true);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim");
+        check("bare /fawebim opens the screen when one exists", actor.messages().isEmpty());
+        actor.setScreenAvailable(false);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim");
+        check("bare /fawebim falls back to the listing", actor.messages().stream()
+                .anyMatch(message -> message.contains("Settings (")));
+
         config.maxBrushRadius = 1000;
         config.save();
     }

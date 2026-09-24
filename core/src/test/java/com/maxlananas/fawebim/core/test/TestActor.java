@@ -25,6 +25,7 @@ public final class TestActor implements Actor {
     private double pitch = 0;
     private String heldItem = "minecraft:wooden_axe";
     private final List<String> messages = new ArrayList<>();
+    private boolean screen;
 
     public TestActor(String name, World world, BlockVector3 position) {
         this.name = name;
@@ -36,6 +37,16 @@ public final class TestActor implements Actor {
 
     public static TestActor console(World world) {
         return new TestActor("CONSOLE", world, BlockVector3.ZERO);
+    }
+
+    /** Makes this actor answer the configuration screen hook, as a real client does. */
+    public void setScreenAvailable(boolean value) {
+        this.screen = value;
+    }
+
+    @Override
+    public boolean openConfigurationScreen() {
+        return screen;
     }
 
     @Override

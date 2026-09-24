@@ -86,10 +86,15 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 3. Launch the game.
 
 The mod works in singleplayer and on a Fabric server. Its configuration is written to
-`config/fawebim.yml` on first start, and every value in it is also editable from the chat, so a
-change never needs a restart:
+`config/fawebim.yml` on first start, and every value in it is editable from the chat, so a change
+never needs a restart. In game, `/fawebim` opens a settings screen: a group list on the left, a row
+per setting with the editor for its type (a switch, a number with `-`/`+`, a text field), a search
+box, a Reset button per row, and a line telling you what the setting under the cursor does. It is a
+`Screen` of the game itself, so it needs no extra library, no downloadable native code, and it works
+wherever the mod does.
 
 ```text
+/fawebim                           open the settings screen (chat listing without a client)
 /fawebim settings                  list every setting with its current value
 /fawebim settings wand             show the settings whose name matches
 /fawebim set max-brush-radius 50   change one and write the file

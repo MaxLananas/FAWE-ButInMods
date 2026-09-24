@@ -105,6 +105,9 @@ Two rules follow from that:
 
 * A setting must change something. `python3 scripts/settings_audit.py` fails when a declared key is
   read nowhere else in the sources, and it is part of the verification list below.
+* A setting must be reachable in game. The chat form is generated from the same table, and the
+  settings screen draws itself from `ConfigUi`, which groups, filters and validates those rows, so a
+  new setting appears in the sidebar and in the search without touching the client code.
 * A behaviour the platform cannot honour does not get a knob. The mod ships no switch that only
   pretends: those are listed under *Known platform limits* in the README instead.
 

@@ -35,12 +35,12 @@ final class ConfigCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Show and edit the mod configuration in game";
+        entry.description = "Open the configuration screen, or read and set the values in chat";
         entry.group = "utility";
         // p pages the listing, s narrows it to one type of setting.
         entry.valueFlags.add("p");
         entry.valueFlags.add("s");
-        entry.arguments.add("[settings|set|reset|reload|save|path]");
+        entry.arguments.add("[gui|settings|set|reset|reload|save|path]");
         // Typing /fawebim <tab> suggests the actions, /fawebim set <tab> the keys.
         entry.suggestions = typed -> {
             java.util.List<String> completions = new ArrayList<>();
@@ -48,7 +48,7 @@ final class ConfigCommands {
             String[] words = remaining.isEmpty() ? new String[0] : remaining.split("\\s+", -1);
             String last = lastWord(remaining);
             if (words.length <= 1) {
-                completions.addAll(List.of("settings", "set", "reset", "reload", "save", "path"));
+                completions.addAll(List.of("gui", "settings", "set", "reset", "reload", "save", "path"));
                 keys(completions, last);
                 return completions;
             }
@@ -68,8 +68,21 @@ final class ConfigCommands {
             return completions;
         };
         entry.handler = ctx -> {
-            String action = ctx.arg(0, "settings").toLowerCase(Locale.ROOT);
+            String action = ctx.arg(0, "").toLowerCase(Locale.ROOT);
             switch (action) {
+                // Bare /fawebim is the shortest way to the settings: a client that
+                // can draw the screen gets it, everything else gets the listing.
+                case "" -> {
+                    if (!screen(ctx)) {
+                        settings(ctx);
+                    }
+                }
+                case "gui", "screen" -> {
+                    if (!screen(ctx)) {
+                        ctx.actor().message(Msg.warn("There is no configuration screen here;"
+                                + " use /fawebim settings to read and set the values in chat"));
+                    }
+                }
                 case "settings", "list", "show" -> settings(ctx);
                 case "set" -> set(ctx);
                 case "reset" -> reset(ctx);
@@ -79,6 +92,11 @@ final class ConfigCommands {
                 default -> usage(ctx);
             }
         };
+    }
+
+    /** Opens the graphical settings screen when the actor has one. */
+    private static boolean screen(Ctx ctx) {
+        return ctx.actor().openConfigurationScreen();
     }
 
     /** {@code /fawebim settings [filter] [-p <page>] [-s <type>]} — the listing. */
@@ -182,12 +200,12 @@ final class ConfigCommands {
         ctx.actor().message(Msg.keyValue("Configuration file",
                 file == null ? "config/fawebim.yml" : file.toString()));
         ctx.actor().message(Msg.of("\u00a77  " + Config.get().settings().size()
-                + " settings, editable here or in the file, then /fawebim reload"));
+                + " settings, editable in /fawebim gui, here, or in the file"));
     }
 
     private void usage(Ctx ctx) {
-        ctx.actor().message(Msg.info("Usage: /fawebim settings [filter] | set <key> <value> | reset <key>"
-                + " | reload | save | path"));
+        ctx.actor().message(Msg.info("Usage: /fawebim gui | settings [filter] | set <key> <value>"
+                + " | reset <key> | reload | save | path"));
     }
 
     /** Every setting key, narrowed to the ones starting with what was typed. */

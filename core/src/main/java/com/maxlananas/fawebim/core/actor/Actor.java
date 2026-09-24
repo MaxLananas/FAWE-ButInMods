@@ -99,6 +99,17 @@ public interface Actor {
         return 5.0;
     }
 
+    /**
+     * Opens the configuration screen, when this actor has one.
+     *
+     * <p>A client that can draw the screen returns true; anything else (the
+     * console, a test, a platform without a client) returns false and the caller
+     * falls back to printing the same values in chat.</p>
+     */
+    default boolean openConfigurationScreen() {
+        return false;
+    }
+
     /** Called when the player's selection changed so the client can be notified. */
     default void updateSelectionOutline() {
     }

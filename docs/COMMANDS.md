@@ -357,7 +357,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//we [version\|reload\|trace\|help]` | `/we`, `/worldedit` | WorldEdit/FAWE information | implemented |
 | `/cs <filename> [args]` | `//cs` | Execute a CraftScript | implemented |
 | `/fast` | — | Toggle FAWE's fast mode for your session | implemented |
-| `/fawebim [settings\|set\|reset\|reload\|save\|path]` | `//fawebim`, `/fbm` | Show and edit the mod configuration in game | implemented |
+| `/fawebim [gui\|settings\|set\|reset\|reload\|save\|path]` | `//fawebim`, `/fbm` | Open the configuration screen, or read and set the values in chat | implemented |
 | `/gmask [mask]` | `//gmask`, `/smask`, `//smask` | Set the global mask (/smask = source mask on overwrite) | implemented |
 | `/gtexture [pattern]` | `//gtexture`, `/material`, `//material` | Set the global pattern | implemented |
 | `/gtransform [transform]` | `//gtransform` | Apply a transform to every edit you make | implemented |

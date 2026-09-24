@@ -135,6 +135,13 @@ public final class FabricActor implements Actor {
     }
 
     @Override
+    public boolean openConfigurationScreen() {
+        // Only the integrated client can draw the screen; on a remote server the
+        // request finds no opener and the command prints the values instead.
+        return ConfigurationScreens.open();
+    }
+
+    @Override
     public boolean hasPermission(String permission) {
         // Single player: everything is allowed unless the player is not op and
         // the game is in a restricted mode.

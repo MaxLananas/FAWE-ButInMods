@@ -17,6 +17,9 @@
     "entrypoints": {
         "main": [
             "com.maxlananas.fawebim.fabric.FaweMod"
+        ],
+        "client": [
+            "com.maxlananas.fawebim.fabric.client.FaweModClient"
         ]
     },
     "mixins": [
