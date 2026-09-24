@@ -19,9 +19,12 @@ COMMAND = 2
 AUTH_RESPONSE = 2
 RESPONSE = 0
 
-# (command, text that must appear in the answer)
+# (command, text that must appear in the answer). The server strips one leading
+# slash from a line, so "fawebim path" is what a player typing /fawebim path
+# sends and "//fawebim path" is what typing //fawebim sends.
 CHECKS = [
     ("fawebim path", "config"),
+    ("//fawebim path", "config"),
     ("fawebim settings", "Settings ("),
     ("fawebim settings max-blocks", "max-blocks-changed"),
     ("fawebim set max-blocks-changed.default 123456", "123456"),
@@ -29,12 +32,16 @@ CHECKS = [
     ("fawebim reset max-blocks-changed.default", "default"),
     ("fawebim save", "written"),
     ("fawebim reload", "reloaded"),
-    ("brushes", "brush"),
-    ("masks", "mask"),
-    ("patterns", "pattern"),
+    ("//brushes", "brush"),
+    ("//masks", "mask"),
+    ("//patterns", "pattern"),
+    ("//transforms", "rotate"),
+    ("//version", "commands registered"),
     ("fawebim settings -s boolean", "Settings ("),
     ("fawebim nonsense", "Usage"),
-    ("set stone", ""),
+    # A command that needs a player is still a command the server knows: the
+    # answer must be about the selection, not about the command.
+    ("//wand", "player"),
 ]
 
 

@@ -71,14 +71,35 @@ public final class FaweMod implements ModInitializer {
     }
 
     @Override
+    /**
+     * Installs the block registry and builds the command registry.
+     *
+     * <p>Idempotent, and called both at mod load and once a server is starting:
+     * the first call is what makes the commands exist at all, the second picks up
+     * the blocks the data packs and the other mods added.</p>
+     */
+    private static void prepareEngine() {
+        registry = new FabricBlockStateRegistry();
+        BlockState.setRegistry(registry);
+        EditSession.BlockStateRegistryHolder.set(registry);
+        CommandManager.get().initialise();
+    }
+
     public void onInitialize() {
+        // The game builds the command dispatcher while its server object is being
+        // constructed, which happens before the starting event reaches the mod.
+        // Everything the commands need to exist has to be ready by then, so the
+        // engine is prepared here, at mod load.
+        prepareEngine();
+
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             try {
                 Config.get().load(server.getServerDirectory());
                 FabricRegistries.install(server);
-                registry = new FabricBlockStateRegistry();
-                BlockState.setRegistry(registry);
-                EditSession.BlockStateRegistryHolder.set(registry);
+                // Blocks a mod registers after us are in the registry by now, so it
+                // is read again; the state ids do not change, which is what the
+                // commands built at load time hold on to.
+                prepareEngine();
                 Schematics.setDirectory(server.getServerDirectory()
                         .resolve(Config.get().schematicSaveDirectory));
                 // The snapshots and the disk history live next to the world, which
@@ -97,7 +118,6 @@ public final class FaweMod implements ModInitializer {
                         LOGGER.info("Read {} history entries back from disk", restored);
                     }
                 }
-                CommandManager.get().initialise();
                 LOGGER.info("FAWE-BIM ready: {} commands registered, {} block states known",
                         CommandManager.get().size(), registry.stateCount());
             } catch (Throwable throwable) {
@@ -164,6 +184,9 @@ public final class FaweMod implements ModInitializer {
      * ({"{@code /fill}, {@code /clear}") is left alone.</p>
      */
     private void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
+        // Nothing to register without the command registry: if this ever runs
+        // before the mod is initialised, the engine is built here.
+        prepareEngine();
         Node root = new Node(null);
         for (CommandRegistry.Entry entry : CommandManager.get().registry().all()) {
             Set<String> names = new LinkedHashSet<>();
