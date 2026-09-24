@@ -222,8 +222,8 @@ halves, and the chunk buffer answers "was this cell written, what did it hold, w
 call instead of three that each redid the arithmetic. A mask answers a state it has already
 rejected from memory: it is asked about every block of a filtered edit, and a block that matches
 nothing used to pay for a name lookup every time - 13 ns per question, 3.0 now. The
-history looked a chunk up through a boxed `Long` for every block, masks held their states in a
-`Set<Integer>`, and every brush built a list of positions before touching one. The chunk buffer kept
+masks held their states in a `Set<Integer>`, and every brush built a list of positions before
+touching one. The chunk buffer kept
 the positions it held in a hash set, so every single write hashed a position and every flush asked
 4096 times per section whether a cell was in that set: it keeps one bit per cell now, and the flush
 walks the bits that are set. The edit timeout counted blocks with an atomic and read the clock on
