@@ -263,19 +263,27 @@ public final class Operations {
                         (int) Math.floor(from.z() + (to.z() - from.z()) * t)));
             }
         }
-        java.util.Set<BlockVector3> written = new java.util.HashSet<>();
+        // The tube of a path overlaps itself where the path bends, and a block
+        // that two spheres share must be written once. The positions live in a
+        // primitive set keyed by the world position, not in a set of objects.
+        com.maxlananas.fawebim.core.util.LongObjectMap<Boolean> written =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>();
+        int radius = (int) Math.ceil(thickness);
+        int[] shellCounter = {0};
         for (BlockVector3 position : positions) {
-            for (BlockVector3 target : spherePositions(position, (int) Math.ceil(thickness), false)) {
-                if (!written.add(target)) {
-                    continue;
+            forEachInSphere(position, radius, false, (x, y, z) -> {
+                long key = (((long) x & 0x3FFFFFF) << 38) | (((long) y & 0xFFF) << 26) | ((long) z & 0x3FFFFFF);
+                if (written.get(key) != null) {
+                    return false;
                 }
-                if (session.setBlock(target.x(), target.y(), target.z(),
-                        pattern.apply(target.x(), target.y(), target.z()))) {
-                    shell++;
+                written.put(key, Boolean.TRUE);
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    shellCounter[0]++;
                 }
-            }
+                return false;
+            });
         }
-        return shell;
+        return shellCounter[0];
     }
 
     /** {@code //curve} — Catmull-Rom spline through the given points. */
