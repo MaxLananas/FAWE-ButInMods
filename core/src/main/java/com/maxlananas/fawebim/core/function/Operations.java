@@ -13,6 +13,7 @@ import com.maxlananas.fawebim.core.world.World;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,154 @@ import java.util.Random;
 public final class Operations {
 
     private Operations() {
+    }
+
+    /** The six neighbours of a cell, as x/y/z offsets. */
+    private static final int[] NEIGHBOURS = {1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1};
+
+    /** A hollow allocates a bit per cell of the selection; past this it refuses. */
+    private static final long MAX_HOLLOW_CELLS = 64L * 1024 * 1024;
+
+    /**
+     * {@code //hollow}: replaces the inside of what the selection holds with the
+     * pattern, leaving a shell of {@code thickness} blocks.
+     *
+     * <p>This is FAWE's own algorithm rather than a test on the shape. The space
+     * that opens onto the selection's faces is flooded through the cells the mask
+     * leaves open - cells that are not solid, by default - and the flood never
+     * runs on from outside the region. Every cell the flood does not reach, and
+     * every cell a thicker shell keeps, is left alone; the rest is replaced. The
+     * surface of the object therefore survives and its inside does not, whatever
+     * shape it has. The selection does need room around the object: a selection
+     * that hugs a solid object leaves the flood nothing to start from and is
+     * emptied whole, which is how FAWE behaves as well.</p>
+     *
+     * @param mask the cells that stop the flood, e.g. solid blocks
+     * @return how many blocks changed
+     */
+    public static int hollow(EditSession session, Region region, int thickness, Pattern pattern, Mask mask) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int width = max.x() - min.x() + 1;
+        int height = max.y() - min.y() + 1;
+        int length = max.z() - min.z() + 1;
+        long volume = (long) width * height * length;
+        if (volume <= 0 || volume > MAX_HOLLOW_CELLS) {
+            throw new IllegalArgumentException("A selection of " + volume + " blocks is too large to hollow");
+        }
+        // One bit per cell of the region padded by a block, so the neighbours of
+        // the region's own cells have an index even when they are outside it.
+        int padWidth = width + 2;
+        int padLength = length + 2;
+        int cellCount = padWidth * (height + 2) * padLength;
+        BitSet open = new BitSet(cellCount);
+        long[] queue = new long[Math.min(1 << 16, Math.max(64, (int) volume))];
+        int queued = 0;
+
+        for (int x = min.x(); x <= max.x(); x++) {
+            for (int y = min.y(); y <= max.y(); y++) {
+                queued = visit(queue, queued, open, region, min, padWidth, padLength, mask, x, y, min.z());
+                queued = visit(queue, queued, open, region, min, padWidth, padLength, mask, x, y, max.z());
+            }
+        }
+        for (int y = min.y(); y <= max.y(); y++) {
+            for (int z = min.z(); z <= max.z(); z++) {
+                queued = visit(queue, queued, open, region, min, padWidth, padLength, mask, min.x(), y, z);
+                queued = visit(queue, queued, open, region, min, padWidth, padLength, mask, max.x(), y, z);
+            }
+        }
+        for (int z = min.z(); z <= max.z(); z++) {
+            for (int x = min.x(); x <= max.x(); x++) {
+                queued = visit(queue, queued, open, region, min, padWidth, padLength, mask, x, min.y(), z);
+                queued = visit(queue, queued, open, region, min, padWidth, padLength, mask, x, max.y(), z);
+            }
+        }
+
+        while (queued > 0) {
+            long packed = queue[--queued];
+            int x = (int) (packed >> 40) + min.x();
+            int y = (int) (packed >> 20 & 0xFFFFF) + min.y();
+            int z = (int) (packed & 0xFFFFF) + min.z();
+            for (int side = 0; side < NEIGHBOURS.length; side += 3) {
+                if (!region.contains(x + NEIGHBOURS[side], y + NEIGHBOURS[side + 1], z + NEIGHBOURS[side + 2])) {
+                    continue;
+                }
+                queued = visit(queue, queued, open, region, min, padWidth, padLength, mask,
+                        x + NEIGHBOURS[side], y + NEIGHBOURS[side + 1], z + NEIGHBOURS[side + 2]);
+            }
+        }
+
+        // A shell thicker than one block is the flood grown inward, a layer at a
+        // time: every cell of the region next to a reached cell counts as reached.
+        for (int layer = 1; layer < thickness; layer++) {
+            BitSet grown = (BitSet) open.clone();
+            for (int y = 0; y < height; y++) {
+                for (int z = 0; z < length; z++) {
+                    for (int x = 0; x < width; x++) {
+                        int index = padded(x, y, z, padWidth, padLength);
+                        if (open.get(index)) {
+                            continue;
+                        }
+                        for (int side = 0; side < NEIGHBOURS.length; side += 3) {
+                            if (open.get(padded(x + NEIGHBOURS[side], y + NEIGHBOURS[side + 1],
+                                    z + NEIGHBOURS[side + 2], padWidth, padLength))) {
+                                grown.set(index);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            open = grown;
+        }
+
+        int changed = 0;
+        for (int y = 0; y < height; y++) {
+            for (int z = 0; z < length; z++) {
+                for (int x = 0; x < width; x++) {
+                    boolean keeps = false;
+                    for (int side = 0; side < NEIGHBOURS.length; side += 3) {
+                        if (open.get(padded(x + NEIGHBOURS[side], y + NEIGHBOURS[side + 1],
+                                z + NEIGHBOURS[side + 2], padWidth, padLength))) {
+                            keeps = true;
+                            break;
+                        }
+                    }
+                    if (keeps) {
+                        continue;
+                    }
+                    int worldX = min.x() + x;
+                    int worldY = min.y() + y;
+                    int worldZ = min.z() + z;
+                    if (session.setBlock(worldX, worldY, worldZ, pattern.apply(worldX, worldY, worldZ))) {
+                        changed++;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /** Adds a cell to the flood and queues it when it is inside the region. */
+    private static int visit(long[] queue, int queued, BitSet open, Region region, BlockVector3 min,
+                             int padWidth, int padLength, Mask mask, int x, int y, int z) {
+        int index = padded(x - min.x(), y - min.y(), z - min.z(), padWidth, padLength);
+        if (open.get(index)) {
+            return queued;
+        }
+        if (mask.test(x, y, z)) {
+            return queued;
+        }
+        open.set(index);
+        if (queued == queue.length) {
+            queue = java.util.Arrays.copyOf(queue, queue.length * 2);
+        }
+        queue[queued++] = ((long) (x - min.x()) << 40) | ((long) (y - min.y()) << 20) | (z - min.z());
+        return queued;
+    }
+
+    private static int padded(int x, int y, int z, int padWidth, int padLength) {
+        return ((y + 1) * padLength + (z + 1)) * padWidth + (x + 1);
     }
 
     // ------------------------------------------------------------------ shapes

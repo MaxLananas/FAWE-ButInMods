@@ -75,6 +75,7 @@ public final class SelfTestMain {
         testMath();
         testBlockStateRegistry();
         testRegions();
+        testHollow();
         testMasks();
         testMaskAndPatternSyntax();
         testPatterns();
@@ -376,6 +377,67 @@ public final class SelfTestMain {
         check("contract", sphere.contract(new BlockVector3(1, 0, 0)));
         session.setSelector(selector);
         check("session selection", session.isSelectionDefined(world));
+    }
+
+    private static void testHollow() {
+        section("hollow");
+        TestWorld world = new TestWorld("hollow");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Carol", world, new BlockVector3(0, 71, 0));
+        LocalSession local = actor.session();
+        local.setMaxBlocksChanged(100000);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int air = BlockState.registry().air();
+
+        // A solid 3x3x3 block of stone in the air, with the selection around it.
+        for (int y = 71; y <= 73; y++) {
+            for (int z = 1; z <= 3; z++) {
+                for (int x = 1; x <= 3; x++) {
+                    world.setBlock(x, y, z, stone);
+                }
+            }
+        }
+        RegionSelector selector = LocalSession.newSelectors(world, "cuboid");
+        selector.selectPrimary(new BlockVector3(0, 70, 0), SelectorLimits.unlimited());
+        selector.selectSecondary(new BlockVector3(4, 74, 4), SelectorLimits.unlimited());
+        local.setSelector(selector);
+        Region region = local.getSelection(world);
+
+        EditSession edit = new EditSession(world, local, "//hollow");
+        Masks.ExtentHolder.set(edit);
+        int changed = Operations.hollow(edit, region, 1, new Patterns.Single(air), new Masks.SolidMask(edit));
+        edit.flushQueue();
+        checkEquals("hollowing a cube replaces its middle", 1, changed);
+        checkEquals("the middle of the cube is air", air, world.getBlock(2, 72, 2));
+        checkEquals("the surface of the cube stays", stone, world.getBlock(1, 72, 2));
+
+        // The same cube with a shell of two: the flood grows one layer inward.
+        for (int y = 71; y <= 73; y++) {
+            for (int z = 1; z <= 3; z++) {
+                for (int x = 1; x <= 3; x++) {
+                    world.setBlock(x, y, z, stone);
+                }
+            }
+        }
+        EditSession thicker = new EditSession(world, local, "//hollow 2");
+        int shelled = Operations.hollow(thicker, region, 2, new Patterns.Single(air), new Masks.SolidMask(thicker));
+        thicker.flushQueue();
+        checkEquals("a shell of two leaves the cube alone", 0, shelled);
+        checkEquals("the cube is still there", stone, world.getBlock(2, 72, 2));
+
+        // A selection that hugs solid blocks has no cell to flood from, so the
+        // whole of it is replaced - FAWE's own caveat for //hollow.
+        RegionSelector tight = LocalSession.newSelectors(world, "cuboid");
+        tight.selectPrimary(new BlockVector3(0, 69, 0), SelectorLimits.unlimited());
+        tight.selectSecondary(new BlockVector3(4, 69, 4), SelectorLimits.unlimited());
+        local.setSelector(tight);
+        EditSession hugging = new EditSession(world, local, "//hollow tight");
+        Masks.ExtentHolder.set(hugging);
+        int emptied = Operations.hollow(hugging, local.getSelection(world), 1,
+                new Patterns.Single(air), new Masks.SolidMask(hugging));
+        hugging.flushQueue();
+        checkEquals("a selection that hugs solid blocks is emptied", 25, emptied);
+        checkEquals("the layer under it is gone", air, world.getBlock(2, 69, 2));
     }
 
     private static void testMasks() {

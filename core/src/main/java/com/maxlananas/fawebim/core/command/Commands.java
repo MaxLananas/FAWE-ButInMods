@@ -5,6 +5,7 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.HeightMaps;
+import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector2;
@@ -612,7 +613,7 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e23 = registry.register("//faces");
+        CommandRegistry.Entry e23 = registry.register("//faces", "//outline");
         e23.description = "Build the faces of the selection";
         e23.group = "region";
         e23.requiresSelection = true;
@@ -690,36 +691,11 @@ public final class Commands {
                     // -m hollows only the blocks the mask selects.
                     Mask hollowMask = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
                     Region region = ctx.selection();
-                    int depth = Math.max(1, thickness);
-                    region.forEachPosition((x, y, z) -> {
-                        if (distanceToEdge(region, x, y, z) >= depth) {
-                            return false;
-                        }
-                        if (hollowMask != null && !hollowMask.test(x, y, z)) {
-                            return false;
-                        }
-                        session.setBlock(x, y, z, pattern != null ? pattern.apply(x, y, z) : air());
-                        return false;
-                    });
-                    flush(ctx, session);
-                };
-
-
-        CommandRegistry.Entry e26 = registry.register("//outline", "//outline-remove");
-        e26.description = "Build a hollow outline";
-        e26.group = "region";
-        e26.requiresSelection = true;
-        e26.arguments.add("pattern");
-        e26.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    Masks.ExtentHolder.set(session);
-                    Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    Region region = ctx.selection();
-                    region.forEachPosition((x, y, z) -> {
-                        session.setBlock(x, y, z, distanceToEdge(region, x, y, z) < 1
-                                ? pattern.apply(x, y, z) : air());
-                        return false;
-                    });
+                    // The flood is stopped by solid blocks unless -m names the
+                    // cells it should be stopped by instead.
+                    Mask barrier = hollowMask != null ? hollowMask : new Masks.SolidMask(null);
+                    Pattern fill = pattern != null ? pattern : new Patterns.Single(air());
+                    Operations.hollow(session, region, Math.max(1, thickness), fill, barrier);
                     flush(ctx, session);
                 };
 
