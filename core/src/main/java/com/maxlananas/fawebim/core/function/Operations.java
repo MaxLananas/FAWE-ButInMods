@@ -28,6 +28,32 @@ public final class Operations {
     private Operations() {
     }
 
+    /**
+     * {@code //faces} and {@code //outline}: the pattern on every cell of the
+     * region that has a neighbour outside it.
+     *
+     * <p>For a cuboid that is its six faces. For any other selection it is the
+     * surface of the shape rather than the faces of the box around it, which is
+     * what FAWE's own {@code RegionShape} pass builds - a sphere's shell, not the
+     * six caps of its bounding box.</p>
+     */
+    public static int faces(EditSession session, Region region, Pattern pattern) {
+        int[] changed = {0};
+        region.forEachPosition((x, y, z) -> {
+            for (int side = 0; side < NEIGHBOURS.length; side += 3) {
+                if (!region.contains(x + NEIGHBOURS[side], y + NEIGHBOURS[side + 1],
+                        z + NEIGHBOURS[side + 2])) {
+                    if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                        changed[0]++;
+                    }
+                    break;
+                }
+            }
+            return false;
+        });
+        return changed[0];
+    }
+
     /** The six neighbours of a cell, as x/y/z offsets. */
     private static final int[] NEIGHBOURS = {1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1};
 

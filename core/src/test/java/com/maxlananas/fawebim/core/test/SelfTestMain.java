@@ -31,6 +31,7 @@ import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.platform.Setting;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
+import com.maxlananas.fawebim.core.region.EllipsoidRegion;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.region.RegionSelector;
 import com.maxlananas.fawebim.core.region.SelectorLimits;
@@ -424,6 +425,28 @@ public final class SelfTestMain {
         thicker.flushQueue();
         checkEquals("a shell of two leaves the cube alone", 0, shelled);
         checkEquals("the cube is still there", stone, world.getBlock(2, 72, 2));
+
+        // //outline is //faces: for a cuboid that is the six faces, and for any
+        // other selection it is the surface of the shape rather than the faces of
+        // the box around it.
+        EditSession faces = new EditSession(world, local, "//faces");
+        Masks.ExtentHolder.set(faces);
+        int gold = BlockState.registry().defaultState("minecraft:gold_block");
+        int faced = Operations.faces(faces, region, new Patterns.Single(gold));
+        faces.flushQueue();
+        checkEquals("the faces of a box are its six sides", 125 - 27, faced);
+
+        // A round selection has the surface of the sphere, not the six caps of
+        // the box around it: the top of the ball is on that surface, a corner of
+        // the box is not part of the shape at all.
+        EllipsoidRegion ball = new EllipsoidRegion(new Vector3(8.5, 71.5, 8.5), new Vector3(3, 3, 3));
+        EditSession round = new EditSession(world, local, "//faces round");
+        Masks.ExtentHolder.set(round);
+        int shell = Operations.faces(round, ball, new Patterns.Single(gold));
+        round.flushQueue();
+        check("a round selection only has its own surface", shell > 0 && shell < 343);
+        checkEquals("the top of the ball is on its surface", gold, world.getBlock(8, 74, 8));
+        checkEquals("a corner of the box around it stays out", air, world.getBlock(5, 71, 5));
 
         // A selection that hugs solid blocks has no cell to flood from, so the
         // whole of it is replaced - FAWE's own caveat for //hollow.

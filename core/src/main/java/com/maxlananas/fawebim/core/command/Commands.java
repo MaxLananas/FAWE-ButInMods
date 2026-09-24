@@ -622,25 +622,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    Region region = ctx.selection();
-                    BlockVector3 min = region.getMinimumPoint();
-                    BlockVector3 max = region.getMaximumPoint();
-                    for (int x = min.x(); x <= max.x(); x++) {
-                        for (int z = min.z(); z <= max.z(); z++) {
-                            session.setBlock(x, min.y(), z, pattern.apply(x, min.y(), z));
-                            session.setBlock(x, max.y(), z, pattern.apply(x, max.y(), z));
-                        }
-                    }
-                    for (int y = min.y(); y <= max.y(); y++) {
-                        for (int x = min.x(); x <= max.x(); x++) {
-                            session.setBlock(x, y, min.z(), pattern.apply(x, y, min.z()));
-                            session.setBlock(x, y, max.z(), pattern.apply(x, y, max.z()));
-                        }
-                        for (int z = min.z(); z <= max.z(); z++) {
-                            session.setBlock(min.x(), y, z, pattern.apply(min.x(), y, z));
-                            session.setBlock(max.x(), y, z, pattern.apply(max.x(), y, z));
-                        }
-                    }
+                    Operations.faces(session, ctx.selection(), pattern);
                     flush(ctx, session);
                 };
 
