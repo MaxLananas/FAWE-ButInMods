@@ -194,19 +194,22 @@ what a change costs.
 
 | Operation | Rate |
 |---|---|
-| Block writes, engine with history | **17 – 20 M blocks/s** |
-| Block writes, engine without history | **50 – 51 M blocks/s** |
-| `//set` over 64x64x64 | **27 – 34 M blocks/s** |
-| `//copy` over 64x64x64 | **66 – 73 M blocks/s** |
-| `//paste` over 64x64x64 | **26 – 27 M blocks/s** |
-| `//replace` over 64x64x64 | **22 – 26 M blocks/s** |
-| `//sphere` radius 40 | **25 – 36 M blocks/s** |
-| `//undo` and `//redo` of that `//set` | **58 – 62 M blocks/s** |
-| A mask asked about a block | **260 – 337 M questions/s** |
+| Block writes, engine with history | **32 M blocks/s** |
+| Block writes, engine without history | **53 – 54 M blocks/s** |
+| `//set` over 64x64x64 | **40 M blocks/s** |
+| `//copy` over 64x64x64 | **70 – 74 M blocks/s** |
+| `//paste` over 64x64x64 | **31 – 32 M blocks/s** |
+| `//replace` over 64x64x64 | **30 – 31 M blocks/s** |
+| `//sphere` radius 40 | **41 M blocks/s** |
+| `//undo` and `//redo` of that `//set` | **69 – 79 M blocks/s** |
+| A mask asked about a block | **262 – 294 M questions/s** |
 
 The spread between two runs of the same binary is wider than the effect of most
 changes, so a single number would be a claim the benchmark cannot support: what the
-table says is what the operations cost, not what a machine will measure.
+table says is what the operations cost, not what a machine will measure. A row runs
+ten times and every run records a history of its own, so the bench drops the history
+of the run before it: keeping them would have the row measure the heap, which on a
+machine with a gigabyte to spare means measuring the garbage collector.
 
 Every row prepares the world with the state the edit is about to overwrite, because an edit that
 finds the value already there returns before it does anything and a benchmark of that measures

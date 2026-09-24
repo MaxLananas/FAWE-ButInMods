@@ -297,12 +297,12 @@ public final class Snapshots {
                 section.putInt("x", set.chunkX());
                 section.putInt("z", set.chunkZ());
                 section.putInt("y", set.sectionY());
-                section.putIntArray("i", shrink(set.indices(), set.size()));
-                section.putIntArray("b", shrink(set.before(), set.size()));
-                section.putIntArray("a", shrink(set.after(), set.size()));
+                section.putIntArray("i", set.cells());
+                section.putIntArray("b", set.beforeStates());
+                section.putIntArray("a", set.afterStates());
                 sections.add(section);
                 for (int i = 0; i < set.size(); i++) {
-                    int index = set.indices()[i];
+                    int index = set.cellAt(i);
                     int x = (set.chunkX() << 4) + (index & 15);
                     int z = (set.chunkZ() << 4) + ((index >> 4) & 15);
                     int y = (set.sectionY() << 4) + ((index >> 8) & 15);

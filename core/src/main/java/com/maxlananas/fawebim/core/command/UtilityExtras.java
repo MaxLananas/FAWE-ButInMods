@@ -499,7 +499,7 @@ final class UtilityExtras {
         for (var sets : current.changes().values()) {
             for (var set : sets) {
                 for (int i = 0; i < set.size(); i++) {
-                    counts.merge(BlockState.registry().name(set.before()[i]), 1, Integer::sum);
+                    counts.merge(BlockState.registry().name(set.beforeAt(i)), 1, Integer::sum);
                 }
             }
         }

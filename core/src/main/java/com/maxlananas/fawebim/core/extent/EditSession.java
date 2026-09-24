@@ -398,20 +398,19 @@ public final class EditSession implements Extent {
 
     /** Applies a change set back to the world (undo/redo). */
     public int applyChangeSet(ChangeSet set, boolean undo) {
-        int[] indices = set.indices();
-        int[] values = undo ? set.before() : set.after();
         int baseX = set.chunkX() << 4;
         int baseY = set.sectionY() << 4;
         int baseZ = set.chunkZ() << 4;
         ChunkSet chunk = chunkFor(baseX, baseZ, true);
-        for (int i = 0; i < set.size(); i++) {
-            int index = indices[i];
-            int x = baseX + (index & 15);
-            int y = baseY + ((index >> 8) & 15);
-            int z = baseZ + ((index >> 4) & 15);
-            chunk.set(x, y, z, values[i]);
+        int size = set.size();
+        for (int row = 0; row < size; row++) {
+            int cell = set.cellAt(row);
+            int x = baseX + (cell & 15);
+            int y = baseY + ((cell >> 8) & 15);
+            int z = baseZ + ((cell >> 4) & 15);
+            chunk.set(x, y, z, undo ? set.beforeAt(row) : set.afterAt(row));
         }
-        return set.size();
+        return size;
     }
 
     @Override

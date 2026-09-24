@@ -289,19 +289,29 @@ public final class BenchMain {
         // over, so the measured run really changes those blocks: an edit that
         // finds the value already there returns before it does anything, and a
         // benchmark of that measures nothing.
-        timed("an edit without history", BLOCKS, () -> fill(world, stone), () -> {
+        // Every row runs ten times and each run records a history of its own -
+        // about a hundred megabytes for a row of 8.4M changes - so the prepare
+        // drops the history of the run before it. A bench that keeps them
+        // measures the heap instead of the engine, and needs a heap no machine
+        // running it is likely to have.
+        Runnable filled = () -> {
+            fill(world, stone);
+            session.getHistory().clear();
+        };
+
+        timed("an edit without history", BLOCKS, filled, () -> {
             EditSession edit = new EditSession(world, session, "bench", false);
             writeAll(edit, dirt);
             edit.flushQueue();
         });
 
-        timed("an edit with history", BLOCKS, () -> fill(world, stone), () -> {
+        timed("an edit with history", BLOCKS, filled, () -> {
             EditSession edit = new EditSession(world, session, "bench", true);
             writeAll(edit, dirt);
             edit.flushQueue();
         });
 
-        timed("an edit that changes nothing", BLOCKS, () -> fill(world, stone), () -> {
+        timed("an edit that changes nothing", BLOCKS, filled, () -> {
             EditSession edit = new EditSession(world, session, "bench", true);
             writeAll(edit, stone);
             edit.flushQueue();
@@ -343,8 +353,14 @@ public final class BenchMain {
         // Each command is measured from the state it expects to find, so the
         // untimed prepare puts the region back and the command really does the
         // work: measuring a no-op edit would only report how fast nothing is.
-        Runnable clearSmall = () -> dispatch(actor, "//pos1 0,0,0", "//pos2 63,63,63", "//set air");
-        Runnable stoneSmall = () -> dispatch(actor, "//pos1 0,0,0", "//pos2 63,63,63", "//set stone");
+        Runnable clearSmall = () -> {
+            dispatch(actor, "//pos1 0,0,0", "//pos2 63,63,63", "//set air");
+            actor.session().getHistory().clear();
+        };
+        Runnable stoneSmall = () -> {
+            dispatch(actor, "//pos1 0,0,0", "//pos2 63,63,63", "//set stone");
+            actor.session().getHistory().clear();
+        };
         dispatch(actor, "//pos1 0,0,0", "//pos2 63,63,63");
         timed("//set stone on 64^3", small, clearSmall, () -> dispatch(actor, "//set stone"));
         timed("//replace stone dirt on 64^3", small, stoneSmall,
@@ -353,7 +369,10 @@ public final class BenchMain {
         timed("//paste over 64^3 of air", small, clearSmall, () -> dispatch(actor, "//paste -o"));
         timed("//walls sand around 64^3", 64L * 64 * 4, clearSmall,
                 () -> dispatch(actor, "//walls sand"));
-        Runnable clearSphere = () -> dispatch(actor, "//pos1 96,32,96", "//pos2 160,96,160", "//set air");
+        Runnable clearSphere = () -> {
+            dispatch(actor, "//pos1 96,32,96", "//pos2 160,96,160", "//set air");
+            actor.session().getHistory().clear();
+        };
         timed("//sphere stone 40", 268_000L, clearSphere, () -> {
             dispatch(actor, "//center 128,64,128", "//sphere stone 40");
         });
