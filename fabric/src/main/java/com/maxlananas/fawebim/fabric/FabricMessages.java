@@ -116,7 +116,9 @@ public final class FabricMessages {
     public static String heldItem(ServerPlayer player) {
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty()) {
-            return null;
+            // The empty hand is an item of its own: WorldEdit binds and looks up
+            // brushes and tools by the item in hand, air included.
+            return "minecraft:air";
         }
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }

@@ -89,14 +89,68 @@ public final class Suggestions {
         return List.of();
     }
 
-    /** Everything a pattern may be built from. */
-    public static List<String> patterns(String prefix) {
+    /** Everything a pattern may be built from, for the token being typed. */
+    public static List<String> patterns(String typed) {
+        return completeToken(typed, Suggestions::patternPart);
+    }
+
+    /** Everything a mask may be built from, for the token being typed. */
+    public static List<String> masks(String typed) {
+        return completeToken(typed, Suggestions::maskPart);
+    }
+
+    /**
+     * The completions of the segment being typed inside a pattern or a mask,
+     * with everything that comes before it kept: {@code #perlin[16][dirt,sto}
+     * completes {@code sto} and answers {@code #perlin[16][dirt,stone}, so the
+     * suggestion replaces the whole token.
+     */
+    private static List<String> completeToken(String typed,
+                                              java.util.function.Function<String, List<String>> part) {
+        String text = typed == null ? "" : typed;
+        int start = segmentStart(text);
+        String head = text.substring(0, start);
+        String tail = text.substring(start);
+        int weight = weightPrefix(tail);
         List<String> out = new ArrayList<>();
-        if (prefix.startsWith("#")) {
-            out.addAll(literal(PATTERNS, prefix));
-            out.addAll(categories(prefix));
-            return out;
+        for (String suggestion : part.apply(tail.substring(weight).toLowerCase(Locale.ROOT))) {
+            if (out.size() >= LIMIT) {
+                break;
+            }
+            out.add(head + tail.substring(0, weight) + suggestion);
         }
+        return out;
+    }
+
+    /** Where the segment being typed starts: after the last separator. */
+    private static int segmentStart(String text) {
+        for (int i = text.length() - 1; i >= 0; i--) {
+            char c = text.charAt(i);
+            if (c == ',' || c == '[' || c == '(' || c == '{') {
+                return i + 1;
+            }
+            if (c == ']' || c == ')' || c == '}') {
+                return text.length();
+            }
+        }
+        return 0;
+    }
+
+    /** The {@code 50%} a weighted entry starts with, kept in front of the name. */
+    private static int weightPrefix(String tail) {
+        int i = 0;
+        while (i < tail.length() && Character.isDigit(tail.charAt(i))) {
+            i++;
+        }
+        if (i > 0 && i < tail.length() && tail.charAt(i) == '%') {
+            return i + 1;
+        }
+        return 0;
+    }
+
+    /** The names one segment of a pattern may be written with. */
+    private static List<String> patternPart(String prefix) {
+        List<String> out = new ArrayList<>();
         if (prefix.startsWith("*") || prefix.startsWith("^") || prefix.startsWith("$")) {
             String inner = prefix.substring(1);
             List<String> names = prefix.startsWith("$") ? BlockState.registry().biomeNames()
@@ -106,27 +160,26 @@ public final class Suggestions {
             }
             return out;
         }
-        out.addAll(filtered(BlockState.registry().blockNames(), prefix));
+        // The # and ## entries come first: they are what a player reaches for
+        // when the block name is not what they are after.
+        out.addAll(literal(PATTERNS, prefix));
+        out.addAll(categories(prefix));
         if (out.size() < LIMIT) {
-            out.addAll(literal(PATTERNS, prefix));
+            out.addAll(filtered(BlockState.registry().blockNames(), prefix));
         }
         return out;
     }
 
-    /** Everything a mask may be built from. */
-    public static List<String> masks(String prefix) {
-        List<String> out = new ArrayList<>();
-        if (prefix.startsWith("#")) {
-            out.addAll(literal(MASKS, prefix));
-            out.addAll(categories(prefix));
-            return out;
-        }
+    /** The names one segment of a mask may be written with. */
+    private static List<String> maskPart(String prefix) {
         if (prefix.startsWith("!") || prefix.startsWith("%")) {
-            return out;
+            return List.of();
         }
-        out.addAll(filtered(BlockState.registry().blockNames(), prefix));
+        List<String> out = new ArrayList<>();
+        out.addAll(literal(MASKS, prefix));
+        out.addAll(categories(prefix));
         if (out.size() < LIMIT) {
-            out.addAll(literal(MASKS, prefix));
+            out.addAll(filtered(BlockState.registry().blockNames(), prefix));
         }
         return out;
     }

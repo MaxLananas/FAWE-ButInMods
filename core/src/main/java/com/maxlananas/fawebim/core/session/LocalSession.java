@@ -34,8 +34,10 @@ public final class LocalSession {
     private int superPickaxeRadius = 1;
     private int maxBlocksChanged = com.maxlananas.fawebim.core.platform.Config.get().defaultChangeLimit;
     private int timeout = com.maxlananas.fawebim.core.platform.Config.get().timeout;
-    private long maxBrushRadius = com.maxlananas.fawebim.core.platform.Config.get().defaultMaxBrushRadius;
-    private double maxBrushRange = com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange;
+    // -1 means "whatever the configuration says", so a setting changed in
+    // /fawebim reaches the sessions that already exist.
+    private long maxBrushRadius = -1;
+    private double maxBrushRange = -1;
     private int changeLimit = -1;
     private SideEffectSet sideEffectSet = SideEffectSet.defaults();
     private int wandItemId = -1;
@@ -438,7 +440,9 @@ public final class LocalSession {
     }
 
     public long getMaxBrushRadius() {
-        return maxBrushRadius;
+        return maxBrushRadius > 0
+                ? maxBrushRadius
+                : com.maxlananas.fawebim.core.platform.Config.get().defaultMaxBrushRadius;
     }
 
     public void setMaxBrushRadius(long maxBrushRadius) {
@@ -446,7 +450,9 @@ public final class LocalSession {
     }
 
     public double getMaxBrushRange() {
-        return maxBrushRange;
+        return maxBrushRange > 0
+                ? maxBrushRange
+                : com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange;
     }
 
     public void setMaxBrushRange(double maxBrushRange) {
