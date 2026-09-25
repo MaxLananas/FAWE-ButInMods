@@ -8,6 +8,7 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 
@@ -33,13 +34,18 @@ public final class ConfigurationScreen extends Screen {
     private static final int TOGGLE_WIDTH = 64;
     private static final int NUMBER_WIDTH = 72;
     private static final int STEP_WIDTH = 18;
-    private static final int PANEL_COLOUR = 0xE6141418;
-    private static final int SIDEBAR_COLOUR = 0xE61C1C22;
-    private static final int HEADER_COLOUR = 0xE6242430;
-    private static final int ROW_HOVER = 0x28FFFFFF;
-    private static final int ACCENT = 0xFF7FD1FF;
-    private static final int LABEL = 0xFFE8E8EC;
-    private static final int DIM = 0xFF9AA0A6;
+    private static final int PANEL_COLOUR = 0xF0161A21;
+    private static final int PANEL_BORDER = 0xFF2C3340;
+    private static final int SIDEBAR_COLOUR = 0xF01B2029;
+    private static final int HEADER_COLOUR = 0xF01E2430;
+    private static final int CARD = 0x30FFFFFF;
+    private static final int CARD_ALT = 0x18FFFFFF;
+    private static final int ROW_HOVER = 0x38FFFFFF;
+    private static final int ACCENT = 0xFF6FC3FF;
+    private static final int ACCENT_DIM = 0x806FC3FF;
+    private static final int CHANGED = 0xFFFFC46B;
+    private static final int LABEL = 0xFFE8EBF0;
+    private static final int DIM = 0xFF98A2B3;
     private static final int GOOD = 0xFF7CE38B;
     private static final int BAD = 0xFFFF8080;
 
@@ -85,8 +91,8 @@ public final class ConfigurationScreen extends Screen {
 
     /** The groups, which is also how one group is shown on its own. */
     private void addSidebar() {
-        int x = PADDING;
-        int y = panelTop() + 28;
+        int x = PADDING + 4;
+        int y = panelTop() + 48;
         List<String> names = new ArrayList<>();
         names.add("All");
         for (ConfigUi.Group entry : ui.groups()) {
@@ -97,9 +103,9 @@ public final class ConfigurationScreen extends Screen {
                 group = name;
                 page = 0;
                 rebuildRows();
-            }).bounds(x, y, SIDEBAR_WIDTH, 20).build();
+            }).bounds(x, y, SIDEBAR_WIDTH - 8, 20).build();
             addRenderableWidget(button);
-            y += ROW_HEIGHT;
+            y += ROW_HEIGHT + 2;
         }
     }
 
@@ -171,7 +177,7 @@ public final class ConfigurationScreen extends Screen {
         int editorRight = contentRight() - RESET_WIDTH - 6;
         switch (setting.kind()) {
             case BOOLEAN -> {
-                Button toggle = Button.builder(Component.literal("On"), pressed -> applyRow(row, !row.on))
+                Button toggle = Button.builder(Component.literal("Enabled"), pressed -> applyRow(row, !row.on))
                         .bounds(editorRight - TOGGLE_WIDTH, row.y, TOGGLE_WIDTH, EDITOR_HEIGHT).build();
                 row.toggle = toggle;
                 row.widgets.add(toggle);
@@ -255,7 +261,8 @@ public final class ConfigurationScreen extends Screen {
     private void syncRow(Row row) {
         row.on = row.setting.value().equalsIgnoreCase("true");
         if (row.toggle != null) {
-            row.toggle.setMessage(Component.literal(row.on ? "On" : "Off"));
+            row.toggle.setMessage(Component.literal(row.on ? "Enabled" : "Disabled")
+                    .withStyle(row.on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
         }
         if (row.box != null && !row.box.isFocused()) {
             row.box.setValue(row.setting.value());
@@ -264,24 +271,43 @@ public final class ConfigurationScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        graphics.fill(0, 0, this.width, this.height, 0xB0000000);
-        graphics.fill(PADDING, panelTop(), this.width - PADDING, panelBottom(), PANEL_COLOUR);
-        graphics.fill(PADDING, panelTop(), PADDING + SIDEBAR_WIDTH, panelBottom(), SIDEBAR_COLOUR);
-        graphics.fill(PADDING + SIDEBAR_WIDTH, panelTop(), this.width - PADDING, panelTop() + 24, HEADER_COLOUR);
+        // A dimmed world behind a raised panel, a header for what is shown and a
+        // sidebar for the groups; the selected group carries an accent bar.
+        // Bands rather than a gradient call: the frame stays on the plain fill
+        // every screen has drawn since 1.21.1.
+        for (int band = 0; band < 8; band++) {
+            int from = this.height * band / 8;
+            int to = this.height * (band + 1) / 8;
+            graphics.fill(0, from, this.width, to, bandColour(band));
+        }
+        panel(graphics, PADDING, panelTop(), this.width - PADDING, panelBottom(), PANEL_COLOUR);
+        panel(graphics, PADDING, panelTop(), PADDING + SIDEBAR_WIDTH, panelBottom(), SIDEBAR_COLOUR);
+        graphics.fill(PADDING + SIDEBAR_WIDTH, panelTop(), this.width - PADDING, panelTop() + 30, HEADER_COLOUR);
+        graphics.fill(PADDING + SIDEBAR_WIDTH, panelTop() + 30, this.width - PADDING, panelTop() + 31, ACCENT_DIM);
 
-        graphics.drawString(this.font, "FAWE-BIM configuration", PADDING + 4, panelTop() - 11, ACCENT, true);
-        graphics.drawString(this.font, group + " - " + visibleCount + " setting(s), page " + (page + 1)
-                + "/" + pageCount, PADDING + SIDEBAR_WIDTH + 10, panelTop() + 8, LABEL, false);
+        graphics.drawString(this.font, "FAWE-BIM", PADDING + 12, panelTop() + 10, ACCENT, true);
+        graphics.drawString(this.font, "WorldEdit commands for Fabric", PADDING + 12, panelTop() + 24, DIM, false);
+        graphics.drawString(this.font, group, PADDING + SIDEBAR_WIDTH + 14, panelTop() + 9, LABEL, true);
+        graphics.drawString(this.font, visibleCount + " setting(s)   page " + (page + 1) + "/" + pageCount,
+                PADDING + SIDEBAR_WIDTH + 14, panelTop() + 21, DIM, false);
+        graphics.fill(PADDING + 4, panelTop() + 36, PADDING + SIDEBAR_WIDTH - 4, panelTop() + 37, PANEL_BORDER);
 
         Row hovered = hovered(mouseX, mouseY);
+        int cardLeft = PADDING + SIDEBAR_WIDTH + 6;
+        int cardRight = this.width - PADDING - 6;
+        boolean stripe = false;
         for (Row row : rows) {
-            if (row == hovered) {
-                graphics.fill(PADDING + SIDEBAR_WIDTH + 4, row.y - 2, this.width - PADDING - 4,
-                        row.y + EDITOR_HEIGHT + 1, ROW_HOVER);
-            }
-            int colour = row.setting.value().equals(row.setting.defaultValue()) ? LABEL : ACCENT;
-            graphics.drawString(this.font, row.setting.key(), PADDING + SIDEBAR_WIDTH + 10, row.y + 5,
-                    colour, false);
+            stripe = !stripe;
+            graphics.fill(cardLeft, row.y - 3, cardRight, row.y + EDITOR_HEIGHT + 2,
+                    row == hovered ? ROW_HOVER : (stripe ? CARD : CARD_ALT));
+            boolean changed = !row.setting.value().equals(row.setting.defaultValue());
+            graphics.fill(cardLeft, row.y - 3, cardLeft + 2, row.y + EDITOR_HEIGHT + 2,
+                    changed ? CHANGED : ACCENT_DIM);
+            graphics.fill(cardLeft + 2, row.y - 3, cardRight, row.y - 2, PANEL_BORDER);
+            graphics.fill(cardLeft + 2, row.y + EDITOR_HEIGHT + 1, cardRight, row.y + EDITOR_HEIGHT + 2,
+                    PANEL_BORDER);
+            graphics.drawString(this.font, row.setting.key(), PADDING + SIDEBAR_WIDTH + 14, row.y + 5,
+                    changed ? CHANGED : LABEL, false);
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -294,10 +320,36 @@ public final class ConfigurationScreen extends Screen {
                             + described.setting.defaultValue() + "   " + ConfigUi.expectedOf(described.setting),
                     PADDING + SIDEBAR_WIDTH + 10, panelBottom() - 30, DIM, false);
         }
+        graphics.fill(PADDING + SIDEBAR_WIDTH, panelBottom() - 34, this.width - PADDING,
+                panelBottom() - 33, PANEL_BORDER);
+        if (described != null) {
+            graphics.fill(PADDING + SIDEBAR_WIDTH + 8, panelBottom() - 42, PADDING + SIDEBAR_WIDTH + 10,
+                    panelBottom() - 40, statusGood ? ACCENT_DIM : BAD);
+        }
         if (!status.isEmpty()) {
-            graphics.drawString(this.font, status, PADDING + SIDEBAR_WIDTH + 10, panelBottom() - 13,
+            graphics.fill(PADDING + SIDEBAR_WIDTH + 8, panelBottom() - 14, PADDING + SIDEBAR_WIDTH + 10,
+                    panelBottom() - 12, statusGood ? GOOD : BAD);
+            graphics.drawString(this.font, status, PADDING + SIDEBAR_WIDTH + 14, panelBottom() - 15,
                     statusGood ? GOOD : BAD, false);
         }
+    }
+
+    /** A filled panel with a one pixel border. */
+    private void panel(GuiGraphics graphics, int x1, int y1, int x2, int y2, int fill) {
+        graphics.fill(x1, y1, x2, y2, fill);
+        graphics.fill(x1, y1, x2, y1 + 1, PANEL_BORDER);
+        graphics.fill(x1, y2 - 1, x2, y2, PANEL_BORDER);
+        graphics.fill(x1, y1, x1 + 1, y2, PANEL_BORDER);
+        graphics.fill(x2 - 1, y1, x2, y2, PANEL_BORDER);
+    }
+
+    /** The colour of one band of the backdrop gradient, top to bottom. */
+    private static int bandColour(int band) {
+        int[] colours = {
+                0xE00A0C11, 0xE00B0E14, 0xE00D1017, 0xE00F131A,
+                0xE011161E, 0xE0131921, 0xE0141A24, 0xE0151A23,
+        };
+        return colours[Math.max(0, Math.min(colours.length - 1, band))];
     }
 
     private Row hovered(int mouseX, int mouseY) {

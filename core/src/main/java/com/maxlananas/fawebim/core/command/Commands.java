@@ -1560,45 +1560,112 @@ public final class Commands {
     }
 
     private void registerShapes() {
-        // //sphere, //cyl, //pyramid, //cone and their hollow variants share one implementation.
-        Object[][] shapes = {
-                {"//sphere", "sphere", false},
-                {"//hsphere", "sphere", true},
-                {"//cyl", "cyl", false},
-                {"//hcyl", "cyl", true},
+        CommandRegistry.Entry sphere = registry.register("//sphere");
+        sphere.description = "Create a sphere or an ellipsoid at your position";
+        sphere.group = "generation";
+        sphere.booleanFlags.add("r");
+        sphere.booleanFlags.add("h");
+        sphere.arguments.add("pattern");
+        sphere.arguments.add("radii");
+        sphere.handler = ctx -> {
+            EditSession session = ctx.editSession();
+            Masks.ExtentHolder.set(session);
+            double[] radii = sphereRadii(ctx.arg(1));
+            int changed = sphere(session, ctx, radii, Parsers.pattern(ctx.arg(0), ctx), ctx.hasFlag("h"));
+            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
+            flush(ctx, session);
         };
-        for (Object[] shape : shapes) {
-            boolean hollow = (boolean) shape[2];
-            String kind = (String) shape[1];
-                    CommandRegistry.Entry e56 = registry.register((String) shape[0]);
-        e56.description = "Create a " + kind + " at your position";
-        e56.group = "generation";
-        e56.booleanFlags.add("h");
-        // -r raises the bottom of the sphere to the placement position.
-        e56.booleanFlags.add("r");
-        e56.arguments.add("pattern");
-        e56.arguments.add("radius");
-        e56.arguments.add("[height]");
-        e56.handler = ctx -> {
-                        EditSession session = ctx.editSession();
-                        Masks.ExtentHolder.set(session);
-                        Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                        double radius = ctx.doubleArg(1);
-                        double height = ctx.doubleArg(2, radius * 2);
-                        BlockVector3 origin = ctx.placement();
-                        boolean hollowShape = hollow || ctx.hasFlag("h");
-                        boolean raised = ctx.hasFlag("r");
-                        int changed = kind.equals("sphere")
-                                ? com.maxlananas.fawebim.core.function.Operations.sphere(session, origin, radius, pattern,
-                                hollowShape, raised)
-                                : com.maxlananas.fawebim.core.function.Operations.cylinder(session, origin,
-                                (int) Math.floor(radius), (int) height, pattern, hollowShape);
-                        ctx.actor().message(Msg.success("Created shape: " + changed + " block(s)"));
-                        flush(ctx, session);
-                    };
 
+        CommandRegistry.Entry hollowSphere = registry.register("//hsphere");
+        hollowSphere.description = "Create a hollow sphere or ellipsoid at your position";
+        hollowSphere.group = "generation";
+        hollowSphere.booleanFlags.add("r");
+        hollowSphere.arguments.add("pattern");
+        hollowSphere.arguments.add("radii");
+        hollowSphere.handler = ctx -> {
+            EditSession session = ctx.editSession();
+            Masks.ExtentHolder.set(session);
+            double[] radii = sphereRadii(ctx.arg(1));
+            int changed = sphere(session, ctx, radii, Parsers.pattern(ctx.arg(0), ctx), true);
+            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
+            flush(ctx, session);
+        };
+
+        CommandRegistry.Entry cylinder = registry.register("//cyl");
+        cylinder.description = "Create a cylinder at your position";
+        cylinder.group = "generation";
+        cylinder.booleanFlags.add("h");
+        cylinder.arguments.add("pattern");
+        cylinder.arguments.add("radii");
+        cylinder.arguments.add("[height]");
+        cylinder.handler = ctx -> {
+            EditSession session = ctx.editSession();
+            Masks.ExtentHolder.set(session);
+            double[] radii = cylinderRadii(ctx.arg(1));
+            int changed = com.maxlananas.fawebim.core.function.Operations.cylinder(session, ctx.placement(),
+                    radii, ctx.intArg(2, 1), Parsers.pattern(ctx.arg(0), ctx), ctx.hasFlag("h"), 0);
+            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
+            flush(ctx, session);
+        };
+
+        CommandRegistry.Entry hollowCylinder = registry.register("//hcyl");
+        hollowCylinder.description = "Create a hollow cylinder at your position";
+        hollowCylinder.group = "generation";
+        hollowCylinder.arguments.add("pattern");
+        hollowCylinder.arguments.add("radii");
+        hollowCylinder.arguments.add("[height]");
+        hollowCylinder.arguments.add("[thickness]");
+        hollowCylinder.handler = ctx -> {
+            EditSession session = ctx.editSession();
+            Masks.ExtentHolder.set(session);
+            double[] radii = cylinderRadii(ctx.arg(1));
+            double thickness = ctx.doubleArg(3, 0);
+            if (thickness > radii[0] || thickness > radii[1]) {
+                throw CommandRegistry.error("Thickness is larger than the radius");
+            }
+            int changed = com.maxlananas.fawebim.core.function.Operations.cylinder(session, ctx.placement(),
+                    radii, ctx.intArg(2, 1), Parsers.pattern(ctx.arg(0), ctx), true, thickness);
+            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
+            flush(ctx, session);
+        };
+
+        registerPyramidAndCone();
+    }
+
+    /** {@code -r} lifts the centre by the vertical radius, as WorldEdit does. */
+    private int sphere(EditSession session, Ctx ctx, double[] radii, Pattern pattern, boolean hollow) {
+        BlockVector3 origin = ctx.hasFlag("r") ? ctx.placement().add(0, (int) radii[1], 0) : ctx.placement();
+        return com.maxlananas.fawebim.core.function.Operations.sphere(session, origin, radii, pattern, hollow);
+    }
+
+    /** The one or three radii {@code //sphere} takes. */
+    private static double[] sphereRadii(String input) {
+        List<Double> radii = Parsers.radii(input);
+        if (radii.size() == 1) {
+            double radius = Math.max(0, radii.get(0));
+            return new double[]{radius, radius, radius};
         }
+        if (radii.size() == 3) {
+            return new double[]{Math.max(0, radii.get(0)), Math.max(0, radii.get(1)),
+                    Math.max(0, radii.get(2))};
+        }
+        throw CommandRegistry.error("You must either specify 1 or 3 radius values.");
+    }
 
+    /** The one or two radii {@code //cyl} takes: north/south then east/west. */
+    private static double[] cylinderRadii(String input) {
+        List<Double> radii = Parsers.radii(input);
+        if (radii.size() == 1) {
+            double radius = Math.max(1, radii.get(0));
+            return new double[]{radius, radius};
+        }
+        if (radii.size() == 2) {
+            return new double[]{Math.max(1, radii.get(0)), Math.max(1, radii.get(1))};
+        }
+        throw CommandRegistry.error("You must either specify 1 or 2 radius values.");
+    }
+
+    private void registerPyramidAndCone() {
         CommandRegistry.Entry e57 = registry.register("//pyramid");
         e57.description = "Create a pyramid at your position";
         e57.group = "generation";
@@ -1698,19 +1765,21 @@ public final class Commands {
         e60.group = "clipboard";
         e60.requiresSelection = true;
         e60.booleanFlags.add("e");
-        e60.booleanFlags.add("r");
         e60.booleanFlags.add("b");
         e60.valueFlags.add("m");
-        e60.arguments.add("[-m <mask>]");
+        // Upstream takes the pattern the selection is left as; its default is air.
+        e60.arguments.add("[leavePattern]");
         e60.handler = ctx -> {
                     EditSession session = ctx.editSession();
+                    Masks.ExtentHolder.set(session);
                     Mask exclude = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
+                    Region region = ctx.selection();
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
-                            ctx.selection(), session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, false);
+                            region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, false);
                     ctx.session().setClipboard(clipboard);
-                    for (BlockVector3 position : ctx.selection()) {
-                        session.setBlock(position.x(), position.y(), position.z(), air());
-                    }
+                    Pattern leave = ctx.args().isEmpty() ? Parsers.pattern("air", ctx)
+                            : Parsers.pattern(ctx.arg(0), ctx);
+                    fill(session, region, leave, null);
                     ctx.actor().message(Msg.success("Cut " + Msg.formatNumber(clipboard.volume()) + " block(s)"));
                     flush(ctx, session);
                 };

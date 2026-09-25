@@ -396,82 +396,67 @@ public final class Operations {
 
     /** {@code //sphere} and {@code /brush sphere}. */
     public static int sphere(EditSession session, BlockVector3 center, double radius, Pattern pattern, boolean hollow) {
-        return sphere(session, center, radius, pattern, hollow, false);
+        return sphere(session, center, new double[]{radius, radius, radius}, pattern, hollow);
     }
 
     /**
-     * A sphere, optionally raised: {@code //sphere -r} keeps the bottom half of
-     * the sphere at the placement height instead of the centre, which is how
-     * FAWE builds a dome.
+     * A sphere or an ellipsoid, solid or hollow, using WorldEdit's geometry: a
+     * radius grows by half a block before the shape is measured, a cell belongs
+     * to it when the squared sum of its axes over the radii is at most one, and
+     * the hollow form keeps the cells whose outward neighbour on some axis has
+     * left the shape.
      */
-    public static int sphere(EditSession session, BlockVector3 center, double radius, Pattern pattern, boolean hollow,
-                             boolean raised) {
+    public static int sphere(EditSession session, BlockVector3 center, double[] radii, Pattern pattern,
+                             boolean hollow) {
+        double radiusX = radii[0] + 0.5;
+        double radiusY = radii[1] + 0.5;
+        double radiusZ = radii[2] + 0.5;
+        double invX = 1 / radiusX;
+        double invY = 1 / radiusY;
+        double invZ = 1 / radiusZ;
+        int ceilX = (int) Math.ceil(radiusX);
+        int ceilY = (int) Math.ceil(radiusY);
+        int ceilZ = (int) Math.ceil(radiusZ);
+        int minY = session.minY();
+        int maxY = session.maxY();
         int changed = 0;
-        int r = (int) Math.ceil(radius);
-        double radiusSq = radius * radius;
-        double innerSq = hollow ? (radius - 1) * (radius - 1) : -1;
-        // The rows of each layer are walked instead of the box around the sphere:
-        // a layer is a disc, so two thirds of the box are cells no sphere reaches,
-        // and the hollow form only visits the cells of the shell. The limits come
-        // from the same comparison the box form made - a cell is inside when its
-        // squared distance is at most the squared radius - so the shape a player
-        // gets is the one it was.
-        for (int y = -r; y <= r; y++) {
-            if (raised && y < 0) {
-                // Raised: the sphere grows upwards from the placement position.
+        for (int x = -ceilX; x <= ceilX; x++) {
+            double dx = square(x * invX);
+            if (dx > 1) {
                 continue;
             }
-            double layerSq = radiusSq - (double) y * y;
-            if (layerSq < 0) {
-                continue;
-            }
-            double innerLayerSq = innerSq - (double) y * y;
-            for (int z = -r; z <= r; z++) {
-                double rowSq = layerSq - (double) z * z;
-                if (rowSq < 0) {
+            for (int z = -ceilZ; z <= ceilZ; z++) {
+                double dxz = dx + square(z * invZ);
+                if (dxz > 1) {
                     continue;
                 }
-                int outer = limit(rowSq);
-                int by = center.y() + y;
-                int bz = center.z() + z;
-                if (!hollow) {
-                    changed += row(session, pattern, by, bz, center.x() - outer, center.x() + outer);
-                    continue;
-                }
-                int inner = limit(innerLayerSq - (double) z * z);
-                if (inner < outer) {
-                    changed += row(session, pattern, by, bz, center.x() - outer, center.x() - inner - 1);
-                    changed += row(session, pattern, by, bz, center.x() + inner + 1, center.x() + outer);
+                for (int y = -ceilY; y <= ceilY; y++) {
+                    double distance = dxz + square(y * invY);
+                    if (distance > 1) {
+                        continue;
+                    }
+                    int blockY = center.y() + y;
+                    if (blockY < minY || blockY > maxY) {
+                        continue;
+                    }
+                    if (hollow && square((Math.abs(x) + 1) * invX) + square(y * invY) + square(z * invZ) <= 1
+                            && dx + square((Math.abs(y) + 1) * invY) + square(z * invZ) <= 1
+                            && dx + square(y * invY) + square((Math.abs(z) + 1) * invZ) <= 1) {
+                        continue;
+                    }
+                    int blockX = center.x() + x;
+                    int blockZ = center.z() + z;
+                    if (session.setBlock(blockX, blockY, blockZ, pattern.apply(blockX, blockY, blockZ))) {
+                        changed++;
+                    }
                 }
             }
         }
         return changed;
     }
 
-    /** The largest {@code n} whose square is within {@code squared}. */
-    private static int limit(double squared) {
-        if (squared < 0) {
-            return -1;
-        }
-        int value = (int) Math.sqrt(squared);
-        while ((double) (value + 1) * (value + 1) <= squared) {
-            value++;
-        }
-        while (value > 0 && (double) value * value > squared) {
-            value--;
-        }
-        return value;
-    }
-
-    /** Writes one row of blocks, and answers how many of them changed. */
-    private static int row(EditSession session, Pattern pattern, int y, int z, int fromX, int toX) {
-        int changed = 0;
-        for (int x = fromX; x <= toX; x++) {
-            if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                changed++;
-            }
-        }
-        return changed;
+    private static double square(double value) {
+        return value * value;
     }
 
     /** {@code //cyl} and {@code /brush cylinder}. */
@@ -480,41 +465,69 @@ public final class Operations {
         return cylinder(session, center, radius, height, pattern, hollow, 0);
     }
 
-    /**
-     * A cylinder, hollow or solid. The wall thickness only applies to the hollow
-     * form: FAWE leaves the floor and the roof in place and keeps the requested
-     * number of blocks behind the shell, so a thickness of one is the plain
-     * hollow cylinder.
-     */
     public static int cylinder(EditSession session, BlockVector3 center, int radius, int height, Pattern pattern,
                                boolean hollow, double thickness) {
-        int changed = 0;
-        int r = Math.max(0, radius);
-        int minY = center.y() - height / 2;
-        int maxY = minY + Math.max(1, height) - 1;
-        double radiusSq = (double) r * r;
+        return cylinder(session, center, new double[]{radius, radius}, height, pattern, hollow, thickness);
+    }
+
+    /**
+     * A cylinder or an elliptic cylinder, solid or hollow. The two radii are the
+     * north/south and the east/west extent, the height grows upward from the
+     * placement position as in WorldEdit and downward when it is negative, and a
+     * hollow cylinder is its wall: the ends stay open and {@code thickness}
+     * widens the wall inwards.
+     */
+    public static int cylinder(EditSession session, BlockVector3 center, double[] radii, int height, Pattern pattern,
+                               boolean hollow, double thickness) {
+        if (height == 0) {
+            return 0;
+        }
+        double radiusX = radii[0] + 0.5;
+        double radiusZ = radii[1] + 0.5;
+        double invX = 1 / radiusX;
+        double invZ = 1 / radiusZ;
+        int ceilX = (int) Math.ceil(radiusX);
+        int ceilZ = (int) Math.ceil(radiusZ);
+        int bottom = height < 0 ? center.y() - Math.abs(height) : center.y();
+        int top = height < 0 ? center.y() - 1 : center.y() + height - 1;
+        int minY = session.minY();
+        int maxY = session.maxY();
         double wall = hollow ? Math.max(0, thickness) : 0;
-        double innerRadius = hollow ? Math.max(0, r - 1 - Math.floor(wall)) : 0;
-        double innerSq = hollow ? innerRadius * innerRadius : -1;
-        // A layer is a disc, and the hollow form only visits its wall; the floor
-        // and the roof are solid, so their rows run the whole way.
-        for (int y = minY; y <= maxY; y++) {
-            boolean solid = !hollow || y == minY || y == maxY;
-            for (int z = -r; z <= r; z++) {
-                double rowSq = radiusSq - (double) z * z;
-                if (rowSq < 0) {
+        double innerInvX = hollow && radiusX > wall ? 1 / (radiusX - wall) : 0;
+        double innerInvZ = hollow && radiusZ > wall ? 1 / (radiusZ - wall) : 0;
+        int changed = 0;
+        for (int x = -ceilX; x <= ceilX; x++) {
+            double dx = square(x * invX);
+            if (dx > 1) {
+                continue;
+            }
+            for (int z = -ceilZ; z <= ceilZ; z++) {
+                if (dx + square(z * invZ) > 1) {
                     continue;
                 }
-                int outer = limit(rowSq);
-                int bz = center.z() + z;
-                if (solid) {
-                    changed += row(session, pattern, y, bz, center.x() - outer, center.x() + outer);
-                    continue;
+                if (hollow) {
+                    // A plain hollow cylinder is the ring whose outward neighbour
+                    // on an axis has left the shape; with a thickness the ring is
+                    // measured against the inner cylinder instead, which is what
+                    // WorldEdit widens the wall with.
+                    boolean keep = wall > 0 && innerInvX > 0 && innerInvZ > 0
+                            ? square((Math.abs(x) + 1) * innerInvX) + square(z * innerInvZ) > 1
+                                    || square(x * innerInvX) + square((Math.abs(z) + 1) * innerInvZ) > 1
+                            : square((Math.abs(x) + 1) * invX) + square(z * invZ) > 1
+                                    || dx + square((Math.abs(z) + 1) * invZ) > 1;
+                    if (!keep) {
+                        continue;
+                    }
                 }
-                int inner = limit(innerSq - (double) z * z);
-                if (inner < outer) {
-                    changed += row(session, pattern, y, bz, center.x() - outer, center.x() - inner - 1);
-                    changed += row(session, pattern, y, bz, center.x() + inner + 1, center.x() + outer);
+                int blockX = center.x() + x;
+                int blockZ = center.z() + z;
+                for (int y = bottom; y <= top; y++) {
+                    if (y < minY || y > maxY) {
+                        continue;
+                    }
+                    if (session.setBlock(blockX, y, blockZ, pattern.apply(blockX, y, blockZ))) {
+                        changed++;
+                    }
                 }
             }
         }
