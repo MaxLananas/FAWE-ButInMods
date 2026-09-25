@@ -95,6 +95,32 @@ CHECKS = [
     ("//count minecraft:stone", "count: 572"),
     ("//undo", "undid 196 block change(s)"),
     ("//count minecraft:stone", "count: 768"),
+    # The commands that reach the surface under a name of their own, and the
+    # spells WorldEdit gives names it declares with a slash. The box is cleared
+    # first, so the formula below fills all 768 cells and //air takes them back;
+    # a console has no position of its own, so the shapes are built around the
+    # selection and the commands that move a player say they need one.
+    ("//pos1 0,60,0", "position 1 set"),
+    ("//pos2 15,62,15", "position 2 set"),
+    ("//air", "768 block(s) set to air"),
+    ("//count minecraft:stone", "count: 0"),
+    ("//generate minecraft:stone 1", "Generated 768 block(s)"),
+    ("//count minecraft:stone", "count: 768"),
+    ("//air", "768 block(s) set to air"),
+    ("//hpyramid minecraft:stone 4", "Created pyramid: 81 block(s)"),
+    ("//count minecraft:stone", "count: 81"),
+    ("//air", "81 block(s) set to air"),
+    ("//blob minecraft:stone 3", "Blob: "),
+    ("//fillr minecraft:stone 3 3", "Filled "),
+    ("//sphere minecraft:stone 3", "Created shape: "),
+    ("//air", "block(s) set to air"),
+    ("//forest oak 20", "Planted "),
+    ("//forestgen 5 mega_redwood 10", "Planted "),
+    ("//gsmask minecraft:stone", "Source mask set to"),
+    ("//gsmask", "Source mask cleared"),
+    ("smask minecraft:stone", "Brush source mask set to"),
+    ("smask", "Brush source mask cleared"),
+    ("//up 5", "must be run by a player"),
 ]
 
 
