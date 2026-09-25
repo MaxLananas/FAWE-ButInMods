@@ -274,6 +274,7 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 | Settings in `config/fawebim.yml` | **39, all read by the code** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
+| Commands a console, a command block or a function can run | **159**, the other 110 are bound to a player |
 
 Every name WorldEdit 7.3.17 and FastAsyncWorldEdit declare is registered and resolves, with no stub
 left in the registry. `./gradlew :core:verify` runs the self-tests and then feeds the 255 declared

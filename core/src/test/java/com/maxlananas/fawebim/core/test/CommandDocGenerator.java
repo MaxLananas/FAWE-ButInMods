@@ -268,6 +268,23 @@ public final class CommandDocGenerator {
         out.append("Every WorldEdit and FAWE command name is registered, so nothing is missing from the "
                 + "surface: this table tracks how many of them already run the ported engine code instead of "
                 + "answering with 'not ported yet'.\n\n");
+        int playerOnly = 0;
+        for (CommandRegistry.Entry entry : entries) {
+            if (entry.requiresPlayer) {
+                playerOnly++;
+            }
+        }
+        out.append("## Who can run a command\n\n");
+        out.append("| | |\n|---|---|\n");
+        out.append("| Bound to a player, refused from the console | ").append(playerOnly).append(" |\n");
+        out.append("| Run by any source, building at the selection | ")
+                .append(entries.size() - playerOnly).append(" |\n\n");
+        out.append("WorldEdit declares a command with a `Player` parameter when it cannot run without a "
+                + "body - the wand, the tools, the navigation, the brushes, `//tree` - and with an `Actor` "
+                + "when a console, a command block or a function can run it. The dispatcher follows the same "
+                + "split: a player-only command answers that it needs a player, and the others build at the "
+                + "selection when the source has no position. `scripts/player_audit.py` compares every flag "
+                + "with the upstream declaration in CI.\n\n");
         out.append("## Remaining by section\n\n");
         out.append("| Section | Remaining |\n|---|---|\n");
         for (java.util.Map.Entry<String, List<CommandRegistry.Entry>> group : stubs.entrySet()) {
