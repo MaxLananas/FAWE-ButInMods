@@ -356,31 +356,33 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e14 = registry.register("//expand");
+        // WorldEdit declares this one with a `vert` sub-command and a list of
+        // directions: `//expand vert` takes the whole column, `//expand 10` grows
+        // in the way the player looks, and `//expand 10 5 north,east` grows up to
+        // ten and back to five in each of those directions.
+        CommandRegistry.Entry e14 = registry.register("//expand", "/expand");
         e14.description = "Expand the selection area";
         e14.group = "selection";
         e14.requiresSelection = true;
-        e14.booleanFlags.add("v");
-        e14.booleanFlags.add("h");
         e14.arguments.add("amount");
+        e14.arguments.add("[reverseAmount]");
         e14.arguments.add("[direction]");
         e14.handler = ctx -> {
                     Region region = ctx.selection();
-                    String amount = ctx.arg(0);
-                    boolean vertical = amount.equalsIgnoreCase("vert") || amount.equalsIgnoreCase("vertical");
-                    BlockVector3 change;
-                    if (vertical) {
-                        int minY = ctx.world().minY();
-                        int maxY = ctx.world().maxY();
-                        change = new BlockVector3(0, maxY - region.getMaximumY(), 0);
-                        region.expand(change);
-                        change = new BlockVector3(0, minY - region.getMinimumY(), 0);
-                        region.expand(change);
-                    } else {
-                        int value = Integer.parseInt(amount);
-                        String direction = ctx.arg(1, ctx.hasFlag("v") ? "up" : ctx.hasFlag("h") ? "me" : "me");
-                        change = directionVector(ctx, direction, value);
-                        region.expand(change);
+                    if (ctx.arg(0).equalsIgnoreCase("vert") || ctx.arg(0).equalsIgnoreCase("vertical")) {
+                        region.setY(ctx.world().minY(), ctx.world().maxY());
+                        ctx.actor().message(Msg.success("Region expanded vert: " + region.describe()));
+                        return;
+                    }
+                    int amount = ctx.intArg(0);
+                    int reverse = ctx.intArg(1, 0);
+                    List<BlockVector3> directions = expandDirections(ctx,
+                            ctx.args().size() > 2 ? ctx.joined(2) : "me");
+                    for (BlockVector3 direction : directions) {
+                        region.expand(direction.multiply(amount));
+                        if (reverse != 0) {
+                            region.expand(direction.multiply(-reverse));
+                        }
                     }
                     ctx.actor().message(Msg.success("Region expanded: " + region.describe()));
                 };
@@ -391,12 +393,20 @@ public final class Commands {
         e15.group = "selection";
         e15.requiresSelection = true;
         e15.arguments.add("amount");
+        e15.arguments.add("[reverseAmount]");
         e15.arguments.add("[direction]");
         e15.handler = ctx -> {
                     Region region = ctx.selection();
-                    int value = ctx.intArg(0);
-                    String direction = ctx.arg(1, "me");
-                    region.contract(directionVector(ctx, direction, value));
+                    int amount = ctx.intArg(0);
+                    int reverse = ctx.intArg(1, 0);
+                    List<BlockVector3> directions = expandDirections(ctx,
+                            ctx.args().size() > 2 ? ctx.joined(2) : "me");
+                    for (BlockVector3 direction : directions) {
+                        region.contract(direction.multiply(amount));
+                        if (reverse != 0) {
+                            region.contract(direction.multiply(-reverse));
+                        }
+                    }
                     ctx.actor().message(Msg.success("Region contracted: " + region.describe()));
                 };
 
@@ -409,9 +419,12 @@ public final class Commands {
         e16.arguments.add("[direction]");
         e16.handler = ctx -> {
                     Region region = ctx.selection();
-                    int value = ctx.intArg(0);
-                    String direction = ctx.arg(1, "me");
-                    region.shift(directionVector(ctx, direction, value));
+                    int amount = ctx.intArg(0);
+                    List<BlockVector3> directions = expandDirections(ctx,
+                            ctx.args().size() > 1 ? ctx.joined(1) : "me");
+                    for (BlockVector3 direction : directions) {
+                        region.shift(direction.multiply(amount));
+                    }
                     ctx.actor().message(Msg.success("Region shifted: " + region.describe()));
                 };
 
@@ -498,6 +511,38 @@ public final class Commands {
         } catch (NumberFormatException e) {
             throw CommandRegistry.error("'" + input + "' is not a valid duration");
         }
+    }
+
+    /**
+     * The directions {@code //expand} grows in: a named direction, several of
+     * them separated by commas, an explicit {@code x,y,z} vector, or {@code me}
+     * for the way the player is looking. WorldEdit takes a list here where
+     * {@code //contract} takes one direction.
+     */
+    private List<BlockVector3> expandDirections(Ctx ctx, String input) {
+        String text = input.trim().toLowerCase(Locale.ROOT);
+        if (text.isEmpty()) {
+            text = "me";
+        }
+        String[] parts = text.split(",");
+        boolean vector = parts.length == 3;
+        for (String part : parts) {
+            try {
+                Integer.parseInt(part.trim());
+            } catch (NumberFormatException e) {
+                vector = false;
+                break;
+            }
+        }
+        if (vector) {
+            return List.of(new BlockVector3(Integer.parseInt(parts[0].trim()),
+                    Integer.parseInt(parts[1].trim()), Integer.parseInt(parts[2].trim())));
+        }
+        List<BlockVector3> out = new ArrayList<>();
+        for (String part : parts) {
+            out.add(directionVector(ctx, part.trim(), 1));
+        }
+        return out;
     }
 
     private BlockVector3 directionVector(Ctx ctx, String direction, int amount) {

@@ -94,6 +94,7 @@ public final class SelfTestMain {
         testSourceMaskReads();
         testConsoleCommands();
         testPlayerOnlyCommands();
+        testSelectionTransforms();
         testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
@@ -1817,6 +1818,33 @@ public final class SelfTestMain {
      * refuse a console, a command block or a function, while the commands that
      * take an Actor keep working from any of them by building at the selection.
      */
+    /**
+     * {@code //expand}, {@code //contract} and {@code //shift} take WorldEdit's
+     * arguments: an amount, a reverse amount, and a list of directions - one name,
+     * several separated by commas, an x,y,z vector, or {@code me} for the way the
+     * player looks. {@code //expand vert} takes the whole column.
+     */
+    private static void testSelectionTransforms() {
+        section("selection transforms");
+        TestWorld world = new TestWorld("selection-transforms");
+        world.fillFlat(30);
+        TestActor actor = new TestActor("Shaper", world, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(actor, "//pos1 0,60,0");
+        CommandManager.get().dispatch(actor, "//pos2 15,62,15");
+        CommandManager.get().dispatch(actor, "//expand 4 0 north,east");
+        check("//expand grows in each named direction",
+                actor.lastMessage().contains("20x3x20"));
+        CommandManager.get().dispatch(actor, "//contract 2 0 north,east");
+        check("//contract takes the same directions", actor.lastMessage().contains("18x3x18"));
+        CommandManager.get().dispatch(actor, "//expand 10 0 2,0,0");
+        check("//expand reads an x,y,z vector", actor.lastMessage().contains("38x3x18"));
+        CommandManager.get().dispatch(actor, "//expand vert");
+        check("//expand vert takes the whole column",
+                actor.lastMessage().contains("38x384x18"));
+        CommandManager.get().dispatch(actor, "//contract vert");
+        check("//contract has no vert form", actor.lastMessage().contains("Expected a number"));
+    }
+
     private static void testPlayerOnlyCommands() {
         section("player only");
         TestWorld world = new TestWorld("player-only");
