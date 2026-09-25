@@ -255,6 +255,11 @@ the state it held above them — so the history of a filled section costs 16 KB 
 75.6/74.7 ms to 54.3/57.0 ms, `//set` 8.3 ms to 7.0, `//replace` 11.6 ms to 9.3, `//sphere` 7.5 ms to
 6.4, and an edit with history 260/263 ms to 223/226 ms.
 
+`//walls` wrote its four planes alternately, so every block belonged to a different chunk than the one
+before it and both the buffer and the history looked their chunk up again for each one. It walks one
+plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the same per-block cost as
+`//set` rather than the two and a half times it was.
+
 ## Status
 
 | | |

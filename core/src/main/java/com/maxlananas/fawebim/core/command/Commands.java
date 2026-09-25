@@ -599,13 +599,21 @@ public final class Commands {
                     Region region = ctx.selection();
                     BlockVector3 min = region.getMinimumPoint();
                     BlockVector3 max = region.getMaximumPoint();
+                    // One plane at a time. The two planes of a direction used to
+                    // be written alternately, which left the chunk the previous
+                    // write went into on every block; a plane walks sixteen
+                    // blocks of one chunk before it moves to the next one.
                     for (int y = min.y(); y <= max.y(); y++) {
                         for (int x = min.x(); x <= max.x(); x++) {
                             session.setBlock(x, y, min.z(), pattern.apply(x, y, min.z()));
+                        }
+                        for (int x = min.x(); x <= max.x(); x++) {
                             session.setBlock(x, y, max.z(), pattern.apply(x, y, max.z()));
                         }
                         for (int z = min.z(); z <= max.z(); z++) {
                             session.setBlock(min.x(), y, z, pattern.apply(min.x(), y, z));
+                        }
+                        for (int z = min.z(); z <= max.z(); z++) {
                             session.setBlock(max.x(), y, z, pattern.apply(max.x(), y, z));
                         }
                     }
