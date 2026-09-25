@@ -1808,7 +1808,7 @@ public final class SelfTestMain {
         section("player only");
         TestWorld world = new TestWorld("player-only");
         world.fillFlat(70);
-        TestActor console = TestActor.positionlessConsole(world);
+        TestActor console = TestActor.positionlessConsole("Pilot", world);
         CommandManager.get().dispatch(console, "//pos1 0,60,0");
         CommandManager.get().dispatch(console, "//pos2 15,62,15");
         for (String line : new String[] {"//tree oak", "//wand", "/smask minecraft:stone", "//up 5",
@@ -1818,13 +1818,18 @@ public final class SelfTestMain {
             check(line + " needs a player",
                     console.lastMessage().contains("must be run by a player"));
         }
-        // The box has to be empty first: a shape that writes the state a cell
-        // already holds changes nothing and reports nothing.
-        CommandManager.get().dispatch(console, "//air");
+        // The box has to hold the whole shape, and be empty: the pyramid of size
+        // 4 is 81 blocks over five layers around the centre of the selection, so
+        // a box of three layers clips it, and a cell that already holds the
+        // state the shape writes reports nothing.
+        CommandManager.get().dispatch(console, "//pos2 15,66,15");
+        CommandManager.get().dispatch(console, "//set minecraft:air");
         console.clearMessages();
         CommandManager.get().dispatch(console, "//hpyramid minecraft:stone 4");
-        check("a shape still builds for a source without a player",
-                console.lastMessage().contains("Created pyramid: 81 block(s)"));
+        // The command reports the shape and the flush reports the write, so the
+        // answer to look at is the one that names the shape.
+        check("a shape still builds for a source without a player", console.messages().stream()
+                .anyMatch(message -> message.contains("Created pyramid: 81 block(s)")));
 
         // The same commands run for a player at the position they stand on.
         TestActor player = new TestActor("Builder", world, new BlockVector3(40, 71, 0));

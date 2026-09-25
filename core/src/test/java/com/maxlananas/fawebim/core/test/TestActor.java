@@ -47,7 +47,16 @@ public final class TestActor implements Actor {
      * somewhere to build answer with the selection.
      */
     public static TestActor positionlessConsole(World world) {
-        return new TestActor("CONSOLE", world, null, false);
+        return positionlessConsole("CONSOLE", world);
+    }
+
+    /**
+     * The same source under a name of its own, for a test that needs a session
+     * of its own: sessions are keyed by the actor's id, and a mask left set by
+     * one test would filter the writes of the next one.
+     */
+    public static TestActor positionlessConsole(String name, World world) {
+        return new TestActor(name, world, null, false);
     }
 
     /** Makes this actor answer the configuration screen hook, as a real client does. */
