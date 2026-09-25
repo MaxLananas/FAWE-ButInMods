@@ -1035,7 +1035,7 @@ public final class SelfTestMain {
         // -m stops the column at the bottom of the selection instead.
         world.setBlock(10, 85, 10, stone);
         EditSession clamped = new EditSession(world, session, "fall -m");
-        Operations.fall(world, clamped, region, true);
+        Operations.fall(world, clamped, region, true, null);
         clamped.flushQueue();
         check("//fall -m keeps the block in the selection", world.getBlock(10, 70, 10) == stone
                 && world.getBlock(10, 85, 10) == air);
@@ -1044,7 +1044,7 @@ public final class SelfTestMain {
         // A block that sits on something does not move at all.
         world.setBlock(10, 70, 10, stone);
         EditSession settled = new EditSession(world, session, "fall -m settled");
-        Operations.fall(world, settled, region, true);
+        Operations.fall(world, settled, region, true, null);
         settled.flushQueue();
         check("//fall -m leaves a resting block where it is", world.getBlock(10, 70, 10) == stone);
 
@@ -2238,6 +2238,14 @@ public final class SelfTestMain {
     }
 
     /** The same count for another block, which a test may be checking instead. */
+    /** The block count the last command reported, or -1 when it said nothing. */
+    private static long actorBlockCount(TestActor actor) {
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile("([0-9,]+) block\\(s\\) affected").matcher(
+                        actor.lastMessage() == null ? "" : actor.lastMessage().replaceAll("\u00a7.", ""));
+        return matcher.find() ? Long.parseLong(matcher.group(1).replace(",", "")) : -1;
+    }
+
     private static String countOf(TestActor actor, String block) {
         CommandManager.get().dispatch(actor, "//count " + block);
         return actor.lastMessage().replaceAll("\u00a7.", "");
@@ -2454,8 +2462,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(miner, "//set stone");
         miner.clearMessages();
         CommandManager.get().dispatch(miner, "//ores minecraft:stone");
-        check("//ores writes the ore bands into the matching rock", miner.messages().stream()
-                .anyMatch(m -> m.contains("block(s) affected") && !m.contains("0 block(s)")));
+        check("//ores writes the ore bands into the matching rock", actorBlockCount(miner) > 0);
         int oreBlocks = 0;
         for (int x = 0; x <= 15; x++) {
             for (int y = 60; y <= 70; y++) {
@@ -2484,8 +2491,7 @@ public final class SelfTestMain {
         ores.clearMessages();
         CommandManager.get().dispatch(ores, "//ore minecraft:stone minecraft:diamond_ore 9 40 100 60 70");
         check("//ore plants veins of the material it is given",
-                ores.messages().stream().anyMatch(m -> m.contains("block(s) affected")
-                        && !m.contains("0 block(s)")));
+                actorBlockCount(ores) > 0);
         int diamonds = 0;
         for (int x = 0; x <= 15; x++) {
             for (int y = 60; y <= 70; y++) {

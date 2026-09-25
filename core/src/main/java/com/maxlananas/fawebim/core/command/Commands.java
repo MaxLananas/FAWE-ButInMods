@@ -826,23 +826,26 @@ public final class Commands {
 
 
         CommandRegistry.Entry e30 = registry.register("//fill");
-        e30.description = "Fill a hole with a pattern (flood fill)";
+        e30.description = "Fill a hole";
         e30.group = "region";
-        e30.requiresSelection = true;
         e30.booleanFlags.add("r");
         e30.booleanFlags.add("h");
         e30.arguments.add("pattern");
-        e30.arguments.add("[radius]");
+        e30.arguments.add("radius");
+        e30.arguments.add("[depth]");
+        e30.arguments.add("[direction]");
         e30.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    int radius = ctx.intArg(1, ctx.world().maxY());
-                    BlockVector3 start = ctx.placement() != null
-                            ? ctx.placement()
-                            : ctx.selection().getMinimumPoint();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
-                            start, pattern, radius, ctx.hasFlag("h"));
+                    double radius = Math.max(1, ctx.doubleArg(1));
+                    int depth = Math.max(1, ctx.intArg(2, 1));
+                    BlockVector3 direction = ctx.args().size() < 4
+                            ? new BlockVector3(0, -1, 0)
+                            : expandDirections(ctx, ctx.joined(3)).get(0);
+                    BlockVector3 start = ctx.placement();
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fillDirection(ctx.world(), session,
+                            start, pattern, radius, depth, direction);
                     ctx.actor().message(Msg.success("Filled " + Msg.formatNumber(changed) + " block(s)"));
                     flush(ctx, session);
                 };
@@ -1555,16 +1558,19 @@ public final class Commands {
 
 
         CommandRegistry.Entry e55 = registry.register("//fall");
-        e55.description = "Make blocks fall";
+        e55.description = "Have the blocks in the selection fall";
         e55.group = "generation";
         e55.requiresSelection = true;
+        e55.arguments.add("[replace]");
         // -m keeps the blocks inside the vertical bounds of the selection.
         e55.booleanFlags.add("m");
         e55.handler = ctx -> {
                     EditSession session = ctx.editSession();
+                    int[] replace = ctx.args().isEmpty() ? null
+                            : new int[]{ctx.pattern(0).apply(ctx.placement())};
                     int changed = com.maxlananas.fawebim.core.function.Operations.fall(ctx.world(), session,
-                            ctx.selection(), ctx.hasFlag("m"));
-                    ctx.actor().message(Msg.success("Moved " + Msg.formatNumber(changed) + " block(s)"));
+                            ctx.selection(), ctx.hasFlag("m"), replace);
+                    ctx.actor().message(Msg.success(changed + " block(s) affected"));
                     flush(ctx, session);
                 };
 
@@ -1647,21 +1653,34 @@ public final class Commands {
 
 
         CommandRegistry.Entry e58 = registry.register("//cone");
-        e58.description = "Create a cone at your position";
+        e58.description = "Generate a cone";
         e58.group = "generation";
         e58.booleanFlags.add("h");
         e58.arguments.add("pattern");
-        e58.arguments.add("radius");
+        e58.arguments.add("radii");
         e58.arguments.add("[height]");
+        e58.arguments.add("[thickness]");
         e58.handler = ctx -> {
+                    Pattern pattern = ctx.pattern(0);
+                    List<Double> radii = com.maxlananas.fawebim.core.command.Parsers.radii(ctx.arg(1));
+                    double radiusX;
+                    double radiusZ;
+                    if (radii.size() == 1) {
+                        radiusX = radiusZ = Math.max(1, radii.get(0));
+                    } else if (radii.size() == 2) {
+                        radiusX = Math.max(1, radii.get(0));
+                        radiusZ = Math.max(1, radii.get(1));
+                    } else {
+                        throw CommandRegistry.error("Invalid radius: give one radius or two, N/S then E/W");
+                    }
+                    int height = ctx.intArg(2, 1);
+                    double thickness = ctx.doubleArg(3, 1);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = ctx.doubleArg(1);
-                    double height = ctx.doubleArg(2, radius * 2);
                     int changed = com.maxlananas.fawebim.core.function.Operations.cone(session, ctx.placement(),
-                            radius, height, pattern, ctx.hasFlag("h"));
-                    ctx.actor().message(Msg.success("Created cone: " + changed + " block(s)"));
+                            pattern, radiusX, radiusZ, height, !ctx.hasFlag("h"), thickness);
+                    ctx.actor().message(Msg.success("Cone created: " + Msg.formatNumber(changed)
+                            + " block(s)"));
                     flush(ctx, session);
                 };
 
@@ -1774,20 +1793,38 @@ public final class Commands {
 
 
         CommandRegistry.Entry e62 = registry.register("//rotate");
-        e62.description = "Rotate the clipboard";
+        e62.description = "Rotate the contents of the clipboard";
         e62.group = "clipboard";
-        e62.arguments.add("angle");
-        e62.arguments.add("[direction]");
+        e62.arguments.add("rotateY");
+        e62.arguments.add("[rotateX]");
+        e62.arguments.add("[rotateZ]");
         e62.handler = ctx -> {
                     if (!ctx.session().hasClipboard()) {
                         throw CommandRegistry.error("No clipboard");
                     }
-                    double angle = ctx.doubleArg(0);
+                    double rotateY = ctx.doubleArg(0);
+                    double rotateX = ctx.doubleArg(1, 0);
+                    double rotateZ = ctx.doubleArg(2, 0);
                     var holder = ctx.session().getClipboard();
                     var origin = holder.getClipboard().getOrigin();
-                    holder.setTransform(holder.getTransform().combine(
-                            com.maxlananas.fawebim.core.transform.Transforms.rotate(origin, angle)));
-                    ctx.actor().message(Msg.success("Clipboard rotated by " + angle + " degrees"));
+                    // Upstream rotates around the clipboard origin, one axis at a
+                    // time and in this order, so a line asking for two of them
+                    // gives the same result as the command run twice.
+                    com.maxlananas.fawebim.core.transform.Transform transform = holder.getTransform();
+                    if (rotateY != 0) {
+                        transform = transform.combine(Transforms.rotate(origin,
+                                com.maxlananas.fawebim.core.transform.Axis.Y, -rotateY));
+                    }
+                    if (rotateX != 0) {
+                        transform = transform.combine(Transforms.rotate(origin,
+                                com.maxlananas.fawebim.core.transform.Axis.X, -rotateX));
+                    }
+                    if (rotateZ != 0) {
+                        transform = transform.combine(Transforms.rotate(origin,
+                                com.maxlananas.fawebim.core.transform.Axis.Z, -rotateZ));
+                    }
+                    holder.setTransform(transform);
+                    ctx.actor().message(Msg.success("Clipboard rotated"));
                 };
 
 
@@ -2006,12 +2043,21 @@ public final class Commands {
     // ------------------------------------------------------------------ history
 
     private void registerHistory() {
-        CommandRegistry.Entry e66 = registry.register("//undo", "//u");
-        e66.description = "Undo your last operation";
+        CommandRegistry.Entry e66 = registry.register("//undo", "/undo", "//u");
+        e66.description = "Undoes the last action (from history)";
         e66.group = "history";
-        e66.arguments.add("[number]");
+        e66.arguments.add("[times]");
+        e66.arguments.add("[player]");
         e66.handler = ctx -> {
-                    int steps = ctx.intArg(0, 1);
+                    int steps = Math.max(1, ctx.intArg(0, 1));
+                    com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx, 0, 1);
+                    if (target != ctx.session()) {
+                        int undone = undoSteps(ctx, target, steps);
+                        ctx.actor().message(undone == 0 ? Msg.error("Nothing to undo")
+                                : Msg.success("Undid " + Msg.formatNumber(undone)
+                                + " block change(s) for " + target.ownerName()));
+                        return;
+                    }
                     int undone = 0;
                     for (int i = 0; i < steps; i++) {
                         var record = ctx.session().getHistory().undo();
@@ -2040,12 +2086,13 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e67 = registry.register("//redo", "//r");
-        e67.description = "Redo your last undone operation";
+        CommandRegistry.Entry e67 = registry.register("//redo", "/redo", "//r");
+        e67.description = "Redoes the last action (from history)";
         e67.group = "history";
-        e67.arguments.add("[number]");
+        e67.arguments.add("[times]");
+        e67.arguments.add("[player]");
         e67.handler = ctx -> {
-                    int steps = ctx.intArg(0, 1);
+                    int steps = Math.max(1, ctx.intArg(0, 1));
                     int redone = 0;
                     for (int i = 0; i < steps; i++) {
                         var record = ctx.session().getHistory().redo();
@@ -2085,6 +2132,64 @@ public final class Commands {
     }
 
     // -------------------------------------------------------------------- biome
+
+    /**
+     * The session {@code //undo} and {@code //redo} act on: the caller's own, or
+     * the one belonging to the player named behind the count.
+     *
+     * <p>The count and the name share the optional tail, so a first argument
+     * that is a number is the count and anything else is the name.</p>
+     */
+    private static com.maxlananas.fawebim.core.session.LocalSession historyTarget(Ctx ctx, int first, int second) {
+        Ctx.Argument argument = ctx.argument(second);
+        if (argument == null || argument.value().isEmpty()) {
+            // A name in the count's place, for a line that names a player and
+            // leaves the count at one.
+            argument = ctx.argument(first);
+            if (argument != null && !argument.value().isEmpty() && !argument.isNumber()) {
+                return otherSession(ctx, argument.value());
+            }
+            return ctx.session();
+        }
+        if (argument.isNumber()) {
+            return ctx.session();
+        }
+        return otherSession(ctx, argument.value());
+    }
+
+    private static com.maxlananas.fawebim.core.session.LocalSession otherSession(Ctx ctx, String name) {
+        com.maxlananas.fawebim.core.session.LocalSession other =
+                com.maxlananas.fawebim.core.session.SessionManager.get().byName(name);
+        if (other == null) {
+            throw CommandRegistry.error("No session found for player '" + name + "'");
+        }
+        return other;
+    }
+
+    /** Runs {@code steps} undos of a session, returning the changes put back. */
+    private static int undoSteps(Ctx ctx, com.maxlananas.fawebim.core.session.LocalSession session, int steps) {
+        int undone = 0;
+        for (int i = 0; i < steps; i++) {
+            var record = session.getHistory().undo();
+            if (record == null) {
+                break;
+            }
+            EditSession edit = new EditSession(ctx.world(), session, "undo", false);
+            for (var sets : record.changes().values()) {
+                for (var set : sets) {
+                    edit.applyChangeSet(set, true);
+                }
+            }
+            for (var sets : record.biomeChanges().values()) {
+                for (var set : sets) {
+                    edit.applyBiomeChangeSet(set, true);
+                }
+            }
+            undone += record.changeCount() + record.biomeChangeCount();
+            edit.flushQueue();
+        }
+        return undone;
+    }
 
     private void registerBiome() {
         CommandRegistry.Entry e69 = registry.register("/setbiome", "//setbiome", "//biome");

@@ -121,6 +121,23 @@ public final class Ctx {
         return positional.get(index);
     }
 
+    /**
+     * One positional argument, or {@code null} when the line did not reach it.
+     * {@link Argument#isNumber()} is what tells a count from a player name in the
+     * commands where upstream accepts either.
+     */
+    public Argument argument(int index) {
+        return index < positional.size() ? new Argument(positional.get(index)) : null;
+    }
+
+    /** A positional argument with the two readings a command may need. */
+    public record Argument(String value) {
+
+        public boolean isNumber() {
+            return Str.isInteger(value) || Str.isDouble(value);
+        }
+    }
+
     public String arg(int index, String fallback) {
         return index < positional.size() ? positional.get(index) : fallback;
     }

@@ -52,6 +52,25 @@ public final class SessionManager {
         return session;
     }
 
+    /**
+     * The session of a player by name, which is what {@code //undo <player>} and
+     * {@code /snapshot} need; {@code null} when that player has no session.
+     */
+    public LocalSession byName(String name) {
+        if (name == null) {
+            return null;
+        }
+        if (name.equalsIgnoreCase(consoleSession.ownerName())) {
+            return consoleSession;
+        }
+        for (LocalSession session : sessions.values()) {
+            if (name.equalsIgnoreCase(session.ownerName())) {
+                return session;
+            }
+        }
+        return null;
+    }
+
     public LocalSession console() {
         return consoleSession;
     }

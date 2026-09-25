@@ -147,7 +147,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//flip [direction]` | — | Flip the clipboard | implemented |
 | `//lazycopy` | `/lc` | Copy the selection to the clipboard without reading it | implemented |
 | `//paste [destination] [-m <mask>]` | `//p` | Paste your clipboard | implemented |
-| `//rotate <angle> [direction]` | — | Rotate the clipboard | implemented |
+| `//rotate <rotateY> [rotateX] [rotateZ]` | — | Rotate the contents of the clipboard | implemented |
 | `/cc` | — | Clear your clipboard | alias |
 | `/clearclip` | — | Clear your clipboard | alias |
 | `/download [name] [format]` | — | Save your clipboard to a schematic file | implemented |
@@ -162,12 +162,12 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 |---|---|---|---|
 | `//blob <pattern> [radius]` | — | Create a distorted sphere | implemented |
 | `//caves [frequency] [rarity] [size]` | — | Generate cave systems in the selection | implemented |
-| `//cone <pattern> <radius> [height]` | — | Create a cone at your position | implemented |
+| `//cone <pattern> <radii> [height] [thickness]` | — | Generate a cone | implemented |
 | `//curve <pattern> [thickness]` | — | Draw a spline through the convex selection's vertices | implemented |
 | `//cyl <pattern> <radius> [height]` | — | Create a cyl at your position | implemented |
 | `//deform <expression>` | — | Deform blocks in the selection using an expression | implemented |
 | `//deltree` | — | Remove the tree you are looking at | implemented |
-| `//fall` | — | Make blocks fall | implemented |
+| `//fall [replace]` | — | Have the blocks in the selection fall | implemented |
 | `//feature <feature> [position]` | — | Generate a feature at your position | implemented |
 | `//flora [density]` | — | Make flora within the region | implemented |
 | `//forest <tree-type> [density]` | — | Make a forest within the region | implemented |
@@ -194,8 +194,8 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
 | `//clearhistory` | — | Clear your history | implemented |
-| `//redo [number]` | `//r` | Redo your last undone operation | implemented |
-| `//undo [number]` | `//u` | Undo your last operation | implemented |
+| `//redo [times] [player]` | `/redo`, `//r` | Redoes the last action (from history) | implemented |
+| `//undo [times] [player]` | `/undo`, `//u` | Undoes the last action (from history) | implemented |
 | `/history <list\|info\|summary\|summarize\|distr\|distribution\|find\|inspect\|search\|near\|rollback\|restore\|rerun\|import\|clear\|size\|rollback\|restore\|rerun\|import\|clear> [-u <user>] [-t <time>] [-r <radius>] [-p <page>]` | — | Inspect the edits of this server | implemented |
 
 ## infos
@@ -235,7 +235,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//drain [radius]` | — | Drain liquids in the selection | implemented |
 | `//extinguish [radius]` | `//ex` | Extinguish nearby fire | implemented |
 | `//faces <pattern>` | `//outline` | Build the faces of the selection | implemented |
-| `//fill <pattern> [radius]` | — | Fill a hole with a pattern (flood fill) | implemented |
+| `//fill <pattern> <radius> [depth] [direction]` | — | Fill a hole | implemented |
 | `//fillr <pattern> <radius> [depth]` | `/fillr` | Fill a hole recursively | implemented |
 | `//fixblocks` | `/updateblocks`, `/fixconnect` | Fixes all blocks in the region to the correct shape and connections | implemented |
 | `//fixlava [radius]` | — | Fix lava placement in the selection | implemented |

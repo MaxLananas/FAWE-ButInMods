@@ -541,33 +541,6 @@ public final class Operations {
         return changed;
     }
 
-    /** {@code //cone}. */
-    public static int cone(EditSession session, BlockVector3 center, double radius, double height, Pattern pattern,
-                           boolean hollow) {
-        int changed = 0;
-        int heightInt = (int) Math.max(1, height);
-        int base = center.y() - heightInt / 2;
-        for (int layer = 0; layer < heightInt; layer++) {
-            double r = radius * (1 - (double) layer / heightInt);
-            int ri = (int) Math.ceil(r);
-            int y = base + layer;
-            for (int z = -ri; z <= ri; z++) {
-                for (int x = -ri; x <= ri; x++) {
-                    double distance = Math.sqrt(x * x + z * z);
-                    if (distance > r || (hollow && distance < r - 1)) {
-                        continue;
-                    }
-                    int bx = center.x() + x;
-                    int bz = center.z() + z;
-                    if (session.setBlock(bx, y, bz, pattern.apply(bx, y, bz))) {
-                        changed++;
-                    }
-                }
-            }
-        }
-        return changed;
-    }
-
     // ------------------------------------------------------------- lines/curves
 
     /** {@code //line}. */
@@ -1519,15 +1492,22 @@ public final class Operations {
 
     /** {@code //fall} — drops every block in the region to the ground. */
     public static int fall(World world, EditSession session, Region region) {
-        return fall(world, session, region, false);
+        return fall(world, session, region, false, null);
     }
 
     /**
-     * {@code //fall}, with {@code -m} keeping the blocks inside the vertical
-     * bounds of the selection instead of letting them out of the bottom.
+     * WorldEdit's {@code EditSession.fall}: every block of the selection drops
+     * onto the first block below it, and the cell it left takes the replace
+     * block - air unless the line named another one.
+     *
+     * @param withinSelection {@code -m}: stop at the floor of the selection
+     *                        rather than the floor of the world
+     * @param replace         the block left behind, or {@code null} for air
      */
-    public static int fall(World world, EditSession session, Region region, boolean withinSelection) {
+    public static int fall(World world, EditSession session, Region region, boolean withinSelection,
+                           int[] replace) {
         BlockStateRegistry registry = BlockState.registry();
+        int left = replace == null ? registry.air() : replace[0];
         int floor = withinSelection ? region.getMinimumPoint().y() : world.minY();
         return region.forEachPosition((x, y, z) -> {
             int state = world.getBlock(x, y, z);
@@ -1541,9 +1521,151 @@ public final class Operations {
             if (landing == y) {
                 return false;
             }
-            session.setBlock(x, y, z, registry.air());
+            session.setBlock(x, y, z, left);
             return session.setBlock(x, landing, z, state);
         });
+    }
+
+    /**
+     * WorldEdit's {@code EditSession.fillXZ}: fills the air of a sphere around
+     * the placement, down to {@code depth} blocks, walking from the origin
+     * downwards so a cell is only written once.
+     */
+    public static int fillXz(World world, EditSession session, BlockVector3 origin, Pattern pattern,
+                             double radius, int depth) {
+        BlockStateRegistry registry = BlockState.registry();
+        int fromY = Math.max(world.minY(), origin.y() - depth + 1);
+        int toY = Math.min(world.maxY(), origin.y());
+        int spread = (int) Math.ceil(radius);
+        int radiusSq = (int) (radius * radius);
+        int changed = 0;
+        for (int y = toY; y >= fromY; y--) {
+            session.checkTimeout();
+            int dy = y - origin.y();
+            int dy2 = dy * dy;
+            for (int x = origin.x() - spread; x <= origin.x() + spread; x++) {
+                int dx = x - origin.x();
+                int dx2 = dx * dx;
+                if (dx2 + dy2 > radiusSq) {
+                    continue;
+                }
+                for (int z = origin.z() - spread; z <= origin.z() + spread; z++) {
+                    int dz = z - origin.z();
+                    if (dx2 + dy2 + dz * dz > radiusSq) {
+                        continue;
+                    }
+                    if (!registry.isAirLike(world.getBlock(x, y, z))) {
+                        continue;
+                    }
+                    if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                        changed++;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * FAWE's {@code EditSession.fillDirection}: the same fill, moved along the
+     * direction it was given. Downwards is the common case and takes the walk
+     * above; any other direction follows the sphere from the origin outwards.
+     */
+    public static int fillDirection(World world, EditSession session, BlockVector3 origin, Pattern pattern,
+                                    double radius, int depth, BlockVector3 direction) {
+        if (direction.y() < 0 && direction.x() == 0 && direction.z() == 0) {
+            return fillXz(world, session, origin, pattern, radius, depth);
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        int spread = (int) Math.ceil(radius);
+        int radiusSq = (int) (radius * radius);
+        int changed = 0;
+        for (int step = 0; step < Math.max(1, (int) (radius * 2 + 1)); step++) {
+            session.checkTimeout();
+            BlockVector3 centre = origin.add(direction.multiply(step));
+            for (int x = centre.x() - spread; x <= centre.x() + spread; x++) {
+                int dx = x - origin.x();
+                int dx2 = dx * dx;
+                if (dx2 > radiusSq) {
+                    continue;
+                }
+                for (int y = centre.y() - spread; y <= centre.y() + spread; y++) {
+                    int dy = y - origin.y();
+                    int dxy2 = dx2 + dy * dy;
+                    if (dxy2 > radiusSq) {
+                        continue;
+                    }
+                    for (int z = centre.z() - spread; z <= centre.z() + spread; z++) {
+                        int dz = z - origin.z();
+                        if (dxy2 + dz * dz > radiusSq) {
+                            continue;
+                        }
+                        if (!registry.isAirLike(world.getBlock(x, y, z))) {
+                            continue;
+                        }
+                        if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * WorldEdit's {@code EditSession.makeCone}: a cone of the two radii and the
+     * height, hollow when asked, with a shell of the given thickness.
+     */
+    public static int cone(EditSession session, BlockVector3 origin, Pattern pattern, double radiusX,
+                           double radiusZ, int height, boolean filled, double thickness) {
+        double radiusXPow = radiusX * radiusX;
+        double radiusZPow = radiusZ * radiusZ;
+        double heightPow = (double) height * height;
+        int layers = Math.abs(height);
+        int ceilX = (int) Math.ceil(radiusX);
+        int ceilZ = (int) Math.ceil(radiusZ);
+        int changed = 0;
+        for (int y = 0; y < layers; y++) {
+            double yTerm = (double) (y - layers) * (y - layers) / heightPow;
+            for (int x = 0; x <= ceilX; x++) {
+                double xTerm = (double) x * x / radiusXPow;
+                for (int z = 0; z <= ceilZ; z++) {
+                    double zTerm = (double) z * z / radiusZPow;
+                    double distance = xTerm + zTerm - yTerm;
+                    if (distance > 1) {
+                        if (z == 0) {
+                            break;
+                        }
+                        continue;
+                    }
+                    if (!filled) {
+                        double xNext = (double) (x + thickness) * (x + thickness) / radiusXPow + zTerm - yTerm;
+                        double yNext = xTerm + zTerm
+                                - (double) (y + (int) thickness - layers) * (y + (int) thickness - layers) / heightPow;
+                        double zNext = xTerm + (double) (z + thickness) * (z + thickness) / radiusZPow - yTerm;
+                        if (xNext <= 0 && zNext <= 0 && yNext <= 0 && y + thickness != layers) {
+                            continue;
+                        }
+                    }
+                    if (distance > 0) {
+                        continue;
+                    }
+                    int yOffset = height < 0 ? -y : y;
+                    // The four quadrants of the layer, with the axes written once.
+                    changed += place(session, pattern, origin.x() + x, origin.y() + yOffset, origin.z() + z);
+                    changed += place(session, pattern, origin.x() - x, origin.y() + yOffset, origin.z() + z);
+                    changed += place(session, pattern, origin.x() + x, origin.y() + yOffset, origin.z() - z);
+                    changed += place(session, pattern, origin.x() - x, origin.y() + yOffset, origin.z() - z);
+                }
+            }
+        }
+        return changed;
+    }
+
+    /** Writes one cell of a generator, counting the ones that really changed. */
+    private static int place(EditSession session, Pattern pattern, int x, int y, int z) {
+        return session.setBlock(x, y, z, pattern.apply(x, y, z)) ? 1 : 0;
     }
 
     /** {@code /brush scatter} — scatters a pattern over the surface. */

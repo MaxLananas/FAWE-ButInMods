@@ -87,12 +87,25 @@ def main() -> int:
 
     # WorldEdit's word wins where both declare a spelling.
     shapes: dict[str, tuple[list[str], list[str], list[str]]] = {}
+    rows: dict[str, dict] = {}
     for row in inventory:
         name = spelling(row)
         if not name:
             continue
         if row.get("source") == "WorldEdit" or key(name) not in shapes:
             shapes[key(name)] = upstream_shape(row)
+            rows[key(name)] = row
+
+    def row_of(_shapes: dict, command_name: str) -> dict:
+        return rows.get(command_name, {})
+
+    def upstream_optional(row: dict) -> list[str]:
+        optional: list[str] = []
+        for parameter in row.get("params", []):
+            annotation = parameter.get("ann") or {}
+            if annotation.get("kind") == "Arg" and annotation.get("def") not in (None, ""):
+                optional.append(parameter.get("name") or "?")
+        return optional
 
     problems = 0
     checked = 0
@@ -104,16 +117,14 @@ def main() -> int:
         mine = [argument.strip("[]") for argument in command.get("arguments", [])]
         mine_optional = [argument for argument in command.get("arguments", []) if argument.startswith("[")]
         flags = set(command.get("booleanFlags", [])) | set(command.get("valueFlags", []))
-        missing_required = len(required) - len(mine)
-        if missing_required > 0 and not all(
-                argument[0] == "[" for argument in required[-missing_required:]):
-            # The build takes fewer arguments than upstream requires, and the
-            # ones upstream requires are not the optional tail.
-            extra_optional = len(mine_optional)
-            if len(required) > len(mine) - extra_optional + len(mine_optional):
-                problems += 1
-                print(f"{command['name']}: upstream requires {required}, the build takes "
-                      f"{command.get('arguments', [])}")
+        # Upstream counts every positional argument it declares, required or with
+        # a default; the build writes the optional ones between brackets.
+        declared = len(required) + len(upstream_optional(row_of(shapes, name)))
+        if declared > len(mine):
+            problems += 1
+            print(f"{command['name']}: upstream takes {declared} argument(s)"
+                  f" ({required}{upstream_optional(row_of(shapes, name))}),"
+                  f" the build takes {command.get('arguments', [])}")
         missing_switches = [switch for switch in switches if switch not in flags]
         if missing_switches:
             problems += 1

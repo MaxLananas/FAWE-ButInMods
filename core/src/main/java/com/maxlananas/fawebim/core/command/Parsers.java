@@ -31,6 +31,26 @@ public final class Parsers {
 
     // ------------------------------------------------------------------ blocks
 
+    /**
+     * A radii argument: one number, or a comma separated pair, which is how
+     * WorldEdit's {@code @Radii} arguments read.
+     */
+    public static java.util.List<Double> radii(String input) {
+        java.util.List<Double> values = new java.util.ArrayList<>(2);
+        for (String part : input.split(",")) {
+            String token = part.trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            try {
+                values.add(Double.parseDouble(token));
+            } catch (NumberFormatException e) {
+                throw CommandRegistry.error("Expected a radius, got '" + token + "'");
+            }
+        }
+        return values;
+    }
+
     /** A true/false argument, refused when it is neither. */
     public static boolean booleanArg(Ctx ctx, int index, boolean fallback) {
         if (index >= ctx.args().size()) {
