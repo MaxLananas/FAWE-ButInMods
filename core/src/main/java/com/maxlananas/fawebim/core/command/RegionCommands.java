@@ -181,7 +181,7 @@ final class RegionCommands {
         entry.requiresPlayer = true;
         entry.handler = ctx -> {
             BlockVector3 target = ctx.args().isEmpty()
-                    ? ctx.world().getTargetBlock(ctx.actor(), 100)
+                    ? ctx.targetBlock(100)
                     : ctx.blockVector(0);
             NbtCompound nbt = ctx.world().getBlockEntity(target.x(), target.y(), target.z());
             if (nbt == null) {
@@ -418,7 +418,7 @@ final class RegionCommands {
                         + com.maxlananas.fawebim.core.platform.Config.get().butcherMaxRadius);
             }
             BlockVector3 origin = ctx.arg(0, "").contains(",")
-                    ? ctx.blockVector(0) : ctx.actor().position();
+                    ? ctx.blockVector(0) : ctx.placement();
             World world = ctx.world();
             Extent.Region3i box = new Extent.Region3i(
                     origin.x() - radius, world.minY(), origin.z() - radius,
@@ -459,7 +459,7 @@ final class RegionCommands {
             if (radius < 0.5 || radius > 500) {
                 throw CommandRegistry.error("Radius must be between 0.5 and 500");
             }
-            BlockVector3 origin = ctx.actor().position();
+            BlockVector3 origin = ctx.placement();
             EditSession session = ctx.editSession("blob");
             int changed = 0;
             Noise noise = new Noise.Perlin(origin.hashCode());

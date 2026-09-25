@@ -159,7 +159,7 @@ final class AnvilCommands {
             if (clipboard == null) {
                 throw CommandRegistry.error("You must first use /anvil copy");
             }
-            BlockVector3 destination = ctx.args().isEmpty() ? ctx.actor().position() : ctx.blockVector(0);
+            BlockVector3 destination = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
             if (ctx.hasFlag("c")) {
                 destination = BlockVector3.at(destination.x() & ~15, destination.y(), destination.z() & ~15);
             }

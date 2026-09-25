@@ -39,6 +39,11 @@ public final class TestActor implements Actor {
         return new TestActor("CONSOLE", world, BlockVector3.ZERO);
     }
 
+    /** The console a command block, a function or a script runs as: no position. */
+    public static TestActor positionlessConsole(World world) {
+        return new TestActor("CONSOLE", world, null);
+    }
+
     /** Makes this actor answer the configuration screen hook, as a real client does. */
     public void setScreenAvailable(boolean value) {
         this.screen = value;

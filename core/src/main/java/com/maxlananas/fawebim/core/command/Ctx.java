@@ -205,6 +205,47 @@ public final class Ctx {
     }
 
     /**
+     * The block a command that works from where the player stands anchors on.
+     *
+     * <p>The console has no position, and a command run from it — a script, a
+     * command block, the server console — still has to build its sphere or its
+     * pyramid somewhere: the centre of the selection is WorldEdit's own answer
+     * for those sources, and the world origin is the last resort when no region
+     * is selected either.</p>
+     */
+    /**
+     * Refuses a command that moves the player when the source has no position:
+     * the console, a command block and a function cannot be teleported.
+     */
+    public void requirePosition() {
+        if (actor.position() == null) {
+            throw CommandRegistry.error("This command must be run by a player");
+        }
+    }
+
+    /** The block the actor looks at, up to {@code range} blocks away. */
+    public BlockVector3 targetBlock(int range) {
+        BlockVector3 target = world().getTargetBlock(actor, range);
+        if (target == null) {
+            throw CommandRegistry.error("No block in reach: look at a block and run it again");
+        }
+        return target;
+    }
+
+    public BlockVector3 placement() {
+        BlockVector3 position = actor.position();
+        if (position != null) {
+            return position;
+        }
+        if (hasSelection()) {
+            Vector3 center = selection().getCenter();
+            return new BlockVector3((int) Math.floor(center.x()), (int) Math.floor(center.y()),
+                    (int) Math.floor(center.z()));
+        }
+        return BlockVector3.ZERO;
+    }
+
+    /**
      * Parses a block position, supporting WorldEdit's relative ({@code ~}) and
      * local ({@code ^}) notation relative to the player.
      */
@@ -217,7 +258,7 @@ public final class Ctx {
         if (split.length != 3) {
             if (Str.isInteger(input)) {
                 // Single number: the y coordinate for //up style commands.
-                BlockVector3 base = actor.position();
+                BlockVector3 base = placement();
                 return new BlockVector3(base.x(), Integer.parseInt(input), base.z());
             }
             throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");

@@ -260,8 +260,8 @@ final class GenerationCommands {
         if (ctx.hasFlag("r")) {
             return new double[]{0, 0, 0};
         }
-        if (ctx.hasFlag("o") && ctx.actor().position() != null) {
-            BlockVector3 placement = ctx.actor().position();
+        if (ctx.hasFlag("o") && ctx.placement() != null) {
+            BlockVector3 placement = ctx.placement();
             return new double[]{placement.x(), placement.y(), placement.z()};
         }
         // Both the plain form and -c measure from the centre; only the unit
@@ -345,7 +345,7 @@ final class GenerationCommands {
         entry.handler = ctx -> {
             String name = ctx.arg(0);
             BlockVector3 position = ctx.args().size() > 1
-                    ? ctx.blockVector(1) : ctx.world().getTargetBlock(ctx.actor(), 100);
+                    ? ctx.blockVector(1) : ctx.targetBlock(100);
             if (!ctx.world().generateFeature(position, name, new Random())) {
                 throw CommandRegistry.error("Unknown feature '" + name
                         + "'. Use a namespaced feature id such as minecraft:trees_oak or minecraft:ore_gold");

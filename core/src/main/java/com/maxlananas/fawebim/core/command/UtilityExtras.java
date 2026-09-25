@@ -560,7 +560,7 @@ final class UtilityExtras {
         long since = ctx.hasFlag("t")
                 ? System.currentTimeMillis() - Commands.parseDuration(ctx.flagValue("t", "")) : -1;
         double radius = ctx.hasFlag("r") ? ctx.flagDouble("r", -1) : -1;
-        BlockVector3 origin = radius >= 0 ? ctx.actor().position() : null;
+        BlockVector3 origin = radius >= 0 ? ctx.placement() : null;
         return EditLog.find(user, ctx.world().name(), radius, since, origin);
     }
 

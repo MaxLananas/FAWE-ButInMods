@@ -216,7 +216,7 @@ public final class Parsers {
                 return new Patterns.TypeSwap();
             }
             case "rel", "r", "relative", "~" -> {
-                BlockVector3 origin = ctx.actor().position() == null ? BlockVector3.ZERO : ctx.actor().position();
+                BlockVector3 origin = ctx.placement();
                 return new Patterns.Relative(pattern(args, ctx), origin);
             }
             case "color", "colour", "averagecolor", "anglecolor" -> {

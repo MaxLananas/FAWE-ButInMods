@@ -120,7 +120,8 @@ public interface World extends Extent {
     default BlockVector3 getTargetBlock(com.maxlananas.fawebim.core.actor.Actor actor, int maxDistance) {
         BlockVector3 origin = actor.position();
         if (origin == null) {
-            return BlockVector3.ZERO;
+            // The console, a command block and a function look at nothing.
+            return null;
         }
         com.maxlananas.fawebim.core.math.Vector3 direction = actor.direction().normalize();
         BlockVector3 last = origin;

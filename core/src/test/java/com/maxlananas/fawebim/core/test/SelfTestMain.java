@@ -91,6 +91,8 @@ public final class SelfTestMain {
         testClipboardAndSchematic();
         testLargeSchematicSave();
         testCommands();
+        testSourceMaskReads();
+        testConsoleCommands();
         testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
@@ -1742,6 +1744,47 @@ public final class SelfTestMain {
     }
 
     /**
+     * Every registered command must survive a source that has no position: the
+     * server console, a command block, a function. The commands that build where
+     * the player stands fall back to the selection, and none of them may end in
+     * an internal error instead of an answer.
+     */
+    private static void testConsoleCommands() throws Exception {
+        section("console");
+        TestWorld world = new TestWorld("console");
+        world.fillFlat(64);
+        TestActor console = TestActor.positionlessConsole(world);
+        String brushes = Config.get().brushPresetDirectory;
+        String temp = Files.createTempDirectory("fawebim-brushes").toString();
+        Config.get().brushPresetDirectory = temp;
+        List<String> failures = new ArrayList<>();
+        for (CommandRegistry.Entry entry : CommandManager.get().registry().all()) {
+            // Once bare, then with the arguments a console-driven command line
+            // carries, so the argument paths run too.
+            for (String tail : new String[] {"", "1", "minecraft:stone"}) {
+                String line = tail.isEmpty() ? entry.name : entry.name + " " + tail;
+                console.clearMessages();
+                try {
+                    CommandManager.get().dispatch(console, line);
+                } catch (Throwable failure) {
+                    failures.add(line + " threw " + failure);
+                    continue;
+                }
+                for (String message : console.messages()) {
+                    if (message.startsWith("Command failed")) {
+                        failures.add(line + ": " + message);
+                    }
+                }
+            }
+        }
+        Config.get().brushPresetDirectory = brushes;
+        for (String failure : failures) {
+            System.out.println("FAIL: " + failure);
+        }
+        check("no command fails from a source without a position", failures.isEmpty());
+    }
+
+    /**
      * The commands a player reaches under their own name rather than as an option
      * of another one: {@code //generate} builds the part of a selection its
      * formula picks out, {@code //hpyramid} is the hollow pyramid WorldEdit
@@ -1749,6 +1792,35 @@ public final class SelfTestMain {
      * it was given, and {@code /smask} sets the brush source mask rather than the
      * global mask {@code /gmask} sets.
      */
+    /**
+     * {@code //gsmask <mask>} limits the blocks an operation reads, and the mask
+     * answers by reading a block itself. That read comes from the world: a mask
+     * asked through itself has no base case and reads until the stack is gone.
+     */
+    private static void testSourceMaskReads() {
+        section("source mask");
+        TestWorld world = new TestWorld("source-mask");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Mask", world, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(actor, "//pos1 0,70,0");
+        CommandManager.get().dispatch(actor, "//pos2 3,70,3");
+        CommandManager.get().dispatch(actor, "//set minecraft:stone");
+        check("the selection is stone", count(actor).equals("Count: 16"));
+        CommandManager.get().dispatch(actor, "//gsmask minecraft:stone");
+        check("a source mask leaves the reads the blocks it accepts", count(actor).equals("Count: 16"));
+        CommandManager.get().dispatch(actor, "//gsmask minecraft:dirt");
+        check("a source mask hides the blocks it rejects", count(actor).equals("Count: 0"));
+        CommandManager.get().dispatch(actor, "//gsmask");
+        CommandManager.get().dispatch(actor, "//count minecraft:stone");
+        check("clearing the source mask restores the reads", count(actor).equals("Count: 16"));
+    }
+
+    /** Counts the selection and answers without the chat colouring. */
+    private static String count(TestActor actor) {
+        CommandManager.get().dispatch(actor, "//count minecraft:stone");
+        return actor.lastMessage().replaceAll("\u00a7.", "");
+    }
+
     private static void testSplitCommands() {
         section("own-name commands");
         int stone = BlockState.registry().defaultState("minecraft:stone");

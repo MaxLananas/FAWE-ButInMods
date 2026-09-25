@@ -101,7 +101,7 @@ public final class Commands {
         e1.group = "selection";
         e1.arguments.add("[coordinates]");
         e1.handler = ctx -> {
-                    BlockVector3 pos = ctx.args().isEmpty() ? ctx.actor().position() : ctx.blockVector(0);
+                    BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
                     RegionSelector selector = ctx.session().getSelector(ctx.world());
                     selector.selectPrimary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     ctx.actor().message(Msg.info("Position 1 set to ").append(Msg.value(pos)));
@@ -113,7 +113,7 @@ public final class Commands {
         e2.group = "selection";
         e2.arguments.add("[coordinates]");
         e2.handler = ctx -> {
-                    BlockVector3 pos = ctx.args().isEmpty() ? ctx.actor().position() : ctx.blockVector(0);
+                    BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
                     RegionSelector selector = ctx.session().getSelector(ctx.world());
                     selector.selectSecondary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     ctx.actor().message(Msg.info("Position 2 set to ").append(Msg.value(pos)));
@@ -125,7 +125,7 @@ public final class Commands {
         e3.group = "selection";
         e3.requiresPlayer = true;
         e3.handler = ctx -> {
-                    BlockVector3 target = ctx.world().getTargetBlock(ctx.actor(), 100);
+                    BlockVector3 target = ctx.targetBlock(100);
                     ctx.session().getSelector(ctx.world()).selectPrimary(target,
                             com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     ctx.actor().message(Msg.info("Position 1 set to ").append(Msg.value(target)));
@@ -137,7 +137,7 @@ public final class Commands {
         e4.group = "selection";
         e4.requiresPlayer = true;
         e4.handler = ctx -> {
-                    BlockVector3 target = ctx.world().getTargetBlock(ctx.actor(), 100);
+                    BlockVector3 target = ctx.targetBlock(100);
                     ctx.session().getSelector(ctx.world()).selectSecondary(target,
                             com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     ctx.actor().message(Msg.info("Position 2 set to ").append(Msg.value(target)));
@@ -164,7 +164,7 @@ public final class Commands {
                     // Without coordinates both positions land where the player
                     // stands; with them the first sets position 1 and the second
                     // position 2, as WorldEdit's /pos does.
-                    BlockVector3 primary = ctx.args().isEmpty() ? ctx.actor().position() : ctx.blockVector(0);
+                    BlockVector3 primary = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
                     if (primary == null) {
                         throw CommandRegistry.error("Coordinates are required when the command is not run by a player");
                     }
@@ -773,8 +773,8 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     int radius = ctx.intArg(1, ctx.world().maxY());
-                    BlockVector3 start = ctx.actor().position() != null
-                            ? ctx.actor().position()
+                    BlockVector3 start = ctx.placement() != null
+                            ? ctx.placement()
                             : ctx.selection().getMinimumPoint();
                     int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
                             start, pattern, radius, ctx.hasFlag("h"));
@@ -800,8 +800,8 @@ public final class Commands {
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     double radius = Math.max(1, ctx.doubleArg(1, 1));
                     int depth = Math.max(1, ctx.intArg(2, Integer.MAX_VALUE));
-                    BlockVector3 start = ctx.actor().position() != null
-                            ? ctx.actor().position() : ctx.selection().getMinimumPoint();
+                    BlockVector3 start = ctx.placement() != null
+                            ? ctx.placement() : ctx.selection().getMinimumPoint();
                     // The fill follows the empty space, so only air is replaced:
                     // whatever the hole was dug through stays where it is.
                     int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
@@ -823,8 +823,8 @@ public final class Commands {
         e31.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    BlockVector3 start = ctx.actor().position() != null
-                            ? ctx.actor().position() : ctx.selection().getMinimumPoint();
+                    BlockVector3 start = ctx.placement() != null
+                            ? ctx.placement() : ctx.selection().getMinimumPoint();
                     Mask drainMask = ctx.hasFlag("p")
                             ? Parsers.mask("minecraft:water,minecraft:lava,minecraft:kelp,minecraft:seagrass,"
                             + "minecraft:tall_seagrass,minecraft:lily_pad,minecraft:bubble_column", ctx)
@@ -908,7 +908,7 @@ public final class Commands {
         e33.arguments.add("[height]");
         e33.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockVector3 origin = ctx.actor().position() != null ? ctx.actor().position() : BlockVector3.ZERO;
+                    BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
                     int size = ctx.intArg(0, 0);
                     int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() + 1;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
@@ -929,7 +929,7 @@ public final class Commands {
         e34.arguments.add("[height]");
         e34.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockVector3 origin = ctx.actor().position() != null ? ctx.actor().position() : BlockVector3.ZERO;
+                    BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
                     int size = ctx.intArg(0, 0);
                     int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() - 1;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
@@ -953,7 +953,7 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
                     int size = ctx.intArg(1, 10);
-                    BlockVector3 origin = ctx.actor().position();
+                    BlockVector3 origin = ctx.placement();
                     int changed = 0;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
                         for (int y = origin.y() - size; y <= origin.y() + size; y++) {
@@ -981,7 +981,7 @@ public final class Commands {
                     int size = ctx.intArg(0);
                     Mask mask = Parsers.mask(ctx.arg(1), ctx);
                     Pattern pattern = Parsers.pattern(ctx.joined(2), ctx);
-                    BlockVector3 origin = ctx.actor().position();
+                    BlockVector3 origin = ctx.placement();
                     int changed = 0;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
                         for (int y = origin.y() - size; y <= origin.y() + size; y++) {
@@ -1319,11 +1319,9 @@ public final class Commands {
                         originX = (deformRegion.getMinimumPoint().x() + deformRegion.getMaximumPoint().x()) / 2;
                         originZ = (deformRegion.getMinimumPoint().z() + deformRegion.getMaximumPoint().z()) / 2;
                     } else if (ctx.hasFlag("o") && !ctx.hasFlag("r")) {
-                        BlockVector3 placement = ctx.actor().position();
-                        if (placement != null) {
-                            originX = placement.x();
-                            originZ = placement.z();
-                        }
+                        BlockVector3 placement = ctx.placement();
+                        originX = placement.x();
+                        originZ = placement.z();
                     }
                     int changed = com.maxlananas.fawebim.core.function.Operations.deform(ctx.world(), session,
                             deformRegion, expression, originX, 0, originZ);
@@ -1404,8 +1402,8 @@ public final class Commands {
         e51.arguments.add("[type]");
         e51.handler = ctx -> {
                     String type = ctx.arg(0, "tree");
-                    boolean ok = ctx.world().generateTree(ctx.actor().position(), type, new java.util.Random());
-                    ctx.actor().message(ok ? Msg.success("Tree planted at ").append(Msg.value(ctx.actor().position()))
+                    boolean ok = ctx.world().generateTree(ctx.placement(), type, new java.util.Random());
+                    ctx.actor().message(ok ? Msg.success("Tree planted at ").append(Msg.value(ctx.placement()))
                             : Msg.error("Unknown tree type '" + type + "'"));
                 };
 
@@ -1416,7 +1414,7 @@ public final class Commands {
         e52.requiresPlayer = true;
         e52.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockVector3 target = ctx.world().getTargetBlock(ctx.actor(), 100);
+                    BlockVector3 target = ctx.targetBlock(100);
                     int changed = com.maxlananas.fawebim.core.function.Operations.removeTree(ctx.world(), session, target);
                     ctx.actor().message(Msg.success("Removed " + changed + " block(s)"));
                     flush(ctx, session);
@@ -1505,7 +1503,7 @@ public final class Commands {
                         Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                         double radius = ctx.doubleArg(1);
                         double height = ctx.doubleArg(2, radius * 2);
-                        BlockVector3 origin = ctx.actor().position();
+                        BlockVector3 origin = ctx.placement();
                         boolean hollowShape = hollow || ctx.hasFlag("h");
                         boolean raised = ctx.hasFlag("r");
                         int changed = kind.equals("sphere")
@@ -1532,7 +1530,7 @@ public final class Commands {
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     int size = ctx.intArg(1);
                     boolean hollowShape = ctx.hasFlag("h");
-                    int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.actor().position(),
+                    int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, hollowShape);
                     ctx.actor().message(Msg.success("Created pyramid: " + changed + " block(s)"));
                     flush(ctx, session);
@@ -1550,7 +1548,7 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     int size = ctx.intArg(1);
-                    int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.actor().position(),
+                    int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, true);
                     ctx.actor().message(Msg.success("Created pyramid: " + changed + " block(s)"));
                     flush(ctx, session);
@@ -1571,7 +1569,7 @@ public final class Commands {
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     double radius = ctx.doubleArg(1);
                     double height = ctx.doubleArg(2, radius * 2);
-                    int changed = com.maxlananas.fawebim.core.function.Operations.cone(session, ctx.actor().position(),
+                    int changed = com.maxlananas.fawebim.core.function.Operations.cone(session, ctx.placement(),
                             radius, height, pattern, ctx.hasFlag("h"));
                     ctx.actor().message(Msg.success("Created cone: " + changed + " block(s)"));
                     flush(ctx, session);
@@ -1664,7 +1662,7 @@ public final class Commands {
                     BlockVector3 destination = ctx.args().isEmpty()
                             ? (ctx.session().shouldPlaceAtPos1()
                             ? ctx.session().getSelector(ctx.world()).getRegion().getMinimumPoint()
-                            : ctx.actor().position())
+                            : ctx.placement())
                             : ctx.blockVector(0);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
@@ -2012,7 +2010,7 @@ public final class Commands {
         e69.handler = ctx -> {
                     if (ctx.hasFlag("p")) {
                         int biomeId = Parsers.biome(ctx.arg(0));
-                        BlockVector3 pos = ctx.actor().position();
+                        BlockVector3 pos = ctx.placement();
                         EditSession session = ctx.editSession();
                         session.setBiome(pos.x(), pos.y(), pos.z(), biomeId);
                         session.flushQueue();
@@ -2063,7 +2061,7 @@ public final class Commands {
         e71.booleanFlags.add("p");
         e71.handler = ctx -> {
                     BlockVector3 pos = ctx.hasFlag("t")
-                            ? ctx.world().getTargetBlock(ctx.actor(), 100) : ctx.actor().position();
+                            ? ctx.targetBlock(100) : ctx.placement();
                     int biomeId = ctx.world().getBiome(pos.x(), pos.y(), pos.z());
                     ctx.actor().message(Msg.keyValue("Biome", BlockState.registry().biomeName(biomeId)));
                 };
@@ -2078,7 +2076,7 @@ public final class Commands {
         e72.group = "chunk";
         e72.requiresPlayer = true;
         e72.handler = ctx -> {
-                    BlockVector3 pos = ctx.actor().position();
+                    BlockVector3 pos = ctx.placement();
                     int cx = pos.x() >> 4;
                     int cz = pos.z() >> 4;
                     ctx.actor().message(Msg.keyValue("Chunk", cx + ", " + cz));
@@ -2142,7 +2140,7 @@ public final class Commands {
         e75.booleanFlags.add("s");
         e75.arguments.add("[coordinates]");
         e75.handler = ctx -> {
-                    BlockVector3 pos = ctx.actor().position();
+                    BlockVector3 pos = ctx.placement();
                     if (ctx.hasFlag("s")) {
                         Region region = ctx.selection();
                         BlockVector3 min = region.getMinimumPoint();
@@ -2199,11 +2197,12 @@ public final class Commands {
         e76.booleanFlags.add("f");
         e76.handler = ctx -> {
                     BlockVector3 target = ctx.args().isEmpty()
-                            ? ctx.world().getTargetBlock(ctx.actor(), 300)
+                            ? ctx.targetBlock(300)
                             : ctx.parseBlockVector(ctx.joined(0));
                     if (target == null) {
                         throw CommandRegistry.error("No block in sight");
                     }
+                    ctx.requirePosition();
                     Navigation.setOnGround(ctx.actor(), target);
                     ctx.actor().message(Msg.success("Teleported to " + target));
                 };
@@ -2214,6 +2213,7 @@ public final class Commands {
         e77.group = "navigation";
         e77.requiresPlayer = true;
         e77.handler = ctx -> {
+                    ctx.requirePosition();
                     if (!Navigation.passThroughForwardWall(ctx.actor(), 6)) {
                         throw CommandRegistry.error("No wall in front of you");
                     }
@@ -2226,6 +2226,7 @@ public final class Commands {
         e78.group = "navigation";
         e78.requiresPlayer = true;
         e78.handler = ctx -> {
+                    ctx.requirePosition();
                     if (!Navigation.findFreePosition(ctx.actor())) {
                         throw CommandRegistry.error("Could not find a free spot");
                     }
@@ -2239,6 +2240,7 @@ public final class Commands {
         e79.requiresPlayer = true;
         e79.arguments.add("[levels]");
         e79.handler = ctx -> {
+                    ctx.requirePosition();
                     int levels = ctx.args().isEmpty() ? 1 : Math.max(1, ctx.intArg(0));
                     int moved = 0;
                     while (moved < levels && Navigation.ascendLevel(ctx.actor())) {
@@ -2257,6 +2259,7 @@ public final class Commands {
         e79b.requiresPlayer = true;
         e79b.arguments.add("[levels]");
         e79b.handler = ctx -> {
+                    ctx.requirePosition();
                     int levels = ctx.args().isEmpty() ? 1 : Math.max(1, ctx.intArg(0));
                     int moved = 0;
                     while (moved < levels && Navigation.descendLevel(ctx.actor())) {
@@ -2277,6 +2280,7 @@ public final class Commands {
         e79c.booleanFlags.add("f");
         e79c.booleanFlags.add("g");
         e79c.handler = ctx -> {
+                    ctx.requirePosition();
                     int clearance = Math.max(0, ctx.args().isEmpty() ? 0 : ctx.intArg(0));
                     if (!Navigation.ascendToCeiling(ctx.actor(), clearance, alwaysGlass(ctx))) {
                         throw CommandRegistry.error("You would hit something above you");
@@ -2293,6 +2297,7 @@ public final class Commands {
         e79d.booleanFlags.add("f");
         e79d.booleanFlags.add("g");
         e79d.handler = ctx -> {
+                    ctx.requirePosition();
                     int distance = ctx.intArg(0);
                     if (distance < 1) {
                         throw CommandRegistry.error("Distance must be positive");

@@ -148,7 +148,7 @@ final class ClipboardExtras {
                 throw CommandRegistry.error("No clipboard: copy something first");
             }
             BlockArrayClipboard clipboard = holder.getClipboard();
-            BlockVector3 destination = ctx.hasFlag("o") ? clipboard.getOrigin() : ctx.actor().position();
+            BlockVector3 destination = ctx.hasFlag("o") ? clipboard.getOrigin() : ctx.placement();
             EditSession session = ctx.editSession("place");
             Masks.ExtentHolder.set(session);
             boolean onlySelect = ctx.hasFlag("n");

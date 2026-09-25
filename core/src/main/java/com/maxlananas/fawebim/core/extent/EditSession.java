@@ -42,6 +42,13 @@ public final class EditSession implements Extent {
 
     /** The buffer the previous write used, and the key it was found under. */
     private ChunkSet currentChunk;
+
+    /**
+     * True while the source mask is deciding a read. A mask such as
+     * {@code //gsmask stone} reads a block to answer, and that read must come
+     * from the world: letting it apply the mask again has no base case.
+     */
+    private boolean applyingSourceMask;
     private long currentChunkKey;
 
     private final com.maxlananas.fawebim.core.util.LongObjectMap<ChunkSet> chunks =
@@ -447,8 +454,17 @@ public final class EditSession implements Extent {
 
     private int readMasked(int x, int y, int z) {
         Mask source = session.getSourceMask();
-        if (source != null && !source.test(x, y, z)) {
-            return com.maxlananas.fawebim.core.world.BlockState.registry().air();
+        if (source != null && !applyingSourceMask) {
+            applyingSourceMask = true;
+            boolean accepted;
+            try {
+                accepted = source.test(x, y, z);
+            } finally {
+                applyingSourceMask = false;
+            }
+            if (!accepted) {
+                return com.maxlananas.fawebim.core.world.BlockState.registry().air();
+            }
         }
         return world.getBlock(x, y, z);
     }

@@ -18,6 +18,7 @@ run/
 # Local test worlds / schematics / reports produced by the test-suite
 /testrun/
 /schematics/
+/brushes/
 /fawe-reports/
 /fawe-report.txt
 *.class
