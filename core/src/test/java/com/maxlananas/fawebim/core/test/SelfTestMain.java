@@ -2021,6 +2021,44 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(sweeper, "//air");
         check("//air clears the selection", sweeper.lastMessage().contains("16 block(s) set to air"));
         check("//air left the selection empty", count(sweeper).equals("Count: 0"));
+
+        // //ores plants the ores the mask names, which is FAWE's own ore command
+        // rather than the pattern form //ore is.
+        TestWorld vein = new TestWorld("own-name-ores");
+        vein.fillFlat(70);
+        TestActor miner = new TestActor("Vale", vein, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(miner, "//pos1 0,60,0");
+        CommandManager.get().dispatch(miner, "//pos2 15,70,15");
+        CommandManager.get().dispatch(miner, "//set stone");
+        miner.clearMessages();
+        CommandManager.get().dispatch(miner, "//ores minecraft:iron_ore");
+        check("//ores plants the ore the mask names", miner.messages().stream()
+                .anyMatch(m -> m.contains("ore block(s)") && !m.contains("Generated 0")));
+        int oreBlocks = 0;
+        for (int x = 0; x <= 15; x++) {
+            for (int y = 60; y <= 70; y++) {
+                for (int z = 0; z <= 15; z++) {
+                    if (BlockState.registry().name(vein.getBlock(x, y, z)).contains("iron_ore")) {
+                        oreBlocks++;
+                    }
+                }
+            }
+        }
+        check("//ores wrote iron ore into the stone", oreBlocks > 0);
+        miner.clearMessages();
+        CommandManager.get().dispatch(miner, "//ores");
+        check("//ores asks for the ores to plant", miner.lastMessage().contains("mask"));
+        miner.clearMessages();
+
+        // /setbiome is WorldEdit's name for it; -p moves it to the player's block.
+        CommandManager.get().dispatch(miner, "//pos1 0,60,0");
+        CommandManager.get().dispatch(miner, "//pos2 15,70,15");
+        CommandManager.get().dispatch(miner, "/setbiome minecraft:plains");
+        check("/setbiome sets the selection", miner.lastMessage().contains("biome cell(s)"));
+        miner.clearMessages();
+        CommandManager.get().dispatch(miner, "/setbiome minecraft:desert -p");
+        check("/setbiome -p sets the block the player stands in",
+                miner.lastMessage().contains("Changed biome at"));
     }
 
     /**

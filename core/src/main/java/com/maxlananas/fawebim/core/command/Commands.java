@@ -1432,7 +1432,7 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e53 = registry.register("//ore", "//ores");
+        CommandRegistry.Entry e53 = registry.register("//ore");
         e53.description = "Generate ores in the selection";
         e53.group = "generation";
         e53.requiresSelection = true;
@@ -1444,6 +1444,48 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern ore = Parsers.pattern(ctx.arg(0), ctx);
+                    com.maxlananas.fawebim.core.function.Operations.OreDeepslate deepslate =
+                            com.maxlananas.fawebim.core.function.Operations.OreDeepslate.of(
+                                    ctx.hasFlag("b"), ctx.hasFlag("d"));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.ore(ctx.world(), session,
+                            ctx.selection(), ore, new java.util.Random(), deepslate);
+                    ctx.actor().message(Msg.success("Generated " + changed + " ore block(s)"));
+                    flush(ctx, session);
+                };
+
+
+        // FAWE's own ore command takes the ores as a mask rather than a pattern,
+        // so `//ores diamond_ore,iron_ore` plants veins of those two. The veins
+        // and the deepslate switches are the ones //ore uses.
+        CommandRegistry.Entry e53b = registry.register("//ores", "/ores");
+        e53b.description = "Generates ores in the selection";
+        e53b.group = "generation";
+        e53b.requiresSelection = true;
+        e53b.booleanFlags.add("b");
+        e53b.booleanFlags.add("d");
+        e53b.arguments.add("mask");
+        e53b.handler = ctx -> {
+                    Mask mask = ctx.mask(0);
+                    List<Integer> ores = new ArrayList<>();
+                    if (mask instanceof Masks.BlockMask blockMask) {
+                        int[] named = blockMask.getStates().toArray();
+                        for (int state : named) {
+                            ores.add(state);
+                        }
+                        for (String input : blockMask.getInputs()) {
+                            int state = BlockState.registry().defaultState(input);
+                            if (state >= 0 && !ores.contains(state)) {
+                                ores.add(state);
+                            }
+                        }
+                    }
+                    if (ores.isEmpty()) {
+                        throw CommandRegistry.error("//ores takes the ore blocks to plant, such as"
+                                + " minecraft:diamond_ore or minecraft:iron_ore,minecraft:deepslate_iron_ore");
+                    }
+                    EditSession session = ctx.editSession();
+                    Masks.ExtentHolder.set(session);
+                    Pattern ore = new com.maxlananas.fawebim.core.pattern.Patterns.RandomState(ores);
                     com.maxlananas.fawebim.core.function.Operations.OreDeepslate deepslate =
                             com.maxlananas.fawebim.core.function.Operations.OreDeepslate.of(
                                     ctx.hasFlag("b"), ctx.hasFlag("d"));
@@ -2011,8 +2053,8 @@ public final class Commands {
     // -------------------------------------------------------------------- biome
 
     private void registerBiome() {
-        CommandRegistry.Entry e69 = registry.register("//biome", "//setbiome");
-        e69.description = "Set the biome in the selection";
+        CommandRegistry.Entry e69 = registry.register("/setbiome", "//setbiome", "//biome");
+        e69.description = "Set the biome in the selection, or at your position with -p";
         e69.group = "biome";
         e69.requiresSelection = true;
         // -p changes the biome of the block the player stands in only.
