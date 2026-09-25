@@ -246,6 +246,15 @@ walk the spans instead — the same cells, in the order the writes reach them. `
 2.0 ms to 0.9 ms per command and `//sphere` from 8.3 ms to 7.3 ms over the same run, and the hollow
 form now costs what its shell costs rather than what its volume costs.
 
+A profile of the bench then put 17% of its samples in finding the section of a block: the chunk
+buffer asked its section array for the section of every write, and sixteen writes in a row land in
+the same one. The buffer remembers the section it wrote into last, and a bulk edit answers from it.
+The undo rows of a fill are one int each now instead of two — the cell in the low twelve bits and
+the state it held above them — so the history of a filled section costs 16 KB rather than 32, and
+`//undo` of a million blocks holds about 4 MB. Over two runs each: a chunk buffer of 8.4M blocks
+75.6/74.7 ms to 54.3/57.0 ms, `//set` 8.3 ms to 7.0, `//replace` 11.6 ms to 9.3, `//sphere` 7.5 ms to
+6.4, and an edit with history 260/263 ms to 223/226 ms.
+
 ## Status
 
 | | |

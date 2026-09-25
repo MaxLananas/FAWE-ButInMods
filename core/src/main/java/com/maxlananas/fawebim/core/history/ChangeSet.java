@@ -17,8 +17,9 @@ import java.util.List;
  * instead of three times.</p>
  *
  * <p>A set whose changes all write the same state - the case of a fill - keeps
- * that state once and drops it from the rows. A change that writes something else
- * widens the rows to carry a state each, once.</p>
+ * that state once and drops it from the rows, and the row itself is then one int:
+ * the cell and the state it held. A change that writes something else widens the
+ * rows to carry a state each, once.</p>
  */
 public final class ChangeSet {
 
@@ -33,10 +34,25 @@ public final class ChangeSet {
     private static final int BEFORE = 1;
     private static final int AFTER = 2;
 
-    private int[] rows = new int[PAIR * 64];
+    /**
+     * The first state id the packed row cannot hold: a row keeps the cell in its
+     * low twelve bits and the previous state above them, so a state that does not
+     * fit sends the set to the two-int row.
+     */
+    private static final int PACKED_LIMIT = 1 << 20;
+    private static final int PACKED_CELL = (1 << 12) - 1;
+
+    private int[] rows = new int[64];
     private int size;
-    /** The ints one row takes; two until a change writes a state of its own. */
-    private int stride = PAIR;
+    /** The ints one row takes: one, two, or three. */
+    private int stride = 1;
+    /**
+     * True while a row is one int: the cell and the state it held, which is the
+     * layout of the fill a {@code //set} or a brush writes. The state a section
+     * holds is a handful of ids in a vanilla game, so the state always fits above
+     * the cell; a set that meets a bigger one moves to the two-int row.
+     */
+    private boolean packed = true;
     /**
      * True while every change recorded here writes the same state, which is what
      * a {@code //set}, a {@code //replace} or a brush that fills does. The state
@@ -80,14 +96,22 @@ public final class ChangeSet {
                 widen();
             }
         }
+        if (packed && previous >= PACKED_LIMIT) {
+            unpack();
+        }
         if ((long) (size + 1) * stride > rows.length) {
             grow();
         }
         int at = size * stride;
-        rows[at + CELL] = (y & 15) << 8 | (z & 15) << 4 | (x & 15);
-        rows[at + BEFORE] = previous;
-        if (!uniform) {
-            rows[at + AFTER] = current;
+        int cell = (y & 15) << 8 | (z & 15) << 4 | (x & 15);
+        if (packed) {
+            rows[at] = previous << 12 | cell;
+        } else {
+            rows[at + CELL] = cell;
+            rows[at + BEFORE] = previous;
+            if (!uniform) {
+                rows[at + AFTER] = current;
+            }
         }
         size++;
     }
@@ -99,6 +123,9 @@ public final class ChangeSet {
      * their "after" value; from here on a row carries its own.</p>
      */
     private void widen() {
+        if (packed) {
+            unpack();
+        }
         int[] wide = new int[rows.length / PAIR * ROW];
         for (int row = 0; row < size; row++) {
             wide[row * ROW + CELL] = rows[row * PAIR + CELL];
@@ -108,6 +135,26 @@ public final class ChangeSet {
         rows = wide;
         stride = ROW;
         uniform = false;
+    }
+
+    /**
+     * Gives a packed row its own "before" int.
+     *
+     * <p>Reached when a state id does not fit above the cell, or when a change
+     * writes a state of its own and the rows widen. The rows of a section are
+     * walked from the back so the split of a row cannot overwrite the row that has
+     * not been read yet.</p>
+     */
+    private void unpack() {
+        int[] wide = new int[rows.length * 2];
+        for (int row = size - 1; row >= 0; row--) {
+            int value = rows[row];
+            wide[row * PAIR + CELL] = value & PACKED_CELL;
+            wide[row * PAIR + BEFORE] = value >>> 12;
+        }
+        rows = wide;
+        packed = false;
+        stride = PAIR;
     }
 
     private void grow() {
@@ -123,12 +170,12 @@ public final class ChangeSet {
 
     /** The 12-bit cell of a row, as {@code y << 8 | z << 4 | x}. */
     public int cellAt(int row) {
-        return rows[row * stride + CELL];
+        return packed ? rows[row] & PACKED_CELL : rows[row * stride + CELL];
     }
 
     /** The state the cell held before the edit. */
     public int beforeAt(int row) {
-        return rows[row * stride + BEFORE];
+        return packed ? rows[row] >>> 12 : rows[row * stride + BEFORE];
     }
 
     /** The state the cell held after the edit. */
@@ -170,7 +217,7 @@ public final class ChangeSet {
         int minY = Integer.MAX_VALUE;
         int maxY = Integer.MIN_VALUE;
         for (int row = 0; row < size; row++) {
-            int y = baseY + ((rows[row * stride + CELL] >> 8) & 15);
+            int y = baseY + ((cellAt(row) >> 8) & 15);
             minY = Math.min(minY, y);
             maxY = Math.max(maxY, y);
         }
@@ -183,7 +230,7 @@ public final class ChangeSet {
         int baseZ = chunkZ << 4;
         int baseY = sectionY << 4;
         for (int row = 0; row < size; row++) {
-            int cell = rows[row * stride + CELL];
+            int cell = cellAt(row);
             out.add(new BlockVector3(
                     baseX + (cell & 15),
                     baseY + ((cell >> 8) & 15),
