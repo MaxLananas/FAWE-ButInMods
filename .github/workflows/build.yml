@@ -45,6 +45,14 @@ jobs:
       - name: Check who every command can be run by
         run: python3 scripts/player_audit.py
 
+      # The runtime job below drives a live server over rcon and checks the same
+      # answers. This runs the rows through the engine before the server boots,
+      # so a row that drifted reports in a minute rather than in ten.
+      - name: Check the smoke run's expected answers against the engine
+        run: |
+          python3 scripts/smoke_lint.py --java "$JAVA_HOME/bin/java" \
+            --classpath core/build/classes/java/main:core/build/classes/java/selfTest
+
       - name: Check every configuration setting is read
         run: python3 scripts/settings_audit.py
 
