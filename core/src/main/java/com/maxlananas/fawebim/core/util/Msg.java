@@ -49,6 +49,44 @@ public final class Msg {
         return new Msg("§b" + key + "§7: §f" + value);
     }
 
+    /** A heading: the mod's cyan-to-blue run, which every listing starts with. */
+    public static Msg title(String text) {
+        return new Msg(gradient(text, 0x8FE3FF, 0x6C9BFF));
+    }
+
+    /**
+     * A per-character colour ramp in the {@code §x} hex form the client reads
+     * since 1.16: a heading that shifts colour instead of sitting in one flat
+     * tone is what makes a listing look finished.
+     */
+    public static String gradient(String text, int from, int to) {
+        if (text.length() < 2) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length() * 8);
+        int last = text.length() - 1;
+        for (int i = 0; i <= last; i++) {
+            int colour = interpolate(from, to, i / (double) last);
+            out.append("§x");
+            for (int shift = 20; shift >= 0; shift -= 4) {
+                out.append('§').append(Character.forDigit((colour >> shift) & 0xF, 16));
+            }
+            out.append(text.charAt(i));
+        }
+        return out.toString();
+    }
+
+    private static int interpolate(int from, int to, double ratio) {
+        int red = channel(from, 16) + (int) Math.round((channel(to, 16) - channel(from, 16)) * ratio);
+        int green = channel(from, 8) + (int) Math.round((channel(to, 8) - channel(from, 8)) * ratio);
+        int blue = channel(from, 0) + (int) Math.round((channel(to, 0) - channel(from, 0)) * ratio);
+        return red << 16 | green << 8 | blue;
+    }
+
+    private static int channel(int colour, int shift) {
+        return colour >> shift & 0xFF;
+    }
+
     public Msg append(Msg other) {
         return new Msg(text + other.text);
     }

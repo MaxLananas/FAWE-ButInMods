@@ -190,11 +190,11 @@ public final class BrushParameters {
         if (value == null || value.isEmpty()) {
             return fallback;
         }
-        try {
-            return Double.parseDouble(value.trim());
-        } catch (NumberFormatException e) {
+        double number = parse(value, argument);
+        if (!Double.isFinite(number)) {
             throw CommandRegistry.error("'" + value + "' is not a valid number for " + argument);
         }
+        return number;
     }
 
     /** A declared argument as a whole number. */
@@ -211,15 +211,30 @@ public final class BrushParameters {
         if (value == null || value.isEmpty()) {
             return fallback;
         }
+        double number;
+        try {
+            number = Double.parseDouble(value.trim());
+        } catch (NumberFormatException literal) {
+            // Not a literal, so it has to be an expression.
+            try {
+                number = Expression.compile(value).evaluate(new Expression.Variables());
+            } catch (RuntimeException e) {
+                throw CommandRegistry.error("'" + value + "' is not a valid number for " + argument);
+            }
+        }
+        // A syntax the expression reader did not finish leaves NaN behind, and
+        // NaN would travel all the way into the geometry as a silent no-op.
+        if (!Double.isFinite(number)) {
+            throw CommandRegistry.error("'" + value + "' is not a valid number for " + argument);
+        }
+        return number;
+    }
+
+    /** A literal number, or the error the command line deserves. */
+    private static double parse(String value, String argument) {
         try {
             return Double.parseDouble(value.trim());
-        } catch (NumberFormatException ignored) {
-            // Not a literal, so it has to be an expression.
-        }
-        try {
-            Expression expression = Expression.compile(value);
-            return expression.evaluate(new Expression.Variables());
-        } catch (RuntimeException e) {
+        } catch (NumberFormatException e) {
             throw CommandRegistry.error("'" + value + "' is not a valid number for " + argument);
         }
     }

@@ -37,16 +37,27 @@ public final class Parsers {
      */
     public static java.util.List<Double> radii(String input) {
         java.util.List<Double> values = new java.util.ArrayList<>(2);
+        double maximum = com.maxlananas.fawebim.core.platform.Config.get().maxRadius;
         for (String part : input.split(",")) {
             String token = part.trim();
             if (token.isEmpty()) {
                 continue;
             }
+            double radius;
             try {
-                values.add(Double.parseDouble(token));
+                radius = Double.parseDouble(token);
             } catch (NumberFormatException e) {
                 throw CommandRegistry.error("Expected a radius, got '" + token + "'");
             }
+            if (!Double.isFinite(radius)) {
+                throw CommandRegistry.error("Expected a radius, got '" + token + "'");
+            }
+            // A radius is walked cell by cell, so an absurd one would lock the
+            // game up before the change limit could stop it. -1 means no ceiling.
+            if (maximum > 0 && radius > maximum) {
+                throw CommandRegistry.error("Maximum radius (in configuration): " + maximum);
+            }
+            values.add(radius);
         }
         return values;
     }

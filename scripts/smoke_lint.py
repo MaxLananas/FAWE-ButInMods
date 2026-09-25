@@ -11,9 +11,19 @@ boot. Run it after the engine is compiled:
 """
 import argparse
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+COLOUR = re.compile("\u00a7.")
+
+
+def plain(text):
+    """The answer without its chat colour codes: the checks read the text
+    a player reads, and the mod colours every one of its answers."""
+    return COLOUR.sub("", text.replace("\\u00a7", "\u00a7"))
+
 
 REPO = Path(__file__).resolve().parent.parent
 JAVA = "java"
@@ -54,7 +64,7 @@ def main():
         return 2
     bad = 0
     for (command, expected), answer in zip(checks, answers):
-        if expected.lower() not in answer.lower():
+        if expected.lower() not in plain(answer).lower():
             print(f"MISMATCH {command}\n    expected: {expected}\n    answer:   {answer}")
             bad += 1
     print(f"smoke rows: {len(checks)}, not answered as expected: {bad}")

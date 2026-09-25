@@ -9,10 +9,20 @@ server said instead of only that a comparison failed.
 """
 import argparse
 import os
+import re
 import socket
 import struct
 import sys
 import time
+
+COLOUR = re.compile("\u00a7.")
+
+
+def plain(text):
+    """The answer without its chat colour codes: the checks read the text
+    a player reads, and the mod colours every one of its answers."""
+    return COLOUR.sub("", text.replace("\\u00a7", "\u00a7"))
+
 
 AUTH = 3
 COMMAND = 2
@@ -239,7 +249,7 @@ def main():
     for command, expected in CHECKS:
         answer = client.run(command)
         shown = answer.replace("\n", " / ")[:220]
-        ok = expected.lower() in answer.lower()
+        ok = expected.lower() in plain(answer).lower()
         print("%s  /%s -> %s" % ("ok  " if ok else "FAIL", command, shown))
         transcript.append("%-45s %s" % ("/" + command, shown))
         if not ok:

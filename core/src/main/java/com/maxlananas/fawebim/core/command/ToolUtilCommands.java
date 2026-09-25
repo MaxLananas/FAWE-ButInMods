@@ -156,8 +156,11 @@ final class ToolUtilCommands {
         entry.handler = ctx -> {
             Brush brush = requireBrush(ctx);
             int size = ctx.intArg(0, brush.settings().getSize());
-            if (size < 1 || size > Config.get().maxBrushRadius) {
-                throw CommandRegistry.error("Size must be between 1 and " + Config.get().maxBrushRadius);
+            // The session limit is the one /brush answers to, so both commands
+            // agree on how large a brush may be made.
+            long limit = Math.min(ctx.session().getMaxBrushRadius(), Config.get().maxBrushRadius);
+            if (size < 1 || size > limit) {
+                throw CommandRegistry.error("Size must be between 1 and " + limit);
             }
             brush.setRadius(size);
             ctx.actor().message(Msg.success("Brush size set to " + size));

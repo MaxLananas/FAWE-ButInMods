@@ -220,8 +220,18 @@ public final class FabricInteractions {
         }
         FabricActor actor = new FabricActor(player);
         LocalSession session = actor.session();
-        Tool tool = Tools.current(session);
         String held = FabricMessages.heldItem(player);
+
+        // A right click in the air with a brush of the held item acts on what the
+        // player is looking at, which is what WorldEdit's right-click-air branch
+        // does; without it a click that lands one pixel above a block does nothing.
+        Brush brush = BrushFactory.current(session);
+        if (brush != null && bound(session, "brush-item", held)) {
+            BlockVector3 target = actor.world().getTargetBlock(actor, (int) actor.reachDistance());
+            return applyBrush(actor, brush, target) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+        }
+
+        Tool tool = Tools.current(session);
         if (tool == null || !bound(session, "tool-item", held)) {
             noteWaiting(actor, held);
             return InteractionResult.PASS;
@@ -246,6 +256,10 @@ public final class FabricInteractions {
         }
         if (changed > 0) {
             actor.message(Msg.success("Brush changed " + Msg.formatNumber(changed) + " block(s)"));
+        } else {
+            // A brush that ran and changed nothing used to be completely silent,
+            // which is indistinguishable from a click that never arrived.
+            actor.message(Msg.warn("The brush changed no block."));
         }
         return changed > 0;
     }

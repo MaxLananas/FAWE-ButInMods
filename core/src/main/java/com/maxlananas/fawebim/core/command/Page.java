@@ -55,7 +55,8 @@ final class Page {
 
     /** The header FAWE prints in front of a paginated listing. */
     String header(String label, int total) {
-        return label + " (" + total + ", page " + number + "/" + pages + "):";
+        return Msg.title(label) + "§7 (" + total + ", page "
+                + number + "/" + pages + "):";
     }
 
     /** Tells the player how to see the rest, when there is a rest. */

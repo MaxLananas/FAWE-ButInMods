@@ -30,7 +30,7 @@ public final class FabricMessages {
         Component result = Component.empty();
         StringBuilder segment = new StringBuilder();
         Style style = Style.EMPTY;
-        ChatFormatting colour = null;
+        TextColor colour = null;
         boolean bold = false;
         boolean italic = false;
         boolean underlined = false;
@@ -44,8 +44,17 @@ public final class FabricMessages {
                     segment.setLength(0);
                 }
                 char code = Character.toLowerCase(raw.charAt(++i));
-                if (code >= '0' && code <= '9' || code >= 'a' && code <= 'f') {
-                    colour = ChatFormatting.getByCode(code);
+                if (code == 'x') {
+                    // §x§R§R§G§G§B§B: the hex form the client reads since 1.16,
+                    // which is what the engine's gradients are made of.
+                    int rgb = hexColour(raw, i + 1);
+                    if (rgb >= 0) {
+                        colour = TextColor.fromRgb(rgb);
+                        i += 12;
+                        bold = italic = underlined = strikethrough = false;
+                    }
+                } else if (code >= '0' && code <= '9' || code >= 'a' && code <= 'f') {
+                    colour = TextColor.fromLegacyFormat(ChatFormatting.getByCode(code));
                     bold = italic = underlined = strikethrough = false;
                 } else {
                     switch (code) {
@@ -73,15 +82,29 @@ public final class FabricMessages {
         return result;
     }
 
-    private static Component styled(String text, Style base, ChatFormatting colour,
-                                    boolean bold, boolean italic, boolean underlined, boolean strikethrough) {
-        Style style = base;
-        if (colour != null) {
-            TextColor textColour = TextColor.fromLegacyFormat(colour);
-            if (textColour != null) {
-                style = style.withColor(textColour);
-            }
+    /** Reads the six colour digits of a {@code §x} sequence, or -1 if it is not one. */
+    private static int hexColour(String raw, int start) {
+        if (start + 12 > raw.length()) {
+            return -1;
         }
+        int rgb = 0;
+        for (int index = 0; index < 6; index++) {
+            int at = start + index * 2;
+            if (raw.charAt(at) != '\u00a7') {
+                return -1;
+            }
+            int digit = Character.digit(raw.charAt(at + 1), 16);
+            if (digit < 0) {
+                return -1;
+            }
+            rgb = rgb << 4 | digit;
+        }
+        return rgb;
+    }
+
+    private static Component styled(String text, Style base, TextColor colour,
+                                    boolean bold, boolean italic, boolean underlined, boolean strikethrough) {
+        Style style = colour == null ? base : base.withColor(colour);
         return Component.literal(text).withStyle(style
                 .withBold(bold)
                 .withItalic(italic)

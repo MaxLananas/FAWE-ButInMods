@@ -129,7 +129,7 @@ final class ConfigCommands {
             return;
         }
         Page page = Page.of(ctx, matches.size());
-        ctx.actor().message(Msg.info("Settings (" + matches.size() + ", page " + page.number() + "/"
+        ctx.actor().message(Msg.info(Msg.title("Settings") + "\u00a77 (" + matches.size() + ", page " + page.number() + "/"
                 + page.pages() + "):"));
         for (Setting<?> setting : matches.subList(page.from(), page.to())) {
             ctx.actor().message(Msg.of("\u00a77 - \u00a7f" + setting.key() + " \u00a77= \u00a7a" + setting.value()

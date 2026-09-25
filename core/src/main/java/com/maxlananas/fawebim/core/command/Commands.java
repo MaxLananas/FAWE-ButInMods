@@ -1960,7 +1960,7 @@ public final class Commands {
                                         : Long.compare(Schematics.timeOf(b), Schematics.timeOf(a)));
                             }
                             Page page = Page.of(ctx, names.size());
-                            ctx.actor().message(Msg.info("Schematics (" + names.size() + ", page " + page.number()
+                            ctx.actor().message(Msg.info(Msg.title("Schematics") + "§7 (" + names.size() + ", page " + page.number()
                                     + "/" + page.pages() + ", " + filter.describe() + "):"));
                             for (String name : names.subList(page.from(), page.to())) {
                                 ctx.actor().message(Msg.of("§7 - §f" + name + " §7("
@@ -3095,6 +3095,9 @@ public final class Commands {
                 com.maxlananas.fawebim.core.brush.BrushParameters.bind(ctx,
                         row, com.maxlananas.fawebim.core.brush.BrushOptions.of(ctx));
         double radius = parameters.radius();
+        if (radius < 0) {
+            throw CommandRegistry.error("The brush radius must not be negative");
+        }
         if (radius > session.getMaxBrushRadius()) {
             throw CommandRegistry.error("Maximum brush radius is " + session.getMaxBrushRadius());
         }

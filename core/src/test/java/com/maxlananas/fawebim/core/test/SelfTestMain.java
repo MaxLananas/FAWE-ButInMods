@@ -50,6 +50,7 @@ import com.maxlananas.fawebim.core.world.ChunkSet;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.RegenOptions;
 
+import com.maxlananas.fawebim.core.util.Msg;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -105,6 +106,8 @@ public final class SelfTestMain {
         testSnapshotSelection();
         testSplitCommands();
         testBrushFactoryCoverage();
+        testHardening();
+        testChatFormatting();
         testConfigAndSettings();
         testRegen();
         testAngleMasks();
@@ -1595,7 +1598,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fawebim settings");
         check("/fawebim settings lists the keys", actor.messages().stream()
-                .anyMatch(message -> message.contains("Settings (")));
+                .anyMatch(message -> plain(message).contains("Settings (")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fawebim set max-brush-radius 33");
         check("/fawebim set reports the change", actor.messages().stream()
@@ -1617,7 +1620,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fawebim settings -s boolean");
         check("/fawebim settings filters by type", actor.messages().stream()
-                .anyMatch(message -> message.contains("Settings (")));
+                .anyMatch(message -> plain(message).contains("Settings (")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fawebim path");
         check("/fawebim path reports the file", actor.messages().stream()
@@ -1710,7 +1713,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fawebim");
         check("bare /fawebim falls back to the listing", actor.messages().stream()
-                .anyMatch(message -> message.contains("Settings (")));
+                .anyMatch(message -> plain(message).contains("Settings (")));
 
         config.maxBrushRadius = 1000;
         config.save();
@@ -2727,6 +2730,124 @@ public final class SelfTestMain {
         check("regen restored the mask", actor.session().getMask() != null);
         int chunkChanges = world.setCount();
         check("regen touched the world", chunkChanges > 0);
+    }
+
+
+    /**
+     * The guards that keep a bad command line or a position outside the world
+     * from becoming a change that never happened.
+     */
+    private static void testHardening() {
+        section("hardening");
+        TestWorld world = new TestWorld("hardening");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Hard", world, new BlockVector3(0, 71, 0));
+        actor.session().setMaxBlocksChanged(1_000_000);
+
+        // Outside the world there is no block: writing one must neither count nor
+        // reach the history, or an undo would claim blocks it cannot restore.
+        EditSession session = new EditSession(world, actor.session(), "hardening");
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        check("a write above the world is refused", !session.setBlock(0, world.maxY() + 20, 0, stone));
+        check("a write below the world is refused", !session.setBlock(0, world.minY() - 20, 0, stone));
+        session.flushQueue();
+        check("a refused write left the world alone",
+                world.getBlock(0, world.maxY() - 1, 0) != stone);
+
+        // A generator that reaches past the ceiling only places what fits, and
+        // what it says it changed is exactly what an undo takes back.
+        TestWorld edge = new TestWorld("edge");
+        TestActor high = new TestActor("Edge", edge, new BlockVector3(0, edge.maxY() - 2, 0));
+        high.session().setMaxBlocksChanged(1_000_000);
+        CommandManager.get().dispatch(high, "//sphere stone 3");
+        check("the generator reported something", high.messages().stream()
+                .anyMatch(message -> message.contains("affected")));
+        int placed = countState(edge, stone, 200);
+        check("the generator placed only blocks inside the world", placed > 0 && placed < 179);
+        high.clearMessages();
+        CommandManager.get().dispatch(high, "//undo");
+        check("undo took back every block the generator placed", countState(edge, stone, 200) == 0);
+
+        // A radius is walked cell by cell; an absurd one is refused instead of
+        // locking the game up before the change limit can stop it.
+        int maximum = com.maxlananas.fawebim.core.platform.Config.get().maxRadius;
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sphere stone " + (maximum + 1));
+        check("a generator refuses a radius above limits.max-radius", actor.messages().stream()
+                .anyMatch(message -> message.contains("Maximum radius (in configuration)")));
+
+        // Brush arguments that are not a radius at all.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/br s stone -5");
+        check("a negative brush radius is refused", actor.messages().stream()
+                .anyMatch(message -> message.contains("must not be negative")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/br s stone 60%");
+        check("a brush radius that is not a number is refused", actor.messages().stream()
+                .anyMatch(message -> message.contains("is not a valid number")));
+
+        // /tool size answers to the ceiling /brush answers to.
+        CommandManager.get().dispatch(actor, "/br s stone 2");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/tool size 500");
+        check("/tool size refuses what /brush would refuse", actor.messages().stream()
+                .anyMatch(message -> message.contains("Size must be between 1 and")));
+    }
+
+    /** How many blocks of one state a world holds at or above a height. */
+    private static int countState(TestWorld world, int state, int fromY) {
+        int count = 0;
+        for (int x = -8; x <= 8; x++) {
+            for (int z = -8; z <= 8; z++) {
+                for (int y = world.maxY(); y >= fromY; y--) {
+                    if (world.getBlock(x, y, z) == state) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+
+    /**
+     * The chat styling: the engine writes the legacy {@code §} codes itself and
+     * the client adapter turns them into components, so a heading is a run of
+     * hex colours that still reads as its plain text.
+     */
+    private static void testChatFormatting() {
+        section("chat");
+        String black = Msg.gradient("ab", 0x000000, 0xFFFFFF);
+        check("a gradient colours every character",
+                black.equals("\u00a7x\u00a70\u00a70\u00a70\u00a70\u00a70\u00a70a"
+                        + "\u00a7x\u00a7f\u00a7f\u00a7f\u00a7f\u00a7f\u00a7fb"));
+        check("a gradient still reads as its text", Msg.of(black).plain().equals("ab"));
+        check("a one character word is left alone", Msg.gradient("a", 0, 0xFFFFFF).equals("a"));
+        check("a title is a gradient", Msg.title("Settings").plain().equals("Settings")
+                && Msg.title("Settings").raw().startsWith("\u00a7x"));
+
+        // The listings a player sees carry the heading, not just the helpers.
+        TestWorld world = new TestWorld("chat");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Chat", world, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(actor, "/fawebim settings");
+        check("the settings listing is headed by the gradient",
+                actor.messages().stream().anyMatch(message -> message.contains("\u00a7x")
+                        && plain(message).contains("Settings (")));
+    }
+
+    /** The text of a message without its colour codes. */
+    private static String plain(String message) {
+        StringBuilder sb = new StringBuilder(message.length());
+        for (int i = 0; i < message.length(); i++) {
+            char c = message.charAt(i);
+            if (c == '\u00a7' && i + 1 < message.length()) {
+                i++;
+                continue;
+            }
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     private static void testTimeLimiter() {

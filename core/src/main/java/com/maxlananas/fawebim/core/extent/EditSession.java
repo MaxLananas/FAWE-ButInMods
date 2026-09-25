@@ -275,6 +275,9 @@ public final class EditSession implements Extent {
 
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
+        if (y < world.minY() || y > world.maxY()) {
+            return false;
+        }
         ChunkSet chunk = chunkFor(x, z, true);
         // A biome cell holds 4x4x4 blocks and commands address blocks, so the
         // buffer is asked first: without this the world would be read 64 times
@@ -318,6 +321,11 @@ public final class EditSession implements Extent {
             return false;
         }
         if (stateId < 0) {
+            return false;
+        }
+        if (y < world.minY() || y > world.maxY()) {
+            // There is no block outside the world: counting one here would put a
+            // change that never happened into the block count and the history.
             return false;
         }
         if (mask != null && !mask.isRegion() && !mask.test(x, y, z)) {

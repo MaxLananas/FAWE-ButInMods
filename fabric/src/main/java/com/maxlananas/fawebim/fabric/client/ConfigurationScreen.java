@@ -100,14 +100,20 @@ public final class ConfigurationScreen extends Screen {
         for (ConfigUi.Group entry : ui.groups()) {
             names.add(entry.name());
         }
+        // The buttons share the height of the row area: they used to keep their
+        // pitch on a short window and land on the footer buttons.
+        int pitch = Math.min(ROW_HEIGHT + 2, Math.max(16, (rowsBottom() - rowsTop()) / names.size()));
         for (String name : names) {
+            if (y + pitch - 2 > rowsBottom()) {
+                break;
+            }
             Button button = Button.builder(Component.literal(name), pressed -> {
                 group = name;
                 page = 0;
                 rebuildRows();
-            }).bounds(x, y, SIDEBAR_WIDTH - 8, 20).build();
+            }).bounds(x, y, SIDEBAR_WIDTH - 8, pitch - 2).build();
             addRenderableWidget(button);
-            y += ROW_HEIGHT + 2;
+            y += pitch;
         }
     }
 
@@ -319,23 +325,19 @@ public final class ConfigurationScreen extends Screen {
 
         int textX = PADDING + SIDEBAR_WIDTH + 10;
         Row described = hovered != null ? hovered : (rows.isEmpty() ? null : rows.get(0));
+        graphics.fill(PADDING + SIDEBAR_WIDTH + 4, panelBottom() - 72, this.width - PADDING - 4,
+                panelBottom() - 71, PANEL_BORDER);
         if (described != null) {
             graphics.drawString(this.font, clipped(described.setting.description(), this.width - PADDING - textX),
-                    textX, panelBottom() - 70, DIM, false);
+                    textX, panelBottom() - 66, DIM, false);
             graphics.drawString(this.font, clipped(described.setting.path() + "   default "
                             + described.setting.defaultValue() + "   " + ConfigUi.expectedOf(described.setting),
-                    this.width - PADDING - textX), textX, panelBottom() - 58, DIM, false);
-        }
-        graphics.fill(PADDING + SIDEBAR_WIDTH, panelBottom() - 50, this.width - PADDING,
-                panelBottom() - 49, PANEL_BORDER);
-        if (described != null) {
-            graphics.fill(textX - 2, panelBottom() - 42, textX, panelBottom() - 40,
-                    statusGood ? ACCENT_DIM : BAD);
+                    this.width - PADDING - textX), textX, panelBottom() - 54, DIM, false);
         }
         if (!status.isEmpty()) {
-            graphics.fill(textX - 2, panelBottom() - 32, textX, panelBottom() - 30, statusGood ? GOOD : BAD);
+            graphics.fill(textX - 2, panelBottom() - 38, textX, panelBottom() - 36, statusGood ? GOOD : BAD);
             graphics.drawString(this.font, clipped(status, this.width - PADDING - textX),
-                    textX + 6, panelBottom() - 33, statusGood ? GOOD : BAD, false);
+                    textX + 6, panelBottom() - 40, statusGood ? GOOD : BAD, false);
         }
     }
 

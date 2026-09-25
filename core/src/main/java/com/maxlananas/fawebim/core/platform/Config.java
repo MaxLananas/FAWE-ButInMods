@@ -38,6 +38,7 @@ public final class Config {
     public int maxChangeLimit = -1;
     public int defaultMaxBrushRadius = 6;
     public int maxBrushRadius = 1000;
+    public int maxRadius = 1000;
     public int maxBrushRange = 100;
     public int timeout = 20;
     public int threads = Runtime.getRuntime().availableProcessors();
@@ -93,6 +94,9 @@ public final class Config {
         integer("max-brush-radius", "limits.max-brush-radius.maximum", maxBrushRadius,
                 "Largest brush radius /tool size accepts.", () -> maxBrushRadius,
                 value -> maxBrushRadius = value);
+        integer("max-radius", "limits.max-radius", maxRadius,
+                "Largest radius a generator accepts, -1 for no ceiling.", () -> maxRadius,
+                value -> maxRadius = value);
         integer("max-brush-range", "limits.max-brush-range", maxBrushRange,
                 "How far a brush reaches from the player, in blocks.", () -> maxBrushRange,
                 value -> maxBrushRange = value);
