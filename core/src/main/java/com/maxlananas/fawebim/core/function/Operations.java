@@ -220,24 +220,65 @@ public final class Operations {
         int r = (int) Math.ceil(radius);
         double radiusSq = radius * radius;
         double innerSq = hollow ? (radius - 1) * (radius - 1) : -1;
+        // The rows of each layer are walked instead of the box around the sphere:
+        // a layer is a disc, so two thirds of the box are cells no sphere reaches,
+        // and the hollow form only visits the cells of the shell. The limits come
+        // from the same comparison the box form made - a cell is inside when its
+        // squared distance is at most the squared radius - so the shape a player
+        // gets is the one it was.
         for (int y = -r; y <= r; y++) {
             if (raised && y < 0) {
                 // Raised: the sphere grows upwards from the placement position.
                 continue;
             }
+            double layerSq = radiusSq - (double) y * y;
+            if (layerSq < 0) {
+                continue;
+            }
+            double innerLayerSq = innerSq - (double) y * y;
             for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    double distanceSq = x * x + y * y + z * z;
-                    if (distanceSq > radiusSq || (hollow && distanceSq < innerSq)) {
-                        continue;
-                    }
-                    int bx = center.x() + x;
-                    int by = center.y() + y;
-                    int bz = center.z() + z;
-                    if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
-                        changed++;
-                    }
+                double rowSq = layerSq - (double) z * z;
+                if (rowSq < 0) {
+                    continue;
                 }
+                int outer = limit(rowSq);
+                int by = center.y() + y;
+                int bz = center.z() + z;
+                if (!hollow) {
+                    changed += row(session, pattern, by, bz, center.x() - outer, center.x() + outer);
+                    continue;
+                }
+                int inner = limit(innerLayerSq - (double) z * z);
+                if (inner < outer) {
+                    changed += row(session, pattern, by, bz, center.x() - outer, center.x() - inner - 1);
+                    changed += row(session, pattern, by, bz, center.x() + inner + 1, center.x() + outer);
+                }
+            }
+        }
+        return changed;
+    }
+
+    /** The largest {@code n} whose square is within {@code squared}. */
+    private static int limit(double squared) {
+        if (squared < 0) {
+            return -1;
+        }
+        int value = (int) Math.sqrt(squared);
+        while ((double) (value + 1) * (value + 1) <= squared) {
+            value++;
+        }
+        while (value > 0 && (double) value * value > squared) {
+            value--;
+        }
+        return value;
+    }
+
+    /** Writes one row of blocks, and answers how many of them changed. */
+    private static int row(EditSession session, Pattern pattern, int y, int z, int fromX, int toX) {
+        int changed = 0;
+        for (int x = fromX; x <= toX; x++) {
+            if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                changed++;
             }
         }
         return changed;
@@ -263,20 +304,27 @@ public final class Operations {
         int maxY = minY + Math.max(1, height) - 1;
         double radiusSq = (double) r * r;
         double wall = hollow ? Math.max(0, thickness) : 0;
-        double inner = hollow ? Math.max(0, r - 1 - Math.floor(wall)) : 0;
-        double innerSq = hollow ? inner * inner : -1;
+        double innerRadius = hollow ? Math.max(0, r - 1 - Math.floor(wall)) : 0;
+        double innerSq = hollow ? innerRadius * innerRadius : -1;
+        // A layer is a disc, and the hollow form only visits its wall; the floor
+        // and the roof are solid, so their rows run the whole way.
         for (int y = minY; y <= maxY; y++) {
+            boolean solid = !hollow || y == minY || y == maxY;
             for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    double distanceSq = x * x + z * z;
-                    if (distanceSq > radiusSq || (hollow && distanceSq < innerSq && y != minY && y != maxY)) {
-                        continue;
-                    }
-                    int bx = center.x() + x;
-                    int bz = center.z() + z;
-                    if (session.setBlock(bx, y, bz, pattern.apply(bx, y, bz))) {
-                        changed++;
-                    }
+                double rowSq = radiusSq - (double) z * z;
+                if (rowSq < 0) {
+                    continue;
+                }
+                int outer = limit(rowSq);
+                int bz = center.z() + z;
+                if (solid) {
+                    changed += row(session, pattern, y, bz, center.x() - outer, center.x() + outer);
+                    continue;
+                }
+                int inner = limit(innerSq - (double) z * z);
+                if (inner < outer) {
+                    changed += row(session, pattern, y, bz, center.x() - outer, center.x() - inner - 1);
+                    changed += row(session, pattern, y, bz, center.x() + inner + 1, center.x() + outer);
                 }
             }
         }

@@ -239,6 +239,13 @@ half the rate of `//set` to the same rate. Copying with biomes read the biome of
 selection and stored all of them, sixty-four identical entries for one cell of a world that keeps
 its biomes per 4x4x4 cell; it samples the cells now.
 
+The shapes walked the box around themselves and tested every cell of it: a sphere of radius 40 asked
+about 531k cells to write 268k, and its hollow form asked about all of them to write the 20k of its
+shell. Each layer of a sphere or a cylinder is a disc, and a disc row is a span of `x`, so the shapes
+walk the spans instead — the same cells, in the order the writes reach them. `//hsphere` went from
+2.0 ms to 0.9 ms per command and `//sphere` from 8.3 ms to 7.3 ms over the same run, and the hollow
+form now costs what its shell costs rather than what its volume costs.
+
 ## Status
 
 | | |

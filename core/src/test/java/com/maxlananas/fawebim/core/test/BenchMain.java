@@ -391,6 +391,14 @@ public final class BenchMain {
         timed("//sphere stone 40", 268_000L, clearSphere, () -> {
             dispatch(actor, "//center 128,64,128", "//sphere stone 40");
         });
+        // The hollow form only writes the shell, so the row counts the shell:
+        // a sphere of radius 40 holds about 20k surface cells and 268k in all.
+        timed("//hsphere stone 40", 20_100L, clearSphere, () -> {
+            dispatch(actor, "//center 128,64,128", "//hsphere stone 40");
+        });
+        timed("//hcyl stone 40 20", 21_200L, clearSphere, () -> {
+            dispatch(actor, "//center 128,64,128", "//hcyl stone 40 20");
+        });
     }
 
     private static void writeAll(EditSession edit, int state) {
