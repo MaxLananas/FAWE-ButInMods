@@ -283,7 +283,7 @@ final class GenerationCommands {
     }
 
     private void forestGen() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("forestgen");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//forestgen", "/forestgen");
         if (entry == null) {
             return;
         }

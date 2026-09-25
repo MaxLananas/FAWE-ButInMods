@@ -883,7 +883,28 @@ public final class Operations {
         return changed;
     }
 
-    /** {@code //flora}/{@code //forest} — plants trees and foliage. */
+    /**
+     * The plants {@code //flora} scatters, with the ground each one wants. The
+     * names are the ones the block registry knows, so a plant the world does not
+     * have is skipped rather than placed as something else.
+     */
+    private static final String[] PLANTS = {
+        "short_grass", "tall_grass", "fern", "dandelion", "poppy", "cornflower", "oxeye_daisy",
+        "azure_bluet", "red_tulip", "orange_tulip", "white_tulip", "pink_tulip", "allium",
+        "brown_mushroom", "red_mushroom", "sweet_berry_bush",
+    };
+
+    /** The plants that grow on sand rather than on grass. */
+    private static final String[] DESERT_PLANTS = {"dead_bush", "cactus"};
+
+    /**
+     * {@code //flora} — scatters plants over the surface of the region.
+     *
+     * <p>WorldEdit walks the region and, at the density it was given, puts the
+     * vegetation of the biome on the surface it finds. Plants are the small ones:
+     * grass, flowers, mushrooms and bushes. The surface a plant sits on decides
+     * what may grow there, so the ones that want sand are only used on sand.</p>
+     */
     public static int flora(World world, EditSession session, Region region, double density) {
         Random random = new Random();
         BlockStateRegistry registry = BlockState.registry();
@@ -894,10 +915,55 @@ public final class Operations {
                     continue;
                 }
                 int y = world.getHighestBlockY(x, z);
-                if (registry.isAirLike(world.getBlock(x, y + 1, z))) {
-                    if (world.generateTree(new BlockVector3(x, y + 1, z), "tree", random)) {
-                        changed++;
-                    }
+                if (y < region.getMinimumPoint().y() || y + 1 > region.getMaximumPoint().y()) {
+                    continue;
+                }
+                if (!registry.isAirLike(world.getBlock(x, y + 1, z))) {
+                    continue;
+                }
+                String ground = registry.name(world.getBlock(x, y, z));
+                String[] choices = ground.contains("sand") ? DESERT_PLANTS : PLANTS;
+                String plant = choices[random.nextInt(choices.length)];
+                int state = plantState(plant);
+                if (state < 0) {
+                    continue;
+                }
+                if (session.setBlock(x, y + 1, z, state)) {
+                    changed++;
+                }
+            }
+        }
+        return changed;
+    }
+
+    /** The state of a plant, or -1 when the world's registry does not know it. */
+    private static int plantState(String plant) {
+        return BlockState.registry().defaultState(plant);
+    }
+
+    /**
+     * {@code //forest} — plants trees over the region.
+     *
+     * <p>WorldEdit picks a column of the region at the density it was given, finds
+     * the surface and plants the tree type it was asked for; a tree that does not
+     * fit (a spot too small, a plant the world does not know) is skipped.</p>
+     */
+    public static int forest(World world, EditSession session, Region region, String treeType, double density) {
+        Random random = new Random();
+        BlockStateRegistry registry = BlockState.registry();
+        int changed = 0;
+        for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
+            for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
+                if (random.nextDouble() > density) {
+                    continue;
+                }
+                int y = world.getHighestBlockY(x, z);
+                if (y < region.getMinimumPoint().y() || y + 1 > region.getMaximumPoint().y()) {
+                    continue;
+                }
+                if (registry.isAirLike(world.getBlock(x, y + 1, z))
+                        && world.generateTree(new BlockVector3(x, y + 1, z), treeType, random)) {
+                    changed++;
                 }
             }
         }

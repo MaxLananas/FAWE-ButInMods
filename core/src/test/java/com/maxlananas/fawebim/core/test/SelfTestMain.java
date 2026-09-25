@@ -1868,6 +1868,40 @@ public final class SelfTestMain {
         check("//fillr of depth one stops there", hole.getBlock(6, 61, 6) == air);
         shallow.clearMessages();
 
+        // //flora plants the small vegetation, //forest the trees.
+        TestWorld plants = new TestWorld("own-name-flora");
+        plants.fillFlat(70);
+        TestActor gardener = new TestActor("Rana", plants, new BlockVector3(2, 71, 2));
+        gardener.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(gardener, "//pos1 0,69,0");
+        CommandManager.get().dispatch(gardener, "//pos2 7,76,7");
+        CommandManager.get().dispatch(gardener, "//flora 100");
+        int planted = 0;
+        for (int x = 0; x <= 7; x++) {
+            for (int z = 0; z <= 7; z++) {
+                String above = BlockState.registry().name(plants.getBlock(x, 70, z));
+                if (!above.contains("air") && !above.contains("grass_block")) {
+                    planted++;
+                }
+            }
+        }
+        check("//flora plants vegetation", planted > 0);
+        gardener.clearMessages();
+
+        CommandManager.get().dispatch(gardener, "//pos1 0,69,0");
+        CommandManager.get().dispatch(gardener, "//pos2 7,80,7");
+        CommandManager.get().dispatch(gardener, "//forest tree 100");
+        int trunks = 0;
+        for (int x = 0; x <= 7; x++) {
+            for (int z = 0; z <= 7; z++) {
+                if (BlockState.registry().name(plants.getBlock(x, 70, z)).contains("log")) {
+                    trunks++;
+                }
+            }
+        }
+        check("//forest plants trees", trunks > 0);
+        gardener.clearMessages();
+
         // /smask sets the source mask, /gmask the global one.
         TestWorld masks = new TestWorld("own-name-masks");
         masks.fillFlat(70);

@@ -1332,20 +1332,36 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e49 = registry.register("//flora", "//forest", "//forestgen");
-        e49.description = "Generate flora/forest in the selection";
+        CommandRegistry.Entry e49 = registry.register("//flora");
+        e49.description = "Make flora within the region";
         e49.group = "generation";
         e49.requiresSelection = true;
-        e49.booleanFlags.add("d");
-        e49.booleanFlags.add("a");
-        e49.booleanFlags.add("t");
         e49.arguments.add("[density]");
         e49.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     double density = ctx.doubleArg(0, 5) / 100.0;
                     int changed = com.maxlananas.fawebim.core.function.Operations.flora(ctx.world(), session,
                             ctx.selection(), density);
-                    ctx.actor().message(Msg.success("Generated " + changed + " plant(s)"));
+                    ctx.actor().message(Msg.success("Planted " + changed + " plant(s)"));
+                    flush(ctx, session);
+                };
+
+
+        // //forest is WorldEdit's "Make a forest": trees of one type, scattered at
+        // a density, while //forestgen generates a forest of a given size.
+        CommandRegistry.Entry e49b = registry.register("//forest");
+        e49b.description = "Make a forest within the region";
+        e49b.group = "generation";
+        e49b.requiresSelection = true;
+        e49b.arguments.add("<tree-type>");
+        e49b.arguments.add("[density]");
+        e49b.handler = ctx -> {
+                    EditSession session = ctx.editSession();
+                    String type = ctx.arg(0).toLowerCase(java.util.Locale.ROOT);
+                    double density = ctx.doubleArg(1, 5) / 100.0;
+                    int changed = com.maxlananas.fawebim.core.function.Operations.forest(ctx.world(), session,
+                            ctx.selection(), type, density);
+                    ctx.actor().message(Msg.success("Planted " + changed + " tree(s)"));
                     flush(ctx, session);
                 };
 
