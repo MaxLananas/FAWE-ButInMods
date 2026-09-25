@@ -15,12 +15,12 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-527%20passing-3fb950?style=flat-square)](docs/STATUS.md)
-[![Commands](https://img.shields.io/badge/commands-269%20registered-58a6ff?style=flat-square)](docs/COMMANDS.md)
-[![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](docs/COMMANDS.md)
-[![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](docs/COMMANDS.md)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-610%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
+[![Commands](https://img.shields.io/badge/commands-299%20registered-58a6ff?style=flat-square)](#status)
+[![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](reference/commands-inventory.json)
+[![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](scripts/flag_audit.py)
 [![Switches](https://img.shields.io/badge/upstream%20switches-0%20missing-3fb950?style=flat-square)](scripts/flag_audit.py)
-[![Stubs](https://img.shields.io/badge/stubs-0-3fb950?style=flat-square)](docs/STATUS.md)
+[![Stubs](https://img.shields.io/badge/stubs-0-3fb950?style=flat-square)](.github/workflows/build.yml)
 
 [![Last commit](https://img.shields.io/github/last-commit/MaxLananas/FAWE-ButInMods?style=flat-square&label=last%20commit)](https://github.com/MaxLananas/FAWE-ButInMods/commits)
 [![Commit activity](https://img.shields.io/github/commit-activity/m/MaxLananas/FAWE-ButInMods?style=flat-square&label=commits%2Fmonth)](https://github.com/MaxLananas/FAWE-ButInMods/commits)
@@ -28,7 +28,7 @@ placeholder commands.
 [![Pull requests](https://img.shields.io/badge/PRs-welcome-8957e5?style=flat-square)](CONTRIBUTING.md)
 [![Stars](https://img.shields.io/github/stars/MaxLananas/FAWE-ButInMods?style=flat-square)](https://github.com/MaxLananas/FAWE-ButInMods/stargazers)
 
-[Install](#install) · [Commands](docs/COMMANDS.md) · [Status](docs/STATUS.md) ·
+[Install](#install) · [Feature matrix](#feature-matrix) · [Status](#status) ·
 [Contributing](CONTRIBUTING.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
 </div>
@@ -44,9 +44,9 @@ placeholder commands.
 | [Quick tour](#quick-tour) | The commands you will type first |
 | [Feature matrix](#feature-matrix) | Everything the mod covers, group by group |
 | [How it works](#how-it-works) | The engine, why it is fast, and the measured throughput |
-| [Status](#status) | Live numbers, always generated from the registry |
+| [Status](#status) | Current numbers, kept honest by the audits |
 | [Known platform limits](#known-platform-limits) | What a mod cannot do that a plugin can |
-| [Development](#development) | Build, test, regenerate the docs, continuous integration |
+| [Development](#development) | Build, test, run the audits, continuous integration |
 | [Project layout](#project-layout) | Where things live |
 | [Credits and licence](#credits-and-licence) | Upstream projects and attribution |
 
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 527-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 610-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -158,9 +158,11 @@ needs nothing beyond Fabric API.
 | Biome | 5 | `//setbiome`, `//biomelist`, `//biomeinfo` |
 | Schematic | 2 | `//schem` with `list`, `save`, `load`, `loadall`, `move`, `delete`, `formats` |
 
-The exhaustive list — every command, its aliases, arguments, switches and status — is generated from
-the live registry into [`docs/COMMANDS.md`](docs/COMMANDS.md), with the machine-readable form in
-[`docs/commands-spec.json`](docs/commands-spec.json).
+Nothing in that matrix is on the honour system. `scripts/generate_command_tables.py` turns
+[`reference/commands-inventory.json`](reference/commands-inventory.json) — every command WorldEdit
+7.3.17 and FastAsyncWorldEdit declare, extracted from their sources — and a dump of the live registry
+into the routing tables under `core/src/main/java/`, and the audits in `scripts/` fail the build the
+moment a spelling, an argument, a switch or a setting stops matching upstream.
 
 ## How it works
 
@@ -264,10 +266,10 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 
 | | |
 |---|---|
-| Engine tests | **527 passing, 0 failing** (`./gradlew :core:selfTest`) |
-| Commands registered | **269** |
+| Engine tests | **610 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Commands registered | **299** |
 | Implemented | **252** |
-| Aliases of an implemented command | **17** |
+| Aliases of an implemented command | **47** |
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
 | Flags declared but never read | **0** |
@@ -330,21 +332,22 @@ so a fresh checkout builds without touching the toolchain.
 ./gradlew build               # core + Fabric mod
 ./gradlew :fabric:runClient   # test client
 ./gradlew :fabric:runServer   # test server
-./gradlew :core:genDocs       # regenerate docs/ from the live command registry
+./gradlew :core:commandSpec  # dump the live registry for the audits
 python3 scripts/generate_command_tables.py   # after changing the command set
 python3 scripts/flag_audit.py                # compare the flags with upstream
 ```
 
-The documentation is generated *from the registry*, never written by hand, so it cannot drift from
-the implementation. The command tables (`SubCommandTable`, `StubTable`, `BrushTable`) are generated
-from `docs/commands-inventory.json`, which is itself extracted from the upstream sources, and from
+The command tables (`SubCommandTable`, `StubTable`, `BrushTable`) are generated from
+`reference/commands-inventory.json`, which is itself extracted from the upstream sources, and from
 the registry dump — that is how the project tracks which WorldEdit/FAWE commands are ported and
-which are still missing.
+which are still missing. The audits in `scripts/` read the same two files and fail on a spelling
+that no longer resolves, an argument or switch upstream declares and this build does not, a flag
+nothing reads, or a configuration setting nothing consumes.
 
 Continuous integration runs on every push and pull request
 ([`.github/workflows/build.yml`](.github/workflows/build.yml)). One job builds the engine, runs the
 self-tests and the command inventory check, builds the mod jar, and fails when the generated
-documentation, the generated command tables or an audit have drifted. A second job boots the
+command tables or an audit have drifted. A second job boots the
 dedicated server with the mod in it and drives it over rcon: it is what proves the mixin applies,
 that the commands are registered with the game, and that `/fawebim set` writes the file the server
 reads back. It found two bugs nothing else could - the commands were registered after the game had
@@ -362,9 +365,9 @@ core/      platform-independent engine: regions, masks, patterns, transforms, Ed
 fabric/    Fabric adapter: mod entry point, Brigadier registration of every command, world access
            (bulk section writes, lighting, entities), the block-state/biome bridge, click and
            interaction callbacks, one mixin and one access widener, as WorldEdit's own adapter does.
-docs/      generated documentation (COMMANDS.md, STATUS.md, commands-spec.json) and the reference
-           command inventory extracted from WorldEdit 7.3.17 and FastAsyncWorldEdit.
-scripts/   generators for the command tables, the documentation and the upstream flag audit.
+reference/ the upstream surface the port is checked against: every command WorldEdit 7.3.17 and
+           FastAsyncWorldEdit declare, with its aliases, arguments, switches and declaring file.
+scripts/   the table generator and the audits that compare this build with that surface.
 ```
 
 ## Credits and licence
@@ -376,6 +379,7 @@ It is an independent implementation whose behaviour is derived from the GPL-3.0 
 [FastAsyncWorldEdit](https://github.com/IntellectualSites/FastAsyncWorldEdit). Command names,
 aliases, switches, argument order, parsers and messages follow those projects; see
 [`NOTICE`](NOTICE) for the full attribution and
-[docs/commands-inventory.json](docs/commands-inventory.json) for the extracted upstream surface.
+[`reference/commands-inventory.json`](reference/commands-inventory.json) for the extracted upstream
+surface.
 
 Author and maintainer: **MaxLananas**.

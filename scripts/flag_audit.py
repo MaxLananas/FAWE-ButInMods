@@ -15,8 +15,8 @@ accepts the command line and ignores it. That cross-check is the last thing this
 audit prints.
 
 Usage:
-    python3 scripts/flag_audit.py [--inventory docs/commands-inventory.json]
-                                  [--spec docs/commands-spec.json]
+    python3 scripts/flag_audit.py [--inventory reference/commands-inventory.json]
+                                  [--spec core/build/commands-spec.json]
                                   [--brush-table core/src/main/java/.../BrushTable.java]
                                   [--brush-factory core/src/main/java/.../BrushFactory.java]
 """
@@ -208,8 +208,8 @@ def brush_flag_audit(table_path: str, factory_path: str) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--inventory", default="docs/commands-inventory.json")
-    parser.add_argument("--spec", default="docs/commands-spec.json")
+    parser.add_argument("--inventory", default="reference/commands-inventory.json")
+    parser.add_argument("--spec", default="core/build/commands-spec.json")
     parser.add_argument("--brush-table", default=BRUSH_TABLE)
     parser.add_argument("--brush-factory", default=BRUSH_FACTORY)
     arguments = parser.parse_args()

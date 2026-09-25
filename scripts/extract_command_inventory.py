@@ -9,7 +9,7 @@ Usage:
     python3 scripts/extract_command_inventory.py \\
         --worldedit /path/to/WorldEdit-7.3.17 \\
         --fawe /path/to/FastAsyncWorldEdit-main \\
-        --out docs/commands-inventory.json
+        --out reference/commands-inventory.json
 
 The CLI platform (``worldedit-cli``) is skipped: its commands only exist for the
 standalone command line tool, not for any in-game platform.

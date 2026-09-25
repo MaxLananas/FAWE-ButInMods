@@ -34,8 +34,8 @@ import java.util.Locale;
  *
  * <p>Every entry keeps FAWE's name, aliases, flags and argument order. Commands
  * that exist upstream but are not implemented here are still registered (see
- * {@link Stubs}) and report their status, so the full command surface is always
- * present and {@code docs/COMMANDS.md} lists it completely.</p>
+ * {@link Stubs}) and report their status, so the full command surface stays
+ * present and the inventory audit keeps seeing every upstream name.</p>
  */
 public final class Commands {
 

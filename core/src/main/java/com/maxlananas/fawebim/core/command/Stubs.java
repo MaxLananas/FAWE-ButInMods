@@ -65,7 +65,7 @@ final class Stubs {
             entry.group = groupFor(name);
             entry.status = "stub";
             entry.handler = ctx -> ctx.actor().message(Msg.warn("'" + name
-                    + "' is registered but not ported yet. See docs/STATUS.md."));
+                    + "' is registered but not ported yet."));
         }
     }
 

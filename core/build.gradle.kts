@@ -32,14 +32,14 @@ val bench by tasks.registering(JavaExec::class) {
     mainClass.set("com.maxlananas.fawebim.core.test.BenchMain")
 }
 
-val genDocs by tasks.registering(JavaExec::class) {
-    description = "Regenerates docs/COMMANDS.md from the command registry."
-    group = "documentation"
+val commandSpec by tasks.registering(JavaExec::class) {
+    description = "Writes build/commands-spec.json, the live registry dump the audits read."
+    group = "verification"
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
     mainClass.set("com.maxlananas.fawebim.core.test.CommandDocGenerator")
-    args(layout.projectDirectory.file("../docs/COMMANDS.md").asFile.absolutePath,
-         layout.projectDirectory.file("../docs/commands-spec.json").asFile.absolutePath)
+    args(layout.buildDirectory.file("commands-spec.json").asFile.absolutePath,
+         layout.projectDirectory.file("../reference/commands-inventory.json").asFile.absolutePath)
 }
 
 val checkInventory by tasks.registering(JavaExec::class) {
@@ -48,7 +48,7 @@ val checkInventory by tasks.registering(JavaExec::class) {
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
     mainClass.set("com.maxlananas.fawebim.core.test.StrictInventoryCheck")
-    args(layout.projectDirectory.file("../docs/commands-inventory.json").asFile.absolutePath)
+    args(layout.projectDirectory.file("../reference/commands-inventory.json").asFile.absolutePath)
 }
 
 tasks.register("verify") {

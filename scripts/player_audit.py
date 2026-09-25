@@ -14,8 +14,8 @@ reach the player through ``InjectedValueAccess`` for several brushes rather than
 through a parameter, and WorldEdit is what the behaviour follows.
 
 Usage:
-    python3 scripts/player_audit.py [--inventory docs/commands-inventory.json]
-                                    [--spec docs/commands-spec.json]
+    python3 scripts/player_audit.py [--inventory reference/commands-inventory.json]
+                                    [--spec core/build/commands-spec.json]
 """
 
 from __future__ import annotations
@@ -61,8 +61,8 @@ def spelling(row: dict) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--inventory", default="docs/commands-inventory.json")
-    parser.add_argument("--spec", default="docs/commands-spec.json")
+    parser.add_argument("--inventory", default="reference/commands-inventory.json")
+    parser.add_argument("--spec", default="core/build/commands-spec.json")
     args = parser.parse_args()
 
     inventory = json.loads(Path(args.inventory).read_text())

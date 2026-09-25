@@ -9,10 +9,17 @@ on:
 permissions:
   contents: read
 
+# One run per branch: a new push cancels the older, still-queued or still-running
+# build of the same branch, so the newest jar is always the one being verified.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Engine, tests and mod jar
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -31,19 +38,20 @@ jobs:
       - name: Build the mod
         run: ./gradlew --no-daemon build
 
-      - name: Check the generated documentation is up to date
+      - name: Check the generated command tables are up to date
         run: |
-          ./gradlew --no-daemon :core:genDocs
+          ./gradlew --no-daemon :core:commandSpec
           python3 scripts/generate_command_tables.py
-          git diff --exit-code -- docs core/src/main/java/com/maxlananas/fawebim/core/command/BrushTable.java \
+          git diff --exit-code -- core/src/main/java/com/maxlananas/fawebim/core/command/BrushTable.java \
             core/src/main/java/com/maxlananas/fawebim/core/command/SubCommandTable.java \
             core/src/main/java/com/maxlananas/fawebim/core/command/StubTable.java
 
-      - name: Audit the command flags against WorldEdit and FAWE
-        run: python3 scripts/flag_audit.py
-
-      - name: Check who every command can be run by
-        run: python3 scripts/player_audit.py
+      - name: Audit the command surface against WorldEdit and FAWE
+        run: |
+          python3 scripts/argument_audit.py
+          python3 scripts/spelling_audit.py
+          python3 scripts/flag_audit.py
+          python3 scripts/player_audit.py
 
       # The runtime job below drives a live server over rcon and checks the same
       # answers. This runs the rows through the engine before the server boots,
@@ -73,6 +81,10 @@ jobs:
   runtime:
     name: Running server
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # A jar that does not build cannot boot a server: run this heavy job only
+    # once the build job has produced one.
+    needs: build
     steps:
       - uses: actions/checkout@v4
 

@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * A very small JSON reader, used by the doc generator to read
- * {@code docs/commands-inventory.json} without pulling in a dependency.
+ * {@code reference/commands-inventory.json} without pulling in a dependency.
  *
  * @see <a href="https://www.rfc-editor.org/rfc/rfc8259">RFC 8259</a>
  */

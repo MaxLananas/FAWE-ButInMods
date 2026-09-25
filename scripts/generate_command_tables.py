@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Generates the command tables that keep the engine in sync with WorldEdit/FAWE.
 
-Inputs (docs/):
-  * commands-inventory.json - every @Command declaration in WorldEdit 7.3.17 and
+Inputs (reference/ and core/build/):
+  * reference/commands-inventory.json - every @Command declaration in WorldEdit 7.3.17 and
     FastAsyncWorldEdit main: name, aliases, description, declaring file.
-  * commands-spec.json - what the engine registers right now, written by
-    `./gradlew :core:genDocs` from the live registry.
+  * core/build/commands-spec.json - what the engine registers right now, written by
+    `./gradlew :core:commandSpec` from the live registry.
 
 Outputs (core/src/main/java/com/maxlananas/fawebim/core/command/):
   * SubCommandTable.java - spellings that are aliases of a command that exists
@@ -15,7 +15,7 @@ Outputs (core/src/main/java/com/maxlananas/fawebim/core/command/):
     description, so the command surface stays complete while the port continues.
 
 Workflow after adding or removing a command:
-    ./gradlew :core:genDocs
+    ./gradlew :core:commandSpec
     python3 scripts/generate_command_tables.py
 """
 
@@ -27,7 +27,8 @@ from pathlib import Path
 from collections import OrderedDict
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS = ROOT / "docs"
+REFERENCE = ROOT / "reference"
+BUILD = ROOT / "core" / "build"
 COMMAND_DIR = ROOT / "core/src/main/java/com/maxlananas/fawebim/core/command"
 
 # File -> container literal. Sub-commands of a container are reached by typing
@@ -418,8 +419,8 @@ def write_brush_table(inventory: list[dict]) -> None:
 
 
 def main() -> None:
-    inventory = json.loads((DOCS / "commands-inventory.json").read_text())
-    spec = json.loads((DOCS / "commands-spec.json").read_text())
+    inventory = json.loads((REFERENCE / "commands-inventory.json").read_text())
+    spec = json.loads((BUILD / "commands-spec.json").read_text())
     supported: dict[str, dict] = {}
     for command in spec["commands"]:
         # Alias rows are the routes this script generates, so they are not

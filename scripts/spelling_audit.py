@@ -13,8 +13,8 @@ either by an entry named after the full path or by the container's own argument
 handling, which the container entry declares as ``[single|area|recursive]``.
 
 Usage:
-    python3 scripts/spelling_audit.py [--inventory docs/commands-inventory.json]
-                                      [--spec docs/commands-spec.json]
+    python3 scripts/spelling_audit.py [--inventory reference/commands-inventory.json]
+                                      [--spec core/build/commands-spec.json]
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ import json
 import re
 from pathlib import Path
 
-INVENTORY = "docs/commands-inventory.json"
-SPEC = "docs/commands-spec.json"
+INVENTORY = "reference/commands-inventory.json"
+SPEC = "core/build/commands-spec.json"
 
 # The container literal a class of upstream commands is reached through.
 CONTAINERS = {

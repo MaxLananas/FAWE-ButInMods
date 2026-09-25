@@ -43,7 +43,7 @@ public final class StrictInventoryCheck {
             Map.entry("ListFilters.java", "list"));
 
     public static void main(String[] args) throws Exception {
-        Path inventory = Path.of(args.length > 0 ? args[0] : "docs/commands-inventory.json");
+        Path inventory = Path.of(args.length > 0 ? args[0] : "reference/commands-inventory.json");
         BlockState.setRegistry(new TestBlockStateRegistry());
         EditSession.BlockStateRegistryHolder.set(new TestBlockStateRegistry());
         CommandManager manager = CommandManager.get();

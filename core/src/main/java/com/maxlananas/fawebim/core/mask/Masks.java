@@ -19,8 +19,7 @@ import java.util.Set;
  * Every mask FAWE ships, in one place.
  *
  * <p>Ids ({@code #solid}, {@code #wall}, ...) and their aliases are identical to
- * the upstream parsers; see {@code docs/COMMANDS.md} and the mask section of the
- * README for the complete list.</p>
+ * the upstream parsers; the mask section of the README lists the families.</p>
  */
 public final class Masks {
 

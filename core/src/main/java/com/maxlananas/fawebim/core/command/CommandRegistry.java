@@ -315,7 +315,7 @@ public final class CommandRegistry {
             }
             if (entry.handler == null) {
                 actor.message(Msg.warn("Command '" + entry.name
-                        + "' is registered but not implemented in this build (see docs/STATUS.md)."));
+                        + "' is registered but not implemented in this build."));
                 return true;
             }
             entry.handler.run(context);

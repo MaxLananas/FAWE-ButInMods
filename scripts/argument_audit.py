@@ -10,8 +10,8 @@ switch upstream declares and the build lacks means the same for a flag - both
 are reported here, command by command.
 
 Usage:
-    python3 scripts/argument_audit.py [--inventory docs/commands-inventory.json]
-                                      [--spec docs/commands-spec.json]
+    python3 scripts/argument_audit.py [--inventory reference/commands-inventory.json]
+                                      [--spec core/build/commands-spec.json]
 """
 
 from __future__ import annotations
@@ -77,8 +77,8 @@ def upstream_shape(row: dict) -> tuple[list[str], list[str], list[str]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--inventory", default="docs/commands-inventory.json")
-    parser.add_argument("--spec", default="docs/commands-spec.json")
+    parser.add_argument("--inventory", default="reference/commands-inventory.json")
+    parser.add_argument("--spec", default="core/build/commands-spec.json")
     args = parser.parse_args()
 
     inventory = json.loads(Path(args.inventory).read_text())
