@@ -349,8 +349,13 @@ public final class FabricWorld implements World {
         //    that and relies on the light engine plus the game's own block-change
         //    bookkeeping, the way WorldEdit's native access does it.
         int changedCount = slot[0];
+        // One position object for the whole walk: the light engine takes the
+        // long of the position and the chunk holder takes its section-relative
+        // index, so neither keeps what it is handed. A packet does, so the one
+        // path that sends per block builds a position of its own.
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int index = 0; index < changedCount; index++) {
-            BlockPos pos = new BlockPos(changedXs[index], changedYs[index], changedZs[index]);
+            pos.set(changedXs[index], changedYs[index], changedZs[index]);
             chunkSource.getLightEngine().checkBlock(pos);
             if (resend) {
                 // The whole chunk is about to be sent, so the section the cell
@@ -364,7 +369,8 @@ public final class FabricWorld implements World {
                 if (now != was) {
                     // Vanilla's own notification: it hands the section to the
                     // game's next broadcast and tells the mobs the ground moved.
-                    level.sendBlockUpdated(pos, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
+                    level.sendBlockUpdated(new BlockPos(changedXs[index], changedYs[index], changedZs[index]),
+                            was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
                 }
             }
         }
