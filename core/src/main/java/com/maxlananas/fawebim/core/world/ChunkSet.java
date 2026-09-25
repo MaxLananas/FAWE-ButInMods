@@ -25,6 +25,9 @@ public final class ChunkSet {
     private List<BlockEntity> blockEntities;
     private int changedCount;
     private boolean dirty;
+    /** The section of the previous write, and its index, or {@code -1}. */
+    private int lastSectionIndex = -1;
+    private PackedBlockArray lastSection;
 
     public ChunkSet(int chunkX, int chunkZ, int minY, int maxY) {
         this.chunkX = chunkX;
@@ -229,8 +232,20 @@ public final class ChunkSet {
         }
     }
 
+    /**
+     * The buffer of the section a height belongs to.
+     *
+     * <p>The last one is remembered: a bulk edit walks a row of sixteen blocks at
+     * a time, so sixteen calls in a row - the hot path of {@code //set} and of
+     * every shape - ask for the section they just wrote into. Only sections that
+     * exist are cached, so a read of an empty section cannot keep a buffer that a
+     * later write creates out of the buffer map.</p>
+     */
     private PackedBlockArray sectionFor(int y, boolean create) {
         int si = (y >> 4) - minSection;
+        if (si == lastSectionIndex) {
+            return lastSection;
+        }
         if (si < 0 || si >= sectionCount) {
             return null;
         }
@@ -238,6 +253,10 @@ public final class ChunkSet {
         if (section == null && create) {
             section = new PackedBlockArray(1);
             sections[si] = section;
+        }
+        if (section != null) {
+            lastSectionIndex = si;
+            lastSection = section;
         }
         return section;
     }
