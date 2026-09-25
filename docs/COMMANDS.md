@@ -233,7 +233,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//air` | `/0` | Sets all the blocks in the region to air | implemented |
 | `//center <pattern>` | — | Set the center block(s) of the selection | implemented |
 | `//drain [radius]` | — | Drain liquids in the selection | implemented |
-| `//extinguish` | `//ex` | Extinguish fires in the region | implemented |
+| `//extinguish [radius]` | `//ex` | Extinguish nearby fire | implemented |
 | `//faces <pattern>` | `//outline` | Build the faces of the selection | implemented |
 | `//fill <pattern> [radius]` | — | Fill a hole with a pattern (flood fill) | implemented |
 | `//fillr <pattern> <radius> [depth]` | `/fillr` | Fill a hole recursively | implemented |
@@ -241,7 +241,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//fixlava [radius]` | — | Fix lava placement in the selection | implemented |
 | `//fixlighting` | — | Propagate lighting through the selection | implemented |
 | `//fixwater [radius]` | — | Fix water placement in the selection | implemented |
-| `//green` | — | Turn dirt into grass | implemented |
+| `//green [size] [height]` | — | Convert dirt to grass blocks around you | implemented |
 | `//hollow [thickness] [pattern] [-m <mask>]` | — | Hollow out the selection | implemented |
 | `//lay <pattern>` | — | Lay a pattern on the ground, keeping natural layers below | implemented |
 | `//move <amount> <direction> [pattern] [-m <mask>]` | — | Move the selection's contents in a direction | implemented |
@@ -259,16 +259,16 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//setblocklight <level>` | — | Set the block light level in the selection | implemented |
 | `//setskylight <level>` | — | Set the sky light level in the selection | implemented |
 | `//smooth [iterations] [mask]` | — | Smooth the terrain in the selection | implemented |
-| `//snow [pattern]` | — | Simulate snow on the terrain | implemented |
+| `//snow [size] [height]` | — | Simulate snow on the terrain | implemented |
 | `//stack [count] [direction] [-m <mask>]` | — | Stack the selection's contents | implemented |
 | `//test <value>` | — | Prints the given value back, used to check command parsing | implemented |
-| `//thaw` | — | Thaw snow and ice in the region | implemented |
+| `//thaw [size] [height]` | — | Thaw snow and ice around you | implemented |
 | `//trim [mask]` | — | Minimize the selection to encompass matching blocks | implemented |
 | `//update` | — | Apply side effects and neighbour updates to the selection | implemented |
 | `//walls <pattern>` | — | Build the walls of the selection | implemented |
 | `//wea` | `/weanywhere`, `/worldeditanywhere` | Bypass region restrictions (there are none in the standalone mod) | implemented |
 | `//wer` | `/worldeditregion` | Select your allowed region (there are none in the standalone mod) | implemented |
-| `/ext` | — | Extinguish fires in the region | alias |
+| `/ext` | — | Extinguish nearby fire | alias |
 | `/middle` | — | Set the center block(s) of the selection | alias |
 | `/mv` | — | Move the selection's contents in a direction | alias |
 | `/rep` | — | Replace all blocks matching a mask with a pattern inside a region | alias |
@@ -288,12 +288,12 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//contract <amount> [direction]` | — | Contract the selection area | implemented |
+| `//contract <amount> [reverseAmount] [direction]` | — | Contract the selection area | implemented |
 | `//count <mask>` | — | Count the number of blocks matching a mask | implemented |
 | `//desel` | `//deselect` | Clear your selection | implemented |
 | `//distr [-p <page>]` | `//distribution` | Show the block distribution in the selection | implemented |
 | `//drawsel` | — | Draw the selection outline (uses particles, no client mod needed) | implemented |
-| `//expand <amount> [direction]` | — | Expand the selection area | implemented |
+| `//expand <amount> [reverseAmount] [direction]` | `/expand` | Expand the selection area | implemented |
 | `//hpos1` | — | Set position 1 to the block you are looking at | implemented |
 | `//hpos2` | — | Set position 2 to the block you are looking at | implemented |
 | `//inset <amount>` | — | Inset the selection area | implemented |

@@ -95,6 +95,7 @@ public final class SelfTestMain {
         testConsoleCommands();
         testPlayerOnlyCommands();
         testSelectionTransforms();
+        testTerrainCommands();
         testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
@@ -1824,6 +1825,52 @@ public final class SelfTestMain {
      * several separated by commas, an x,y,z vector, or {@code me} for the way the
      * player looks. {@code //expand vert} takes the whole column.
      */
+    /**
+     * The terrain commands WorldEdit runs around the source: {@code //green}
+     * converts the dirt of a cylinder into grass, {@code //snow} covers it the way
+     * the weather would, {@code //thaw} takes the snow and ice back, and
+     * {@code //extinguish} removes the fire in a cube around the player.
+     */
+    private static void testTerrainCommands() {
+        section("terrain");
+        TestWorld world = new TestWorld("terrain");
+        world.fillFlat(30);
+        TestActor actor = new TestActor("Farmer", world, new BlockVector3(8, 30, 8));
+        CommandManager.get().dispatch(actor, "//pos1 4,29,4");
+        CommandManager.get().dispatch(actor, "//pos2 12,29,12");
+        CommandManager.get().dispatch(actor, "//set minecraft:dirt");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//green 6");
+        check("//green converts the dirt of its cylinder",
+                actor.messages().stream().anyMatch(m -> m.contains("Greened 81 block(s)")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//snow 4");
+        check("//snow covers the disc around the player",
+                actor.messages().stream().anyMatch(m -> m.contains("Snowed 49 block(s)")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//thaw 4");
+        check("//thaw takes the snow back",
+                actor.messages().stream().anyMatch(m -> m.contains("Thawed 49 block(s)")));
+
+        // Fire in the cube around the player, and nothing else, goes away.
+        CommandManager.get().dispatch(actor, "//pos1 7,30,7");
+        CommandManager.get().dispatch(actor, "//pos2 9,30,9");
+        CommandManager.get().dispatch(actor, "//set minecraft:fire");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//extinguish 2");
+        check("//extinguish removes nearby fire",
+                actor.messages().stream().anyMatch(m -> m.contains("Extinguished 9 block(s)")));
+        CommandManager.get().dispatch(actor, "//count minecraft:fire");
+        check("no fire is left", count(actor).equals("Count: 0"));
+        // The command removes fire and nothing else, so the grass the fire sat on
+        // is still there.
+        CommandManager.get().dispatch(actor, "//pos1 4,29,4");
+        CommandManager.get().dispatch(actor, "//pos2 12,29,12");
+        check("the ground under the fire is untouched",
+                countOf(actor, "minecraft:grass_block").equals("Count: 81"));
+    }
+
     private static void testSelectionTransforms() {
         section("selection transforms");
         TestWorld world = new TestWorld("selection-transforms");
@@ -1904,7 +1951,12 @@ public final class SelfTestMain {
 
     /** Counts the selection and answers without the chat colouring. */
     private static String count(TestActor actor) {
-        CommandManager.get().dispatch(actor, "//count minecraft:stone");
+        return countOf(actor, "minecraft:stone");
+    }
+
+    /** The same count for another block, which a test may be checking instead. */
+    private static String countOf(TestActor actor, String block) {
+        CommandManager.get().dispatch(actor, "//count " + block);
         return actor.lastMessage().replaceAll("\u00a7.", "");
     }
 

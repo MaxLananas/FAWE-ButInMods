@@ -57,6 +57,192 @@ public final class Operations {
     /** The six neighbours of a cell, as x/y/z offsets. */
     private static final int[] NEIGHBOURS = {1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1};
 
+    /**
+     * {@code //thaw}: melts the snow and ice of a cylinder around a position.
+     *
+     * <p>WorldEdit's own algorithm: each column of the disc is walked downwards
+     * and the first block that is not air decides the column - ice becomes
+     * water, a snow layer is removed, and anything else is left alone.</p>
+     */
+    public static int thaw(World world, EditSession session, BlockVector3 center, double radius, int height) {
+        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+        int ice = registry.defaultState("minecraft:ice");
+        int snow = registry.defaultState("minecraft:snow");
+        int water = registry.defaultState("minecraft:water");
+        int air = registry.air();
+        int affected = 0;
+        double radiusSq = radius * radius;
+        int ceilRadius = (int) Math.ceil(radius);
+        int minY = Math.max(world.minY(), center.y() - height);
+        int maxY = Math.min(world.maxY(), center.y() + height);
+        for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
+            for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
+                int dx = x - center.x();
+                int dz = z - center.z();
+                if (dx * dx + dz * dz > radiusSq) {
+                    continue;
+                }
+                for (int y = maxY; y > minY; y--) {
+                    int state = session.getBlock(x, y, z);
+                    if (state == ice) {
+                        if (session.setBlock(x, y, z, water)) {
+                            affected++;
+                        }
+                    } else if (state == snow) {
+                        if (session.setBlock(x, y, z, air)) {
+                            affected++;
+                        }
+                    } else if (registry.isAirLike(state)) {
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
+        return affected;
+    }
+
+    /**
+     * {@code //green}: turns the dirt of a cylinder around a position into grass.
+     *
+     * <p>WorldEdit's own algorithm: the topmost block of each column is looked
+     * at, dirt (and coarse dirt with {@code -f}) becomes grass, and water, lava
+     * and anything solid stop the column.</p>
+     */
+    public static int green(World world, EditSession session, BlockVector3 center, double radius, int height,
+                            boolean onlyNormalDirt) {
+        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+        int dirt = registry.defaultState("minecraft:dirt");
+        int coarseDirt = registry.defaultState("minecraft:coarse_dirt");
+        int grass = registry.defaultState("minecraft:grass_block");
+        int water = registry.defaultState("minecraft:water");
+        int lava = registry.defaultState("minecraft:lava");
+        int affected = 0;
+        double radiusSq = radius * radius;
+        int ceilRadius = (int) Math.ceil(radius);
+        int minY = Math.max(world.minY(), center.y() - height);
+        int maxY = Math.min(world.maxY(), center.y() + height);
+        for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
+            for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
+                int dx = x - center.x();
+                int dz = z - center.z();
+                if (dx * dx + dz * dz > radiusSq) {
+                    continue;
+                }
+                for (int y = maxY; y > minY; y--) {
+                    int state = session.getBlock(x, y, z);
+                    if (state == dirt || (!onlyNormalDirt && state == coarseDirt)) {
+                        if (session.setBlock(x, y, z, grass)) {
+                            affected++;
+                        }
+                        break;
+                    }
+                    if (state == water || state == lava || registry.isSolid(state)) {
+                        break;
+                    }
+                }
+            }
+        }
+        return affected;
+    }
+
+    /**
+     * {@code //snow}: covers a cylinder around a position in snow the way the
+     * weather would.
+     *
+     * <p>WorldEdit's {@code SnowSimulator}: a water block at sea level freezes,
+     * and everything else the column holds gets a snow layer on top of it. With
+     * {@code -s} the layers pile up - a full layer becomes a snow block - instead
+     * of a single layer per run.</p>
+     */
+    public static int simulateSnow(World world, EditSession session, BlockVector3 center, double radius, int height,
+                                   boolean stack) {
+        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+        int snow = registry.defaultState("minecraft:snow");
+        int snowBlock = registry.defaultState("minecraft:snow_block");
+        int ice = registry.defaultState("minecraft:ice");
+        int water = registry.defaultState("minecraft:water");
+        int affected = 0;
+        double radiusSq = radius * radius;
+        int ceilRadius = (int) Math.ceil(radius);
+        int minY = Math.max(world.minY(), center.y() - height);
+        int maxY = Math.min(world.maxY(), center.y() + height);
+        for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
+            for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
+                int dx = x - center.x();
+                int dz = z - center.z();
+                if (dx * dx + dz * dz > radiusSq) {
+                    continue;
+                }
+                for (int y = maxY; y > minY; y--) {
+                    int state = session.getBlock(x, y, z);
+                    // The ground of a column is the first block that is not air,
+                    // and not an existing layer when they are being stacked.
+                    if (registry.isAirLike(state) || (stack && state == snow)) {
+                        continue;
+                    }
+                    if (state == water) {
+                        if ("0".equals(registry.properties(state).get("level"))) {
+                            if (session.setBlock(x, y, z, ice)) {
+                                affected++;
+                            }
+                        }
+                        break;
+                    }
+                    // A layer is placed on the block above the ground, at most one
+                    // block below the top of the region.
+                    if (y == maxY) {
+                        break;
+                    }
+                    int above = session.getBlock(x, y + 1, z);
+                    boolean aboveAir = registry.isAirLike(above);
+                    boolean aboveSnow = above == snow;
+                    if (!aboveAir && !(stack && aboveSnow)) {
+                        break;
+                    }
+                    if (stack && aboveSnow) {
+                        int layers = Integer.parseInt(registry.properties(above).getOrDefault("layers", "1"));
+                        int next = layers + 1;
+                        int placed = next >= 8 ? snowBlock
+                                : registry.withProperty(snow, "layers", Integer.toString(next));
+                        if (placed >= 0 && session.setBlock(x, y + 1, z, placed)) {
+                            affected++;
+                        }
+                    } else if (session.setBlock(x, y + 1, z, snow)) {
+                        affected++;
+                    }
+                    break;
+                }
+            }
+        }
+        return affected;
+    }
+
+    /**
+     * {@code //extinguish}: removes every block a mask accepts inside a cube
+     * around a position, which is WorldEdit's {@code removeNear}.
+     */
+    public static int removeNear(World world, EditSession session, BlockVector3 center, int apothem,
+                                 Mask mask) {
+        int affected = 0;
+        for (int y = center.y() - apothem; y <= center.y() + apothem; y++) {
+            if (y < world.minY() || y > world.maxY()) {
+                continue;
+            }
+            for (int z = center.z() - apothem; z <= center.z() + apothem; z++) {
+                for (int x = center.x() - apothem; x <= center.x() + apothem; x++) {
+                    if (!mask.test(x, y, z)) {
+                        continue;
+                    }
+                    if (session.setBlock(x, y, z, BlockState.registry().air())) {
+                        affected++;
+                    }
+                }
+            }
+        }
+        return affected;
+    }
+
     /** A hollow allocates a bit per cell of the selection; past this it refuses. */
     private static final long MAX_HOLLOW_CELLS = 64L * 1024 * 1024;
 

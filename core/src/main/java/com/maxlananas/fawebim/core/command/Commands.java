@@ -545,6 +545,15 @@ public final class Commands {
         return out;
     }
 
+    /**
+     * The vertical reach of WorldEdit's utility commands: its
+     * {@code default-vertical-height}, which is 128 blocks up and down when a
+     * command does not name a height of its own.
+     */
+    private static int defaultVerticalHeight() {
+        return 128;
+    }
+
     private BlockVector3 directionVector(Ctx ctx, String direction, int amount) {
         String dir = direction.toLowerCase(Locale.ROOT);
         if (dir.equals("me")) {
@@ -1052,94 +1061,77 @@ public final class Commands {
                 };
 
 
+        // WorldEdit runs these three around the place the source stands on: the
+        // radius and height describe a cylinder, the placement position is its
+        // centre, and the top block of each column decides what happens to it.
         CommandRegistry.Entry e37 = registry.register("//snow");
         e37.description = "Simulate snow on the terrain";
         e37.group = "region";
-        e37.requiresSelection = true;
-        // -s stacks a snow layer per click instead of laying a full block.
+        // -s stacks a snow layer on the snow that is already there.
         e37.booleanFlags.add("s");
-        e37.arguments.add("[pattern]");
+        e37.arguments.add("[size]");
+        e37.arguments.add("[height]");
         e37.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    boolean stack = ctx.hasFlag("s");
-                    int snow = BlockState.registry().defaultState(
-                            stack ? "minecraft:snow" : "minecraft:snow_block");
-                    Region region = ctx.selection();
-                    int changed = 0;
-                    for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                        for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                            for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    if (session.setBlock(x, y + 1, z, snow)) {
-                                        changed++;
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    double size = Math.max(1, ctx.doubleArg(0, 10));
+                    int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.simulateSnow(
+                            ctx.world(), session, ctx.placement(), size, height, ctx.hasFlag("s"));
                     ctx.actor().message(Msg.success("Snowed " + Msg.formatNumber(changed) + " block(s)"));
                     flush(ctx, session);
                 };
 
 
         CommandRegistry.Entry e38 = registry.register("//thaw");
-        e38.description = "Thaw snow and ice in the region";
+        e38.description = "Thaw snow and ice around you";
         e38.group = "region";
-        e38.requiresSelection = true;
+        e38.arguments.add("[size]");
+        e38.arguments.add("[height]");
         e38.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    int changed = 0;
-                    BlockStateRegistry blockRegistry = BlockState.registry();
-                    for (BlockVector3 position : ctx.selection()) {
-                        String name = blockRegistry.name(ctx.world().getBlock(position.x(), position.y(), position.z()));
-                        if (name.contains("snow") || name.contains("ice")) {
-                            if (session.setBlock(position.x(), position.y(), position.z(), air())) {
-                                changed++;
-                            }
-                        }
-                    }
+                    double size = Math.max(1, ctx.doubleArg(0, 10));
+                    int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.thaw(
+                            ctx.world(), session, ctx.placement(), size, height);
                     ctx.actor().message(Msg.success("Thawed " + Msg.formatNumber(changed) + " block(s)"));
                     flush(ctx, session);
                 };
 
 
         CommandRegistry.Entry e39 = registry.register("//green");
-        e39.description = "Turn dirt into grass";
+        e39.description = "Convert dirt to grass blocks around you";
         e39.group = "region";
-        e39.requiresSelection = true;
-        // -f also turns coarse dirt into grass, which FAWE keeps out by default.
+        // -f also turns coarse dirt into grass, which WorldEdit keeps out by default.
         e39.booleanFlags.add("f");
+        e39.arguments.add("[size]");
+        e39.arguments.add("[height]");
         e39.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockStateRegistry blockRegistry = BlockState.registry();
-                    Mask dirt = Parsers.mask(ctx.hasFlag("f") ? "minecraft:dirt,minecraft:coarse_dirt"
-                            : "minecraft:dirt", ctx);
-                    Pattern grass = new Patterns.Single(blockRegistry.defaultState("minecraft:grass_block"));
-                    int changed = fill(session, ctx.selection(), grass, dirt);
+                    Masks.ExtentHolder.set(session);
+                    double size = Math.max(1, ctx.doubleArg(0, 10));
+                    int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.green(ctx.world(), session,
+                            ctx.placement(), size, height, !ctx.hasFlag("f"));
                     ctx.actor().message(Msg.success("Greened " + Msg.formatNumber(changed) + " block(s)"));
                     flush(ctx, session);
                 };
 
 
+        // WorldEdit removes the fire in a cube around the source and leaves the
+        // lava alone, in a radius of forty blocks unless one is named.
         CommandRegistry.Entry e40 = registry.register("//extinguish", "//ex");
-        e40.description = "Extinguish fires in the region";
+        e40.description = "Extinguish nearby fire";
         e40.group = "region";
-        e40.requiresSelection = true;
+        e40.arguments.add("[radius]");
         e40.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = 0;
-                    for (BlockVector3 position : ctx.selection()) {
-                        String name = BlockState.registry()
-                                .name(ctx.world().getBlock(position.x(), position.y(), position.z()));
-                        if (name.contains("fire") || name.contains("lava") || name.contains("magma")) {
-                            if (session.setBlock(position.x(), position.y(), position.z(), air())) {
-                                changed++;
-                            }
-                        }
-                    }
+                    Masks.ExtentHolder.set(session);
+                    int radius = Math.max(1, ctx.intArg(0, 40));
+                    Mask fire = Parsers.mask("minecraft:fire", ctx);
+                    int changed = com.maxlananas.fawebim.core.function.Operations.removeNear(
+                            ctx.world(), session, ctx.placement(), radius, fire);
                     ctx.actor().message(Msg.success("Extinguished " + Msg.formatNumber(changed) + " block(s)"));
                     flush(ctx, session);
                 };
