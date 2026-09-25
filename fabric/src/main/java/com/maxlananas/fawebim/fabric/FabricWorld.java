@@ -59,6 +59,10 @@ public final class FabricWorld implements World {
     private static final int UPDATE_CLIENTS = 2;
 
     private final ServerLevel level;
+    /** The chunk of the previous read or write, and its position. */
+    private LevelChunk cachedChunk;
+    private int cachedChunkX = Integer.MIN_VALUE;
+    private int cachedChunkZ = Integer.MIN_VALUE;
 
     /**
      * Shared worker pool for the work the engine hands off the server thread.
@@ -132,7 +136,9 @@ public final class FabricWorld implements World {
      * own accessor allocates and without its second chunk lookup.
      *
      * <p>Every read and every write of an edit goes through here. A region is
-     * walked x first, so sixteen calls in a row ask for the same chunk.</p>
+     * walked x first, so sixteen calls in a row ask for the same chunk, and the
+     * chunk lookup behind that walk is a hash of the chunk position with a load
+     * on a miss; the last chunk is remembered so the run pays for it once.</p>
      *
      * @return the section, or {@code null} when the position is outside the
      *         sections of the level
@@ -142,7 +148,29 @@ public final class FabricWorld implements World {
         if (index < 0 || index >= level.getSectionsCount()) {
             return null;
         }
-        return level.getChunk(x >> 4, z >> 4).getSection(index);
+        return chunkAt(x >> 4, z >> 4).getSection(index);
+    }
+
+    /**
+     * The chunk of a position, from the last one when it is the same.
+     *
+     * <p>FAWE's own world adapter keeps a chunk cache in front of the platform
+     * for the same reason: an edit walks a row of one chunk at a time, and the
+     * game's chunk map is asked once per block without it. Only the block reads
+     * and writes of an edit go through here; the flush and the block-entity
+     * paths look their chunk up themselves, once per chunk, so a stale entry
+     * cannot decide what is written.</p>
+     */
+    private LevelChunk chunkAt(int chunkX, int chunkZ) {
+        LevelChunk cached = cachedChunk;
+        if (cached != null && cachedChunkX == chunkX && cachedChunkZ == chunkZ) {
+            return cached;
+        }
+        LevelChunk chunk = level.getChunk(chunkX, chunkZ);
+        cachedChunk = chunk;
+        cachedChunkX = chunkX;
+        cachedChunkZ = chunkZ;
+        return chunk;
     }
 
     @Override
@@ -178,7 +206,7 @@ public final class FabricWorld implements World {
         if (biomeKey == null || y < minY() || y > maxY()) {
             return false;
         }
-        LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
+        LevelChunk chunk = chunkAt(x >> 4, z >> 4);
         int sectionIndex = chunk.getSectionIndex(y);
         if (sectionIndex < 0 || sectionIndex >= chunk.getSections().length) {
             return false;
@@ -240,6 +268,9 @@ public final class FabricWorld implements World {
      */
     @Override
     public int applyChunk(ChunkSet set) {
+        // The flush looks its chunk up itself: it runs once per chunk, so the
+        // cache is no help here, and the write it is about to make must not go
+        // through an entry that another walk put there.
         LevelChunk chunk = level.getChunk(set.chunkX(), set.chunkZ());
         PackedBlockArray[] sections = set.sections();
         int applied = 0;
