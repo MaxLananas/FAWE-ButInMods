@@ -381,54 +381,163 @@ final class GenerationCommands {
      * where a formula is true. Without a formula the pattern replaces the whole
      * selection, which is what {@code //g <pattern>} does in FAWE.
      */
+    /**
+     * {@code //generate} — builds the part of the selection a formula picks out.
+     *
+     * <p>This is WorldEdit's shape generator: the formula is evaluated once per
+     * block and the block belongs to the shape when the value is above zero, which
+     * is how {@code //generate stone y%10<5} carves a pattern out of a selection.
+     * What the formula's {@code x}/{@code y}/{@code z} mean follows the switches:
+     * {@code -r} is the world origin at scale one, {@code -o} the position of the
+     * player running it, {@code -c} the centre of the selection at scale one, and
+     * the plain form measures from the centre in units of the selection's half
+     * size, so the selection is the box from -1 to 1. {@code -h} writes only the
+     * shell: the blocks of the shape that have a neighbour outside it.</p>
+     *
+     * <p>WorldEdit's {@code type} and {@code data} variables carry the numeric ids
+     * the game used before block states existed, and a formula that assigns them
+     * picks the block of a cell. The ids are states here, so {@code type} is the
+     * state a cell holds and {@code data} is left unset.</p>
+     */
     private void generate() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("generate", "/gen", "/g");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//generate", "//gen", "//g");
         if (entry == null) {
             return;
         }
-        entry.description = "Replace the selection with a pattern, optionally using a formula";
+        entry.description = "Generates a shape according to a formula";
         entry.group = "generation";
         entry.requiresSelection = true;
-        entry.arguments.add("pattern");
-        entry.arguments.add("[formula]");
+        // -h writes the shell, -r/-o/-c choose what the formula's coordinates
+        // are measured from.
         entry.booleanFlags.add("h");
+        entry.booleanFlags.add("r");
+        entry.booleanFlags.add("o");
+        entry.booleanFlags.add("c");
+        entry.arguments.add("<pattern>");
+        entry.arguments.add("<formula>");
         entry.handler = ctx -> {
             Region region = ctx.selection();
             Pattern pattern = ctx.pattern(0);
-            Expression expression = ctx.args().size() > 1 ? Expression.compile(ctx.joined(1)) : null;
+            if (ctx.args().size() < 2) {
+                throw CommandRegistry.error("Usage: " + entry.usage());
+            }
+            String formula = ctx.joined(1);
+            Expression expression = Expression.compile(formula);
+            boolean assignsState = usesTypeVariable(formula);
+            double[] origin = origin(ctx, region);
+            double[] scale = scale(ctx, region, origin);
             boolean hollow = ctx.hasFlag("h");
-            EditSession session = ctx.editSession("generate");
-            World world = ctx.world();
-            Expression.Variables variables = new Expression.Variables();
-            variables.set("miny", world.minY());
-            variables.set("maxy", world.maxY());
+            EditSession session = ctx.editSession("//generate");
             BlockVector3 min = region.getMinimumPoint();
             BlockVector3 max = region.getMaximumPoint();
-            int changed = 0;
-            for (int x = min.x(); x <= max.x(); x++) {
-                for (int y = min.y(); y <= max.y(); y++) {
-                    for (int z = min.z(); z <= max.z(); z++) {
-                        session.checkTimeout();
-                        if (hollow && !isSurface(world, x, y, z)) {
-                            continue;
-                        }
-                        if (expression != null) {
-                            variables.set("x", x);
-                            variables.set("y", y);
-                            variables.set("z", z);
-                            if (expression.evaluate(variables) == 0) {
-                                continue;
+            int width = max.x() - min.x() + 1;
+            int height = max.y() - min.y() + 1;
+            int length = max.z() - min.z() + 1;
+            long volume = (long) width * height * length;
+            if (volume > Integer.MAX_VALUE) {
+                throw CommandRegistry.error("A selection of " + volume + " blocks is too large to generate into");
+            }
+            // A bit per block, plus one block of border on each side when the
+            // formula has to be asked about the neighbours of the shape.
+            int pad = hollow ? 1 : 0;
+            int padWidth = width + 2 * pad;
+            int padLength = length + 2 * pad;
+            long[] inside = hollow ? new long[(padWidth * (height + 2) * padLength + 63) >>> 6] : null;
+            Expression.Variables variables = new Expression.Variables();
+            World world = ctx.world();
+            variables.set("miny", world.minY());
+            variables.set("maxy", world.maxY());
+            if (inside != null) {
+                for (int y = min.y() - pad; y <= max.y() + pad; y++) {
+                    for (int z = min.z() - pad; z <= max.z() + pad; z++) {
+                        for (int x = min.x() - pad; x <= max.x() + pad; x++) {
+                            if (inShape(expression, variables, world, x, y, z, origin, scale, assignsState)) {
+                                int index = (x - min.x() + pad)
+                                        + (z - min.z() + pad) * padWidth
+                                        + (y - min.y() + pad) * padWidth * padLength;
+                                inside[index >>> 6] |= 1L << (index & 63);
                             }
                         }
-                        if (session.setBlock(x, y, z, pattern.apply(new BlockVector3(x, y, z)))) {
+                    }
+                }
+            }
+            int changed = 0;
+            for (int y = min.y(); y <= max.y(); y++) {
+                for (int z = min.z(); z <= max.z(); z++) {
+                    for (int x = min.x(); x <= max.x(); x++) {
+                        session.checkTimeout();
+                        int index = (x - min.x() + pad) + (z - min.z() + pad) * padWidth
+                                + (y - min.y() + pad) * padWidth * padLength;
+                        if (inside != null) {
+                            if ((inside[index >>> 6] & (1L << (index & 63))) == 0) {
+                                continue;
+                            }
+                            if (!touchesOutside(inside, padWidth, padLength, index)) {
+                                continue;
+                            }
+                        } else if (!inShape(expression, variables, world, x, y, z, origin, scale, assignsState)) {
+                            continue;
+                        }
+                        int state = expressionState(variables);
+                        if (state < 0) {
+                            state = pattern.apply(new BlockVector3(x, y, z));
+                        }
+                        if (session.setBlock(x, y, z, state)) {
                             changed++;
                         }
                     }
                 }
             }
             session.flushQueue();
-            ctx.actor().message(Msg.success(changed + " block(s) generated"));
+            ctx.actor().message(Msg.success("Generated " + changed + " block(s)"));
         };
+    }
+
+    /**
+     * True when the formula is above zero at a position, i.e. the position is part
+     * of the shape. The coordinates are the position relative to the origin, in
+     * units of the selection's half size.
+     */
+    private static boolean inShape(Expression expression, Expression.Variables variables, World world,
+            int x, int y, int z, double[] origin, double[] scale, boolean assignsState) {
+        variables.set("x", (x - origin[0]) / scale[0]);
+        variables.set("y", (y - origin[1]) / scale[1]);
+        variables.set("z", (z - origin[2]) / scale[2]);
+        if (assignsState) {
+            // The state the cell holds, which is what WorldEdit's numeric block id
+            // used to be, and the value a formula assigning "type" reads back.
+            variables.set("type", world.getBlock(x, y, z));
+            variables.set("data", 0);
+        }
+        return expression.evaluate(variables) > 0;
+    }
+
+    /**
+     * The state a formula that assigns {@code type} asked for, or -1 when the cell
+     * keeps the pattern. Read after {@link #inShape}, which binds the variable.
+     */
+    private static int expressionState(Expression.Variables variables) {
+        return variables.has("type") ? (int) variables.get("type") : -1;
+    }
+
+    /** True when the formula mentions WorldEdit's numeric block id variables. */
+    private static boolean usesTypeVariable(String formula) {
+        return java.util.regex.Pattern.compile("\\b(?:type|data)\\b").matcher(formula).find();
+    }
+
+    /** True when one of the six neighbours of a shape cell is outside the shape. */
+    private static boolean touchesOutside(long[] inside, int padWidth, int padLength, int index) {
+        int stepY = padWidth * padLength;
+        return bitCleared(inside, index + 1)
+                || bitCleared(inside, index - 1)
+                || bitCleared(inside, index + padWidth)
+                || bitCleared(inside, index - padWidth)
+                || bitCleared(inside, index + stepY)
+                || bitCleared(inside, index - stepY);
+    }
+
+    private static boolean bitCleared(long[] bits, int index) {
+        return (bits[index >>> 6] & (1L << (index & 63))) == 0;
     }
 
     /** True when a neighbour of the block is air, i.e. the block is exposed. */

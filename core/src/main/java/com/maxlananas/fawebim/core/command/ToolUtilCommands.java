@@ -158,7 +158,8 @@ final class ToolUtilCommands {
 
     /** {@code /tool tracemask [mask]} — what a trace stops at. */
     private void traceMask() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool tracemask");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool tracemask",
+                "/tool targetmask", "/tool tarmask", "/tool tm");
         if (entry == null) {
             return;
         }

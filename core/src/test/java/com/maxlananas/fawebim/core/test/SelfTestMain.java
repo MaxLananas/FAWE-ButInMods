@@ -91,6 +91,7 @@ public final class SelfTestMain {
         testClipboardAndSchematic();
         testLargeSchematicSave();
         testCommands();
+        testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
         testRegen();
@@ -1738,6 +1739,148 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//definitelynotacommand");
         check("unknown command handled", actor.lastMessage().contains("Unknown command"));
+    }
+
+    /**
+     * The commands a player reaches under their own name rather than as an option
+     * of another one: {@code //generate} builds the part of a selection its
+     * formula picks out, {@code //hpyramid} is the hollow pyramid WorldEdit
+     * declares on its own, {@code //fillr} follows a hole down as far as the depth
+     * it was given, and {@code /smask} sets the brush source mask rather than the
+     * global mask {@code /gmask} sets.
+     */
+    private static void testSplitCommands() {
+        section("own-name commands");
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int air = BlockState.registry().air();
+
+        // A formula picking the top half of a 5x5x5 selection: with the selection
+        // as the unit box, y > 0 is the two layers above its centre.
+        TestWorld formula = new TestWorld("own-name-generate");
+        formula.fillFlat(70);
+        TestActor actor = new TestActor("Erin", formula, new BlockVector3(2, 66, 2));
+        actor.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(actor, "//pos1 0,71,0");
+        CommandManager.get().dispatch(actor, "//pos2 4,75,4");
+        CommandManager.get().dispatch(actor, "//generate stone y>0");
+        int top = 0;
+        for (int y = 71; y <= 75; y++) {
+            for (int z = 0; z <= 4; z++) {
+                for (int x = 0; x <= 4; x++) {
+                    if (formula.getBlock(x, y, z) == stone) {
+                        top++;
+                    }
+                }
+            }
+        }
+        checkEquals("//generate picks the formula's blocks", 50, top);
+        actor.clearMessages();
+
+        // -r measures in world coordinates at scale one, so every layer is above
+        // y = 0 and the whole selection is generated into.
+        TestWorld raw = new TestWorld("own-name-generate-raw");
+        raw.fillFlat(70);
+        TestActor rawActor = new TestActor("Nina", raw, new BlockVector3(2, 66, 2));
+        rawActor.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(rawActor, "//pos1 0,71,0");
+        CommandManager.get().dispatch(rawActor, "//pos2 4,75,4");
+        CommandManager.get().dispatch(rawActor, "//generate -r stone y>0");
+        check("//generate -r builds the whole selection",
+                raw.getBlock(2, 71, 2) == stone && raw.getBlock(2, 75, 2) == stone);
+        rawActor.clearMessages();
+
+        // The shell is the surface of the shape the formula describes, including
+        // the block of border around the selection the formula is asked about, so
+        // the formula has to end inside the selection for -h to have an inside to
+        // leave empty. y < 62 keeps the two lower layers of the box: the cells of
+        // its top layer have a neighbour above them outside the shape, and the
+        // cells in the middle of the lower layer have neighbours on every side.
+        TestWorld shell = new TestWorld("own-name-generate-hollow");
+        shell.fillFlat(70);
+        TestActor shellActor = new TestActor("Omar", shell, new BlockVector3(2, 66, 2));
+        shellActor.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(shellActor, "//pos1 0,71,0");
+        CommandManager.get().dispatch(shellActor, "//pos2 4,75,4");
+        CommandManager.get().dispatch(shellActor, "//generate -r -h stone y<73");
+        // The shape the formula describes is every layer below y = 73, including
+        // the ones around the selection, so its surface inside the selection is
+        // the single layer under that edge: 25 of the 125 cells.
+        int shellCells = 0;
+        for (int y = 71; y <= 75; y++) {
+            for (int z = 0; z <= 4; z++) {
+                for (int x = 0; x <= 4; x++) {
+                    if (shell.getBlock(x, y, z) == stone) {
+                        shellCells++;
+                    }
+                }
+            }
+        }
+        checkEquals("//generate -h writes the shape's surface only", 25, shellCells);
+        check("//generate -h leaves the shape's inside", shell.getBlock(2, 71, 2) == air);
+        check("//generate -h leaves what the formula excludes", shell.getBlock(2, 73, 2) == air);
+        shellActor.clearMessages();
+
+        // //hpyramid is hollow where //pyramid is not: the middle of a layer of the
+        // hollow one holds nothing and the solid one holds stone.
+        TestWorld hollowWorld = new TestWorld("own-name-hpyramid");
+        hollowWorld.fillFlat(70);
+        TestActor hollowBuilder = new TestActor("Hana", hollowWorld, new BlockVector3(0, 75, 0));
+        hollowBuilder.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(hollowBuilder, "//hpyramid stone 6");
+        check("//hpyramid has a shell", hollowWorld.getBlock(0, 75, 3) == stone);
+        check("//hpyramid is hollow", hollowWorld.getBlock(0, 75, 0) == air);
+
+        TestWorld solidWorld = new TestWorld("own-name-pyramid");
+        solidWorld.fillFlat(70);
+        TestActor solidBuilder = new TestActor("Iris", solidWorld, new BlockVector3(0, 75, 0));
+        solidBuilder.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(solidBuilder, "//pyramid stone 6");
+        check("//pyramid is solid", solidWorld.getBlock(0, 75, 0) == stone);
+
+        // //fillr fills the air above the ground and stops at its depth.
+        TestWorld hole = new TestWorld("own-name-fill");
+        hole.fillFlat(60);
+        int grass = BlockState.registry().defaultState("minecraft:grass_block");
+        TestActor digger = new TestActor("Frank", hole, new BlockVector3(4, 61, 4));
+        digger.session().setMaxBlocksChanged(100000);
+        for (int y = 61; y <= 63; y++) {
+            for (int z = 3; z <= 5; z++) {
+                for (int x = 3; x <= 5; x++) {
+                    hole.setBlock(x, y, z, air);
+                }
+            }
+        }
+        CommandManager.get().dispatch(digger, "//fillr stone 5 2");
+        check("//fillr fills the hole", hole.getBlock(3, 61, 3) == stone
+                && hole.getBlock(4, 63, 4) == stone);
+        check("//fillr stops at its depth", hole.getBlock(3, 59, 3) == grass
+                && hole.getBlock(4, 60, 4) == stone);
+        digger.clearMessages();
+
+        // One block of depth fills one layer and leaves the one below it alone.
+        TestActor shallow = new TestActor("Gwen", hole, new BlockVector3(6, 62, 6));
+        hole.setBlock(6, 62, 6, air);
+        hole.setBlock(6, 61, 6, air);
+        hole.setBlock(6, 60, 6, air);
+        CommandManager.get().dispatch(shallow, "//fillr sand 1 1");
+        check("//fillr of depth one fills its layer", hole.getBlock(6, 62, 6)
+                == BlockState.registry().defaultState("minecraft:sand"));
+        check("//fillr of depth one stops there", hole.getBlock(6, 61, 6) == air);
+        shallow.clearMessages();
+
+        // /smask sets the source mask, /gmask the global one.
+        TestWorld masks = new TestWorld("own-name-masks");
+        masks.fillFlat(70);
+        TestActor maskUser = new TestActor("Quinn", masks, new BlockVector3(0, 71, 0));
+        LocalSession session = maskUser.session();
+        CommandManager.get().dispatch(maskUser, "//gmask stone");
+        check("/gmask sets the global mask", session.getMask() != null);
+        CommandManager.get().dispatch(maskUser, "/smask stone");
+        check("/smask sets the source mask", session.getSourceMask() != null);
+        CommandManager.get().dispatch(maskUser, "//gmask");
+        check("/gmask clears only the global mask",
+                session.getMask() == null && session.getSourceMask() != null);
+        maskUser.clearMessages();
     }
 
     /**

@@ -541,6 +541,18 @@ public final class Operations {
 
     public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
                                 boolean hollow, Mask replaceMask) {
+        return floodFill(world, session, start, pattern, radius, hollow, replaceMask, 0);
+    }
+
+    /**
+     * A flood fill that also stops {@code depth} blocks below the start, which is
+     * how WorldEdit's {@code /fillr} keeps a recursive fill from following a hole
+     * to the bottom of the world.
+     *
+     * @param depth how many blocks below the start may be filled, 0 for no limit
+     */
+    public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
+                                boolean hollow, Mask replaceMask, int depth) {
         BlockStateRegistry registry = BlockState.registry();
         int targetState = world.getBlock(start.x(), start.y(), start.z());
         if (!registry.isAirLike(targetState) && replaceMask == null) {
@@ -548,6 +560,7 @@ public final class Operations {
             replaceMask = new com.maxlananas.fawebim.core.mask.Masks.BlockMask(session,
                     List.of(registry.describe(targetState)));
         }
+        int lowest = depth > 0 ? start.y() - depth + 1 : Integer.MIN_VALUE;
         Deque<BlockVector3> queue = new ArrayDeque<>();
         java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
         queue.add(start);
@@ -557,7 +570,7 @@ public final class Operations {
             if (!visited.add(current)) {
                 continue;
             }
-            if (current.distance(start) > radius) {
+            if (current.distance(start) > radius || current.y() < lowest) {
                 continue;
             }
             Mask reject = replaceMask;
@@ -572,7 +585,7 @@ public final class Operations {
             session.limiter().check(1);
             for (com.maxlananas.fawebim.core.world.Direction direction : com.maxlananas.fawebim.core.world.Direction.values()) {
                 BlockVector3 next = current.add(direction.toVector());
-                if (!visited.contains(next) && next.distance(start) <= radius) {
+                if (!visited.contains(next) && next.distance(start) <= radius && next.y() >= lowest) {
                     queue.add(next);
                 }
             }

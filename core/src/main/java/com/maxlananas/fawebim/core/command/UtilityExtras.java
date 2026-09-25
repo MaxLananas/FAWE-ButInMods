@@ -273,8 +273,7 @@ final class UtilityExtras {
 
     /** {@code //gsmask} — the mask applied to the blocks an operation reads. */
     private void sourceMask() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("gsmask", "/sourcemask",
-                "/targetmask", "/tarmask");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("gsmask");
         if (entry == null) {
             return;
         }

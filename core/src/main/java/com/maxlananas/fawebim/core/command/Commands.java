@@ -760,7 +760,7 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e30 = registry.register("//fill", "//fillr");
+        CommandRegistry.Entry e30 = registry.register("//fill");
         e30.description = "Fill a hole with a pattern (flood fill)";
         e30.group = "region";
         e30.requiresSelection = true;
@@ -778,6 +778,35 @@ public final class Commands {
                             : ctx.selection().getMinimumPoint();
                     int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
                             start, pattern, radius, ctx.hasFlag("h"));
+                    ctx.actor().message(Msg.success("Filled " + Msg.formatNumber(changed) + " block(s)"));
+                    flush(ctx, session);
+                };
+
+
+        // /fillr is WorldEdit's recursive fill: it fills the connected space at
+        // the placement position and follows it down, stopping at the depth it was
+        // given, which is what keeps a hole from being followed to the bottom of
+        // the world.
+        CommandRegistry.Entry e30b = registry.register("//fillr", "/fillr");
+        e30b.description = "Fill a hole recursively";
+        e30b.group = "region";
+        e30b.requiresPlayer = true;
+        e30b.arguments.add("<pattern>");
+        e30b.arguments.add("<radius>");
+        e30b.arguments.add("[depth]");
+        e30b.handler = ctx -> {
+                    EditSession session = ctx.editSession();
+                    Masks.ExtentHolder.set(session);
+                    Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
+                    double radius = Math.max(1, ctx.doubleArg(1, 1));
+                    int depth = Math.max(1, ctx.intArg(2, Integer.MAX_VALUE));
+                    BlockVector3 start = ctx.actor().position() != null
+                            ? ctx.actor().position() : ctx.selection().getMinimumPoint();
+                    // The fill follows the empty space, so only air is replaced:
+                    // whatever the hole was dug through stays where it is.
+                    int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
+                            start, pattern, (int) Math.ceil(radius), false,
+                            new Masks.AirMask(session, false), depth);
                     ctx.actor().message(Msg.success("Filled " + Msg.formatNumber(changed) + " block(s)"));
                     flush(ctx, session);
                 };
@@ -1271,46 +1300,6 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e47 = registry.register("//generate", "//gen", "//g");
-        e47.description = "Generate a shape from an expression or noise pattern";
-        e47.group = "generation";
-        e47.requiresSelection = true;
-        e47.booleanFlags.add("h");
-        e47.booleanFlags.add("o");
-        e47.booleanFlags.add("r");
-        // -c evaluates the expression around the centre of the selection.
-        e47.booleanFlags.add("c");
-        e47.arguments.add("pattern");
-        e47.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    Masks.ExtentHolder.set(session);
-                    String input = ctx.joined(0);
-                    Pattern pattern;
-                    if (input.startsWith("=")) {
-                        pattern = new Patterns.ExpressionPattern(input.substring(1));
-                    } else {
-                        pattern = Parsers.pattern(input, ctx);
-                    }
-                    int changed = 0;
-                    BlockVector3 min = ctx.selection().getMinimumPoint();
-                    BlockVector3 max = ctx.selection().getMaximumPoint();
-                    for (int y = min.y(); y <= max.y(); y++) {
-                        for (int z = min.z(); z <= max.z(); z++) {
-                            for (int x = min.x(); x <= max.x(); x++) {
-                                int state = pattern.apply(x, y, z);
-                                if (!ctx.hasFlag("h") || !BlockState.registry().isAirLike(state)) {
-                                    if (session.setBlock(x, y, z, state)) {
-                                        changed++;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    ctx.actor().message(Msg.success("Generated " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
-                };
-
-
         CommandRegistry.Entry e48 = registry.register("//deform");
         e48.description = "Deform blocks in the selection using an expression";
         e48.group = "generation";
@@ -1514,7 +1503,7 @@ public final class Commands {
 
         }
 
-        CommandRegistry.Entry e57 = registry.register("//pyramid", "//hpyramid");
+        CommandRegistry.Entry e57 = registry.register("//pyramid");
         e57.description = "Create a pyramid at your position";
         e57.group = "generation";
         e57.requiresPlayer = true;
@@ -1526,9 +1515,27 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     int size = ctx.intArg(1);
-                    boolean hollowShape = ctx.entry().name.equals("//hpyramid") || ctx.hasFlag("h");
+                    boolean hollowShape = ctx.hasFlag("h");
                     int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.actor().position(),
                             size, pattern, hollowShape);
+                    ctx.actor().message(Msg.success("Created pyramid: " + changed + " block(s)"));
+                    flush(ctx, session);
+                };
+
+
+        CommandRegistry.Entry e57b = registry.register("//hpyramid", "/hpyramid");
+        e57b.description = "Generate a hollow pyramid";
+        e57b.group = "generation";
+        e57b.requiresPlayer = true;
+        e57b.arguments.add("pattern");
+        e57b.arguments.add("size");
+        e57b.handler = ctx -> {
+                    EditSession session = ctx.editSession();
+                    Masks.ExtentHolder.set(session);
+                    Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
+                    int size = ctx.intArg(1);
+                    int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.actor().position(),
+                            size, pattern, true);
                     ctx.actor().message(Msg.success("Created pyramid: " + changed + " block(s)"));
                     flush(ctx, session);
                 };
@@ -2377,8 +2384,8 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e86 = registry.register("/gmask", "//gmask", "/smask", "//smask");
-        e86.description = "Set the global mask (/smask = source mask on overwrite)";
+        CommandRegistry.Entry e86 = registry.register("/gmask", "//gmask");
+        e86.description = "Set the global mask";
         e86.group = "utility";
         e86.arguments.add("[mask]");
         e86.handler = ctx -> {
@@ -2390,6 +2397,34 @@ public final class Commands {
                     Mask mask = Parsers.mask(ctx.joined(0), ctx);
                     ctx.session().setMask(mask);
                     ctx.actor().message(Msg.success("Global mask set to " + ctx.joined(0)));
+                };
+
+
+        // The source mask is a different question from the global mask: it says
+        // which blocks a brush may read from, while the global mask says which it
+        // may write. It belongs to the brush, so it is kept on the brush when one
+        // is equipped and on the session otherwise.
+        CommandRegistry.Entry e86b = registry.register("/smask", "//smask", "/sourcemask");
+        e86b.description = "Set the brush source mask";
+        e86b.group = "brush";
+        e86b.arguments.add("[mask]");
+        e86b.handler = ctx -> {
+                    com.maxlananas.fawebim.core.brush.Brush brush =
+                            com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.session());
+                    if (ctx.args().isEmpty()) {
+                        ctx.session().setSourceMask(null);
+                        if (brush != null) {
+                            brush.settings().setSourceMask(null);
+                        }
+                        ctx.actor().message(Msg.success("Brush source mask cleared"));
+                        return;
+                    }
+                    Mask mask = Parsers.mask(ctx.joined(0), ctx);
+                    ctx.session().setSourceMask(mask);
+                    if (brush != null) {
+                        brush.settings().setSourceMask(mask);
+                    }
+                    ctx.actor().message(Msg.success("Brush source mask set to " + ctx.joined(0)));
                 };
 
 
