@@ -2774,25 +2774,25 @@ public final class Commands {
         CommandRegistry.Entry e89 = registry.register("//masks");
         e89.description = "List the available masks";
         e89.group = "utility";
-        e89.handler = ctx -> ctx.actor().message(Msg.info( "Masks: #air #existing #solid #liquid #fullcube #wall #surface #angle #surfaceangle #roc #beside " + "#extrema #xaxis #yaxis #zaxis #true #false #exposed #biome #region #dregion #offset " + "#simplex #clipboard # =expr ! & ,"));
+        e89.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Masks") + "§7: #air #existing #solid #liquid #fullcube #wall #surface #angle #surfaceangle #roc #beside " + "#extrema #xaxis #yaxis #zaxis #true #false #exposed #biome #region #dregion #offset " + "#simplex #clipboard # =expr ! & ,"));
 
 
         CommandRegistry.Entry e90 = registry.register("//patterns");
         e90.description = "List the available patterns";
         e90.group = "utility";
-        e90.handler = ctx -> ctx.actor().message(Msg.info( "Patterns: block, 25%block, #clipboard #copy #existing #biome #offset #spread #solidspread " + "#surfacespread #l/#linear #l3d #l2d #color #lighten #darken #saturate #desaturate " + "#swaptype #simplex ##tag =expr ^"));
+        e90.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Patterns") + "§7: block, 25%block, #clipboard #copy #existing #biome #offset #spread #solidspread " + "#surfacespread #l/#linear #l3d #l2d #color #lighten #darken #saturate #desaturate " + "#swaptype #simplex ##tag =expr ^"));
 
 
         CommandRegistry.Entry e91 = registry.register("//transforms");
         e91.description = "List the available transforms";
         e91.group = "utility";
-        e91.handler = ctx -> ctx.actor().message(Msg.info( "Transforms: rotate <angle> [axis], flip [direction], scale <factor>, offset <x> <y> <z>"));
+        e91.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Transforms") + "§7: rotate <angle> [axis], flip [direction], scale <factor>, offset <x> <y> <z>"));
 
 
         CommandRegistry.Entry e92 = registry.register("//brushes");
         e92.description = "List the available brushes";
         e92.group = "utility";
-        e92.handler = ctx -> ctx.actor().message(Msg.info( "Brushes: sphere ball smooth blendball flatten height raise lower layer line spline catenary " + "scatter shatter splatter rock blob pull stencil gravity cylinder clipboard copypaste " + "biome butcher forest command populateschematic surface surfacespline sweep"));
+        e92.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Brushes") + "§7: sphere ball smooth blendball flatten height raise lower layer line spline catenary " + "scatter shatter splatter rock blob pull stencil gravity cylinder clipboard copypaste " + "biome butcher forest command populateschematic surface surfacespline sweep"));
 
 
         CommandRegistry.Entry e93 = registry.register("//desel", "//deselect");
@@ -2888,7 +2888,7 @@ public final class Commands {
         CommandRegistry.Entry e96 = registry.register("//version");
         e96.description = "Show the mod version";
         e96.group = "utility";
-        e96.handler = ctx -> ctx.actor().message(Msg.info("FAWE-BIM " + com.maxlananas.fawebim.core.platform.Config.VERSION
+        e96.handler = ctx -> ctx.actor().message(Msg.info(Msg.title("FAWE-BIM") + "§7 " + com.maxlananas.fawebim.core.platform.Config.VERSION
                 + " \u2014 " + registry.all().size() + " commands registered"));
 
     }
@@ -2970,7 +2970,18 @@ public final class Commands {
         e100.handler = ctx -> {
                     String type = ctx.arg(0, "none").toLowerCase(Locale.ROOT);
                     if (type.equals("none")) {
-                        com.maxlananas.fawebim.core.tool.Tools.clear(ctx.session());
+                        LocalSession session = ctx.session();
+                        String held = ctx.actor().heldItem();
+                        com.maxlananas.fawebim.core.tool.Tools.clear(session);
+                        // Upstream a brush is a tool bound to an item, so unbinding
+                        // clears the brush equipped with the held item as well.
+                        if (held != null && held.equals(session.getBindings().get("brush-item"))) {
+                            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
+                            session.getBindings().remove("brush-command");
+                        }
+                        if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
+                            com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
+                        }
                         ctx.actor().message(Msg.success("Tool unbound"));
                         return;
                     }
@@ -3024,8 +3035,13 @@ public final class Commands {
         none.group = "brush";
         none.requiresPlayer = true;
         none.handler = ctx -> {
-            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(ctx.session());
-            ctx.session().getBindings().remove("brush-command");
+            LocalSession session = ctx.session();
+            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
+            session.getBindings().remove("brush-command");
+            String held = ctx.actor().heldItem();
+            if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
+                com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
+            }
             ctx.actor().message(Msg.success("Brush unbound"));
         };
     }

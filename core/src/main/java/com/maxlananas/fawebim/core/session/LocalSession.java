@@ -32,8 +32,8 @@ public final class LocalSession {
     private boolean superPickaxeEnabled = false;
     private int superPickaxeMode = 1; // 0 = single, 1 = area, 2 = recursive
     private int superPickaxeRadius = 1;
-    private int maxBlocksChanged = com.maxlananas.fawebim.core.platform.Config.get().defaultChangeLimit;
-    private int timeout = com.maxlananas.fawebim.core.platform.Config.get().timeout;
+    private int maxBlocksChanged = -1;
+    private int timeout = -1;
     // -1 means "whatever the configuration says", so a setting changed in
     // /fawebim reaches the sessions that already exist.
     private long maxBrushRadius = -1;
@@ -420,7 +420,8 @@ public final class LocalSession {
     }
 
     public int getMaxBlocksChanged() {
-        return maxBlocksChanged;
+        return maxBlocksChanged >= 0 ? maxBlocksChanged
+                : com.maxlananas.fawebim.core.platform.Config.get().defaultChangeLimit;
     }
 
     public void setMaxBlocksChanged(int maxBlocksChanged) {
@@ -428,11 +429,11 @@ public final class LocalSession {
     }
 
     public boolean hasBlockChangeLimit() {
-        return maxBlocksChanged > 0;
+        return getMaxBlocksChanged() > 0;
     }
 
     public int getTimeout() {
-        return timeout;
+        return timeout >= 0 ? timeout : com.maxlananas.fawebim.core.platform.Config.get().timeout;
     }
 
     public void setTimeout(int timeout) {

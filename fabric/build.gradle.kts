@@ -29,6 +29,15 @@ loom {
     }
 }
 
+repositories {
+    // Mod Menu is optional at runtime; the compile-only dependency is what makes
+    // the client entrypoint type-check, and Loom keeps it out of the jar.
+    maven {
+        name = "Terraformers"
+        url = uri("https://maven.terraformersmc.com/releases")
+    }
+}
+
 dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
     mappings(loom.layered {
@@ -37,6 +46,12 @@ dependencies {
     })
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
     modImplementation("net.fabricmc.fabric-api:fabric-api:$fabricApiVersion")
+
+    // The Mod Menu screen factory, and the mod itself in a development client so
+    // the entrypoint is exercised: neither is required to run the mod.
+    val modMenuVersion = property("modmenu_version") as String
+    modCompileOnly("com.terraformersmc:modmenu:$modMenuVersion")
+    modLocalRuntime("com.terraformersmc:modmenu:$modMenuVersion")
 
     implementation(project(":core"))
     include(project(":core"))

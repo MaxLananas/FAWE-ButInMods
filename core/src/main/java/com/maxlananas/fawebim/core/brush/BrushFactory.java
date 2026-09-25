@@ -54,6 +54,11 @@ public final class BrushFactory {
         session.getBindings().remove("brush-item");
     }
 
+    public static void unbindSecondary(LocalSession session) {
+        session.getBindings().remove("secondary-brush");
+        session.getBindings().remove("secondary-brush-item");
+    }
+
     /**
      * Builds a brush from the values of a {@code /brush} command line.
      *

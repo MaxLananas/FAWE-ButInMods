@@ -158,13 +158,11 @@ public final class FabricInteractions {
         String held = FabricMessages.heldItem(player);
         Brush brush = BrushFactory.current(session);
         if (brush != null && brush.leftClick() && bound(session, "brush-item", held)) {
-            BlockVector3 target = actor.world().getTargetBlock(actor, (int) actor.reachDistance());
-            return applyBrush(actor, brush, target);
+            return applyBrush(actor, brush, aimedBlock(player));
         }
         Tool tool = Tools.current(session);
         if (tool != null && bound(session, "tool-item", held)) {
-            BlockVector3 target = actor.world().getTargetBlock(actor, (int) actor.reachDistance());
-            return tool.onSwing(new Tool.ToolContext(actor, target, actor.facing(), null));
+            return tool.onSwing(new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null));
         }
         return false;
     }
@@ -181,8 +179,7 @@ public final class FabricInteractions {
         // 1. Brushes.
         Brush brush = BrushFactory.current(session);
         if (brush != null && bound(session, "brush-item", held)) {
-            return applyBrush(actor, brush, FabricMessages.blockVector(pos).add(
-                    face.getStepX(), face.getStepY(), face.getStepZ()))
+            return applyBrush(actor, brush, landing(player, pos, face))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
@@ -227,8 +224,8 @@ public final class FabricInteractions {
         // does; without it a click that lands one pixel above a block does nothing.
         Brush brush = BrushFactory.current(session);
         if (brush != null && bound(session, "brush-item", held)) {
-            BlockVector3 target = actor.world().getTargetBlock(actor, (int) actor.reachDistance());
-            return applyBrush(actor, brush, target) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+            return applyBrush(actor, brush, aimedBlock(player))
+                    ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
         Tool tool = Tools.current(session);
@@ -236,9 +233,47 @@ public final class FabricInteractions {
             noteWaiting(actor, held);
             return InteractionResult.PASS;
         }
-        BlockVector3 target = actor.world().getTargetBlock(actor, 100);
-        Tool.ToolContext context = new Tool.ToolContext(actor, target, actor.facing(), null);
+        Tool.ToolContext context = new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null);
         return tool.onRightClick(context) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+    }
+
+    /**
+     * The block the crosshair covers. {@code pick} is the game's own ray trace
+     * from the eyes along the view vector, so the answer is the block the player
+     * is aiming at - a trace written next to it can disagree with the crosshair
+     * by a block and put a brush where the player stands instead of where they
+     * look.
+     */
+    private static net.minecraft.world.phys.BlockHitResult aim(ServerPlayer player, double reach) {
+        net.minecraft.world.phys.HitResult hit = player.pick(reach, 1.0F, false);
+        return hit instanceof net.minecraft.world.phys.BlockHitResult block ? block : null;
+    }
+
+    /** Where a click lands: the block under the crosshair, or the clicked face's neighbour. */
+    private static BlockVector3 landing(ServerPlayer player, BlockPos pos,
+                                        net.minecraft.core.Direction face) {
+        double reach = Math.max(5.0, Config.get().maxBrushRange);
+        net.minecraft.world.phys.BlockHitResult aimed = aim(player, reach);
+        if (aimed != null) {
+            net.minecraft.core.Direction side = aimed.getDirection();
+            return FabricMessages.blockVector(aimed.getBlockPos())
+                    .add(side.getStepX(), side.getStepY(), side.getStepZ());
+        }
+        return FabricMessages.blockVector(pos).add(face.getStepX(), face.getStepY(), face.getStepZ());
+    }
+
+    /** The block under the crosshair, never the one the player stands in. */
+    private static BlockVector3 aimedBlock(ServerPlayer player) {
+        double reach = Math.max(5.0, Config.get().maxBrushRange);
+        net.minecraft.world.phys.BlockHitResult aimed = aim(player, reach);
+        if (aimed != null) {
+            return FabricMessages.blockVector(aimed.getBlockPos());
+        }
+        // Nothing under the crosshair: the end of the reach is still in front of
+        // the player, where the brush belongs.
+        net.minecraft.world.phys.Vec3 end = player.getEyePosition(1.0F)
+                .add(player.getViewVector(1.0F).scale(reach));
+        return new BlockVector3((int) Math.floor(end.x), (int) Math.floor(end.y), (int) Math.floor(end.z));
     }
 
     /** True when the session's binding for {@code key} matches the held item. */
@@ -255,11 +290,13 @@ public final class FabricInteractions {
             markHandled(actor.player());
         }
         if (changed > 0) {
-            actor.message(Msg.success("Brush changed " + Msg.formatNumber(changed) + " block(s)"));
+            actor.message(Msg.success("Brush changed ")
+                    .append(Msg.value(Msg.formatNumber(changed) + " block(s)"))
+                    .append(" around ").append(Msg.value(position)));
         } else {
             // A brush that ran and changed nothing used to be completely silent,
             // which is indistinguishable from a click that never arrived.
-            actor.message(Msg.warn("The brush changed no block."));
+            actor.message(Msg.warn("The brush changed no block around ").append(Msg.value(position)));
         }
         return changed > 0;
     }

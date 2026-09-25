@@ -333,7 +333,8 @@ public final class CommandRegistry {
             actor.message(Msg.error("Max blocks changed in an operation: " + e.getLimit()));
             return true;
         } catch (com.maxlananas.fawebim.core.util.TimeLimiter.OperationTimeoutException e) {
-            actor.message(Msg.error("Operation timed out after " + e.elapsedMillis() + "ms"));
+            actor.message(Msg.error("Operation timed out after " + e.elapsedMillis()
+                    + "ms; raise 'timeout' in /fawebim, 0 for no limit"));
             return true;
         } catch (Exception e) {
             actor.message(Msg.error("Command failed: " + e.getMessage()));

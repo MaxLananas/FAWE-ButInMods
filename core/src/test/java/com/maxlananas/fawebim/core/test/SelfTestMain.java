@@ -1508,7 +1508,7 @@ public final class SelfTestMain {
 
         world.awaitExecutor();
         check("large save reports the result", actor.messages().stream()
-                .anyMatch(message -> message.contains("Saved schematic 'bigselftest.schem'")));
+                .anyMatch(message -> plain(message).contains("Saved schematic 'bigselftest.schem'")));
         check("large save wrote the file", Schematics.exists("bigselftest", "sponge.3")
                 && Files.isRegularFile(dir.resolve("bigselftest.schem")));
         BlockArrayClipboard reloaded = Schematics.load("bigselftest.schem");
@@ -1637,7 +1637,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/limit 50");
         check("//limit accepts a value under the ceiling", actor.messages().stream()
-                .anyMatch(message -> message.contains("Limit set to 50")));
+                .anyMatch(message -> plain(message).contains("Limit set to 50")));
         config.set("max-change-limit", "-1");
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fawebim set max-brush-radius");
@@ -1647,7 +1647,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/history size 12");
         check("/history size sets the undo depth", actor.messages().stream()
-                .anyMatch(message -> message.contains("History size set to 12")));
+                .anyMatch(message -> plain(message).contains("History size set to 12")));
         checkEquals("history kept the new depth", 12, actor.session().getHistory().maxRecords());
 
         // Tab completion offers the keys the player has started to type.
@@ -1928,21 +1928,21 @@ public final class SelfTestMain {
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/placement pos1");
-        check("/placement takes a type", actor.lastMessage().contains("Now placing at pos #1."));
+        check("/placement takes a type", plain(actor.lastMessage()).contains("Now placing at pos #1."));
         checkEquals("pos1 is the first position of the selection", new BlockVector3(4, 30, 4),
                 actor.session().getPlacement().position(world, actor));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/placement world 2 1,2,3");
         check("the offset is multiplied and named",
-                actor.lastMessage().contains("Now placing at (2, 4, 6)."));
+                plain(actor.lastMessage()).contains("Now placing at (2, 4, 6)."));
         checkEquals("the offset is added to the anchor", new BlockVector3(2, 4, 6),
                 actor.session().getPlacement().position(world, actor));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/placement here");
         check("here is the world origin moved to the player",
-                actor.lastMessage().contains("Now placing at (40, 30, 40)."));
+                plain(actor.lastMessage()).contains("Now placing at (40, 30, 40)."));
 
         CommandManager.get().dispatch(actor, "/placement min");
         checkEquals("min is a corner of the selection", new BlockVector3(4, 30, 4),
@@ -1958,7 +1958,7 @@ public final class SelfTestMain {
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/toggleplace");
-        check("/toggleplace moves to pos1", actor.lastMessage().contains("Now placing at pos #1."));
+        check("/toggleplace moves to pos1", plain(actor.lastMessage()).contains("Now placing at pos #1."));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/toggleplace");
         check("/toggleplace moves back to the player",
@@ -1970,7 +1970,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
         check("//snow runs at the placement", actor.messages().stream()
-                .anyMatch(m -> m.contains("Snowed 49 block(s)")));
+                .anyMatch(m -> plain(m).contains("Snowed 49 block(s)")));
     }
 
     private static void testSnapshotSelection() {
@@ -2015,12 +2015,12 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/snapshot sel 0");
         check("an index below one is refused",
-                actor.lastMessage().contains("Invalid index, must be greater than or equal to 1."));
+                plain(actor.lastMessage()).contains("Invalid index, must be greater than or equal to 1."));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/snapshot sel 99");
         check("an index past the list is refused",
-                actor.lastMessage().contains("Invalid index, must be between 1 and 2."));
+                plain(actor.lastMessage()).contains("Invalid index, must be between 1 and 2."));
     }
 
     private static void testSessionOptions() {
@@ -2059,11 +2059,11 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//perf lighting");
         check("//perf reports a side effect",
-                actor.lastMessage().contains("Side effect \"Lighting\" is set to On"));
+                plain(actor.lastMessage()).contains("Side effect \"Lighting\" is set to On"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//perf lighting off");
         check("//perf sets a side effect",
-                actor.lastMessage().contains("Side effect \"Lighting\" set to Off"));
+                plain(actor.lastMessage()).contains("Side effect \"Lighting\" set to Off"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//perf lighting off");
         check("//perf says when the state is already set",
@@ -2071,7 +2071,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//perf nope");
         check("an unknown side effect lists the ones the engine has",
-                actor.lastMessage().contains("Unknown side effect 'nope'"));
+                plain(actor.lastMessage()).contains("Unknown side effect 'nope'"));
 
         // The lighting pass the side effect gates is the one the flush runs.
         world.relitChunks().clear();
@@ -2104,7 +2104,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//update nonsense");
         check("an unknown side effect is refused by //update",
-                actor.lastMessage().contains("Unknown side effect 'nonsense'"));
+                plain(actor.lastMessage()).contains("Unknown side effect 'nonsense'"));
 
         // //reorder takes upstream's three names and, as upstream does, keeps the
         // mode at fast.
@@ -2165,7 +2165,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//pos2 2,30,2");
         CommandManager.get().dispatch(actor, "//set minecraft:sand");
         check("a traced edit prints what it wrote",
-                actor.messages().stream().anyMatch(m -> m.contains("Trace: set 0,30,0")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Trace: set 0,30,0")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/we trace inactive");
         check("/we trace turns the hook off", actor.lastMessage().contains("Trace mode now inactive."));
@@ -2186,21 +2186,21 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove items");
         check("/remove items takes the drops around the player",
-                actor.messages().stream().anyMatch(m -> m.contains("2 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("2 entit(y/ies)")));
         checkEquals("the painting and the distant arrow stay", 2, world.getEntities().size());
 
         // A radius of -1 is every loaded entity, however far away it sits.
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove arrows -1");
         check("/remove arrows -1 reaches the whole world",
-                actor.messages().stream().anyMatch(m -> m.contains("1 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("1 entit(y/ies)")));
 
         // A radius the cylinder ignores: the arrow is out of reach at five blocks.
         world.addEntity(new EntityData("minecraft:arrow", new NbtCompound(), new Vector3(900.5, 40, 900.5)));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove arrows 5");
         check("/remove arrows 5 leaves distant entities alone",
-                actor.messages().stream().anyMatch(m -> m.contains("0 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("0 entit(y/ies)")));
         checkEquals("the distant arrow is still loaded", 2, world.getEntities().size());
 
         actor.clearMessages();
@@ -2220,16 +2220,16 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//green 6");
         check("//green converts the dirt of its cylinder",
-                actor.messages().stream().anyMatch(m -> m.contains("Greened 81 block(s)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Greened 81 block(s)")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
         check("//snow covers the disc around the player",
-                actor.messages().stream().anyMatch(m -> m.contains("Snowed 49 block(s)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Snowed 49 block(s)")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//thaw 4");
         check("//thaw takes the snow back",
-                actor.messages().stream().anyMatch(m -> m.contains("Thawed 49 block(s)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Thawed 49 block(s)")));
 
         // Fire in the cube around the player, and nothing else, goes away.
         CommandManager.get().dispatch(actor, "//pos1 7,30,7");
@@ -2238,7 +2238,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//extinguish 2");
         check("//extinguish removes nearby fire",
-                actor.messages().stream().anyMatch(m -> m.contains("Extinguished 9 block(s)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Extinguished 9 block(s)")));
         CommandManager.get().dispatch(actor, "//count minecraft:fire");
         check("no fire is left", count(actor).equals("Count: 0"));
         // The command removes fire and nothing else, so the grass the fire sat on
@@ -2295,7 +2295,7 @@ public final class SelfTestMain {
         // The command reports the shape and the flush reports the write, so the
         // answer to look at is the one that names the shape.
         check("a shape still builds for a source without a player", console.messages().stream()
-                .anyMatch(message -> message.contains("Created pyramid: 81 block(s)")));
+                .anyMatch(message -> plain(message).contains("Created pyramid: 81 block(s)")));
 
         // The same commands run for a player at the position they stand on.
         TestActor player = new TestActor("Builder", world, new BlockVector3(40, 71, 0));
@@ -2544,7 +2544,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(sweeper, "//pos2 3,70,3");
         CommandManager.get().dispatch(sweeper, "//set stone");
         CommandManager.get().dispatch(sweeper, "//air");
-        check("//air clears the selection", sweeper.lastMessage().contains("16 block(s) set to air"));
+        check("//air clears the selection", plain(sweeper.lastMessage()).contains("16 block(s) set to air"));
         check("//air left the selection empty", count(sweeper).equals("Count: 0"));
 
         // //ores plants vanilla's ore distribution where the mask allows it,
@@ -2793,7 +2793,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/tool size 500");
         check("/tool size refuses what /brush would refuse", actor.messages().stream()
-                .anyMatch(message -> message.contains("Size must be between 1 and")));
+                .anyMatch(message -> plain(message).contains("Size must be between 1 and")));
     }
 
     /** How many blocks of one state a world holds at or above a height. */
@@ -2818,6 +2818,17 @@ public final class SelfTestMain {
      * hex colours that still reads as its plain text.
      */
     private static void testChatFormatting() {
+        // The highlight colours the values inside a line and leaves the words
+        // alone, and a plain dump of the line is exactly what was written.
+        String written = "Cut 384 block(s) around 12, 70, -3 with 'my build' -h #perlin";
+        String styled = Msg.info(written).raw();
+        check("the counts are highlighted", styled.contains("§b384"));
+        check("the coordinates are highlighted", styled.contains("§b12") && styled.contains("§b-3"));
+        check("a switch is highlighted", styled.contains("§e-h"));
+        check("a pattern name is highlighted", styled.contains("§d#perlin"));
+        check("a quoted name is highlighted", styled.contains("§f'my build'§7"));
+        check("the words are untouched", Msg.info(written).plain().equals(written));
+
         section("chat");
         String black = Msg.gradient("ab", 0x000000, 0xFFFFFF);
         check("a gradient colours every character",
@@ -2942,7 +2953,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel nope");
         check("an unknown type lists the ones that exist", actor.messages().stream()
-                .anyMatch(message -> message.contains("Unknown selection type 'nope'")));
+                .anyMatch(message -> plain(message).contains("Unknown selection type 'nope'")));
 
         // -d remembers the pick for new sessions, like WorldEdit's //sel -d.
         actor.clearMessages();

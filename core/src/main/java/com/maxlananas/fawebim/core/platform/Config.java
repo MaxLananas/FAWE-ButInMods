@@ -40,7 +40,7 @@ public final class Config {
     public int maxBrushRadius = 1000;
     public int maxRadius = 1000;
     public int maxBrushRange = 100;
-    public int timeout = 20;
+    public int timeout = 0;
     public int threads = Runtime.getRuntime().availableProcessors();
     public boolean allowAncientBlocks = true;
     public boolean allowNonPlayerEntities = true;
@@ -101,8 +101,8 @@ public final class Config {
                 "How far a brush reaches from the player, in blocks.", () -> maxBrushRange,
                 value -> maxBrushRange = value);
         integer("timeout", "calculation.timeout", timeout,
-                "Seconds an operation may run before it is stopped.", () -> timeout,
-                value -> timeout = value);
+                "Seconds an operation may run before it is stopped, 0 for no limit.",
+                () -> timeout, value -> timeout = value);
         integer("threads", "threads", threads,
                 "Worker threads the engine may use; the pool takes its size at start.",
                 () -> threads, value -> threads = value);

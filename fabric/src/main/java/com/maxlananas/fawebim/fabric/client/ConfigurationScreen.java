@@ -51,6 +51,8 @@ public final class ConfigurationScreen extends Screen {
     private static final int GOOD = 0xFF7CE38B;
     private static final int BAD = 0xFFFF8080;
 
+    /** The screen that opened this one, so closing returns to it. */
+    private final Screen parent;
     private final ConfigUi ui = new ConfigUi(Config.get());
     private final List<Row> rows = new ArrayList<>();
 
@@ -80,7 +82,18 @@ public final class ConfigurationScreen extends Screen {
     }
 
     public ConfigurationScreen() {
+        this(null);
+    }
+
+    /** Opened from another screen - the mod list, for instance. */
+    public ConfigurationScreen(Screen parent) {
         super(Component.literal("FAWE-BIM configuration"));
+        this.parent = parent;
+    }
+
+    @Override
+    public void onClose() {
+        net.minecraft.client.Minecraft.getInstance().setScreen(parent);
     }
 
     @Override

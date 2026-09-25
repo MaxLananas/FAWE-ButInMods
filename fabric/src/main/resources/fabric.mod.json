@@ -20,7 +20,13 @@
         ],
         "client": [
             "com.maxlananas.fawebim.fabric.client.FaweModClient"
+        ],
+        "modmenu": [
+            "com.maxlananas.fawebim.fabric.client.ModMenuIntegration"
         ]
+    },
+    "suggests": {
+        "modmenu": "*"
     },
     "mixins": [
         "fawebim.mixins.json"

@@ -23,30 +23,153 @@ public final class Msg {
         return new Msg("");
     }
 
+    /** The colour a number, a coordinate or a count is written in. */
+    private static final String NUMBER = "§b";
+    /** The colour a name between quotes is written in. */
+    private static final String QUOTED = "§f";
+    /** The colour a switch is written in. */
+    private static final String FLAG = "§e";
+    /** The colour a {@code #} pattern, mask or category is written in. */
+    private static final String NAME = "§d";
+
     /** Light grey, the colour FAWE uses for values. */
     public static Msg value(Object value) {
-        return new Msg("§b" + value);
+        return new Msg("§b" + highlight(String.valueOf(value), "§b"));
     }
 
     public static Msg error(String text) {
-        return new Msg("§c" + text);
+        return new Msg("§c" + highlight(text, "§c"));
     }
 
     public static Msg success(String text) {
-        return new Msg("§a" + text);
+        return new Msg("§a" + highlight(text, "§a"));
     }
 
     public static Msg warn(String text) {
-        return new Msg("§e" + text);
+        return new Msg("§e" + highlight(text, "§e"));
     }
 
     public static Msg info(String text) {
-        return new Msg("§7" + text);
+        return new Msg("§7" + highlight(text, "§7"));
     }
 
     /** {@code §bkey§7: §fvalue} style line. */
     public static Msg keyValue(String key, Object value) {
-        return new Msg("§b" + key + "§7: §f" + value);
+        return new Msg("§b" + key + "§7: §f" + highlight(String.valueOf(value), "§f"));
+    }
+
+    /**
+     * Colours the parts of a message a reader looks for: numbers and coordinates,
+     * names between quotes, switches and {@code #} pattern, mask and category
+     * names. The colour in force is put back after each of them, so the line keeps
+     * the colour it was built with, and text that already carries codes - a
+     * heading, an appended {@link #value} - is left as it is.
+     */
+    public static String highlight(String text, String role) {
+        StringBuilder out = new StringBuilder(text.length() + 24);
+        int index = 0;
+        while (index < text.length()) {
+            if (text.charAt(index) == '§') {
+                int length = codeLength(text, index);
+                out.append(text, index, index + length);
+                index += length;
+                continue;
+            }
+            int next = text.indexOf('§', index);
+            if (next < 0) {
+                next = text.length();
+            }
+            highlightRun(text.substring(index, next), role, out);
+            index = next;
+        }
+        return out.toString();
+    }
+
+    /**
+     * The length of the colour code at {@code index}: the {@code §x} form carries
+     * six hex digits after it, every other one is a single character.
+     */
+    private static int codeLength(String text, int index) {
+        if (index + 1 < text.length() && text.charAt(index + 1) == 'x' && index + 13 < text.length()) {
+            return 14;
+        }
+        return Math.min(2, text.length() - index);
+    }
+
+    private static void highlightRun(String run, String role, StringBuilder out) {
+        int index = 0;
+        while (index < run.length()) {
+            char c = run.charAt(index);
+            if (c == ' ' || c == '\t') {
+                out.append(c);
+                index++;
+                continue;
+            }
+            if (c == '\'' || c == '"') {
+                int close = run.indexOf(c, index + 1);
+                if (close > index) {
+                    out.append(QUOTED).append(run, index, close + 1).append(role);
+                    index = close + 1;
+                    continue;
+                }
+            }
+            int end = index;
+            while (end < run.length() && run.charAt(end) != ' ' && run.charAt(end) != '\t') {
+                end++;
+            }
+            String token = run.substring(index, end);
+            String colour = tokenColour(token);
+            if (colour == null || colour.equals(role)) {
+                out.append(token);
+            } else {
+                // Whole tokens are coloured, so the text around them keeps its own
+                // colour and a token is never split by a colour code.
+                out.append(colour).append(token).append(role);
+            }
+            index = end;
+        }
+    }
+
+    /** What colour a single token deserves, if any. */
+    private static String tokenColour(String token) {
+        int start = 0;
+        while (start < token.length() && "([{".indexOf(token.charAt(start)) >= 0) {
+            start++;
+        }
+        int end = token.length();
+        while (end > start && ")]},.;:!?".indexOf(token.charAt(end - 1)) >= 0) {
+            end--;
+        }
+        if (end <= start) {
+            return null;
+        }
+        String core = token.substring(start, end);
+        if (isNumber(core)) {
+            return NUMBER;
+        }
+        if (core.charAt(0) == '-' && core.length() > 1 && Character.isLetter(core.charAt(1))) {
+            return FLAG;
+        }
+        if (core.charAt(0) == '#' && core.length() > 1) {
+            return NAME;
+        }
+        return null;
+    }
+
+    /** A count, a coordinate, a percentage or a decimal, optionally signed. */
+    private static boolean isNumber(String token) {
+        char first = token.charAt(0);
+        if (!Character.isDigit(first) && first != '-' && first != '+') {
+            return false;
+        }
+        for (int i = 1; i < token.length(); i++) {
+            char c = token.charAt(i);
+            if (!Character.isDigit(c) && c != ',' && c != '.' && c != '%' && c != ':' && c != '-'
+                    && c != '+') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** A heading: the mod's cyan-to-blue run, which every listing starts with. */
