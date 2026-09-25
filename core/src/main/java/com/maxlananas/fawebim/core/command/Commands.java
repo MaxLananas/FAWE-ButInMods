@@ -47,9 +47,20 @@ public final class Commands {
 
     // ------------------------------------------------------------------ helpers
 
-    private void flush(Ctx ctx, EditSession session) {
+    /**
+     * Flushes the queued blocks and answers with one line naming what the
+     * command did - a label, the count and the time - or with nothing at all
+     * when the handler already reported the result itself.
+     */
+    private void flush(Ctx ctx, EditSession session, String label) {
+        flush(ctx, session, label, session.getBlocksChanged(), "block(s)");
+    }
+
+    private void flush(Ctx ctx, EditSession session, String label, long changed, String unit) {
         session.flushQueue();
-        ctx.actor().message(session.summary());
+        if (label != null) {
+            ctx.actor().message(session.result(label, changed, unit));
+        }
     }
 
     private static int air() {
@@ -106,7 +117,7 @@ public final class Commands {
                     BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
                     RegionSelector selector = ctx.session().getSelector(ctx.world());
                     selector.selectPrimary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.info("Position 1 set to ").append(Msg.value(pos)));
+                    ctx.actor().message(Msg.result("Position 1", "set to " + Msg.value(pos).raw()));
                 };
 
 
@@ -118,7 +129,7 @@ public final class Commands {
                     BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
                     RegionSelector selector = ctx.session().getSelector(ctx.world());
                     selector.selectSecondary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.info("Position 2 set to ").append(Msg.value(pos)));
+                    ctx.actor().message(Msg.result("Position 2", "set to " + Msg.value(pos).raw()));
                 };
 
 
@@ -130,7 +141,7 @@ public final class Commands {
                     BlockVector3 target = ctx.targetBlock(100);
                     ctx.session().getSelector(ctx.world()).selectPrimary(target,
                             com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.info("Position 1 set to ").append(Msg.value(target)));
+                    ctx.actor().message(Msg.result("Position 1", "set to " + Msg.value(target).raw()));
                 };
 
 
@@ -142,7 +153,7 @@ public final class Commands {
                     BlockVector3 target = ctx.targetBlock(100);
                     ctx.session().getSelector(ctx.world()).selectSecondary(target,
                             com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.info("Position 2 set to ").append(Msg.value(target)));
+                    ctx.actor().message(Msg.result("Position 2", "set to " + Msg.value(target).raw()));
                 };
 
 
@@ -174,8 +185,8 @@ public final class Commands {
                     RegionSelector selector = ctx.session().getSelector(ctx.world());
                     selector.selectPrimary(primary, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     selector.selectSecondary(secondary, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.info("Position 1 set to ").append(Msg.value(primary)));
-                    ctx.actor().message(Msg.info("Position 2 set to ").append(Msg.value(secondary)));
+                    ctx.actor().message(Msg.result("Position 1", "set to " + Msg.value(primary).raw()));
+                    ctx.actor().message(Msg.result("Position 2", "set to " + Msg.value(secondary).raw()));
                 };
 
 
@@ -211,7 +222,8 @@ public final class Commands {
                         ctx.actor().message(Msg.success("Default selection type set to " + selector.getTypeName()));
                         return;
                     }
-                    ctx.actor().message(Msg.success("Selection type set to " + selector.getTypeName()));
+                    ctx.actor().message(Msg.result("Selection type", "set to "
+                            + Msg.value(selector.getTypeName()).raw()));
                 };
 
 
@@ -380,7 +392,8 @@ public final class Commands {
                     Region region = ctx.selection();
                     if (ctx.arg(0).equalsIgnoreCase("vert") || ctx.arg(0).equalsIgnoreCase("vertical")) {
                         region.setY(ctx.world().minY(), ctx.world().maxY());
-                        ctx.actor().message(Msg.success("Region expanded vert: " + region.describe()));
+                        ctx.actor().message(Msg.result("Region expanded vertically",
+                                Msg.value(region.describe()).raw()));
                         return;
                     }
                     int amount = ctx.intArg(0);
@@ -393,7 +406,7 @@ public final class Commands {
                             region.expand(direction.multiply(-reverse));
                         }
                     }
-                    ctx.actor().message(Msg.success("Region expanded: " + region.describe()));
+                    ctx.actor().message(Msg.result("Region expanded", Msg.value(region.describe()).raw()));
                 };
 
 
@@ -416,7 +429,7 @@ public final class Commands {
                             region.contract(direction.multiply(-reverse));
                         }
                     }
-                    ctx.actor().message(Msg.success("Region contracted: " + region.describe()));
+                    ctx.actor().message(Msg.result("Region contracted", Msg.value(region.describe()).raw()));
                 };
 
 
@@ -434,7 +447,7 @@ public final class Commands {
                     for (BlockVector3 direction : directions) {
                         region.shift(direction.multiply(amount));
                     }
-                    ctx.actor().message(Msg.success("Region shifted: " + region.describe()));
+                    ctx.actor().message(Msg.result("Region shifted", Msg.value(region.describe()).raw()));
                 };
 
 
@@ -605,7 +618,7 @@ public final class Commands {
                         mask = ctx.session().getMask();
                     }
                     fill(session, ctx.selection(), pattern, mask);
-                    flush(ctx, session);
+                    flush(ctx, session, "Set");
                 };
 
 
@@ -622,7 +635,7 @@ public final class Commands {
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
                     Pattern pattern = Parsers.pattern(ctx.joined(1), ctx);
                     fill(session, ctx.selection(), pattern, mask);
-                    flush(ctx, session);
+                    flush(ctx, session, "Replaced");
                 };
 
 
@@ -648,7 +661,7 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Overlaid");
                 };
 
 
@@ -682,7 +695,7 @@ public final class Commands {
                             session.setBlock(max.x(), y, z, pattern.apply(max.x(), y, z));
                         }
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Walls");
                 };
 
 
@@ -696,7 +709,7 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     Operations.faces(session, ctx.selection(), pattern);
-                    flush(ctx, session);
+                    flush(ctx, session, "Faces");
                 };
 
 
@@ -724,7 +737,7 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Centered");
                 };
 
 
@@ -748,7 +761,7 @@ public final class Commands {
                     Mask barrier = hollowMask != null ? hollowMask : new Masks.SolidMask(null);
                     Pattern fill = pattern != null ? pattern : new Patterns.Single(air());
                     Operations.hollow(session, region, Math.max(1, thickness), fill, barrier);
-                    flush(ctx, session);
+                    flush(ctx, session, "Hollowed");
                 };
 
 
@@ -766,8 +779,7 @@ public final class Commands {
                     String maskInput = ctx.arg(1, "");
                     Mask smoothMask = maskInput.isEmpty() ? null : Parsers.mask(maskInput, ctx);
                     int changed = HeightMaps.smooth(ctx.world(), session, ctx.selection(), iterations, smoothMask);
-                    ctx.actor().message(Msg.success("Smoothed " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Smoothed", changed, "block(s)");
                 };
 
 
@@ -798,7 +810,7 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Naturalized");
                 };
 
 
@@ -829,7 +841,7 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Laid");
                 };
 
 
@@ -854,8 +866,7 @@ public final class Commands {
                     BlockVector3 start = ctx.placement();
                     int changed = com.maxlananas.fawebim.core.function.Operations.fillDirection(ctx.world(), session,
                             start, pattern, radius, depth, direction);
-                    ctx.actor().message(Msg.success("Filled " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Filled", changed, "block(s)");
                 };
 
 
@@ -882,8 +893,7 @@ public final class Commands {
                     int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
                             start, pattern, (int) Math.ceil(radius), false,
                             new Masks.AirMask(session, false), depth);
-                    ctx.actor().message(Msg.success("Filled " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Filled", changed, "block(s)");
                 };
 
 
@@ -910,8 +920,7 @@ public final class Commands {
                         changed += com.maxlananas.fawebim.core.function.Operations.drainWaterlogged(session,
                                 ctx.selection());
                     }
-                    ctx.actor().message(Msg.success("Drained " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Drained", changed, "block(s)");
                 };
 
 
@@ -993,7 +1002,7 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Removed above");
                 };
 
 
@@ -1014,7 +1023,7 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Removed below");
                 };
 
 
@@ -1039,8 +1048,7 @@ public final class Commands {
                             }
                         }
                     }
-                    ctx.actor().message(Msg.success("Removed " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Removed", changed, "block(s)");
                 };
 
 
@@ -1068,8 +1076,7 @@ public final class Commands {
                             }
                         }
                     }
-                    ctx.actor().message(Msg.success("Replaced " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Replaced", changed, "block(s)");
                 };
 
 
@@ -1090,8 +1097,7 @@ public final class Commands {
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.simulateSnow(
                             ctx.world(), session, ctx.placement(), size, height, ctx.hasFlag("s"));
-                    ctx.actor().message(Msg.success("Snowed " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Snowed", changed, "block(s)");
                 };
 
 
@@ -1107,8 +1113,7 @@ public final class Commands {
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.thaw(
                             ctx.world(), session, ctx.placement(), size, height);
-                    ctx.actor().message(Msg.success("Thawed " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Thawed", changed, "block(s)");
                 };
 
 
@@ -1126,8 +1131,7 @@ public final class Commands {
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.green(ctx.world(), session,
                             ctx.placement(), size, height, !ctx.hasFlag("f"));
-                    ctx.actor().message(Msg.success("Greened " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Greened", changed, "block(s)");
                 };
 
 
@@ -1144,8 +1148,7 @@ public final class Commands {
                     Mask fire = Parsers.mask("minecraft:fire", ctx);
                     int changed = com.maxlananas.fawebim.core.function.Operations.removeNear(
                             ctx.world(), session, ctx.placement(), radius, fire);
-                    ctx.actor().message(Msg.success("Extinguished " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Extinguished", changed, "block(s)");
                 };
 
 
@@ -1158,8 +1161,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
                             ctx.selection(), "water", ctx.intArg(0, 5));
-                    ctx.actor().message(Msg.success("Fixed " + Msg.formatNumber(changed) + " water block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Fixed water", changed, "water block(s)");
                 };
 
 
@@ -1172,8 +1174,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
                             ctx.selection(), "lava", ctx.intArg(0, 5));
-                    ctx.actor().message(Msg.success("Fixed " + Msg.formatNumber(changed) + " lava block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Fixed lava", changed, "lava block(s)");
                 };
 
 
@@ -1235,9 +1236,9 @@ public final class Commands {
                     if (ctx.hasFlag("s")) {
                         region.shift(offset);
                     }
-                    flush(ctx, session);
-                    ctx.actor().message(Msg.success("Moved the selection by " + amount + " block(s) towards "
-                            + direction.toLowerCase(Locale.ROOT)));
+                    flush(ctx, session, "Moved", session.getBlocksChanged(), "block(s)");
+                    ctx.actor().message(Msg.result("Selection", "moved by " + Msg.count(amount)
+                            + "\u00a77 block(s) towards \u00a7b" + direction.toLowerCase(Locale.ROOT)));
                 };
 
 
@@ -1287,7 +1288,7 @@ public final class Commands {
                     if (ctx.hasFlag("s")) {
                         region.shift(new BlockVector3(dx * count, dy * count, dz * count));
                     }
-                    flush(ctx, session);
+                    flush(ctx, session, "Stacked");
                 };
 
     }
@@ -1318,8 +1319,7 @@ public final class Commands {
                     BlockVector3 max = ctx.selection().getMaximumPoint();
                     int changed = com.maxlananas.fawebim.core.function.Operations.line(session, min, max, pattern, thickness,
                             ctx.hasFlag("h"));
-                    ctx.actor().message(Msg.success("Drew " + changed + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Drew", changed, "block(s)");
                 };
 
 
@@ -1346,8 +1346,7 @@ public final class Commands {
                         changed = com.maxlananas.fawebim.core.function.Operations.splineShell(session, points, pattern,
                                 thickness);
                     }
-                    ctx.actor().message(Msg.success("Drew " + changed + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Drew", changed, "block(s)");
                 };
 
 
@@ -1376,8 +1375,7 @@ public final class Commands {
                     }
                     int changed = com.maxlananas.fawebim.core.function.Operations.deform(ctx.world(), session,
                             deformRegion, expression, originX, 0, originZ);
-                    ctx.actor().message(Msg.success("Deformed " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Deformed", changed, "block(s)");
                 };
 
 
@@ -1391,8 +1389,7 @@ public final class Commands {
                     double density = ctx.doubleArg(0, 5) / 100.0;
                     int changed = com.maxlananas.fawebim.core.function.Operations.flora(ctx.world(), session,
                             ctx.selection(), density);
-                    ctx.actor().message(Msg.success("Planted " + changed + " plant(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Planted", changed, "plant(s)");
                 };
 
 
@@ -1417,8 +1414,7 @@ public final class Commands {
                     double density = ctx.doubleArg(1, 5) / 100.0;
                     int changed = com.maxlananas.fawebim.core.function.Operations.forest(ctx.world(), session,
                             ctx.selection(), type, density);
-                    ctx.actor().message(Msg.success("Planted " + changed + " tree(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Planted", changed, "tree(s)");
                 };
 
 
@@ -1447,8 +1443,7 @@ public final class Commands {
                             }
                         }
                     }
-                    ctx.actor().message(Msg.success("Generated " + changed + " pumpkin(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Generated", changed, "pumpkin(s)");
                 };
 
 
@@ -1478,8 +1473,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     BlockVector3 target = ctx.targetBlock(100);
                     int changed = com.maxlananas.fawebim.core.function.Operations.removeTree(ctx.world(), session, target);
-                    ctx.actor().message(Msg.success("Removed " + changed + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Removed", changed, "block(s)");
                 };
 
 
@@ -1519,8 +1513,7 @@ public final class Commands {
                             ctx.selection(), mask, material, size, frequency, rarity, minY, maxY, false,
                             com.maxlananas.fawebim.core.function.Operations.OreDeepslate.NONE,
                             java.util.concurrent.ThreadLocalRandom.current());
-                    ctx.actor().message(Msg.success(changed + " block(s) affected"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Generated", changed, "block(s)");
                 };
 
 
@@ -1543,8 +1536,7 @@ public final class Commands {
                     int changed = com.maxlananas.fawebim.core.function.Operations.ores(ctx.world(), session,
                             ctx.selection(), mask, deepslate,
                             java.util.concurrent.ThreadLocalRandom.current());
-                    ctx.actor().message(Msg.success(changed + " block(s) affected"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Generated", changed, "block(s)");
                 };
 
 
@@ -1561,8 +1553,7 @@ public final class Commands {
                             : new int[]{ctx.pattern(0).apply(ctx.placement())};
                     int changed = com.maxlananas.fawebim.core.function.Operations.fall(ctx.world(), session,
                             ctx.selection(), ctx.hasFlag("m"), replace);
-                    ctx.actor().message(Msg.success(changed + " block(s) affected"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Generated", changed, "block(s)");
                 };
 
     }
@@ -1580,8 +1571,7 @@ public final class Commands {
             Masks.ExtentHolder.set(session);
             double[] radii = sphereRadii(ctx.arg(1));
             int changed = sphere(session, ctx, radii, Parsers.pattern(ctx.arg(0), ctx), ctx.hasFlag("h"));
-            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
-            flush(ctx, session);
+            flush(ctx, session, "Created", changed, "block(s)");
         };
 
         CommandRegistry.Entry hollowSphere = registry.register("//hsphere");
@@ -1595,8 +1585,7 @@ public final class Commands {
             Masks.ExtentHolder.set(session);
             double[] radii = sphereRadii(ctx.arg(1));
             int changed = sphere(session, ctx, radii, Parsers.pattern(ctx.arg(0), ctx), true);
-            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
-            flush(ctx, session);
+            flush(ctx, session, "Created", changed, "block(s)");
         };
 
         CommandRegistry.Entry cylinder = registry.register("//cyl");
@@ -1612,8 +1601,7 @@ public final class Commands {
             double[] radii = cylinderRadii(ctx.arg(1));
             int changed = com.maxlananas.fawebim.core.function.Operations.cylinder(session, ctx.placement(),
                     radii, ctx.intArg(2, 1), Parsers.pattern(ctx.arg(0), ctx), ctx.hasFlag("h"), 0);
-            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
-            flush(ctx, session);
+            flush(ctx, session, "Created", changed, "block(s)");
         };
 
         CommandRegistry.Entry hollowCylinder = registry.register("//hcyl");
@@ -1633,8 +1621,7 @@ public final class Commands {
             }
             int changed = com.maxlananas.fawebim.core.function.Operations.cylinder(session, ctx.placement(),
                     radii, ctx.intArg(2, 1), Parsers.pattern(ctx.arg(0), ctx), true, thickness);
-            ctx.actor().message(Msg.success("Created shape: " + Msg.formatNumber(changed) + " block(s)"));
-            flush(ctx, session);
+            flush(ctx, session, "Created", changed, "block(s)");
         };
 
         registerPyramidAndCone();
@@ -1688,8 +1675,7 @@ public final class Commands {
                     boolean hollowShape = ctx.hasFlag("h");
                     int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, hollowShape);
-                    ctx.actor().message(Msg.success("Created pyramid: " + changed + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Created", changed, "block(s)");
                 };
 
 
@@ -1705,8 +1691,7 @@ public final class Commands {
                     int size = ctx.intArg(1);
                     int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, true);
-                    ctx.actor().message(Msg.success("Created pyramid: " + changed + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Created", changed, "block(s)");
                 };
 
 
@@ -1737,9 +1722,7 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     int changed = com.maxlananas.fawebim.core.function.Operations.cone(session, ctx.placement(),
                             pattern, radiusX, radiusZ, height, !ctx.hasFlag("h"), thickness);
-                    ctx.actor().message(Msg.success("Cone created: " + Msg.formatNumber(changed)
-                            + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Created", changed, "block(s)");
                 };
 
     }
@@ -1762,9 +1745,16 @@ public final class Commands {
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
                             ctx.selection(), session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, ctx.hasFlag("c"));
                     ctx.session().setClipboard(clipboard);
-                    ctx.actor().message(Msg.success("Copied " + Msg.formatNumber(clipboard.volume())
-                            + " block(s) (" + clipboard.entities().size() + " entities"
-                            + (clipboard.hasBiomes() ? ", biomes" : "") + ")"));
+                    StringBuilder detail = new StringBuilder(Msg.count(clipboard.volume()))
+                            .append("\u00a77 block(s) to your clipboard");
+                    if (!clipboard.entities().isEmpty()) {
+                        detail.append(", ").append(Msg.count(clipboard.entities().size()))
+                                .append("\u00a77 entities");
+                    }
+                    if (clipboard.hasBiomes()) {
+                        detail.append(", \u00a77biomes");
+                    }
+                    ctx.actor().message(Msg.result("Copied", detail.toString()));
                 };
 
 
@@ -1790,11 +1780,18 @@ public final class Commands {
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
                             region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
                     ctx.session().setClipboard(clipboard);
-                    ctx.actor().message(Msg.success("Cut ")
-                            .append(Msg.value(Msg.formatNumber(clipboard.volume()) + " block(s)"))
-                            .append(" to your clipboard in ")
-                            .append(Msg.value(timer.phrase())));
-                    flush(ctx, session);
+                    StringBuilder detail = new StringBuilder(Msg.count(clipboard.volume()))
+                            .append("\u00a77 block(s) to your clipboard");
+                    if (!clipboard.entities().isEmpty()) {
+                        detail.append(", ").append(Msg.count(clipboard.entities().size()))
+                                .append("\u00a77 entities");
+                    }
+                    if (clipboard.hasBiomes()) {
+                        detail.append(", \u00a77biomes");
+                    }
+                    detail.append(" in \u00a7b").append(timer.phrase());
+                    ctx.actor().message(Msg.result("Cut", detail.toString()));
+                    session.flushQueue();
                 };
 
 
@@ -1852,8 +1849,7 @@ public final class Commands {
                                 destination.add(clipboard.getWidth(), clipboard.getHeight(), clipboard.getLength()),
                                 com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     }
-                    ctx.actor().message(Msg.success("Pasted " + Msg.formatNumber(changed) + " block(s)"));
-                    flush(ctx, session);
+                    flush(ctx, session, "Pasted", changed, "block(s)");
                 };
 
 

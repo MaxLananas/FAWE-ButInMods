@@ -180,9 +180,34 @@ public final class Msg {
         return true;
     }
 
+    /** The marker in front of a heading or a result line. */
+    private static final String MARKER = "\u00a78\u00bb ";
+
     /** A heading: the mod's cyan-to-blue run, which every listing starts with. */
     public static Msg title(String text) {
-        return new Msg(gradient(text, 0x8FE3FF, 0x6C9BFF));
+        return new Msg(MARKER + gradient(text, 0x8FE3FF, 0x6C9BFF));
+    }
+
+    /**
+     * The one line a command answers with: the marker, what it did in the mod's
+     * gradient, then the detail, whose values already carry their own colour.
+     *
+     * <p>Every command that touches the world or the session ends on one of
+     * these, so an answer is recognisable at a glance - which edit it was, what
+     * it changed and how long it took - instead of a row of flat grey text.</p>
+     */
+    public static Msg result(String label, String detail) {
+        return new Msg(MARKER + gradient(label, 0x8FE3FF, 0x6C9BFF) + "\u00a77: " + detail);
+    }
+
+    /** A result with nothing to add: {@code » label}. */
+    public static Msg result(String label) {
+        return new Msg(MARKER + gradient(label, 0x8FE3FF, 0x6C9BFF));
+    }
+
+    /** {@code §b12} - a count, ready to sit inside a result line. */
+    public static String count(long value) {
+        return NUMBER + formatNumber(value);
     }
 
     /**

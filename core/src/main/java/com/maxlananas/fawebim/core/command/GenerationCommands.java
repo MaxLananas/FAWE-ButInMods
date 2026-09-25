@@ -72,7 +72,7 @@ final class GenerationCommands {
                     ctx.intArg(7, 0), ctx.intArg(8, 0), ctx.intArg(9, 3), new Random());
             int changed = gen.generate(ctx.world(), session, region);
             session.flushQueue();
-            ctx.actor().message(Msg.success(changed + " block(s) affected"));
+            ctx.actor().message(Msg.result("Generated", Msg.count(changed) + "\u00a77 block(s) affected"));
         };
     }
 
@@ -111,7 +111,7 @@ final class GenerationCommands {
             EditSession session = ctx.editSession("img");
             int changed = ImageGen.place(session, image, ctx.placement(), threshold, randomize);
             session.flushQueue();
-            ctx.actor().message(Msg.success("Image applied: " + changed + " block(s) changed"));
+            ctx.actor().message(Msg.result("Image applied", Msg.count(changed) + "\u00a77 block(s) changed"));
         };
     }
 
@@ -187,7 +187,7 @@ final class GenerationCommands {
                 }
             }
             session.flushQueue();
-            ctx.actor().message(Msg.success("Biome set for " + changed + " biome cell(s)"));
+            ctx.actor().message(Msg.result("Biome set", "for " + Msg.count(changed) + "\u00a77 biome cell(s)"));
         };
     }
 
@@ -265,7 +265,8 @@ final class GenerationCommands {
                     planted++;
                 }
             }
-            ctx.actor().message(Msg.success("Planted " + planted + " tree(s) out of " + attempts + " attempt(s)"));
+            ctx.actor().message(Msg.result("Planted", Msg.count(planted) + "\u00a77 tree(s) out of "
+                    + Msg.count(attempts) + "\u00a77 attempt(s)"));
         };
     }
 
@@ -291,7 +292,8 @@ final class GenerationCommands {
                 throw CommandRegistry.error("Unknown feature '" + name
                         + "'. Use a namespaced feature id such as minecraft:trees_oak or minecraft:ore_gold");
             }
-            ctx.actor().message(Msg.success("Placed feature " + name + " at " + position));
+            ctx.actor().message(Msg.result("Placed feature", Msg.value(name).raw() + "\u00a77 at "
+                    + Msg.value(position).raw()));
         };
     }
 
@@ -313,7 +315,8 @@ final class GenerationCommands {
                 throw CommandRegistry.error("Unknown structure '" + name
                         + "'. Try a worldgen structure id such as minecraft:village_plains");
             }
-            ctx.actor().message(Msg.success("Generated structure " + name + " at " + min));
+            ctx.actor().message(Msg.result("Generated structure", Msg.value(name).raw() + "\u00a77 at "
+                    + Msg.value(min).raw()));
         };
     }
 
@@ -430,7 +433,7 @@ final class GenerationCommands {
                 }
             }
             session.flushQueue();
-            ctx.actor().message(Msg.success("Generated " + changed + " block(s)"));
+            ctx.actor().message(Msg.result("Generated", Msg.count(changed) + "\u00a77 block(s)"));
         };
     }
 

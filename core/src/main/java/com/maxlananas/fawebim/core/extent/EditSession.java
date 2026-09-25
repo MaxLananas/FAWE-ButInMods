@@ -553,16 +553,27 @@ public final class EditSession implements Extent {
         }
     }
 
+    /**
+     * The one line a world-editing command answers with: the label of what it
+     * did, how many blocks that was and how long it took.
+     *
+     * <p>The time is what tells a player whether a selection is one they can
+     * work with: a million blocks is a second or a minute depending on the
+     * machine, the size and the side effects they left on.</p>
+     */
+    public Msg result(String label, long changed, String unit) {
+        return Msg.result(label, Msg.count(changed) + "\u00a77 " + unit + " affected in "
+                + "\u00a7b" + com.maxlananas.fawebim.core.util.Timer.phrase(elapsed()));
+    }
+
     /** Convenience for messages: format the operation summary. */
     public Msg summary() {
-        // The time is what tells a player whether a selection is one they can
-        // work with: a million blocks is a second or a minute depending on the
-        // machine, the size and the side effects they left on.
-        return Msg.success("Operation completed: ")
-                .append(Msg.value(blocksChanged + " block(s)"))
-                .append(" affected in ")
-                .append(Msg.value(com.maxlananas.fawebim.core.util.Timer.phrase(
-                        (System.currentTimeMillis() - openedAt) / 1000.0)));
+        return result("Operation completed", blocksChanged, "block(s)");
+    }
+
+    /** How long this session has been open, in seconds. */
+    public double elapsed() {
+        return (System.currentTimeMillis() - openedAt) / 1000.0;
     }
 
     /** Thrown when the session's block change limit is hit. */

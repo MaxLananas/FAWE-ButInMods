@@ -56,8 +56,9 @@ final class ClipboardExtras {
                 com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
             }
             ctx.session().setClipboard(clipboard);
-            ctx.actor().message(Msg.success("Lazily copied " + Msg.formatNumber(clipboard.volume())
-                    + " block(s) to the clipboard" + (ctx.hasFlag("e") ? " without entities" : "")));
+            ctx.actor().message(Msg.result("Lazily copied", Msg.count(clipboard.volume())
+                    + "\u00a77 block(s) to the clipboard"
+                    + (ctx.hasFlag("e") ? "\u00a77 without entities" : "")));
         };
     }
 

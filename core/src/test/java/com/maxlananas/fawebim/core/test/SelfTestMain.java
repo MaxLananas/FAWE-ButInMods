@@ -117,6 +117,8 @@ public final class SelfTestMain {
         testTimeLimiter();
         testUtil();
         testAnvilRegionFiles();
+        testEveryAnswerIsColoured();
+        testEveryCommandAnswersInColour();
 
         System.out.println();
         System.out.println("Self-tests: " + passed + " passed, " + failed + " failed");
@@ -1253,7 +1255,8 @@ public final class SelfTestMain {
         check("//smooth lowered the spike", world.getBlock(25, 74, 25) == air && world.getBlock(25, 72, 25) == air);
         check("//smooth kept a top block", world.getBlock(25, 70, 25) != air);
         check("//smooth reported the change", actor.messages().stream()
-                .anyMatch(message -> message.contains("Smoothed")));
+                .anyMatch(message -> plain(message).startsWith("\u00bb Smoothed: ")
+                        && plain(message).contains("block(s) affected in ")));
 
         // The optional second argument is the mask the height map is built from,
         // so a stone height map does not see a sand spike at all.
@@ -1266,7 +1269,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//smooth 1 stone");
         check("//smooth <mask> left the sand alone", world.getBlock(45, 74, 45) == sand);
         check("//smooth <mask> ran", actor.messages().stream()
-                .anyMatch(message -> message.contains("Smoothed")));
+                .anyMatch(message -> plain(message).startsWith("\u00bb Smoothed: ")));
 
         // //snowsmooth blurs the snow layer of every column instead of the terrain.
         for (int x = 20; x <= 30; x++) {
@@ -1970,7 +1973,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
         check("//snow runs at the placement", actor.messages().stream()
-                .anyMatch(m -> plain(m).contains("Snowed 49 block(s)")));
+                .anyMatch(m -> plain(m).startsWith("\u00bb Snowed: ") && plain(m).contains("49")));
     }
 
     private static void testSnapshotSelection() {
@@ -2009,7 +2012,8 @@ public final class SelfTestMain {
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/snapshot sel 1");
-        check("/snapshot sel takes an index", actor.lastMessage().contains("Snapshot set to:"));
+        check("/snapshot sel takes an index",
+                plain(actor.lastMessage()).startsWith("\u00bb Snapshot: set to "));
         check("and it holds the newest snapshot", actor.session().getActiveSnapshot() != null);
 
         actor.clearMessages();
@@ -2219,17 +2223,17 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//set minecraft:dirt");
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//green 6");
-        check("//green converts the dirt of its cylinder",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("Greened 81 block(s)")));
+        check("//green converts the dirt of its cylinder", actor.messages().stream()
+                .anyMatch(m -> plain(m).startsWith("\u00bb Greened: ") && plain(m).contains("81")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
-        check("//snow covers the disc around the player",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("Snowed 49 block(s)")));
+        check("//snow covers the disc around the player", actor.messages().stream()
+                .anyMatch(m -> plain(m).startsWith("\u00bb Snowed: ") && plain(m).contains("49")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//thaw 4");
-        check("//thaw takes the snow back",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("Thawed 49 block(s)")));
+        check("//thaw takes the snow back", actor.messages().stream()
+                .anyMatch(m -> plain(m).startsWith("\u00bb Thawed: ") && plain(m).contains("49")));
 
         // Fire in the cube around the player, and nothing else, goes away.
         CommandManager.get().dispatch(actor, "//pos1 7,30,7");
@@ -2237,8 +2241,8 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//set minecraft:fire");
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//extinguish 2");
-        check("//extinguish removes nearby fire",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("Extinguished 9 block(s)")));
+        check("//extinguish removes nearby fire", actor.messages().stream()
+                .anyMatch(m -> plain(m).startsWith("\u00bb Extinguished: ") && plain(m).contains("9")));
         CommandManager.get().dispatch(actor, "//count minecraft:fire");
         check("no fire is left", count(actor).equals("Count: 0"));
         // The command removes fire and nothing else, so the grass the fire sat on
@@ -2292,10 +2296,9 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(console, "//set minecraft:air");
         console.clearMessages();
         CommandManager.get().dispatch(console, "//hpyramid minecraft:stone 4");
-        // The command reports the shape and the flush reports the write, so the
-        // answer to look at is the one that names the shape.
         check("a shape still builds for a source without a player", console.messages().stream()
-                .anyMatch(message -> plain(message).contains("Created pyramid: 81 block(s)")));
+                .anyMatch(message -> plain(message).startsWith("\u00bb Created: ")
+                        && plain(message).contains("81")));
 
         // The same commands run for a player at the position they stand on.
         TestActor player = new TestActor("Builder", world, new BlockVector3(40, 71, 0));
@@ -2529,7 +2532,8 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(planter, "//pos1 0,70,0");
         CommandManager.get().dispatch(planter, "//pos2 7,79,7");
         CommandManager.get().dispatch(planter, "//forestgen 5 mega_redwood 5");
-        check("//forestgen takes a WorldEdit tree type", planter.lastMessage().contains("Planted"));
+        check("//forestgen takes a WorldEdit tree type",
+                plain(planter.lastMessage()).startsWith("\u00bb Planted: "));
         planter.clearMessages();
         CommandManager.get().dispatch(planter, "//forestgen 5 palm 5");
         check("//forestgen refuses an unknown tree type",
@@ -2836,8 +2840,8 @@ public final class SelfTestMain {
                         + "\u00a7x\u00a7f\u00a7f\u00a7f\u00a7f\u00a7f\u00a7fb"));
         check("a gradient still reads as its text", Msg.of(black).plain().equals("ab"));
         check("a one character word is left alone", Msg.gradient("a", 0, 0xFFFFFF).equals("a"));
-        check("a title is a gradient", Msg.title("Settings").plain().equals("Settings")
-                && Msg.title("Settings").raw().startsWith("\u00a7x"));
+        check("a title is a gradient with the marker", Msg.title("Settings").plain().equals("\u00bb Settings")
+                && Msg.title("Settings").raw().startsWith("\u00a78\u00bb \u00a7x"));
 
         // The listings a player sees carry the heading, not just the helpers.
         TestWorld world = new TestWorld("chat");
@@ -2887,8 +2891,8 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cut");
         String answer = actor.messages().isEmpty() ? "" : plain(actor.messages().get(0));
-        check("//cut reports the blocks and the time",
-                answer.startsWith("Cut ") && answer.contains("block(s) to your clipboard in "));
+        check("//cut reports the blocks and the time", answer.startsWith("\u00bb Cut: ")
+                && answer.contains("block(s) to your clipboard in "));
 
         int left = 0;
         for (int y = 64; y <= 69; y++) {
@@ -2935,7 +2939,8 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel sphere");
         check("//sel sphere sets it", actor.messages().stream()
-                .anyMatch(message -> message.contains("Selection type set to sphere")));
+                .anyMatch(message -> plain(message).startsWith("\u00bb Selection type: ")
+                        && plain(message).contains("sphere")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel");
         check("//sel reports the new type", actor.messages().stream()
@@ -2996,6 +3001,86 @@ public final class SelfTestMain {
         }
         check("a counting check still expires", thrown);
         check("a counting check counts what it was given", expired.processed() > 100);
+    }
+
+    /**
+     * Every answer the engine sent while these checks ran must carry a colour.
+     * A command whose text reaches chat without one is a command that reads as
+     * flat grey next to the rest, and this walks the whole corpus of the run -
+     * every command the checks dispatch - to catch the ones that still do.
+     */
+    private static void testEveryAnswerIsColoured() {
+        section("chat colour");
+        List<String> plain = new ArrayList<>();
+        for (String message : TestActor.receivedMessages()) {
+            if (message.indexOf('\u00a7') < 0) {
+                plain.add(message);
+            }
+        }
+        System.out.println("    answers seen: " + TestActor.receivedMessages().size());
+        check("every answer carries a colour", plain.isEmpty());
+        for (String message : plain) {
+            System.out.println("    uncoloured: " + message);
+        }
+    }
+
+    /**
+     * Walks the whole command surface: every registered name is dispatched with
+     * a few argument shapes of its own, and every answer that comes back - the
+     * result line, the usage error, the refusal - must carry a colour. This is
+     * what makes "every command is coloured" a measurement over all of them
+     * instead of a claim about the ones the other checks happen to run.
+     */
+    private static void testEveryCommandAnswersInColour() {
+        section("command colour");
+        // Each shape is tried with a fresh world and actor: a shape that turns
+        // into a world edit must not change what the next command sees.
+        String[][] shapes = {
+            {},
+            {"stone"},
+            {"3"},
+            {"-1"},
+            {"stone", "3"},
+        };
+        List<String> uncoloured = new ArrayList<>();
+        List<String> broken = new ArrayList<>();
+        int answers = 0;
+        for (CommandRegistry.Entry entry : CommandManager.get().registry().all()) {
+            // One world per command: a shape is free to edit it, the next command
+            // still starts from a flat one, and the whole surface is walked in a
+            // minute rather than building a world per line.
+            TestWorld world = new TestWorld("colour");
+            world.fillFlat(70);
+            TestActor actor = new TestActor("Colour", world, new BlockVector3(0, 71, 0));
+            for (String[] shape : shapes) {
+                StringBuilder line = new StringBuilder(entry.name);
+                for (String argument : shape) {
+                    line.append(' ').append(argument);
+                }
+                int before = TestActor.receivedMessages().size();
+                try {
+                    CommandManager.get().dispatch(actor, line.toString());
+                } catch (Throwable failure) {
+                    broken.add(line + " threw " + failure);
+                }
+                List<String> sent = TestActor.receivedMessages();
+                for (int i = before; i < sent.size(); i++) {
+                    answers++;
+                    if (sent.get(i).indexOf('\u00a7') < 0) {
+                        uncoloured.add(line + " -> " + sent.get(i));
+                    }
+                }
+            }
+        }
+        System.out.println("    answers checked: " + answers);
+        check("every command answers in colour", uncoloured.isEmpty());
+        check("no command throws out of the dispatcher", broken.isEmpty());
+        for (String message : uncoloured) {
+            System.out.println("    uncoloured: " + message);
+        }
+        for (String message : broken) {
+            System.out.println("    threw: " + message);
+        }
     }
 
     private static void testUtil() {

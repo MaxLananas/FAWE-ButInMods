@@ -91,11 +91,11 @@ final class ToolUtilCommands {
             Brush brush = targetBrush(ctx);
             if (ctx.args().isEmpty()) {
                 brush.setMask(null);
-                ctx.actor().message(Msg.success("Brush mask disabled"));
+                ctx.actor().message(Msg.result("Brush mask", "cleared"));
                 return;
             }
             brush.setMask(Parsers.mask(ctx.joined(0), ctx));
-            ctx.actor().message(Msg.success("Brush mask set to " + ctx.joined(0)));
+            ctx.actor().message(Msg.result("Brush mask", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
     }
 
@@ -116,7 +116,7 @@ final class ToolUtilCommands {
             Brush brush = targetBrush(ctx);
             Pattern pattern = ctx.pattern(0);
             brush.setFill(pattern);
-            ctx.actor().message(Msg.success("Brush material set to " + ctx.joined(0)));
+            ctx.actor().message(Msg.result("Brush material", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
     }
 
@@ -138,7 +138,7 @@ final class ToolUtilCommands {
                 throw CommandRegistry.error("Range must be between 1 and " + Config.get().maxBrushRange);
             }
             settings.setRange(range);
-            ctx.actor().message(Msg.success("Brush range set to " + range + " block(s)"));
+            ctx.actor().message(Msg.result("Brush range", "set to " + Msg.count(range) + "\u00a77 block(s)"));
         };
     }
 
@@ -163,7 +163,7 @@ final class ToolUtilCommands {
                 throw CommandRegistry.error("Size must be between 1 and " + limit);
             }
             brush.setRadius(size);
-            ctx.actor().message(Msg.success("Brush size set to " + size));
+            ctx.actor().message(Msg.result("Brush size", "set to " + Msg.count(size)));
         };
     }
 
@@ -183,11 +183,11 @@ final class ToolUtilCommands {
             BrushSettings settings = requireBrush(ctx).settings();
             if (ctx.args().isEmpty()) {
                 settings.setTraceMask(null);
-                ctx.actor().message(Msg.success("Trace mask cleared; traces stop at solid blocks"));
+                ctx.actor().message(Msg.result("Trace mask", "cleared; traces stop at solid blocks"));
                 return;
             }
             settings.setTraceMask(Parsers.mask(ctx.joined(0), ctx));
-            ctx.actor().message(Msg.success("Trace mask set to " + ctx.joined(0)));
+            ctx.actor().message(Msg.result("Trace mask", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
     }
 
@@ -210,7 +210,7 @@ final class ToolUtilCommands {
             if (ctx.args().isEmpty()) {
                 settings.setTransform(null);
                 ctx.session().getTransformSet().clear();
-                ctx.actor().message(Msg.success("Brush transform cleared"));
+                ctx.actor().message(Msg.result("Brush transform", "cleared"));
                 return;
             }
             Transform transform = parseTransform(ctx);
@@ -218,7 +218,7 @@ final class ToolUtilCommands {
             Transforms.Set set = new Transforms.Set();
             set.add(transform);
             ctx.session().getTransformSet().setTransforms(set);
-            ctx.actor().message(Msg.success("Brush transform set to " + ctx.joined(0)));
+            ctx.actor().message(Msg.result("Brush transform", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
     }
 
@@ -269,7 +269,8 @@ final class ToolUtilCommands {
                 }
             }
             settings.setTargetMode(mode.ordinal());
-            ctx.actor().message(Msg.success("Target mode: " + mode.name().toLowerCase(Locale.ROOT)));
+            ctx.actor().message(Msg.result("Target mode", "set to "
+                    + Msg.value(mode.name().toLowerCase(Locale.ROOT)).raw()));
         };
     }
 
@@ -292,7 +293,7 @@ final class ToolUtilCommands {
             BrushSettings settings = requireBrush(ctx).settings();
             int offset = ctx.intArg(0, 0);
             settings.setTargetOffset(offset);
-            ctx.actor().message(Msg.success("Target offset set to " + offset));
+            ctx.actor().message(Msg.result("Target offset", "set to " + Msg.value(offset).raw()));
         };
     }
 
@@ -339,7 +340,7 @@ final class ToolUtilCommands {
             if (ctx.args().isEmpty()) {
                 brush.settings().setScrollAction(null);
                 brush.settings().setScrollActionName("");
-                ctx.actor().message(Msg.success("Scroll action unset"));
+                ctx.actor().message(Msg.result("Scroll action", "cleared"));
                 return;
             }
             String name = ctx.arg(0);
@@ -366,9 +367,10 @@ final class ToolUtilCommands {
             brush.settings().setScrollAction(scroll);
             brush.settings().setScrollActionName((name + " " + String.join(" ", rest)).trim());
             if (action == com.maxlananas.fawebim.core.tool.Scroll.Action.NONE || scroll == null) {
-                ctx.actor().message(Msg.success("Scroll action unset"));
+                ctx.actor().message(Msg.result("Scroll action", "cleared"));
             } else {
-                ctx.actor().message(Msg.success("Scroll action set to " + name.toLowerCase(Locale.ROOT)));
+                ctx.actor().message(Msg.result("Scroll action", "set to "
+                    + Msg.value(name.toLowerCase(Locale.ROOT)).raw()));
             }
         };
     }
@@ -413,13 +415,13 @@ final class ToolUtilCommands {
             } else {
                 BrushFactory.unbind(session);
             }
-            ctx.actor().message(Msg.success("Left click brush: " + bound.describe()));
+            ctx.actor().message(Msg.result("Left click brush", Msg.value(bound.describe()).raw()));
             return;
         }
         if (previousSecondary != null) {
             BrushFactory.bindSecondary(session, previousSecondary, ctx.actor());
         }
-        ctx.actor().message(Msg.success("Right click brush: " + bound.describe()));
+        ctx.actor().message(Msg.result("Right click brush", Msg.value(bound.describe()).raw()));
     }
 
     /**
@@ -442,7 +444,7 @@ final class ToolUtilCommands {
         entry.handler = ctx -> {
             if (ctx.args().isEmpty()) {
                 ctx.session().setSourceMask(null);
-                ctx.actor().message(Msg.success("Brush source mask cleared"));
+                ctx.actor().message(Msg.result("Brush source mask", "cleared"));
                 return;
             }
             Mask mask = Parsers.mask(ctx.joined(0), ctx);
@@ -450,7 +452,7 @@ final class ToolUtilCommands {
             // mask is what a tool with no mask of its own reads through.
             targetBrush(ctx).settings().setSourceMask(mask);
             ctx.session().setSourceMask(mask);
-            ctx.actor().message(Msg.success("Brush source mask set to " + ctx.joined(0)));
+            ctx.actor().message(Msg.result("Brush source mask", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
     }
 

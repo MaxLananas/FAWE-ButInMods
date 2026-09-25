@@ -84,7 +84,7 @@ final class SnapshotCommands {
                 throw CommandRegistry.error("No snapshot named '" + ctx.arg(0) + "'");
             }
             ctx.session().setActiveSnapshot(path);
-            ctx.actor().message(Msg.success("Using snapshot " + path.getFileName()));
+            ctx.actor().message(Msg.result("Using snapshot", Msg.value(path.getFileName()).raw()));
         };
     }
 
@@ -176,7 +176,7 @@ final class SnapshotCommands {
             }
             Path path = snapshots.get(index - 1);
             ctx.session().setActiveSnapshot(path);
-            ctx.actor().message(Msg.success("Snapshot set to: " + path.getFileName()));
+            ctx.actor().message(Msg.result("Snapshot", "set to " + Msg.value(path.getFileName()).raw()));
         };
     }
 

@@ -16,6 +16,9 @@ import java.util.UUID;
 /** An actor that records the messages it receives, used by the self-tests. */
 public final class TestActor implements Actor {
 
+    /** Everything the engine sent any actor of this run, for the formatting check. */
+    private static final java.util.List<String> ALL_RECEIVED = new java.util.ArrayList<>();
+
     private final String name;
     private final UUID uuid;
     private final World world;
@@ -147,6 +150,15 @@ public final class TestActor implements Actor {
     @Override
     public void message(Msg message) {
         messages.add(message.raw());
+        ALL_RECEIVED.add(message.raw());
+    }
+
+    /**
+     * Every message the engine handed any actor of this run, which the
+     * formatting check walks to prove no answer reaches chat without colour.
+     */
+    static java.util.List<String> receivedMessages() {
+        return ALL_RECEIVED;
     }
 
     @Override

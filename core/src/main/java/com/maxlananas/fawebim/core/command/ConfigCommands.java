@@ -170,8 +170,8 @@ final class ConfigCommands {
         if (error != null) {
             throw CommandRegistry.error(error);
         }
-        ctx.actor().message(Msg.success(setting.key() + ": " + before + " -> " + setting.value()
-                + " (saved to config/fawebim.yml)"));
+        ctx.actor().message(Msg.result(setting.key(), Msg.value(before).raw() + "\u00a77 -> "
+                + Msg.value(setting.value()).raw() + "\u00a77 (saved to config/fawebim.yml)"));
     }
 
     /** {@code /fawebim reset <key>} — puts one value back to the shipped default. */
@@ -184,18 +184,18 @@ final class ConfigCommands {
         String before = setting.value();
         setting.reset();
         Config.get().save();
-        ctx.actor().message(Msg.success(setting.key() + ": " + before + " -> " + setting.value()
-                + " (default)"));
+        ctx.actor().message(Msg.result(setting.key(), Msg.value(before).raw() + "\u00a77 -> "
+                + Msg.value(setting.value()).raw() + "\u00a77 (default)"));
     }
 
     private void reload(Ctx ctx) {
         Config.get().reload();
-        ctx.actor().message(Msg.success("Configuration reloaded from config/fawebim.yml"));
+        ctx.actor().message(Msg.result("Configuration", "reloaded from config/fawebim.yml"));
     }
 
     private void save(Ctx ctx) {
         Config.get().save();
-        ctx.actor().message(Msg.success("Configuration written to config/fawebim.yml"));
+        ctx.actor().message(Msg.result("Configuration", "written to config/fawebim.yml"));
     }
 
     private void path(Ctx ctx) {
