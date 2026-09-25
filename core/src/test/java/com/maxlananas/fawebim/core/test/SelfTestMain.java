@@ -28,6 +28,7 @@ import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.platform.Config;
+import com.maxlananas.fawebim.core.session.SideEffect;
 import com.maxlananas.fawebim.core.platform.Setting;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
@@ -97,6 +98,7 @@ public final class SelfTestMain {
         testSelectionTransforms();
         testTerrainCommands();
         testEntityCommands();
+        testSessionOptions();
         testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
@@ -1832,6 +1834,139 @@ public final class SelfTestMain {
      * the weather would, {@code //thaw} takes the snow and ice back, and
      * {@code //extinguish} removes the fire in a cube around the player.
      */
+    private static void testSessionOptions() {
+        section("session options");
+        TestWorld world = new TestWorld("options");
+        world.fillFlat(30);
+        TestActor actor = new TestActor("Tuner", world, new BlockVector3(0, 30, 0));
+        CommandManager.get().dispatch(actor, "//pos1 0,30,0");
+        CommandManager.get().dispatch(actor, "//pos2 8,30,8");
+
+        // /fast takes the state it is asked for, and says when it is already there.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fast");
+        check("/fast turns the mode on", actor.lastMessage().contains("Fast mode enabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fast true");
+        check("/fast names the state it is already in",
+                actor.lastMessage().contains("Fast mode already enabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fast false");
+        check("/fast turns the mode off again", actor.lastMessage().contains("Fast mode disabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fast maybe");
+        check("a state that is neither true nor false is refused",
+                actor.lastMessage().contains("Expected true or false"));
+
+        // What fast mode leaves out of an edit.
+        CommandManager.get().dispatch(actor, "/fast true");
+        EditSession fast = new EditSession(world, actor.session(), "fast-mode");
+        check("fast mode defers lighting", fast.sideEffects().isDelayed(SideEffect.LIGHTING));
+        check("fast mode skips the per-block notification of a change",
+                !fast.sideEffects().shouldApply(SideEffect.UPDATE));
+        CommandManager.get().dispatch(actor, "/fast false");
+
+        // //perf reads one side effect, sets one, and refuses what it does not have.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//perf lighting");
+        check("//perf reports a side effect",
+                actor.lastMessage().contains("Side effect \"Lighting\" is set to On"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//perf lighting off");
+        check("//perf sets a side effect",
+                actor.lastMessage().contains("Side effect \"Lighting\" set to Off"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//perf lighting off");
+        check("//perf says when the state is already set",
+                actor.lastMessage().contains("already Off"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//perf nope");
+        check("an unknown side effect lists the ones the engine has",
+                actor.lastMessage().contains("Unknown side effect 'nope'"));
+
+        // The lighting pass the side effect gates is the one the flush runs.
+        world.relitChunks().clear();
+        CommandManager.get().dispatch(actor, "//set minecraft:stone");
+        check("lighting off leaves the chunks it wrote unlit", world.relitChunks().isEmpty());
+        CommandManager.get().dispatch(actor, "//perf lighting on");
+        world.relitChunks().clear();
+        CommandManager.get().dispatch(actor, "//set minecraft:dirt");
+        check("lighting on relights the chunks of the edit", !world.relitChunks().isEmpty());
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//perf off");
+        check("a state on its own applies to every side effect",
+                actor.messages().stream().anyMatch(m -> m.contains("All side effects set to Off")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//perf");
+        check("//perf on its own names every side effect",
+                actor.messages().stream().anyMatch(m -> m.contains("Lighting"))
+                        && actor.messages().stream().anyMatch(m -> m.contains("Client sync")));
+        CommandManager.get().dispatch(actor, "//perf on");
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//update");
+        check("//update applies the default side effects",
+                actor.lastMessage().contains("Applied side effects to the selection."));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//update neighbors,lighting");
+        check("//update takes a list of side effects",
+                actor.lastMessage().contains("Applied side effects to the selection."));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//update nonsense");
+        check("an unknown side effect is refused by //update",
+                actor.lastMessage().contains("Unknown side effect 'nonsense'"));
+
+        // //reorder takes upstream's three names and, as upstream does, keeps the
+        // mode at fast.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//reorder");
+        check("//reorder names the mode", actor.lastMessage().contains("The reorder mode is fast"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//reorder multi");
+        check("//reorder accepts multi", actor.lastMessage().contains("The reorder mode is now fast"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//reorder full");
+        check("//reorder only accepts upstream's names",
+                actor.lastMessage().contains("Reorder mode must be none, multi or fast"));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//drawsel false");
+        check("//drawsel knows the state it is already in",
+                actor.lastMessage().contains("Selection drawing already disabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//drawsel true");
+        check("//drawsel takes a state", actor.lastMessage().contains("Selection drawing enabled"));
+        CommandManager.get().dispatch(actor, "//drawsel false");
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//watchdog inactive");
+        check("//watchdog takes a hook mode", actor.lastMessage().contains("Watchdog hook now inactive."));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//watchdog inactive");
+        check("//watchdog says when the hook is already there",
+                actor.lastMessage().contains("Watchdog hook already inactive."));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//watchdog sideways");
+        check("a hook mode that is neither is refused",
+                actor.lastMessage().contains("Hook mode must be active or inactive"));
+        CommandManager.get().dispatch(actor, "//watchdog active");
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/we trace active");
+        check("/we trace takes a hook mode", actor.lastMessage().contains("Trace mode now active."));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//pos1 0,30,0");
+        CommandManager.get().dispatch(actor, "//pos2 2,30,2");
+        CommandManager.get().dispatch(actor, "//set minecraft:sand");
+        check("a traced edit prints what it wrote",
+                actor.messages().stream().anyMatch(m -> m.contains("Trace: set 0,30,0")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/we trace inactive");
+        check("/we trace turns the hook off", actor.lastMessage().contains("Trace mode now inactive."));
+        check("the session stops tracing with it", !actor.session().isTracing());
+    }
+
     private static void testEntityCommands() {
         section("entities");
         TestWorld world = new TestWorld("entities");

@@ -268,6 +268,19 @@ public final class FabricWorld implements World {
      */
     @Override
     public int applyChunk(ChunkSet set) {
+        return applyChunk(set, com.maxlananas.fawebim.core.session.SideEffectSet.defaults());
+    }
+
+    @Override
+    public int applyChunk(ChunkSet set, com.maxlananas.fawebim.core.session.SideEffectSet sideEffects) {
+        boolean lighting = sideEffects.shouldApply(
+                com.maxlananas.fawebim.core.session.SideEffect.LIGHTING);
+        boolean notify = sideEffects.shouldApply(
+                com.maxlananas.fawebim.core.session.SideEffect.UPDATE);
+        boolean neighbors = sideEffects.shouldApply(
+                com.maxlananas.fawebim.core.session.SideEffect.NEIGHBORS);
+        boolean network = sideEffects.shouldApply(
+                com.maxlananas.fawebim.core.session.SideEffect.NETWORK);
         // The flush looks its chunk up itself: it runs once per chunk, so the
         // cache is no help here, and the write it is about to make must not go
         // through an entry that another walk put there.
@@ -285,12 +298,13 @@ public final class FabricWorld implements World {
         //    the positions and nothing else - the clients get the chunk, not a
         //    packet per block - so the states are only collected below that.
         int count = set.size();
-        boolean resend = count >= Math.max(1, Config.get().chunkResendThreshold);
+        boolean resend = network && count >= Math.max(1, Config.get().chunkResendThreshold);
         int[] changedXs = new int[count];
         int[] changedYs = new int[count];
         int[] changedZs = new int[count];
-        BlockState[] before = resend ? null : new BlockState[count];
-        BlockState[] after = resend ? null : new BlockState[count];
+        boolean perBlockNotify = !resend && (notify || neighbors);
+        BlockState[] before = perBlockNotify ? new BlockState[count] : null;
+        BlockState[] after = perBlockNotify ? new BlockState[count] : null;
         int[] slot = {0};
         var chunkSource = level.getChunkSource();
         boolean ticking = chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
@@ -356,21 +370,35 @@ public final class FabricWorld implements World {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int index = 0; index < changedCount; index++) {
             pos.set(changedXs[index], changedYs[index], changedZs[index]);
-            chunkSource.getLightEngine().checkBlock(pos);
+            if (lighting) {
+                chunkSource.getLightEngine().checkBlock(pos);
+            }
             if (resend) {
                 // The whole chunk is about to be sent, so the section the cell
                 // belongs to does not also have to be marked for a broadcast.
-                if (ticking && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {
+                if (network && ticking
+                        && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {
                     cache.blockChanged(pos);
                 }
-            } else {
+            } else if (perBlockNotify) {
                 BlockState was = before[index];
                 BlockState now = after[index];
                 if (now != was) {
                     // Vanilla's own notification: it hands the section to the
                     // game's next broadcast and tells the mobs the ground moved.
-                    level.sendBlockUpdated(new BlockPos(changedXs[index], changedYs[index], changedZs[index]),
-                            was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
+                    if (notify) {
+                        level.sendBlockUpdated(
+                                new BlockPos(changedXs[index], changedYs[index], changedZs[index]),
+                                was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
+                    }
+                    if (neighbors) {
+                        // A neighbour update can schedule a block tick, which
+                        // keeps the position it was given, so this path hands it
+                        // one of its own rather than the reused cursor.
+                        level.updateNeighborsAt(
+                                new BlockPos(changedXs[index], changedYs[index], changedZs[index]),
+                                now.getBlock());
+                    }
                 }
             }
         }
@@ -428,6 +456,14 @@ public final class FabricWorld implements World {
             if (touched) {
                 chunk.markUnsaved();
             }
+        }
+    }
+
+    @Override
+    public void resendChunks(Collection<BlockVector2> chunks) {
+        var lightEngine = level.getChunkSource().getLightEngine();
+        for (BlockVector2 chunk : chunks) {
+            sendChunk(level.getChunk(chunk.x(), chunk.z()), lightEngine);
         }
     }
 

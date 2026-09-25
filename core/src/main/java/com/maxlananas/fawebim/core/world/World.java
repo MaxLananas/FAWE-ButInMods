@@ -59,6 +59,23 @@ public interface World extends Extent {
     int applyChunk(ChunkSet set);
 
     /**
+     * Applies a chunk buffer with the side effects the edit was given: lighting
+     * per block, the notification of each changed block, the neighbouring blocks
+     * and the sync of the affected chunks to the clients.
+     *
+     * <p>A platform without those extra passes keeps the plain write, which is
+     * what the default does; the ones it does have are skipped when the edit
+     * turned them off.</p>
+     *
+     * @param set the prepared chunk data
+     * @param sideEffects the side effects to apply while writing
+     * @return the number of blocks that changed
+     */
+    default int applyChunk(ChunkSet set, com.maxlananas.fawebim.core.session.SideEffectSet sideEffects) {
+        return applyChunk(set);
+    }
+
+    /**
      * Writes the data of a block entity whose block the buffer just put down.
      *
      * <p>A platform takes the matching block entity out of the chunk and loads
@@ -71,6 +88,10 @@ public interface World extends Extent {
 
     /** Ensures the given chunks get relit after a bulk edit. */
     void relight(Collection<BlockVector2> chunks);
+
+    /** Sends the given chunks, with their light, to everyone who can see them. */
+    default void resendChunks(Collection<BlockVector2> chunks) {
+    }
 
     /** Queues a "every neighbour of this block should update" notification. */
     default void queueBlockUpdate(int x, int y, int z) {

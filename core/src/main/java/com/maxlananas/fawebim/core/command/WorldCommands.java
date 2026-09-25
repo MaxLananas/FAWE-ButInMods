@@ -102,13 +102,22 @@ final class WorldCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Toggle the trace hook for your edits";
+        entry.description = "Toggles trace hook";
         entry.group = "worldedit";
+        entry.arguments.add("[active|inactive]");
         entry.handler = ctx -> {
-            boolean tracing = !ctx.session().isTracing();
-            ctx.session().setTracing(tracing);
-            ctx.actor().message(Msg.success("Trace hook " + (tracing ? "enabled" : "disabled")
-                    + (tracing ? "; the next edit prints its steps" : "")));
+            com.maxlananas.fawebim.core.session.LocalSession session = ctx.session();
+            Boolean mode = ctx.args().isEmpty() ? null : Parsers.hookMode(ctx.arg(0));
+            boolean tracing = session.isTracing();
+            if (mode != null && mode == tracing) {
+                ctx.actor().message(Msg.info(tracing
+                        ? "Trace mode already active." : "Trace mode already inactive."));
+                return;
+            }
+            tracing = mode != null ? mode : !tracing;
+            session.setTracing(tracing);
+            ctx.actor().message(Msg.success(tracing
+                    ? "Trace mode now active." : "Trace mode now inactive."));
         };
     }
 

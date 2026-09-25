@@ -189,6 +189,16 @@ public final class Ctx {
         return editSession;
     }
 
+    /**
+     * Prints the trace of the edit this command ran, when the session has the
+     * trace hook on and a session was opened at all.
+     */
+    public void reportTrace() {
+        if (editSession != null) {
+            editSession.reportTrace(actor());
+        }
+    }
+
     /** The player's selection, or a clear error when there is none. */
     public Region selection() {
         if (selection == null) {

@@ -264,7 +264,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//test <value>` | — | Prints the given value back, used to check command parsing | implemented |
 | `//thaw [size] [height]` | — | Thaw snow and ice around you | implemented |
 | `//trim [mask]` | — | Minimize the selection to encompass matching blocks | implemented |
-| `//update` | — | Apply side effects and neighbour updates to the selection | implemented |
+| `//update [sideEffectSet]` | — | Apply side effects to your selection | implemented |
 | `//walls <pattern>` | — | Build the walls of the selection | implemented |
 | `//wea` | `/weanywhere`, `/worldeditanywhere` | Bypass region restrictions (there are none in the standalone mod) | implemented |
 | `//wer` | `/worldeditregion` | Select your allowed region (there are none in the standalone mod) | implemented |
@@ -292,7 +292,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//count <mask>` | — | Count the number of blocks matching a mask | implemented |
 | `//desel` | `//deselect` | Clear your selection | implemented |
 | `//distr [-p <page>]` | `//distribution` | Show the block distribution in the selection | implemented |
-| `//drawsel` | — | Draw the selection outline (uses particles, no client mod needed) | implemented |
+| `//drawsel [true\|false]` | — | Draw the selection outline (uses particles, no client mod needed) | implemented |
 | `//expand <amount> [reverseAmount] [direction]` | `/expand` | Expand the selection area | implemented |
 | `//hpos1` | — | Set position 1 to the block you are looking at | implemented |
 | `//hpos2` | — | Set position 2 to the block you are looking at | implemented |
@@ -357,13 +357,13 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//help [filter] [-p <page>]` | `/help` | List the commands | implemented |
 | `//masks` | — | List the available masks | implemented |
 | `//patterns` | — | List the available patterns | implemented |
-| `//reorder` | — | Reorder the blocks of edits as they run | implemented |
+| `//reorder [none\|multi\|fast]` | — | Sets the reorder mode of WorldEdit | implemented |
 | `//transforms` | — | List the available transforms | implemented |
 | `//version` | — | Show the mod version | implemented |
-| `//watchdog` | — | Changes watchdog hook state | implemented |
+| `//watchdog [active\|inactive]` | — | Changes watchdog hook state | implemented |
 | `//we [version\|reload\|trace\|help]` | `/we`, `/worldedit` | WorldEdit/FAWE information | implemented |
 | `/cs <filename> [args]` | `//cs` | Execute a CraftScript | implemented |
-| `/fast` | — | Toggle FAWE's fast mode for your session | implemented |
+| `/fast [true\|false]` | — | Toggle fast mode | implemented |
 | `/fawebim [gui\|settings\|set\|reset\|reload\|save\|path]` | `//fawebim`, `/fbm` | Open the configuration screen, or read and set the values in chat | implemented |
 | `/gmask [mask]` | `//gmask` | Set the global mask | implemented |
 | `/gtexture [pattern]` | `//gtexture`, `/material`, `//material` | Set the global pattern | implemented |
@@ -371,7 +371,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/limit [limit]` | `//limit` | Set the maximum number of blocks you can change | implemented |
 | `/macro <file> [args...]` | `/m` | Run a macro from the macros directory | implemented |
 | `/masks-list` | — | List every available mask | alias |
-| `/perf` | `//perf` | Show performance information | implemented |
+| `/perf [sideEffect] [newState]` | `//perf` | Toggle side effects for performance | implemented |
 | `/timeout [seconds]` | — | Set your operation timeout in seconds | implemented |
 | `/tips` | — | Toggle FAWE's tips on and off | implemented |
 | `placement` | `/placement`, `/toggleplace` | Select which placement position to use for schematics | implemented |
@@ -385,7 +385,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/we reload` | — | Reload the FAWE-BIM configuration | implemented |
 | `/we report [-p]` | `/report` | Write a report about this installation | implemented |
 | `/we threads` | `/threads` | Print all thread stacks | implemented |
-| `/we trace` | `/trace` | Toggle the trace hook for your edits | implemented |
+| `/we trace [active\|inactive]` | `/trace` | Toggles trace hook | implemented |
 | `/we tz [timezone]` | `/tz` | Set your timezone for snapshots | implemented |
 | `/we version` | `/we ver`, `/version`, `/ver` | Get the FAWE-BIM version | implemented |
 

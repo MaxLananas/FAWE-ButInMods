@@ -31,6 +31,74 @@ public final class Parsers {
 
     // ------------------------------------------------------------------ blocks
 
+    /** A true/false argument, refused when it is neither. */
+    public static boolean booleanArg(Ctx ctx, int index, boolean fallback) {
+        if (index >= ctx.args().size()) {
+            return fallback;
+        }
+        String value = ctx.arg(index).toLowerCase(java.util.Locale.ROOT);
+        return switch (value) {
+            case "true", "yes", "on", "1" -> true;
+            case "false", "no", "off", "0" -> false;
+            default -> throw CommandRegistry.error("Expected true or false, got '" + ctx.arg(index) + "'");
+        };
+    }
+
+    /** The {@code active}/{@code inactive} pair of upstream's {@code HookMode}. */
+    public static boolean hookMode(String word) {
+        return switch (word.toLowerCase(java.util.Locale.ROOT)) {
+            case "active" -> true;
+            case "inactive" -> false;
+            default -> throw CommandRegistry.error("Hook mode must be active or inactive, got '" + word + "'");
+        };
+    }
+
+    /**
+     * A side effect list, which is a comma separated list of names with an
+     * optional {@code =on}, {@code =off} or {@code =delayed} behind each one; a
+     * name on its own turns that effect on, and a state on its own applies to
+     * every effect, the way {@code /perf} takes it.
+     */
+    public static com.maxlananas.fawebim.core.session.SideEffectSet sideEffectSet(String input) {
+        com.maxlananas.fawebim.core.session.SideEffectSet set =
+                com.maxlananas.fawebim.core.session.SideEffectSet.defaults();
+        for (String part : input.split(",")) {
+            String token = part.trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            int separator = token.indexOf('=');
+            String name = separator < 0 ? token : token.substring(0, separator);
+            com.maxlananas.fawebim.core.session.SideEffect effect =
+                    com.maxlananas.fawebim.core.session.SideEffect.parse(name);
+            if (effect != null) {
+                com.maxlananas.fawebim.core.session.SideEffect.State state =
+                        com.maxlananas.fawebim.core.session.SideEffect.State.ON;
+                if (separator >= 0) {
+                    state = com.maxlananas.fawebim.core.session.SideEffect.State
+                            .parse(token.substring(separator + 1));
+                    if (state == null) {
+                        throw CommandRegistry.error("A side effect state must be on, off or delayed: '"
+                                + token + "'");
+                    }
+                }
+                set = set.with(effect, state);
+                continue;
+            }
+            com.maxlananas.fawebim.core.session.SideEffect.State state =
+                    com.maxlananas.fawebim.core.session.SideEffect.State.parse(token);
+            if (state == null) {
+                throw CommandRegistry.error("Unknown side effect '" + token + "'; try one of "
+                        + com.maxlananas.fawebim.core.session.SideEffect.names());
+            }
+            for (com.maxlananas.fawebim.core.session.SideEffect each
+                    : com.maxlananas.fawebim.core.session.SideEffect.values()) {
+                set = set.with(each, state);
+            }
+        }
+        return set;
+    }
+
     public static int block(Ctx ctx, String input) {
         BlockStateRegistry registry = BlockState.registry();
         int id = registry.parse(input);

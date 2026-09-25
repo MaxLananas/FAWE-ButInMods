@@ -64,6 +64,12 @@ public final class EditSession implements Extent {
     private boolean cancelled;
     private boolean tracing;
     private final List<String> traceLog = new ArrayList<>();
+    /**
+     * The side effects of this edit, resolved once when it opens: the session's
+     * set, with lighting and the per-block notifications deferred when the
+     * session runs in fast mode.
+     */
+    private final com.maxlananas.fawebim.core.session.SideEffectSet sideEffects;
     private boolean queueEnabled = true;
     /** When the session was opened, which is what queue.max-wait-ms measures. */
     private final long openedAt = System.currentTimeMillis();
@@ -81,11 +87,28 @@ public final class EditSession implements Extent {
         this.session = session;
         session.setLastWorldName(world.name());
         this.registry = BlockStateRegistryHolder.registry();
-        // With history turned off in the configuration the session records
-        // nothing, so //undo has nothing to undo and no record is kept.
+        com.maxlananas.fawebim.core.session.SideEffectSet effects = session.getSideEffectSet();
+        if (session.isFastMode()) {
+            // Fast mode is the promise that an edit writes blocks and little
+            // else: lighting waits for the flush and the per-block notifications
+            // are skipped, which is what the command warns about.
+            effects = effects
+                    .with(com.maxlananas.fawebim.core.session.SideEffect.LIGHTING,
+                            com.maxlananas.fawebim.core.session.SideEffect.State.DELAYED)
+                    .with(com.maxlananas.fawebim.core.session.SideEffect.NEIGHBORS,
+                            com.maxlananas.fawebim.core.session.SideEffect.State.OFF)
+                    .with(com.maxlananas.fawebim.core.session.SideEffect.UPDATE,
+                            com.maxlananas.fawebim.core.session.SideEffect.State.OFF);
+        }
+        this.sideEffects = effects;
+        // With history turned off in the configuration, or with the history side
+        // effect switched off in the session, the edit records nothing, so
+        // //undo has nothing to undo and no record is kept.
         this.record = recordHistory && com.maxlananas.fawebim.core.platform.Config.get().historyEnabled
+                && effects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.HISTORY)
                 ? session.getHistory().newRecord(description, world.name())
                 : null;
+        this.tracing = session.isTracing();
         this.limiter = new TimeLimiter(session.getTimeout() * 1000L);
         this.changeLimit = session.hasBlockChangeLimit() ? session.getMaxBlocksChanged() : -1;
         this.mask = session.getMask();
@@ -154,6 +177,41 @@ public final class EditSession implements Extent {
     public void setTracing(boolean tracing) {
         this.tracing = tracing;
     }
+
+    public boolean isTracing() {
+        return tracing;
+    }
+
+    /** The side effects this edit applies, resolved when it opened. */
+    public com.maxlananas.fawebim.core.session.SideEffectSet sideEffects() {
+        return sideEffects;
+    }
+
+    /**
+     * Prints what a traced edit did, which only the session flag turns on.
+     * A large edit records a line per block, so the report stops after a screen
+     * and counts the rest.
+     */
+    public void reportTrace(com.maxlananas.fawebim.core.actor.Actor actor) {
+        if (!tracing) {
+            return;
+        }
+        if (traceLog.isEmpty()) {
+            actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: no block was written"));
+            return;
+        }
+        int shown = Math.min(traceLog.size(), TRACE_REPORT_LIMIT);
+        for (int index = 0; index < shown; index++) {
+            actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: " + traceLog.get(index)));
+        }
+        if (traceLog.size() > shown) {
+            actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: "
+                    + (traceLog.size() - shown) + " more action(s)"));
+        }
+    }
+
+    /** How many traced actions a report prints before it counts the rest. */
+    private static final int TRACE_REPORT_LIMIT = 20;
 
     public List<String> getTraceLog() {
         return traceLog;
@@ -352,12 +410,14 @@ public final class EditSession implements Extent {
         for (ChunkSet chunk : pending) {
             if (!chunk.isEmpty()) {
                 world.loadChunk(chunk.chunkX(), chunk.chunkZ());
-                world.applyChunk(chunk);
+                world.applyChunk(chunk, sideEffects);
                 dirtyChunks.add(new BlockVector2(chunk.chunkX(), chunk.chunkZ()));
             }
         }
         if (!dirtyChunks.isEmpty()) {
-            world.relight(dirtyChunks);
+            if (sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.LIGHTING)) {
+                world.relight(dirtyChunks);
+            }
             dirtyChunks.clear();
         }
     }
@@ -369,6 +429,9 @@ public final class EditSession implements Extent {
 
     @Override
     public void addEntity(com.maxlananas.fawebim.core.world.EntityData data) {
+        if (!sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.ENTITY_EVENTS)) {
+            return;
+        }
         recordEntity(data, false);
         world.addEntity(data);
     }
@@ -384,6 +447,9 @@ public final class EditSession implements Extent {
 
     @Override
     public void removeEntity(com.maxlananas.fawebim.core.world.EntityData data) {
+        if (!sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.ENTITY_EVENTS)) {
+            return;
+        }
         recordEntity(data, true);
         world.removeEntity(data);
     }

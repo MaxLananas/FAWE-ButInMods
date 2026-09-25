@@ -16,6 +16,8 @@ import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.region.RegionSelector;
 import com.maxlananas.fawebim.core.session.LocalSession;
+import com.maxlananas.fawebim.core.session.SideEffect;
+import com.maxlananas.fawebim.core.session.SideEffectSet;
 import com.maxlananas.fawebim.core.transform.Transforms;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.Str;
@@ -249,12 +251,20 @@ public final class Commands {
         e10.description = "Draw the selection outline (uses particles, no client mod needed)";
         e10.requiresPlayer = true;
         e10.group = "selection";
+        e10.arguments.add("[true|false]");
         e10.handler = ctx -> {
                     LocalSession session = ctx.session();
-                    session.setDrawSelection(!session.isDrawSelection());
+                    boolean enabled = ctx.args().isEmpty()
+                            ? !session.isDrawSelection() : Parsers.booleanArg(ctx, 0, false);
+                    if (enabled == session.isDrawSelection()) {
+                        ctx.actor().message(Msg.info("Selection drawing already "
+                                + (enabled ? "enabled" : "disabled")));
+                        return;
+                    }
+                    session.setDrawSelection(enabled);
                     ctx.actor().updateSelectionOutline();
-                    ctx.actor().message(Msg.info("Selection drawing "
-                            + (session.isDrawSelection() ? "enabled" : "disabled")));
+                    ctx.actor().message(Msg.success("Selection drawing "
+                            + (enabled ? "enabled" : "disabled")));
                 };
 
 
@@ -2428,29 +2438,93 @@ public final class Commands {
 
     private void registerUtility() {
         CommandRegistry.Entry e81 = registry.register("/fast");
-        e81.description = "Toggle FAWE's fast mode for your session";
+        e81.description = "Toggle fast mode";
         e81.group = "utility";
+        e81.arguments.add("[true|false]");
         e81.handler = ctx -> {
                     LocalSession session = ctx.session();
-                    session.setFastMode(!session.isFastMode());
-                    ctx.actor().message(Msg.info("Fast mode "
-                            + (session.isFastMode() ? "§aenabled" : "§cdisabled")));
+                    boolean enabled = ctx.args().isEmpty()
+                            ? !session.isFastMode() : Parsers.booleanArg(ctx, 0, false);
+                    if (enabled == session.isFastMode()) {
+                        ctx.actor().message(Msg.info("Fast mode already "
+                                + (enabled ? "enabled" : "disabled") + "."));
+                        return;
+                    }
+                    session.setFastMode(enabled);
+                    ctx.actor().message(Msg.success(enabled
+                            ? "Fast mode enabled. Lighting in the affected chunks may be wrong"
+                                    + " and/or you may need to rejoin to see changes."
+                            : "Fast mode disabled."));
                 };
 
 
         CommandRegistry.Entry e82 = registry.register("/perf", "//perf");
-        e82.description = "Show performance information";
+        e82.description = "Toggle side effects for performance";
         e82.group = "utility";
+        e82.arguments.add("[sideEffect]");
+        e82.arguments.add("[newState]");
         e82.booleanFlags.add("h");
         e82.handler = ctx -> {
-                    Runtime runtime = Runtime.getRuntime();
-                    long used = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024;
-                    ctx.actor().message(Msg.keyValue("Threads", Thread.activeCount()));
-                    ctx.actor().message(Msg.keyValue("Memory", used + " MB used of "
-                            + runtime.totalMemory() / 1024 / 1024 + " MB"));
-                    ctx.actor().message(Msg.keyValue("History", ctx.session().getHistory().size()
-                            + " record(s), " + Msg.formatNumber(ctx.session().getHistory().totalChanges())
-                            + " change(s)"));
+                    LocalSession session = ctx.session();
+                    SideEffect effect = null;
+                    SideEffect.State newState = null;
+                    if (!ctx.args().isEmpty()) {
+                        effect = SideEffect.parse(ctx.arg(0));
+                        if (effect == null) {
+                            // A state on its own applies to every side effect.
+                            newState = SideEffect.State.parse(ctx.arg(0));
+                            if (newState == null) {
+                                throw CommandRegistry.error("Unknown side effect '" + ctx.arg(0)
+                                        + "'; try one of " + SideEffect.names());
+                            }
+                        }
+                    }
+                    if (effect != null && ctx.args().size() > 1) {
+                        newState = SideEffect.State.parse(ctx.arg(1));
+                        if (newState == null) {
+                            throw CommandRegistry.error("A side effect state must be on, off or delayed: '"
+                                    + ctx.arg(1) + "'");
+                        }
+                    }
+                    // -h prints the box instead of the one-line answer, the way
+                    // upstream's SideEffectBox does.
+                    boolean box = ctx.hasFlag("h");
+                    if (effect != null) {
+                        SideEffect.State current = session.getSideEffectSet().getState(effect);
+                        if (newState != null && newState == current) {
+                            if (!box) {
+                                ctx.actor().message(Msg.info("Side effect \"" + effect.getDisplayName()
+                                        + "\" is already " + newState.getDisplayName()));
+                            }
+                            return;
+                        }
+                        if (newState != null) {
+                            session.setSideEffectSet(session.getSideEffectSet().with(effect, newState));
+                            if (!box) {
+                                ctx.actor().message(Msg.success("Side effect \"" + effect.getDisplayName()
+                                        + "\" set to " + newState.getDisplayName()));
+                            }
+                        } else {
+                            ctx.actor().message(Msg.info("Side effect \"" + effect.getDisplayName()
+                                    + "\" is set to " + current.getDisplayName()));
+                        }
+                    } else if (newState != null) {
+                        SideEffectSet set = session.getSideEffectSet();
+                        for (SideEffect each : SideEffect.values()) {
+                            set = set.with(each, newState);
+                        }
+                        session.setSideEffectSet(set);
+                        if (!box) {
+                            ctx.actor().message(Msg.success("All side effects set to "
+                                    + newState.getDisplayName()));
+                        }
+                    }
+                    if (effect == null || box) {
+                        for (SideEffect each : SideEffect.values()) {
+                            ctx.actor().message(Msg.keyValue(each.getDisplayName(),
+                                    session.getSideEffectSet().getState(each).getDisplayName()));
+                        }
+                    }
                 };
 
 
@@ -2619,8 +2693,12 @@ public final class Commands {
                             ctx.actor().message(Msg.success("Configuration reloaded"));
                         }
                         case "trace" -> {
-                            ctx.session().setTracing(!ctx.session().isTracing());
-                            ctx.actor().message(Msg.info("Tracing " + (ctx.session().isTracing() ? "on" : "off")));
+                            // The same switch as the /we trace command, for a
+                            // line that reached /we itself.
+                            boolean tracing = !ctx.session().isTracing();
+                            ctx.session().setTracing(tracing);
+                            ctx.actor().message(Msg.success(tracing
+                                    ? "Trace mode now active." : "Trace mode now inactive."));
                         }
                         default -> ctx.actor().message(Msg.info("Usage: /we version|reload|trace"));
                     }

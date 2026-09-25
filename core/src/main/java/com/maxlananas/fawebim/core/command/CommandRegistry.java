@@ -288,6 +288,7 @@ public final class CommandRegistry {
                 return true;
             }
             entry.handler.run(context);
+            context.reportTrace();
             return true;
         } catch (CommandException e) {
             actor.message(Msg.error(e.getMessage()));

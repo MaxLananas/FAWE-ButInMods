@@ -204,11 +204,20 @@ final class UtilityExtras {
         }
         entry.description = "Changes watchdog hook state";
         entry.group = "utility";
+        entry.arguments.add("[active|inactive]");
         entry.handler = ctx -> {
-            boolean enabled = !ctx.session().isWatchdogEnabled();
-            ctx.session().setWatchdogEnabled(enabled);
-            ctx.actor().message(Msg.success("Watchdog hook " + (enabled ? "enabled" : "disabled")
-                    + (enabled ? "" : "; long edits will run to completion")));
+            LocalSession session = ctx.session();
+            Boolean mode = ctx.args().isEmpty() ? null : Parsers.hookMode(ctx.arg(0));
+            boolean active = session.isWatchdogEnabled();
+            if (mode != null && mode == active) {
+                ctx.actor().message(Msg.info(active
+                        ? "Watchdog hook already active." : "Watchdog hook already inactive."));
+                return;
+            }
+            active = mode != null ? mode : !active;
+            session.setWatchdogEnabled(active);
+            ctx.actor().message(Msg.success(active
+                    ? "Watchdog hook now active." : "Watchdog hook now inactive."));
         };
     }
 
@@ -244,32 +253,37 @@ final class UtilityExtras {
     }
 
     /**
-     * {@code //reorder} — whether blocks are re-ordered while an edit runs, which
-     * lets a pattern that reads the world (a clipboard brush, an ore vein) see a
-     * consistent state. {@code multi} reorders one edit at a time, {@code full}
-     * also reorders within the operation.
+     * {@code //reorder} — the order the blocks of an edit are written in.
+     *
+     * <p>WorldEdit deprecated the setter of this mode, and FAWE's session keeps
+     * answering {@code fast} whatever it was given, so an edit is written in the
+     * order it was generated and the command only names the mode back; the names
+     * it accepts are upstream's, spelled the way its converter spells them.</p>
      */
     private void reorder() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//reorder");
         if (entry == null) {
             return;
         }
-        entry.description = "Reorder the blocks of edits as they run";
+        entry.description = "Sets the reorder mode of WorldEdit";
         entry.group = "utility";
+        entry.arguments.add("[none|multi|fast]");
         entry.handler = ctx -> {
-            LocalSession session = ctx.session();
-            if (!ctx.args().isEmpty()) {
-                session.setReorderMode(switch (ctx.arg(0).toLowerCase(Locale.ROOT)) {
-                    case "none" -> LocalSession.REORDER_NONE;
-                    case "multi" -> LocalSession.REORDER_MULTI;
-                    case "full" -> LocalSession.REORDER_FULL;
-                    default -> throw CommandRegistry.error("Reorder must be none, multi or full");
-                });
+            if (ctx.args().isEmpty()) {
+                ctx.actor().message(Msg.info("The reorder mode is " + LocalSession.REORDER_NAME));
             } else {
-                session.setReorderMode((session.getReorderMode() + 1) % 3);
+                requireReorderMode(ctx.arg(0));
+                ctx.actor().message(Msg.success("The reorder mode is now " + LocalSession.REORDER_NAME));
             }
-            ctx.actor().message(Msg.success("Reorder mode: " + session.reorderModeName()));
         };
+    }
+
+    /** The three names upstream accepts for {@code //reorder}. */
+    private static void requireReorderMode(String word) {
+        String mode = word.toLowerCase(Locale.ROOT);
+        if (!mode.equals("none") && !mode.equals("multi") && !mode.equals("fast")) {
+            throw CommandRegistry.error("Reorder mode must be none, multi or fast, got '" + word + "'");
+        }
     }
 
     /** {@code //gsmask} — the mask applied to the blocks an operation reads. */

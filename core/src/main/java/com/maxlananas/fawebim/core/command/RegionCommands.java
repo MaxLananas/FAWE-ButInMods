@@ -5,10 +5,13 @@ import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.EntityRemovers;
 import com.maxlananas.fawebim.core.function.HeightMaps;
 import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.Region;
+import com.maxlananas.fawebim.core.session.SideEffect;
+import com.maxlananas.fawebim.core.session.SideEffectSet;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.noise.Noise;
@@ -17,7 +20,9 @@ import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Region commands, mirroring WorldEdit's {@code RegionCommands}.
@@ -250,26 +255,49 @@ final class RegionCommands {
     }
 
     /**
-     * {@code //update} — applies the side effects of every block in the
-     * selection, which is what WorldEdit's {@code /update} does after a paste
-     * with side effects disabled.
+     * {@code //update} — applies side effects to the selection.
+     *
+     * <p>The blocks do not change; what runs is the work an edit would have done
+     * around them: lighting the chunks, telling the neighbours of every position,
+     * and sending what changed back to the clients. Which of those run is what
+     * the side effect list says, and without one the default set decides, which
+     * is the lighting pass.</p>
      */
     private void update() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//update");
         if (entry == null) {
             return;
         }
-        entry.description = "Apply side effects and neighbour updates to the selection";
+        entry.description = "Apply side effects to your selection";
         entry.group = "region";
         entry.requiresSelection = true;
+        entry.arguments.add("[sideEffectSet]");
         entry.handler = ctx -> {
             World world = ctx.world();
             Region region = ctx.selection();
-            long updated = region.forEachPosition((x, y, z) -> {
-                world.queueBlockUpdate(x, y, z);
-                return true;
-            });
-            ctx.actor().message(Msg.success(updated + " block update(s) queued"));
+            SideEffectSet sideEffects = ctx.args().isEmpty()
+                    ? SideEffectSet.defaults() : Parsers.sideEffectSet(ctx.arg(0));
+            if (sideEffects.shouldApply(SideEffect.NEIGHBORS)) {
+                region.forEachPosition((x, y, z) -> {
+                    world.queueBlockUpdate(x, y, z);
+                    return true;
+                });
+            }
+            boolean lighting = sideEffects.shouldApply(SideEffect.LIGHTING);
+            if (lighting || sideEffects.shouldApply(SideEffect.NETWORK)) {
+                Set<BlockVector2> chunks = new LinkedHashSet<>();
+                region.forEachPosition((x, y, z) -> {
+                    chunks.add(new BlockVector2(x >> 4, z >> 4));
+                    return true;
+                });
+                if (lighting) {
+                    world.relight(chunks);
+                }
+                if (sideEffects.shouldApply(SideEffect.NETWORK)) {
+                    world.resendChunks(chunks);
+                }
+            }
+            ctx.actor().message(Msg.success("Applied side effects to the selection."));
         };
     }
 

@@ -26,7 +26,7 @@ public final class LocalSession {
     private Mask mask;
     private Pattern pattern;
     private boolean placeAtPos1 = true;
-    private boolean fastMode = true;
+    private boolean fastMode = false;
     private boolean superPickaxeEnabled = true;
     private int superPickaxeMode = 1; // 0 = single, 1 = area, 2 = recursive
     private int superPickaxeRadius = 1;
@@ -35,10 +35,7 @@ public final class LocalSession {
     private long maxBrushRadius = com.maxlananas.fawebim.core.platform.Config.get().defaultMaxBrushRadius;
     private double maxBrushRange = com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange;
     private int changeLimit = -1;
-    private boolean sideEffectsLighting = true;
-    private boolean sideEffectsNeighbors = true;
-    private boolean sideEffectsEntities = true;
-    private boolean disableOtherSideEffects = false;
+    private SideEffectSet sideEffectSet = SideEffectSet.defaults();
     private int wandItemId = -1;
     private String lastFailedMessage;
     private boolean includeAir = false;
@@ -49,7 +46,6 @@ public final class LocalSession {
     private String toolBindingName;
     private Mask sourceMask;
     private int placementMode = PLACEMENT_FIRST;
-    private int reorderMode = REORDER_NONE;
     private boolean cancelled;
     private boolean tips;
     private boolean watchdog = true;
@@ -68,10 +64,12 @@ public final class LocalSession {
     public static final int PLACEMENT_LAST = 1;
     public static final int PLACEMENT_ORIGIN = 2;
 
-    /** Reordering modes of {@code //reorder}. */
-    public static final int REORDER_NONE = 0;
-    public static final int REORDER_MULTI = 1;
-    public static final int REORDER_FULL = 2;
+    /**
+     * The reorder mode of {@code //reorder}, which upstream deprecated the setter
+     * of and FAWE always answers with {@code fast}: an edit is written in the
+     * order it was generated whatever the command printed.
+     */
+    public static final String REORDER_NAME = "fast";
 
     public LocalSession() {
         this(new History(com.maxlananas.fawebim.core.platform.Config.get().historySize));
@@ -156,22 +154,6 @@ public final class LocalSession {
             case PLACEMENT_LAST -> "last";
             case PLACEMENT_ORIGIN -> "origin";
             default -> "first";
-        };
-    }
-
-    public int getReorderMode() {
-        return reorderMode;
-    }
-
-    public void setReorderMode(int reorderMode) {
-        this.reorderMode = reorderMode;
-    }
-
-    public String reorderModeName() {
-        return switch (reorderMode) {
-            case REORDER_MULTI -> "multi";
-            case REORDER_FULL -> "full";
-            default -> "none";
         };
     }
 
@@ -501,30 +483,13 @@ public final class LocalSession {
         return changeLimit > 0;
     }
 
-    public boolean isSideEffectsLighting() {
-        return sideEffectsLighting;
+    /** The side effects every edit of this session applies. */
+    public SideEffectSet getSideEffectSet() {
+        return sideEffectSet;
     }
 
-    public boolean isSideEffectsNeighbors() {
-        return sideEffectsNeighbors;
-    }
-
-    public boolean isSideEffectsEntities() {
-        return sideEffectsEntities;
-    }
-
-    public void setSideEffects(boolean lighting, boolean neighbors, boolean entities) {
-        this.sideEffectsLighting = lighting;
-        this.sideEffectsNeighbors = neighbors;
-        this.sideEffectsEntities = entities;
-    }
-
-    public void setDisableOtherSideEffects(boolean value) {
-        this.disableOtherSideEffects = value;
-    }
-
-    public boolean isDisableOtherSideEffects() {
-        return disableOtherSideEffects;
+    public void setSideEffectSet(SideEffectSet sideEffectSet) {
+        this.sideEffectSet = sideEffectSet == null ? SideEffectSet.defaults() : sideEffectSet;
     }
 
     public int getWandItemId() {
