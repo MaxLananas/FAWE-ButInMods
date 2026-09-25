@@ -38,7 +38,7 @@ public final class TestActor implements Actor {
         this.world = world;
         this.position = position;
         this.player = player;
-        this.session = SessionManager.get().of(uuid);
+        this.session = SessionManager.get().of(uuid, name);
     }
 
     /**

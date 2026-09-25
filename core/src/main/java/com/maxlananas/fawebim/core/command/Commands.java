@@ -1540,23 +1540,6 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e54 = registry.register("//caves");
-        e54.description = "Generate cave systems in the selection";
-        e54.group = "generation";
-        e54.requiresSelection = true;
-        e54.arguments.add("[frequency]");
-        e54.arguments.add("[rarity]");
-        e54.arguments.add("[size]");
-        e54.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.caves(ctx.world(), session,
-                            ctx.selection(), new java.util.Random(),
-                            ctx.intArg(0, 40), ctx.doubleArg(1, 0.5), ctx.intArg(2, 8));
-                    ctx.actor().message(Msg.success("Generated " + Msg.formatNumber(changed) + " cave block(s)"));
-                    flush(ctx, session);
-                };
-
-
         CommandRegistry.Entry e55 = registry.register("//fall");
         e55.description = "Have the blocks in the selection fall";
         e55.group = "generation";
@@ -2049,39 +2032,15 @@ public final class Commands {
         e66.arguments.add("[times]");
         e66.arguments.add("[player]");
         e66.handler = ctx -> {
-                    int steps = Math.max(1, ctx.intArg(0, 1));
-                    com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx, 0, 1);
-                    if (target != ctx.session()) {
-                        int undone = undoSteps(ctx, target, steps);
-                        ctx.actor().message(undone == 0 ? Msg.error("Nothing to undo")
-                                : Msg.success("Undid " + Msg.formatNumber(undone)
-                                + " block change(s) for " + target.ownerName()));
-                        return;
-                    }
-                    int undone = 0;
-                    for (int i = 0; i < steps; i++) {
-                        var record = ctx.session().getHistory().undo();
-                        if (record == null) {
-                            break;
-                        }
-                        EditSession session = new EditSession(ctx.world(), ctx.session(), "undo", false);
-                        for (var sets : record.changes().values()) {
-                            for (var set : sets) {
-                                session.applyChangeSet(set, true);
-                            }
-                        }
-                        for (var sets : record.biomeChanges().values()) {
-                            for (var set : sets) {
-                                session.applyBiomeChangeSet(set, true);
-                            }
-                        }
-                        undone += record.changeCount() + record.biomeChangeCount();
-                        flush(ctx, session);
-                    }
+                    int steps = undoCount(ctx.argument(0));
+                    com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx);
+                    int undone = historySteps(ctx, target, steps, true);
+                    String who = target == ctx.session() ? "" : " for " + target.ownerName();
                     if (undone == 0) {
-                        ctx.actor().message(Msg.error("Nothing to undo"));
+                        ctx.actor().message(Msg.error("Nothing to undo" + who));
                     } else {
-                        ctx.actor().message(Msg.success("Undid " + Msg.formatNumber(undone) + " block change(s)"));
+                        ctx.actor().message(Msg.success("Undid " + Msg.formatNumber(undone)
+                                + " block change(s)" + who));
                     }
                 };
 
@@ -2092,31 +2051,15 @@ public final class Commands {
         e67.arguments.add("[times]");
         e67.arguments.add("[player]");
         e67.handler = ctx -> {
-                    int steps = Math.max(1, ctx.intArg(0, 1));
-                    int redone = 0;
-                    for (int i = 0; i < steps; i++) {
-                        var record = ctx.session().getHistory().redo();
-                        if (record == null) {
-                            break;
-                        }
-                        EditSession session = new EditSession(ctx.world(), ctx.session(), "redo", false);
-                        for (var sets : record.changes().values()) {
-                            for (var set : sets) {
-                                session.applyChangeSet(set, false);
-                            }
-                        }
-                        for (var sets : record.biomeChanges().values()) {
-                            for (var set : sets) {
-                                session.applyBiomeChangeSet(set, false);
-                            }
-                        }
-                        redone += record.changeCount();
-                        flush(ctx, session);
-                    }
+                    int steps = undoCount(ctx.argument(0));
+                    com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx);
+                    int redone = historySteps(ctx, target, steps, false);
+                    String who = target == ctx.session() ? "" : " for " + target.ownerName();
                     if (redone == 0) {
-                        ctx.actor().message(Msg.error("Nothing to redo"));
+                        ctx.actor().message(Msg.error("Nothing to redo" + who));
                     } else {
-                        ctx.actor().message(Msg.success("Redid " + Msg.formatNumber(redone) + " block change(s)"));
+                        ctx.actor().message(Msg.success("Redid " + Msg.formatNumber(redone)
+                                + " block change(s)" + who));
                     }
                 };
 
@@ -2131,65 +2074,73 @@ public final class Commands {
 
     }
 
-    // -------------------------------------------------------------------- biome
-
     /**
      * The session {@code //undo} and {@code //redo} act on: the caller's own, or
      * the one belonging to the player named behind the count.
      *
-     * <p>The count and the name share the optional tail, so a first argument
-     * that is a number is the count and anything else is the name.</p>
+     * <p>The count and the name share the optional tail, so the argument that is
+     * a number is the count and the one that is not is the name.</p>
      */
-    private static com.maxlananas.fawebim.core.session.LocalSession historyTarget(Ctx ctx, int first, int second) {
-        Ctx.Argument argument = ctx.argument(second);
-        if (argument == null || argument.value().isEmpty()) {
+    private static com.maxlananas.fawebim.core.session.LocalSession historyTarget(Ctx ctx) {
+        Ctx.Argument named = ctx.argument(1);
+        if (named == null || named.isNumber()) {
             // A name in the count's place, for a line that names a player and
             // leaves the count at one.
-            argument = ctx.argument(first);
-            if (argument != null && !argument.value().isEmpty() && !argument.isNumber()) {
-                return otherSession(ctx, argument.value());
-            }
+            named = ctx.argument(0);
+        }
+        if (named == null || named.isNumber()) {
             return ctx.session();
         }
-        if (argument.isNumber()) {
-            return ctx.session();
-        }
-        return otherSession(ctx, argument.value());
+        return otherSession(ctx, named.value());
     }
 
     private static com.maxlananas.fawebim.core.session.LocalSession otherSession(Ctx ctx, String name) {
         com.maxlananas.fawebim.core.session.LocalSession other =
                 com.maxlananas.fawebim.core.session.SessionManager.get().byName(name);
         if (other == null) {
-            throw CommandRegistry.error("No session found for player '" + name + "'");
+            throw CommandRegistry.error("Unable to find session for " + name);
         }
         return other;
     }
 
-    /** Runs {@code steps} undos of a session, returning the changes put back. */
-    private static int undoSteps(Ctx ctx, com.maxlananas.fawebim.core.session.LocalSession session, int steps) {
-        int undone = 0;
+    /** The count {@code //undo} and {@code //redo} take: one unless a number was given. */
+    private static int undoCount(Ctx.Argument first) {
+        return first == null || !first.isNumber() ? 1 : Math.max(1, (int) Math.round(
+                Double.parseDouble(first.value())));
+    }
+
+    /**
+     * Runs {@code steps} edits of a session's history in one direction, putting
+     * back what an undo takes off or replaying what a redo returns. The changes
+     * are written without being recorded again, which is what keeps an undo out
+     * of the history it is walking.
+     */
+    private int historySteps(Ctx ctx, com.maxlananas.fawebim.core.session.LocalSession session,
+                             int steps, boolean undo) {
+        int changed = 0;
         for (int i = 0; i < steps; i++) {
-            var record = session.getHistory().undo();
+            var record = undo ? session.getHistory().undo() : session.getHistory().redo();
             if (record == null) {
                 break;
             }
-            EditSession edit = new EditSession(ctx.world(), session, "undo", false);
+            EditSession edit = new EditSession(ctx.world(), session, undo ? "undo" : "redo", false);
             for (var sets : record.changes().values()) {
                 for (var set : sets) {
-                    edit.applyChangeSet(set, true);
+                    edit.applyChangeSet(set, undo);
                 }
             }
             for (var sets : record.biomeChanges().values()) {
                 for (var set : sets) {
-                    edit.applyBiomeChangeSet(set, true);
+                    edit.applyBiomeChangeSet(set, undo);
                 }
             }
-            undone += record.changeCount() + record.biomeChangeCount();
+            changed += record.changeCount() + record.biomeChangeCount();
             edit.flushQueue();
         }
-        return undone;
+        return changed;
     }
+
+    // -------------------------------------------------------------------- biome
 
     private void registerBiome() {
         CommandRegistry.Entry e69 = registry.register("/setbiome", "//setbiome", "//biome");

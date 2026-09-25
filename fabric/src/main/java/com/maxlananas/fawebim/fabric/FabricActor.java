@@ -67,7 +67,7 @@ public final class FabricActor implements Actor {
 
     @Override
     public LocalSession session() {
-        return SessionManager.get().of(uuid());
+        return SessionManager.get().of(uuid(), name());
     }
 
     @Override

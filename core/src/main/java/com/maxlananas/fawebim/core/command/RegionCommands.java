@@ -3,10 +3,12 @@ package com.maxlananas.fawebim.core.command;
 import com.maxlananas.fawebim.core.brush.Creatures;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.EntityRemovers;
+import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.function.HeightMaps;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.Region;
@@ -14,7 +16,6 @@ import com.maxlananas.fawebim.core.session.SideEffect;
 import com.maxlananas.fawebim.core.session.SideEffectSet;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
-import com.maxlananas.fawebim.core.util.noise.Noise;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.Extent;
@@ -305,7 +306,7 @@ final class RegionCommands {
     private void snowSmooth() {
         // Upstream spells this one with a single slash; players type it with the
         // usual double slash next to //smooth, so both are accepted.
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("snowsmooth", "/snowsmooth", "//snowsmooth");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//snowsmooth", "/snowsmooth");
         if (entry == null) {
             return;
         }
@@ -493,8 +494,8 @@ final class RegionCommands {
     }
 
     /**
-     * {@code //blob} — builds a sphere whose radius is perturbed by Perlin noise,
-     * which is FAWE's "distorted sphere" generator.
+     * {@code //blob} — FAWE's distorted sphere: a sphere of the given size whose
+     * surface is pushed in and out by noise, squashed to the radii it was given.
      */
     private void blob() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//blob");
@@ -504,46 +505,25 @@ final class RegionCommands {
         entry.description = "Create a distorted sphere";
         entry.group = "generation";
         entry.arguments.add("pattern");
+        entry.arguments.add("[size]");
         entry.arguments.add("[radius]");
-        entry.booleanFlags.add("h");
+        entry.arguments.add("[roundness]");
+        entry.arguments.add("[frequency]");
+        entry.arguments.add("[amplitude]");
         entry.handler = ctx -> {
             Pattern pattern = ctx.pattern(0);
-            double radius = ctx.doubleArg(1, 5);
-            if (radius < 0.5 || radius > 500) {
-                throw CommandRegistry.error("Radius must be between 0.5 and 500");
-            }
-            BlockVector3 origin = ctx.placement();
+            double size = ctx.doubleArg(1, 5);
+            Vector3 radius = ctx.vectorArg(2, 5);
+            double sphericity = ctx.doubleArg(3, 100) / 100;
+            double frequency = ctx.doubleArg(4, 30) / 100;
+            double amplitude = ctx.doubleArg(5, 50) / 100;
+            double max = Math.max(radius.x(), Math.max(radius.y(), radius.z()));
+            BlockVector3 position = ctx.placement();
             EditSession session = ctx.editSession("blob");
-            int changed = 0;
-            Noise noise = new Noise.Perlin(origin.hashCode());
-            boolean hollow = ctx.hasFlag("h");
-            double inner = radius - 1.5;
-            int min = (int) Math.floor(-radius - 3);
-            int max = (int) Math.ceil(radius + 3);
-            for (int x = min; x <= max; x++) {
-                for (int y = min; y <= max; y++) {
-                    for (int z = min; z <= max; z++) {
-                        double distance = Math.sqrt(x * x + y * y + z * z);
-                        double perturbed = radius
-                                + noise.noise(x * 0.12, y * 0.12, z * 0.12) * radius * 0.3;
-                        if (distance > perturbed) {
-                            continue;
-                        }
-                        if (hollow && distance < inner) {
-                            continue;
-                        }
-                        BlockVector3 position = origin.add(x, y, z);
-                        session.checkTimeout();
-                        if (session.setBlock(position.x(), position.y(), position.z(),
-                                pattern.apply(position))) {
-                            changed++;
-                        }
-                    }
-                }
-            }
+            int changed = Operations.makeBlob(ctx.world(), session, position, pattern, size,
+                    frequency, amplitude, radius.divide(max), sphericity);
             session.flushQueue();
-            ctx.actor().message(Msg.success("Blob: " + changed + " block(s) changed"));
+            ctx.actor().message(Msg.success("Blob: " + changed + " block(s) created"));
         };
     }
-
 }

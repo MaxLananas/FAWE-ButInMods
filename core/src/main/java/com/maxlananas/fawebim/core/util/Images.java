@@ -40,6 +40,11 @@ public final class Images {
         }
     }
 
+    /** Wraps a decoded pixel buffer, {@code 0xRRGGBBAA} per pixel. */
+    public static PixelSource of(int width, int height, int[] pixels) {
+        return new PixelSource(width, height, pixels);
+    }
+
     /** An indexed pixel buffer with the alpha channel ignored. */
     public static final class PixelSource {
 

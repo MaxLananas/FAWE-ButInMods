@@ -19,7 +19,8 @@ import java.util.Map;
 public final class TestBlockStateRegistry implements BlockStateRegistry {
 
     private static final String[] BLOCKS = {
-            "minecraft:air", "minecraft:stone", "minecraft:cobblestone", "minecraft:dirt",
+            "minecraft:air", "minecraft:cave_air", "minecraft:void_air", "minecraft:stone",
+            "minecraft:cobblestone", "minecraft:dirt",
             "minecraft:coarse_dirt", "minecraft:grass_block", "minecraft:mycelium",
             "minecraft:podzol", "minecraft:farmland", "minecraft:sand", "minecraft:red_sand",
             "minecraft:gravel", "minecraft:clay", "minecraft:bedrock", "minecraft:water",

@@ -160,8 +160,8 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//blob <pattern> [radius]` | — | Create a distorted sphere | implemented |
-| `//caves [frequency] [rarity] [size]` | — | Generate cave systems in the selection | implemented |
+| `//blob <pattern> [size] [radius] [roundness] [frequency] [amplitude]` | — | Create a distorted sphere | implemented |
+| `//caves [size] [frequency] [rarity] [minY] [maxY] [systemFrequency] [individualRarity] [pocketChance] [pocketMin] [pocketMax]` | `/carvecaves` | Generates a cave network | implemented |
 | `//cone <pattern> <radii> [height] [thickness]` | — | Generate a cone | implemented |
 | `//curve <pattern> [thickness]` | — | Draw a spline through the convex selection's vertices | implemented |
 | `//cyl <pattern> <radius> [height]` | — | Create a cyl at your position | implemented |
@@ -177,7 +177,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//hcyl <pattern> <radius> [height]` | — | Create a cyl at your position | implemented |
 | `//hpyramid <pattern> <size>` | `/hpyramid` | Generate a hollow pyramid | implemented |
 | `//hsphere <pattern> <radius> [height]` | — | Create a sphere at your position | implemented |
-| `//img <image> [pattern]` | `/image` | Build terrain from a heightmap image | implemented |
+| `//img <image> [randomize] [threshold] [dimensions]` | `/image` | Generate an image | implemented |
 | `//line <pattern> [thickness]` | — | Draw a line between selection corners | implemented |
 | `//ore <mask> <material> <size> [frequency] [rarity] [minY] [maxY]` | `/ore` | Generates ores | implemented |
 | `//ores <mask>` | `/ores` | Generates ores | implemented |
@@ -202,8 +202,8 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 
 | Command | Aliases | What it does | Status |
 |---|---|---|---|
-| `//heightmapinterface` | `/hmi` | Show the world's height limits and heightmap information | implemented |
-| `//registry [-p <page>]` | — | Show the size of the block and biome registries | implemented |
+| `//heightmapinterface [min] [max]` | `/hmi` | Generate the heightmap interface | implemented |
+| `//registry <registry> [query]` | — | Search through the given registry | implemented |
 | `/searchitem <query>` | `/search`, `/l` | Search for an item | implemented |
 
 ## mask
@@ -260,6 +260,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//setskylight <level>` | — | Set the sky light level in the selection | implemented |
 | `//smooth [iterations] [mask]` | — | Smooth the terrain in the selection | implemented |
 | `//snow [size] [height]` | — | Simulate snow on the terrain | implemented |
+| `//snowsmooth [iterations] [-l <snowBlockCount>] [-m <mask>]` | `/snowsmooth` | Smooth the elevation in the selection with snow layers | implemented |
 | `//stack [count] [direction] [-m <mask>]` | — | Stack the selection's contents | implemented |
 | `//test <value>` | — | Prints the given value back, used to check command parsing | implemented |
 | `//thaw [size] [height]` | — | Thaw snow and ice around you | implemented |
@@ -275,7 +276,6 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/select` | — | Select your allowed region (there are none in the standalone mod) | alias |
 | `butcher [radius]` | `/butcher` | Kill all or matching entities within a radius | implemented |
 | `remove <type> [radius]` | `rem`, `rement`, `/remove`, `/rem`, `/rement` | Remove all entities of a type | implemented |
-| `snowsmooth [iterations] [-l <snowBlockCount>] [-m <mask>]` | `/snowsmooth`, `//snowsmooth` | Smooth the elevation in the selection with snow layers | implemented |
 
 ## schematic
 

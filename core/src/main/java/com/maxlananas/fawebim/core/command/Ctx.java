@@ -331,6 +331,28 @@ public final class Ctx {
     }
 
     /** Resolves a pattern argument using the session's global pattern as fallback. */
+    /**
+     * A vector argument: either the three components separated by commas or one
+     * number repeated on all three axes, which is how WorldEdit reads
+     * {@code //blob <pattern> <size> <radius>}.
+     */
+    public Vector3 vectorArg(int index, double fallback) {
+        if (index >= positional.size()) {
+            return new Vector3(fallback, fallback, fallback);
+        }
+        String[] parts = positional.get(index).split(",", -1);
+        if (parts.length == 1) {
+            double value = doubleArg(index);
+            return new Vector3(value, value, value);
+        }
+        if (parts.length != 3) {
+            throw CommandRegistry.error("Expected one value or x,y,z, got '"
+                    + positional.get(index) + "'");
+        }
+        return new Vector3(Double.parseDouble(parts[0].trim()), Double.parseDouble(parts[1].trim()),
+                Double.parseDouble(parts[2].trim()));
+    }
+
     public Pattern pattern(int index) {
         if (index >= positional.size()) {
             Pattern global = session().getPattern();
