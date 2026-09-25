@@ -35,6 +35,9 @@ public final class FabricInteractions {
     /** Players whose click was already handled in this game tick. */
     private static final Map<UUID, Long> LAST_HANDLED = new ConcurrentHashMap<>();
 
+    /** The item a notice last named, so a wrong item is said once and not per click. */
+    private static final Map<UUID, String> LAST_NOTICE = new ConcurrentHashMap<>();
+
     private FabricInteractions() {
     }
 
@@ -60,6 +63,39 @@ public final class FabricInteractions {
 
     static void forget(UUID uuid) {
         LAST_HANDLED.remove(uuid);
+        LAST_NOTICE.remove(uuid);
+    }
+
+    /**
+     * The item a brush or a tool is waiting for when the player holds another.
+     * WorldEdit keeps one tool per item, so a click with the wrong item does
+     * nothing at all; naming the item turns that silence into a state the player
+     * can act on.
+     */
+    private static String waitingItem(LocalSession session, String held) {
+        Map<String, Object> bindings = session.getBindings();
+        if (bindings.containsKey("brush") && !held.equals(bindings.get("brush-item"))) {
+            return String.valueOf(bindings.get("brush-item"));
+        }
+        if (bindings.containsKey("tool") && !held.equals(bindings.get("tool-item"))) {
+            return String.valueOf(bindings.get("tool-item"));
+        }
+        return null;
+    }
+
+    private static void noteWaiting(FabricActor actor, String held) {
+        ServerPlayer player = actor.player();
+        if (player == null) {
+            return;
+        }
+        String waiting = waitingItem(actor.session(), held);
+        if (waiting == null) {
+            LAST_NOTICE.remove(player.getUUID());
+            return;
+        }
+        if (!waiting.equals(LAST_NOTICE.put(player.getUUID(), waiting))) {
+            actor.message(Msg.warn("The brush is bound to " + waiting + ", you are holding " + held + "."));
+        }
     }
 
     /** Left-click a block. */
@@ -170,6 +206,10 @@ public final class FabricInteractions {
             actor.updateSelectionOutline();
             return handled(player);
         }
+
+        // Nothing claimed the click: if a brush or a tool is waiting for another
+        // item, say which one instead of doing nothing silently.
+        noteWaiting(actor, held);
         return InteractionResult.PASS;
     }
 
@@ -183,6 +223,7 @@ public final class FabricInteractions {
         Tool tool = Tools.current(session);
         String held = FabricMessages.heldItem(player);
         if (tool == null || !bound(session, "tool-item", held)) {
+            noteWaiting(actor, held);
             return InteractionResult.PASS;
         }
         BlockVector3 target = actor.world().getTargetBlock(actor, 100);

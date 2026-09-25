@@ -28,6 +28,8 @@ public final class ConfigurationScreen extends Screen {
 
     private static final int PADDING = 14;
     private static final int SIDEBAR_WIDTH = 108;
+    private static final int HEADER_HEIGHT = 48;
+    private static final int FOOTER_HEIGHT = 76;
     private static final int ROW_HEIGHT = 22;
     private static final int EDITOR_HEIGHT = 18;
     private static final int RESET_WIDTH = 50;
@@ -92,7 +94,7 @@ public final class ConfigurationScreen extends Screen {
     /** The groups, which is also how one group is shown on its own. */
     private void addSidebar() {
         int x = PADDING + 4;
-        int y = panelTop() + 48;
+        int y = rowsTop();
         List<String> names = new ArrayList<>();
         names.add("All");
         for (ConfigUi.Group entry : ui.groups()) {
@@ -111,7 +113,7 @@ public final class ConfigurationScreen extends Screen {
 
     /** The search box, which narrows the rows while it is typed in. */
     private void addSearch() {
-        search = new EditBox(this.font, contentRight() - 160, panelTop() + 5, 160, EDITOR_HEIGHT,
+        search = new EditBox(this.font, searchLeft(), panelTop() + 8, 160, EDITOR_HEIGHT,
                 Component.literal("Search"));
         search.setHint(Component.literal("Search settings"));
         search.setValue(query);
@@ -124,7 +126,7 @@ public final class ConfigurationScreen extends Screen {
     }
 
     private void addFooter() {
-        int y = panelBottom() - 24;
+        int y = panelBottom() - 26;
         int x = PADDING + SIDEBAR_WIDTH + 10;
         addRenderableWidget(Button.builder(Component.literal("Reload"), pressed -> {
             ui.reloadFromDisk();
@@ -282,15 +284,18 @@ public final class ConfigurationScreen extends Screen {
         }
         panel(graphics, PADDING, panelTop(), this.width - PADDING, panelBottom(), PANEL_COLOUR);
         panel(graphics, PADDING, panelTop(), PADDING + SIDEBAR_WIDTH, panelBottom(), SIDEBAR_COLOUR);
-        graphics.fill(PADDING + SIDEBAR_WIDTH, panelTop(), this.width - PADDING, panelTop() + 30, HEADER_COLOUR);
-        graphics.fill(PADDING + SIDEBAR_WIDTH, panelTop() + 30, this.width - PADDING, panelTop() + 31, ACCENT_DIM);
+        int headerBottom = panelTop() + HEADER_HEIGHT - 8;
+        graphics.fill(PADDING, panelTop(), this.width - PADDING, headerBottom, HEADER_COLOUR);
+        graphics.fill(PADDING, headerBottom, this.width - PADDING, headerBottom + 1, ACCENT_DIM);
 
-        graphics.drawString(this.font, "FAWE-BIM", PADDING + 12, panelTop() + 10, ACCENT, true);
-        graphics.drawString(this.font, "WorldEdit commands for Fabric", PADDING + 12, panelTop() + 24, DIM, false);
-        graphics.drawString(this.font, group, PADDING + SIDEBAR_WIDTH + 14, panelTop() + 9, LABEL, true);
-        graphics.drawString(this.font, visibleCount + " setting(s)   page " + (page + 1) + "/" + pageCount,
-                PADDING + SIDEBAR_WIDTH + 14, panelTop() + 21, DIM, false);
-        graphics.fill(PADDING + 4, panelTop() + 36, PADDING + SIDEBAR_WIDTH - 4, panelTop() + 37, PANEL_BORDER);
+        graphics.drawString(this.font, "FAWE-BIM", PADDING + 12, panelTop() + 9, ACCENT, true);
+        int titleX = PADDING + SIDEBAR_WIDTH + 14;
+        int titleRoom = searchLeft() - 12 - titleX;
+        graphics.drawString(this.font, clipped(group, titleRoom), titleX, panelTop() + 9, LABEL, true);
+        graphics.drawString(this.font, clipped(visibleCount + " setting(s)   page " + (page + 1) + "/"
+                + pageCount, titleRoom), titleX, panelTop() + 22, DIM, false);
+        graphics.fill(PADDING + SIDEBAR_WIDTH - 5, headerBottom, PADDING + SIDEBAR_WIDTH - 4,
+                panelBottom(), PANEL_BORDER);
 
         Row hovered = hovered(mouseX, mouseY);
         int cardLeft = PADDING + SIDEBAR_WIDTH + 6;
@@ -312,25 +317,25 @@ public final class ConfigurationScreen extends Screen {
 
         super.render(graphics, mouseX, mouseY, partialTick);
 
+        int textX = PADDING + SIDEBAR_WIDTH + 10;
         Row described = hovered != null ? hovered : (rows.isEmpty() ? null : rows.get(0));
         if (described != null) {
-            graphics.drawString(this.font, described.setting.description(), PADDING + SIDEBAR_WIDTH + 10,
-                    panelBottom() - 40, DIM, false);
-            graphics.drawString(this.font, described.setting.path() + "   default "
+            graphics.drawString(this.font, clipped(described.setting.description(), this.width - PADDING - textX),
+                    textX, panelBottom() - 70, DIM, false);
+            graphics.drawString(this.font, clipped(described.setting.path() + "   default "
                             + described.setting.defaultValue() + "   " + ConfigUi.expectedOf(described.setting),
-                    PADDING + SIDEBAR_WIDTH + 10, panelBottom() - 30, DIM, false);
+                    this.width - PADDING - textX), textX, panelBottom() - 58, DIM, false);
         }
-        graphics.fill(PADDING + SIDEBAR_WIDTH, panelBottom() - 34, this.width - PADDING,
-                panelBottom() - 33, PANEL_BORDER);
+        graphics.fill(PADDING + SIDEBAR_WIDTH, panelBottom() - 50, this.width - PADDING,
+                panelBottom() - 49, PANEL_BORDER);
         if (described != null) {
-            graphics.fill(PADDING + SIDEBAR_WIDTH + 8, panelBottom() - 42, PADDING + SIDEBAR_WIDTH + 10,
-                    panelBottom() - 40, statusGood ? ACCENT_DIM : BAD);
+            graphics.fill(textX - 2, panelBottom() - 42, textX, panelBottom() - 40,
+                    statusGood ? ACCENT_DIM : BAD);
         }
         if (!status.isEmpty()) {
-            graphics.fill(PADDING + SIDEBAR_WIDTH + 8, panelBottom() - 14, PADDING + SIDEBAR_WIDTH + 10,
-                    panelBottom() - 12, statusGood ? GOOD : BAD);
-            graphics.drawString(this.font, status, PADDING + SIDEBAR_WIDTH + 14, panelBottom() - 15,
-                    statusGood ? GOOD : BAD, false);
+            graphics.fill(textX - 2, panelBottom() - 32, textX, panelBottom() - 30, statusGood ? GOOD : BAD);
+            graphics.drawString(this.font, clipped(status, this.width - PADDING - textX),
+                    textX + 6, panelBottom() - 33, statusGood ? GOOD : BAD, false);
         }
     }
 
@@ -415,12 +420,25 @@ public final class ConfigurationScreen extends Screen {
         return this.width - PADDING - 8;
     }
 
+    private int searchLeft() {
+        return contentRight() - 160;
+    }
+
+    /** A string cut to the room it has, so a long line never runs under a field. */
+    private String clipped(String text, int room) {
+        if (room <= 0 || this.font.width(text) <= room) {
+            return text;
+        }
+        String cut = this.font.plainSubstrByWidth(text, Math.max(0, room - 6));
+        return cut + "...";
+    }
+
     private int rowsTop() {
-        return panelTop() + 30;
+        return panelTop() + HEADER_HEIGHT;
     }
 
     private int rowsBottom() {
-        return panelBottom() - 48;
+        return panelBottom() - FOOTER_HEIGHT;
     }
 
     private int rowsPerPage() {
