@@ -16,7 +16,13 @@ public final class Msg {
     }
 
     public static Msg of(String text) {
-        return new Msg(text);
+        return new Msg(highlight(text, openingColour(text, "§f")));
+    }
+
+    /** The colour a line written by hand opens with, or a plain default. */
+    private static String openingColour(String text, String fallback) {
+        int at = text.indexOf('§');
+        return at >= 0 ? text.substring(at, Math.min(text.length(), at + codeLength(text, at))) : fallback;
     }
 
     public static Msg empty() {
@@ -67,11 +73,13 @@ public final class Msg {
      */
     public static String highlight(String text, String role) {
         StringBuilder out = new StringBuilder(text.length() + 24);
+        String current = role;
         int index = 0;
         while (index < text.length()) {
             if (text.charAt(index) == '§') {
                 int length = codeLength(text, index);
-                out.append(text, index, index + length);
+                current = text.substring(index, index + length);
+                out.append(current);
                 index += length;
                 continue;
             }
@@ -79,7 +87,7 @@ public final class Msg {
             if (next < 0) {
                 next = text.length();
             }
-            highlightRun(text.substring(index, next), role, out);
+            highlightRun(text.substring(index, next), current, out);
             index = next;
         }
         return out.toString();
@@ -96,7 +104,7 @@ public final class Msg {
         return Math.min(2, text.length() - index);
     }
 
-    private static void highlightRun(String run, String role, StringBuilder out) {
+    private static void highlightRun(String run, String colour, StringBuilder out) {
         int index = 0;
         while (index < run.length()) {
             char c = run.charAt(index);
@@ -108,7 +116,7 @@ public final class Msg {
             if (c == '\'' || c == '"') {
                 int close = run.indexOf(c, index + 1);
                 if (close > index) {
-                    out.append(QUOTED).append(run, index, close + 1).append(role);
+                    out.append(QUOTED).append(run, index, close + 1).append(colour);
                     index = close + 1;
                     continue;
                 }
@@ -118,13 +126,13 @@ public final class Msg {
                 end++;
             }
             String token = run.substring(index, end);
-            String colour = tokenColour(token);
-            if (colour == null || colour.equals(role)) {
+            String highlight = tokenColour(token);
+            if (highlight == null || highlight.equals(colour)) {
                 out.append(token);
             } else {
-                // Whole tokens are coloured, so the text around them keeps its own
-                // colour and a token is never split by a colour code.
-                out.append(colour).append(token).append(role);
+                // Whole tokens are coloured, so the sentence keeps the colour it
+                // was written in and a token is never split by a colour code.
+                out.append(highlight).append(token).append(colour);
             }
             index = end;
         }

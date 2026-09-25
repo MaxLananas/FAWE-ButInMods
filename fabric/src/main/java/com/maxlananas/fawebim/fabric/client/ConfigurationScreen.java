@@ -9,6 +9,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 
@@ -89,11 +90,6 @@ public final class ConfigurationScreen extends Screen {
     public ConfigurationScreen(Screen parent) {
         super(Component.literal("FAWE-BIM configuration"));
         this.parent = parent;
-    }
-
-    @Override
-    public void onClose() {
-        net.minecraft.client.Minecraft.getInstance().setScreen(parent);
     }
 
     @Override
@@ -409,7 +405,9 @@ public final class ConfigurationScreen extends Screen {
                 ui.set(row.setting.key(), row.box.getValue());
             }
         }
-        super.onClose();
+        // The opener: the mod list when Mod Menu opened this screen, null when
+        // the command did, which is the same close vanilla does.
+        Minecraft.getInstance().setScreen(parent);
     }
 
     @Override

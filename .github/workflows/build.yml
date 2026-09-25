@@ -49,8 +49,22 @@ jobs:
           fi
           exit "$status"
 
+      # javac refuses a member declared twice, and the adapter is only compiled
+      # here: this reads the sources first so that mistake costs a second, not a
+      # whole Gradle run.
+      - name: Check the adapter declares no member twice
+        run: python3 scripts/member_audit.py
+
       - name: Build the mod
-        run: ./gradlew --no-daemon build
+        run: |
+          ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Same reason as the engine step above: the log itself is behind a
+            # signed URL, the annotation is what the run page shows.
+            tail -c 3000 /tmp/build.log | python3 -c "import sys; print('::error title=mod build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+          fi
+          exit "$status"
 
       - name: Check the generated command tables are up to date
         run: |
