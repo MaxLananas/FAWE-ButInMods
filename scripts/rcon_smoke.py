@@ -163,6 +163,7 @@ class Rcon:
     def __init__(self, host, port, password, timeout=15.0):
         self.socket = socket.create_connection((host, port), timeout=timeout)
         self.socket.settimeout(timeout)
+        self.timeout = timeout
         self.request_id = 0
         sent = self.send(AUTH, password)
         answer = self.receive()
@@ -203,6 +204,7 @@ class Rcon:
         and then an empty one as the end marker; it may also split a long answer
         in two, which is why anything type 0 is collected until the marker.
         """
+        self.socket.settimeout(self.timeout)
         self.send(COMMAND, command)
         parts = []
         while True:
@@ -214,6 +216,10 @@ class Rcon:
             if not answer[2]:
                 break
             parts.append(answer[2])
+            # The answer is in: a second packet would be there by now, and the
+            # server does not always send the end marker, so waiting for one
+            # costs the whole socket timeout on every single command.
+            self.socket.settimeout(0.4)
         return "\n".join(parts)
 
 
