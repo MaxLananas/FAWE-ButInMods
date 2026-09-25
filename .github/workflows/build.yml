@@ -29,6 +29,12 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Cache the Gradle distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -101,6 +107,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+
+      - name: Cache the Gradle distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

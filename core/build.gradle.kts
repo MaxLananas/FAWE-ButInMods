@@ -38,7 +38,7 @@ val commandSpec by tasks.registering(JavaExec::class) {
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
     mainClass.set("com.maxlananas.fawebim.core.test.CommandDocGenerator")
-    args(layout.buildDirectory.file("commands-spec.json").asFile.absolutePath,
+    args(layout.buildDirectory.file("commands-spec.json").get().asFile.absolutePath,
          layout.projectDirectory.file("../reference/commands-inventory.json").asFile.absolutePath)
 }
 
