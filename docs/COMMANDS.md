@@ -274,7 +274,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/rep` | — | Replace all blocks matching a mask with a pattern inside a region | alias |
 | `/select` | — | Select your allowed region (there are none in the standalone mod) | alias |
 | `butcher [radius]` | `/butcher` | Kill all or matching entities within a radius | implemented |
-| `remove <mask>` | `rem`, `rement`, `/remove`, `/rem`, `/rement` | Remove blocks above the ground level that match the mask | implemented |
+| `remove <type> [radius]` | `rem`, `rement`, `/remove`, `/rem`, `/rement` | Remove all entities of a type | implemented |
 | `snowsmooth [iterations] [-l <snowBlockCount>] [-m <mask>]` | `/snowsmooth`, `//snowsmooth` | Smooth the elevation in the selection with snow layers | implemented |
 
 ## schematic

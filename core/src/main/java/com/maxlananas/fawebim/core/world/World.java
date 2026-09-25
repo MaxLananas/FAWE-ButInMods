@@ -150,6 +150,11 @@ public interface World extends Extent {
         return List.of();
     }
 
+    /** Every entity of the loaded chunks, which is a radius of -1 to {@code /remove}. */
+    default List<EntityData> getEntities() {
+        return getEntities(new Region3i(-30_000_000, minY(), -30_000_000, 30_000_000, maxY(), 30_000_000));
+    }
+
     /** Called before an edit that may insert/remove block entities. */
     default void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
     }

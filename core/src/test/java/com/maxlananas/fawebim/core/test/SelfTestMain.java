@@ -96,6 +96,7 @@ public final class SelfTestMain {
         testPlayerOnlyCommands();
         testSelectionTransforms();
         testTerrainCommands();
+        testEntityCommands();
         testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
@@ -1831,6 +1832,43 @@ public final class SelfTestMain {
      * the weather would, {@code //thaw} takes the snow and ice back, and
      * {@code //extinguish} removes the fire in a cube around the player.
      */
+    private static void testEntityCommands() {
+        section("entities");
+        TestWorld world = new TestWorld("entities");
+        world.fillFlat(30);
+        TestActor actor = new TestActor("Janitor", world, new BlockVector3(0, 30, 0));
+        world.addEntity(new EntityData("minecraft:item", new NbtCompound(), new Vector3(0.5, 31, 0.5)));
+        world.addEntity(new EntityData("minecraft:item", new NbtCompound(), new Vector3(3.5, 31, 3.5)));
+        world.addEntity(new EntityData("minecraft:arrow", new NbtCompound(), new Vector3(900.5, 40, 900.5)));
+        world.addEntity(new EntityData("minecraft:painting", new NbtCompound(), new Vector3(-2.5, 31, -2.5)));
+
+        // The default radius is five, so both drops go and the painting stays.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/remove items");
+        check("/remove items takes the drops around the player",
+                actor.messages().stream().anyMatch(m -> m.contains("2 entit(y/ies)")));
+        checkEquals("the painting and the distant arrow stay", 2, world.getEntities().size());
+
+        // A radius of -1 is every loaded entity, however far away it sits.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/remove arrows -1");
+        check("/remove arrows -1 reaches the whole world",
+                actor.messages().stream().anyMatch(m -> m.contains("1 entit(y/ies)")));
+
+        // A radius the cylinder ignores: the arrow is out of reach at five blocks.
+        world.addEntity(new EntityData("minecraft:arrow", new NbtCompound(), new Vector3(900.5, 40, 900.5)));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/remove arrows 5");
+        check("/remove arrows 5 leaves distant entities alone",
+                actor.messages().stream().anyMatch(m -> m.contains("0 entit(y/ies)")));
+        checkEquals("the distant arrow is still loaded", 2, world.getEntities().size());
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/remove trees 5");
+        check("an unknown type lists the accepted ones",
+                actor.lastMessage().contains("Acceptable types: projectiles, items, paintings"));
+    }
+
     private static void testTerrainCommands() {
         section("terrain");
         TestWorld world = new TestWorld("terrain");

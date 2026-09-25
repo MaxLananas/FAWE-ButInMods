@@ -2,6 +2,7 @@ package com.maxlananas.fawebim.core.command;
 
 import com.maxlananas.fawebim.core.brush.Creatures;
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.function.EntityRemovers;
 import com.maxlananas.fawebim.core.function.HeightMaps;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.math.BlockVector3;
@@ -355,36 +356,63 @@ final class RegionCommands {
     }
 
     /**
-     * {@code //remove} — removes matching blocks that have air above them, i.e.
-     * the blocks that are "exposed" on the surface.
+     * {@code /remove} — removes the entities of one type around the player, which
+     * is WorldEdit's {@code EntityRemover}: a radius of {@code -1} reaches every
+     * loaded chunk, and anything smaller is a cylinder of that radius by the full
+     * height of the world.
      */
     private void remove() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("remove", "rem", "rement", "/remove", "/rem", "/rement");
         if (entry == null) {
             return;
         }
-        entry.description = "Remove blocks above the ground level that match the mask";
+        entry.description = "Remove all entities of a type";
         entry.group = "region";
-        entry.requiresSelection = true;
-        entry.arguments.add("mask");
+        entry.arguments.add("<type>");
+        entry.arguments.add("[radius]");
         entry.handler = ctx -> {
-            Region region = ctx.selection();
-            Mask mask = ctx.mask(0);
+            EntityRemovers.Type type = EntityRemovers.find(ctx.arg(0));
+            if (type == null) {
+                throw CommandRegistry.error("Acceptable types: " + EntityRemovers.keywords());
+            }
+            int radius = ctx.intArg(1, 5);
+            if (radius < -1) {
+                throw CommandRegistry.error("Use -1 to remove all entities in loaded chunks");
+            }
             World world = ctx.world();
-            EditSession session = ctx.editSession("remove");
-            int air = BlockState.registry().air();
-            int changed = region.forEachPosition((x, y, z) -> {
-                session.checkTimeout();
-                if (!mask.test(x, y, z)) {
-                    return false;
+            List<EntityData> candidates;
+            double centerX = 0;
+            double centerZ = 0;
+            if (radius < 0) {
+                candidates = world.getEntities();
+            } else {
+                BlockVector3 center = ctx.placement();
+                centerX = center.x() + 0.5;
+                centerZ = center.z() + 0.5;
+                candidates = world.getEntities(new Extent.Region3i(
+                        (int) Math.floor(centerX - radius), world.minY(), (int) Math.floor(centerZ - radius),
+                        (int) Math.ceil(centerX + radius), world.maxY(), (int) Math.ceil(centerZ + radius)));
+            }
+            // The cylinder test runs on the squared distance so no square root is
+            // taken per entity, and it applies before the type test because most
+            // entities of a busy world sit outside the radius.
+            double radiusSq = (double) radius * radius;
+            int removed = 0;
+            for (EntityData entity : candidates) {
+                if (!entity.isSpawnable() || !type.matches(entity.type())) {
+                    continue;
                 }
-                if (!BlockState.registry().isAir(world.getBlock(x, y + 1, z))) {
-                    return false;
+                if (radius >= 0) {
+                    double dx = entity.position().x() - centerX;
+                    double dz = entity.position().z() - centerZ;
+                    if (dx * dx + dz * dz > radiusSq) {
+                        continue;
+                    }
                 }
-                return session.setBlock(x, y, z, air);
-            });
-            session.flushQueue();
-            ctx.actor().message(Msg.success(changed + " block(s) removed"));
+                world.removeEntity(entity);
+                removed++;
+            }
+            ctx.actor().message(Msg.success(removed + " entit(y/ies) have been marked for removal"));
         };
     }
 
