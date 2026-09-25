@@ -174,7 +174,11 @@ final class AnvilCommands {
         };
     }
 
-    /** {@code /anvil count <mask> [-d]} — how many blocks match, or the full histogram. */
+    /**
+     * {@code /anvil count <mask> [-d]} — how many blocks match, or the full
+     * histogram. {@code -d} counts by block state rather than by name, which is
+     * the data flag upstream declares for it.
+     */
     private void count() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("/anvil count");
         if (entry == null) {
@@ -188,7 +192,7 @@ final class AnvilCommands {
         entry.arguments.add("mask");
         entry.handler = ctx -> {
             Mask mask = ctx.mask(0);
-            Map<String, Long> counts = countSelection(ctx, mask);
+            Map<String, Long> counts = countSelection(ctx, mask, ctx.hasFlag("d"));
             long total = counts.values().stream().mapToLong(Long::longValue).sum();
             if (ctx.hasFlag("d")) {
                 distribution(ctx, counts);
@@ -238,7 +242,8 @@ final class AnvilCommands {
         entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
-        entry.handler = ctx -> distribution(ctx, countSelection(ctx, null));
+        entry.booleanFlags.add("d");
+        entry.handler = ctx -> distribution(ctx, countSelection(ctx, null, ctx.hasFlag("d")));
     }
 
     /** {@code /anvil replace <from> <to> [-d]}. */
@@ -595,7 +600,7 @@ final class AnvilCommands {
         return mapped;
     }
 
-    private Map<String, Long> countSelection(Ctx ctx, Mask mask) {
+    private Map<String, Long> countSelection(Ctx ctx, Mask mask, boolean byState) {
         World world = ctx.world();
         Region region = ctx.selection();
         BlockStateRegistry registry = BlockState.registry();
@@ -604,8 +609,8 @@ final class AnvilCommands {
             if (mask != null && !mask.test(position)) {
                 continue;
             }
-            counts.merge(registry.name(world.getBlock(position.x(), position.y(), position.z())),
-                    1L, Long::sum);
+            int state = world.getBlock(position.x(), position.y(), position.z());
+            counts.merge(byState ? registry.describe(state) : registry.name(state), 1L, Long::sum);
         }
         return counts;
     }

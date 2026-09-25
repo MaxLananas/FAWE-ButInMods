@@ -70,6 +70,11 @@ public final class Selectors {
         }
 
         @Override
+        public BlockVector3 getPrimaryPosition() {
+            return pos1 == null ? getRegion().getMinimumPoint() : pos1;
+        }
+
+        @Override
         public boolean selectSecondary(BlockVector3 position, SelectorLimits limits) {
             BlockVector3 clamped = clamp(position);
             if (clamped.equals(pos2)) {

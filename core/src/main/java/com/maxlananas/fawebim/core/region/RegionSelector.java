@@ -28,6 +28,11 @@ public interface RegionSelector {
 
     Region getRegion();
 
+    /** The first position a player set, which is what placement at pos #1 uses. */
+    default BlockVector3 getPrimaryPosition() {
+        return getRegion().getMinimumPoint();
+    }
+
     /** The selection shape name as used by {@code //sel}. */
     String getTypeName();
 

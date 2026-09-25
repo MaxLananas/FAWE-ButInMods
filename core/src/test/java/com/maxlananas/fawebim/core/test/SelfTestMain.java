@@ -99,6 +99,8 @@ public final class SelfTestMain {
         testTerrainCommands();
         testEntityCommands();
         testSessionOptions();
+        testPlacement();
+        testSnapshotSelection();
         testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
@@ -1834,6 +1836,114 @@ public final class SelfTestMain {
      * the weather would, {@code //thaw} takes the snow and ice back, and
      * {@code //extinguish} removes the fire in a cube around the player.
      */
+    private static void testPlacement() {
+        section("placement");
+        TestWorld world = new TestWorld("placement");
+        world.fillFlat(30);
+        TestActor actor = new TestActor("Builder", world, new BlockVector3(40, 30, 40));
+        checkEquals("a session starts placing at the player", new BlockVector3(40, 30, 40),
+                actor.session().getPlacement().position(world, actor));
+
+        CommandManager.get().dispatch(actor, "//pos1 4,30,4");
+        CommandManager.get().dispatch(actor, "//pos2 8,30,8");
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/placement pos1");
+        check("/placement takes a type", actor.lastMessage().contains("Now placing at pos #1."));
+        checkEquals("pos1 is the first position of the selection", new BlockVector3(4, 30, 4),
+                actor.session().getPlacement().position(world, actor));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/placement world 2 1,2,3");
+        check("the offset is multiplied and named",
+                actor.lastMessage().contains("Now placing at (2, 4, 6)."));
+        checkEquals("the offset is added to the anchor", new BlockVector3(2, 4, 6),
+                actor.session().getPlacement().position(world, actor));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/placement here");
+        check("here is the world origin moved to the player",
+                actor.lastMessage().contains("Now placing at (40, 30, 40)."));
+
+        CommandManager.get().dispatch(actor, "/placement min");
+        checkEquals("min is a corner of the selection", new BlockVector3(4, 30, 4),
+                actor.session().getPlacement().position(world, actor));
+        CommandManager.get().dispatch(actor, "/placement max");
+        checkEquals("max is the other corner", new BlockVector3(8, 30, 8),
+                actor.session().getPlacement().position(world, actor));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/placement nowhere");
+        check("an unknown placement lists the types",
+                actor.lastMessage().contains("Placement must be one of world, player, here, pos1, min, max"));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/toggleplace");
+        check("/toggleplace moves to pos1", actor.lastMessage().contains("Now placing at pos #1."));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/toggleplace");
+        check("/toggleplace moves back to the player",
+                actor.lastMessage().contains("Now placing at the block you stand in."));
+
+        // The placement is where an edit really starts: the snow pass runs in a
+        // cylinder around pos1, which is 36 blocks from the player.
+        CommandManager.get().dispatch(actor, "/placement pos1");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//snow 4");
+        check("//snow runs at the placement", actor.messages().stream()
+                .anyMatch(m -> m.contains("Snowed 49 block(s)")));
+    }
+
+    private static void testSnapshotSelection() {
+        section("snapshot selection");
+        TestWorld world = new TestWorld("snapshot-select");
+        world.fillFlat(30);
+        TestActor actor = new TestActor("Keeper", world, new BlockVector3(0, 30, 0));
+        java.nio.file.Path folder;
+        try {
+            folder = java.nio.file.Files.createTempDirectory("fawebim-snapshots");
+        } catch (java.io.IOException e) {
+            throw new AssertionError(e);
+        }
+        com.maxlananas.fawebim.core.history.Snapshots.setDirectory(folder);
+
+        // Three edits, so the listener completes two of them, and both are
+        // saved to the folder the list reads.
+        History.Record[] completed = new History.Record[2];
+        actor.session().getHistory().setRecordListener(record -> {
+            completed[1] = completed[0];
+            completed[0] = record;
+        });
+        CommandManager.get().dispatch(actor, "//pos1 0,30,0");
+        CommandManager.get().dispatch(actor, "//pos2 2,30,2");
+        CommandManager.get().dispatch(actor, "//set minecraft:stone");
+        CommandManager.get().dispatch(actor, "//set minecraft:dirt");
+        CommandManager.get().dispatch(actor, "//set minecraft:sand");
+        try {
+            Thread.sleep(1100);
+            com.maxlananas.fawebim.core.history.Snapshots.save(completed[1], actor.name());
+            Thread.sleep(1100);
+            com.maxlananas.fawebim.core.history.Snapshots.save(completed[0], actor.name());
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/snapshot sel 1");
+        check("/snapshot sel takes an index", actor.lastMessage().contains("Snapshot set to:"));
+        check("and it holds the newest snapshot", actor.session().getActiveSnapshot() != null);
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/snapshot sel 0");
+        check("an index below one is refused",
+                actor.lastMessage().contains("Invalid index, must be greater than or equal to 1."));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/snapshot sel 99");
+        check("an index past the list is refused",
+                actor.lastMessage().contains("Invalid index, must be between 1 and 2."));
+    }
+
     private static void testSessionOptions() {
         section("session options");
         TestWorld world = new TestWorld("options");
@@ -2334,8 +2444,8 @@ public final class SelfTestMain {
         check("//air clears the selection", sweeper.lastMessage().contains("16 block(s) set to air"));
         check("//air left the selection empty", count(sweeper).equals("Count: 0"));
 
-        // //ores plants the ores the mask names, which is FAWE's own ore command
-        // rather than the pattern form //ore is.
+        // //ores plants vanilla's ore distribution where the mask allows it,
+        // which is FAWE's own ore command rather than the pattern form //ore is.
         TestWorld vein = new TestWorld("own-name-ores");
         vein.fillFlat(70);
         TestActor miner = new TestActor("Vale", vein, new BlockVector3(0, 71, 0));
@@ -2343,24 +2453,59 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(miner, "//pos2 15,70,15");
         CommandManager.get().dispatch(miner, "//set stone");
         miner.clearMessages();
-        CommandManager.get().dispatch(miner, "//ores minecraft:iron_ore");
-        check("//ores plants the ore the mask names", miner.messages().stream()
-                .anyMatch(m -> m.contains("ore block(s)") && !m.contains("Generated 0")));
+        CommandManager.get().dispatch(miner, "//ores minecraft:stone");
+        check("//ores writes the ore bands into the matching rock", miner.messages().stream()
+                .anyMatch(m -> m.contains("block(s) affected") && !m.contains("0 block(s)")));
         int oreBlocks = 0;
         for (int x = 0; x <= 15; x++) {
             for (int y = 60; y <= 70; y++) {
                 for (int z = 0; z <= 15; z++) {
-                    if (BlockState.registry().name(vein.getBlock(x, y, z)).contains("iron_ore")) {
+                    String name = BlockState.registry().name(vein.getBlock(x, y, z));
+                    if (name.endsWith("_ore") || name.equals("minecraft:coal_ore")) {
                         oreBlocks++;
                     }
                 }
             }
         }
-        check("//ores wrote iron ore into the stone", oreBlocks > 0);
+        check("//ores left ores in the stone", oreBlocks > 0);
         miner.clearMessages();
         CommandManager.get().dispatch(miner, "//ores");
-        check("//ores asks for the ores to plant", miner.lastMessage().contains("mask"));
+        check("//ores asks for a mask", miner.lastMessage().contains("mask"));
         miner.clearMessages();
+
+        // //ore takes the vein settings upstream declares, and refuses a band
+        // that runs outside the world.
+        TestWorld seeded = new TestWorld("own-name-ore");
+        seeded.fillFlat(70);
+        TestActor ores = new TestActor("Seam", seeded, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(ores, "//pos1 0,60,0");
+        CommandManager.get().dispatch(ores, "//pos2 15,70,15");
+        CommandManager.get().dispatch(ores, "//set stone");
+        ores.clearMessages();
+        CommandManager.get().dispatch(ores, "//ore minecraft:stone minecraft:diamond_ore 9 40 100 60 70");
+        check("//ore plants veins of the material it is given",
+                ores.messages().stream().anyMatch(m -> m.contains("block(s) affected")
+                        && !m.contains("0 block(s)")));
+        int diamonds = 0;
+        for (int x = 0; x <= 15; x++) {
+            for (int y = 60; y <= 70; y++) {
+                for (int z = 0; z <= 15; z++) {
+                    if (BlockState.registry().name(seeded.getBlock(x, y, z)).contains("diamond_ore")) {
+                        diamonds++;
+                    }
+                }
+            }
+        }
+        check("//ore wrote the material into the selection", diamonds > 0);
+        ores.clearMessages();
+        CommandManager.get().dispatch(ores, "//ore minecraft:stone minecraft:diamond_ore 9 40 100 60 2000");
+        check("//ore refuses a maxY past the world",
+                ores.lastMessage().contains("may not be greater than"));
+        ores.clearMessages();
+        CommandManager.get().dispatch(ores, "//ore minecraft:stone minecraft:diamond_ore 9 40 100 70 60");
+        check("//ore refuses an empty band",
+                ores.lastMessage().contains("may not be greater than argument maxy"));
+        ores.clearMessages();
 
         // /setbiome is WorldEdit's name for it; -p moves it to the player's block.
         CommandManager.get().dispatch(miner, "//pos1 0,60,0");

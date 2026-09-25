@@ -25,7 +25,7 @@ public final class LocalSession {
     private final History history;
     private Mask mask;
     private Pattern pattern;
-    private boolean placeAtPos1 = true;
+    private Placement placement = Placement.DEFAULT;
     private boolean fastMode = false;
     private boolean superPickaxeEnabled = true;
     private int superPickaxeMode = 1; // 0 = single, 1 = area, 2 = recursive
@@ -45,7 +45,6 @@ public final class LocalSession {
     private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
     private String toolBindingName;
     private Mask sourceMask;
-    private int placementMode = PLACEMENT_FIRST;
     private boolean cancelled;
     private boolean tips;
     private boolean watchdog = true;
@@ -59,10 +58,14 @@ public final class LocalSession {
     private BlockVector3 lastClickedPosition;
     private com.maxlananas.fawebim.core.world.Direction lastClickedFace = com.maxlananas.fawebim.core.world.Direction.NORTH;
 
-    /** Placement modes of {@code //placement}, matching WorldEdit's names. */
-    public static final int PLACEMENT_FIRST = 0;
-    public static final int PLACEMENT_LAST = 1;
-    public static final int PLACEMENT_ORIGIN = 2;
+    /** Where pastes and generators start from: the anchor plus its offset. */
+    public Placement getPlacement() {
+        return placement;
+    }
+
+    public void setPlacement(Placement placement) {
+        this.placement = placement == null ? Placement.DEFAULT : placement;
+    }
 
     /**
      * The reorder mode of {@code //reorder}, which upstream deprecated the setter
@@ -139,22 +142,6 @@ public final class LocalSession {
 
     public void setSourceMask(Mask sourceMask) {
         this.sourceMask = sourceMask;
-    }
-
-    public int getPlacementMode() {
-        return placementMode;
-    }
-
-    public void setPlacementMode(int placementMode) {
-        this.placementMode = placementMode;
-    }
-
-    public String placementModeName() {
-        return switch (placementMode) {
-            case PLACEMENT_LAST -> "last";
-            case PLACEMENT_ORIGIN -> "origin";
-            default -> "first";
-        };
     }
 
     /** {@code /cancel}: abort the next edit that checks the session state. */
@@ -395,13 +382,6 @@ public final class LocalSession {
         this.pattern = pattern;
     }
 
-    public boolean shouldPlaceAtPos1() {
-        return placeAtPos1;
-    }
-
-    public void togglePlace() {
-        placeAtPos1 = !placeAtPos1;
-    }
 
     public boolean isFastMode() {
         return fastMode;

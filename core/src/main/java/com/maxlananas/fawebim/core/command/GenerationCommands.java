@@ -5,7 +5,6 @@ import com.maxlananas.fawebim.core.expression.Expression;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.math.BlockVector3;
-import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.Region;
@@ -37,7 +36,6 @@ final class GenerationCommands {
     }
 
     void register() {
-        ores();
         caves();
         image();
         generateBiome();
@@ -45,41 +43,6 @@ final class GenerationCommands {
         feature();
         structure();
         generate();
-    }
-
-    /** {@code //ores} — scatters ore veins through the matching stone. */
-    private void ores() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("ores", "/ore");
-        if (entry == null) {
-            return;
-        }
-        entry.description = "Generates ores in the region";
-        entry.group = "generation";
-        entry.requiresSelection = true;
-        entry.arguments.add("mask");
-        entry.arguments.add("pattern");
-        entry.arguments.add("[size]");
-        entry.arguments.add("[frequency]");
-        entry.arguments.add("[rarity]");
-        entry.handler = ctx -> {
-            Region region = ctx.selection();
-            Mask mask = ctx.mask(0);
-            Pattern pattern = ctx.pattern(1);
-            int size = ctx.intArg(2, 6);
-            double frequency = ctx.doubleArg(3, 500);
-            double rarity = ctx.doubleArg(4, 1);
-            if (size < 1 || size > 64) {
-                throw CommandRegistry.error("Size must be between 1 and 64");
-            }
-            if (frequency <= 0 || rarity <= 0) {
-                throw CommandRegistry.error("Frequency and rarity must be greater than 0");
-            }
-            EditSession session = ctx.editSession("ores");
-            int changed = Operations.ore(ctx.world(), session, region, mask, pattern, size, frequency, rarity,
-                    new Random());
-            session.flushQueue();
-            ctx.actor().message(Msg.success(changed + " ore block(s) generated"));
-        };
     }
 
     /** {@code //caves} — carves tunnels with the noise-driven cave generator. */

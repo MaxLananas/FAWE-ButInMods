@@ -2,7 +2,6 @@ package com.maxlananas.fawebim.core.command;
 
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.history.Snapshots;
-import com.maxlananas.fawebim.core.math.BlockBox;
 import com.maxlananas.fawebim.core.util.Msg;
 
 import java.io.IOException;
@@ -153,28 +152,31 @@ final class SnapshotCommands {
         throw CommandRegistry.error("Expected a date like 2026-09-22 or 2026-09-22 14:30:00, got '" + input + "'");
     }
 
-    /** {@code /snapshot sel} — selects the area a snapshot covers. */
+    /**
+     * {@code /snapshot sel <index>} — the snapshot at that place in the list,
+     * counting from one, newest first, which is what WorldEdit's line selects.
+     */
     private void select() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("/snapshot sel");
         if (entry == null) {
             return;
         }
-        entry.description = "Select the region of the chosen snapshot";
+        entry.description = "Choose the snapshot based on the list id";
         entry.group = "snapshot";
+        entry.arguments.add("index");
         entry.handler = ctx -> {
-            Path path = requireSnapshot(ctx);
-            BlockBox box = Snapshots.bounds(read(ctx, path));
-            if (box == null) {
-                throw CommandRegistry.error("Snapshot " + path.getFileName() + " contains no blocks");
+            int index = ctx.intArg(0);
+            if (index < 1) {
+                throw CommandRegistry.error("Invalid index, must be greater than or equal to 1.");
             }
-            var world = ctx.world();
-            var selector = ctx.session().getSelector(world);
-            selector.selectPrimary(new com.maxlananas.fawebim.core.math.BlockVector3(box.minX(), box.minY(), box.minZ()),
-                    com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-            selector.selectSecondary(new com.maxlananas.fawebim.core.math.BlockVector3(box.maxX(), box.maxY(), box.maxZ()),
-                    com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-            ctx.actor().updateSelectionOutline();
-            ctx.actor().message(Msg.success("Selected the area of " + path.getFileName()));
+            List<Path> snapshots = Snapshots.list(ctx.actor().name());
+            if (snapshots.size() < index) {
+                throw CommandRegistry.error("Invalid index, must be between 1 and "
+                        + snapshots.size() + ".");
+            }
+            Path path = snapshots.get(index - 1);
+            ctx.session().setActiveSnapshot(path);
+            ctx.actor().message(Msg.success("Snapshot set to: " + path.getFileName()));
         };
     }
 

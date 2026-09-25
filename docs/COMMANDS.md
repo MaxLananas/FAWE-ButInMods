@@ -29,10 +29,10 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 - [navigation](#navigation) (`8`)
 - [region](#region) (`46`)
 - [schematic](#schematic) (`2`)
-- [selection](#selection) (`19`)
+- [selection](#selection) (`18`)
 - [snapshot](#snapshot) (`6`)
 - [tool](#tool) (`21`)
-- [utility](#utility) (`26`)
+- [utility](#utility) (`27`)
 - [worldedit](#worldedit) (`8`)
 
 ## anvil
@@ -179,8 +179,8 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//hsphere <pattern> <radius> [height]` | — | Create a sphere at your position | implemented |
 | `//img <image> [pattern]` | `/image` | Build terrain from a heightmap image | implemented |
 | `//line <pattern> [thickness]` | — | Draw a line between selection corners | implemented |
-| `//ore <pattern>` | — | Generate ores in the selection | implemented |
-| `//ores <mask>` | `/ores` | Generates ores in the selection | implemented |
+| `//ore <mask> <material> <size> [frequency] [rarity] [minY] [maxY]` | `/ore` | Generates ores | implemented |
+| `//ores <mask>` | `/ores` | Generates ores | implemented |
 | `//pumpkins [density]` | — | Generate a pumpkin patch | implemented |
 | `//pyramid <pattern> <size>` | — | Create a pyramid at your position | implemented |
 | `//sphere <pattern> <radius> [height]` | — | Create a sphere at your position | implemented |
@@ -305,7 +305,6 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `//shift <amount> [direction]` | — | Shift the selection area | implemented |
 | `//size` | — | Show the size and dimensions of the selection | implemented |
 | `//toggleeditwand` | — | Toggle the wand's function (only the commands remain active) | implemented |
-| `//toggleplace` | — | Switch between placing at position 1 or at your position | implemented |
 | `//wand` | — | Give yourself the selection wand | implemented |
 
 ## snapshot
@@ -316,7 +315,7 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/snapshot before [date]` | — | Choose the nearest snapshot before a date | implemented |
 | `/snapshot list [-p <page>]` | — | List your snapshots | implemented |
 | `/snapshot restore [name]` | `/restore` | Restore a snapshot | implemented |
-| `/snapshot sel` | — | Select the region of the chosen snapshot | implemented |
+| `/snapshot sel <index>` | — | Choose the snapshot based on the list id | implemented |
 | `/snapshot use <name>` | — | Choose the snapshot to work with | implemented |
 
 ## tool
@@ -374,7 +373,8 @@ Both spellings work: WorldEdit's `//set` and Minecraft's `/set` (Minecraft strip
 | `/perf [sideEffect] [newState]` | `//perf` | Toggle side effects for performance | implemented |
 | `/timeout [seconds]` | — | Set your operation timeout in seconds | implemented |
 | `/tips` | — | Toggle FAWE's tips on and off | implemented |
-| `placement` | `/placement`, `/toggleplace` | Select which placement position to use for schematics | implemented |
+| `placement <placementType> [multiplier] [offset]` | `/placement` | Select which placement to use | implemented |
+| `toggleplace` | `/toggleplace` | Switch between your position and pos1 for placement | implemented |
 
 ## worldedit
 

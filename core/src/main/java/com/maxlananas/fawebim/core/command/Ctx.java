@@ -243,6 +243,10 @@ public final class Ctx {
     }
 
     public BlockVector3 placement() {
+        BlockVector3 placed = session().getPlacement().position(world(), actor());
+        if (placed != null) {
+            return placed;
+        }
         BlockVector3 position = actor.position();
         if (position != null) {
             return position;

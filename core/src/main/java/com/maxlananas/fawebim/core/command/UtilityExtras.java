@@ -7,6 +7,8 @@ import com.maxlananas.fawebim.core.history.History;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.session.LocalSession;
+import com.maxlananas.fawebim.core.session.Placement;
+import com.maxlananas.fawebim.core.session.PlacementType;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
@@ -43,6 +45,7 @@ final class UtilityExtras {
         tips();
         watchdog();
         placement();
+        togglePlace();
         reorder();
         sourceMask();
         heightmapInterface();
@@ -222,33 +225,68 @@ final class UtilityExtras {
     }
 
     /**
-     * {@code //placement} — where a pasted schematic lands relative to the
-     * player: at the first block, the last block or the origin.
+     * {@code /placement} — where pastes and generators start from.
+     *
+     * <p>The type names the anchor - the world origin, the block the player
+     * stands in, the first position of the selection or one of its corners - and
+     * the offset moves it, multiplied by the number in between. {@code here}
+     * becomes the world origin plus the player's coordinates, which is how
+     * WorldEdit reads it.</p>
      */
     private void placement() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("placement", "/placement", "/toggleplace");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("placement", "/placement");
         if (entry == null) {
             return;
         }
-        entry.description = "Select which placement position to use for schematics";
+        entry.description = "Select which placement to use";
         entry.group = "utility";
+        entry.arguments.add("placementType");
+        entry.arguments.add("[multiplier]");
+        entry.arguments.add("[offset]");
         entry.handler = ctx -> {
-            LocalSession session = ctx.session();
-            if (!ctx.args().isEmpty()) {
-                session.setPlacementMode(parsePlacement(ctx.arg(0)));
-            } else {
-                session.setPlacementMode((session.getPlacementMode() + 1) % 3);
+            PlacementType type = PlacementType.parse(ctx.arg(0));
+            if (type == null) {
+                throw CommandRegistry.error("Placement must be one of " + PlacementType.names()
+                        + ", got '" + ctx.arg(0) + "'");
             }
-            ctx.actor().message(Msg.success("Placement mode: " + session.placementModeName()));
+            int multiplier = ctx.intArg(1, 1);
+            BlockVector3 offset = ctx.args().size() < 3 ? BlockVector3.ZERO : ctx.blockVector(2).multiply(multiplier);
+            if (type == PlacementType.HERE) {
+                if (!type.canBeUsedBy(ctx.actor())) {
+                    throw CommandRegistry.error("Cannot toggle placing in this context.");
+                }
+                offset = offset.add(ctx.actor().position());
+                type = PlacementType.WORLD;
+            }
+            Placement placement = new Placement(type, offset);
+            if (!placement.canBeUsedBy(ctx.actor())) {
+                throw CommandRegistry.error("Cannot toggle placing in this context.");
+            }
+            ctx.session().setPlacement(placement);
+            ctx.actor().message(Msg.success(placement.message()));
         };
     }
 
-    private static int parsePlacement(String input) {
-        return switch (input.toLowerCase(Locale.ROOT)) {
-            case "last" -> LocalSession.PLACEMENT_LAST;
-            case "origin" -> LocalSession.PLACEMENT_ORIGIN;
-            case "first" -> LocalSession.PLACEMENT_FIRST;
-            default -> throw CommandRegistry.error("Placement must be first, last or origin");
+    /**
+     * {@code /toggleplace} — swaps between the block the player stands in and
+     * the first position of the selection.
+     */
+    private void togglePlace() {
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("toggleplace", "/toggleplace");
+        if (entry == null) {
+            return;
+        }
+        entry.description = "Switch between your position and pos1 for placement";
+        entry.group = "utility";
+        entry.handler = ctx -> {
+            PlacementType type = ctx.session().getPlacement().type() == PlacementType.POS1
+                    ? PlacementType.PLAYER : PlacementType.POS1;
+            Placement placement = new Placement(type, BlockVector3.ZERO);
+            if (!placement.canBeUsedBy(ctx.actor())) {
+                throw CommandRegistry.error("Cannot toggle placing in this context.");
+            }
+            ctx.session().setPlacement(placement);
+            ctx.actor().message(Msg.success(placement.message()));
         };
     }
 

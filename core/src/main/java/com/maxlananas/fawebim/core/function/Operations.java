@@ -1239,38 +1239,199 @@ public final class Operations {
      * @param frequency one vein per this many blocks
      * @param rarity    1 in {@code rarity} veins is actually placed
      */
-    public static int ore(World world, EditSession session, Region region, Mask mask, Pattern ore, int size,
-                          double frequency, double rarity, Random random) {
+    /**
+     * FAWE's {@code addOre}: scatters veins of the pattern through the selection.
+     *
+     * <p>The deposits are seeded per chunk - {@code frequency} attempts each, of
+     * which {@code rarity} percent run - and each one is a vein {@code size}
+     * blocks long. That is {@code Extent.spawnResource} and {@code OreGen.spawn}
+     * of the upstream sources, down to the sine the vein is bent with and the
+     * larger tail it grows towards the end.</p>
+     */
+    public static int ore(World world, EditSession session, Region region, Mask mask, Pattern material,
+                          int size, int frequency, int rarity, int minY, int maxY, boolean triangular,
+                          OreDeepslate deepslate, Random random) {
+        int changed = 0;
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        int veins = (int) Math.max(1, region.getVolume() / Math.max(1, frequency));
-        int changed = 0;
-        for (int i = 0; i < veins; i++) {
-            if (rarity > 1 && random.nextDouble() * rarity > 1) {
-                continue;
-            }
-            session.checkTimeout();
-            int x = min.x() + random.nextInt(Math.max(1, max.x() - min.x() + 1));
-            int y = min.y() + random.nextInt(Math.max(1, max.y() - min.y() + 1));
-            int z = min.z() + random.nextInt(Math.max(1, max.z() - min.z() + 1));
-            for (int j = 0; j < size; j++) {
-                int bx = x + random.nextInt(3) - 1;
-                int by = y + random.nextInt(3) - 1;
-                int bz = z + random.nextInt(3) - 1;
-                if (!region.contains(bx, by, bz) || mask == null || !mask.test(bx, by, bz)) {
-                    continue;
-                }
-                if (session.setBlock(bx, by, bz, ore.apply(bx, by, bz))) {
-                    changed++;
+        for (int chunkX = min.x() >> 4; chunkX <= max.x() >> 4; chunkX++) {
+            for (int chunkZ = min.z() >> 4; chunkZ <= max.z() >> 4; chunkZ++) {
+                for (int attempt = 0; attempt < frequency; attempt++) {
+                    session.checkTimeout();
+                    if (random.nextInt(100) > rarity) {
+                        continue;
+                    }
+                    int x = (chunkX << 4) + random.nextInt(16);
+                    int z = (chunkZ << 4) + random.nextInt(16);
+                    changed += spawnVein(world, session, mask, material, size, minY, maxY, triangular,
+                            deepslate, random, x, z);
                 }
             }
         }
         return changed;
     }
 
-    /** {@code //ore} with the defaults FAWE uses when only a pattern is given. */
-    public static int ore(World world, EditSession session, Region region, Pattern ore, Random random) {
-        return ore(world, session, region, ore, random, OreDeepslate.NONE);
+    /** One deposit of {@link #ore}, upstream's {@code OreGen.spawn}. */
+    private static int spawnVein(World world, EditSession session, Mask mask, Pattern material, int size,
+                                 int minY, int maxY, boolean triangular, OreDeepslate deepslate,
+                                 Random random, int x, int z) {
+        int y;
+        if (triangular) {
+            // A triangular distribution puts most of the veins near the middle
+            // of the band, which is how the vanilla ore bands are shaped.
+            int range = maxY - minY;
+            int mid = range / 2;
+            y = minY + random.nextInt(Math.max(1, mid)) + random.nextInt(Math.max(1, range - mid));
+        } else {
+            y = minY + random.nextInt(Math.max(1, maxY - minY));
+        }
+        if (!mask.test(x, y, z)) {
+            return 0;
+        }
+        double angle = random.nextDouble() * Math.PI;
+        double eighth = size * 0.125;
+        double sin = Math.sin(angle) * eighth;
+        double cos = Math.cos(angle) * eighth;
+        double d1 = x + sin;
+        double d2 = x - sin;
+        double d3 = z + cos;
+        double d4 = z - cos;
+        double d5 = y + random.nextInt(3) - 2;
+        double d6 = y + random.nextInt(3) - 2;
+        double xd = d2 - d1;
+        double yd = d6 - d5;
+        double zd = d4 - d3;
+        double sixteenth = size * 0.0625;
+        double sizeInverse = 1.0 / size;
+        int changed = 0;
+        double factor = 0;
+        for (int i = 0; i < size; i++, factor += sizeInverse) {
+            double centreX = d1 + xd * factor;
+            double centreY = d5 + yd * factor;
+            double centreZ = d3 + zd * factor;
+            double radius = (Math.sin(Math.PI * factor) + 1.0) * (random.nextDouble() * sixteenth) + 1.0;
+            double half = radius * 0.5;
+            int fromX = floorZero(centreX - half);
+            int fromY = Math.max(minY + 1, floorZero(centreY - half));
+            int fromZ = floorZero(centreZ - half);
+            int toX = floorZero(centreX + half);
+            int toY = Math.min(maxY, floorZero(centreY + half));
+            int toZ = floorZero(centreZ + half);
+            // The inverse of the radius is taken once per slice, so the ellipse
+            // test is three multiplications per block rather than a division.
+            double inverse = 1.0 / half;
+            for (int xx = fromX; xx <= toX; xx++) {
+                double dx = (xx + 0.5 - centreX) * inverse;
+                double dx2 = dx * dx;
+                if (dx2 >= 1) {
+                    continue;
+                }
+                for (int yy = fromY; yy <= toY; yy++) {
+                    double dy = (yy + 0.5 - centreY) * inverse;
+                    double dxy2 = dx2 + dy * dy;
+                    if (dxy2 >= 1) {
+                        continue;
+                    }
+                    for (int zz = fromZ; zz <= toZ; zz++) {
+                        double dz = (zz + 0.5 - centreZ) * inverse;
+                        if (dxy2 + dz * dz >= 1 || !mask.test(xx, yy, zz)) {
+                            continue;
+                        }
+                        int state = material.apply(xx, yy, zz);
+                        state = deepslateState(world, deepslate, state, xx, yy, zz);
+                        if (session.setBlock(xx, yy, zz, state)) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /** The state of a cell for {@code //ore}/{@code //ores}: the deepslate form where FAWE uses it. */
+    private static int deepslateState(World world, OreDeepslate deepslate, int state, int x, int y, int z) {
+        if (deepslate == OreDeepslate.NONE) {
+            return state;
+        }
+        if (deepslate == OreDeepslate.BELOW_ZERO) {
+            return y < 0 ? deepslateVariant(BlockState.registry(), state) : state;
+        }
+        String target = BlockState.registry().name(world.getBlock(x, y, z));
+        if (!target.contains("deepslate") && !target.contains("tuff")) {
+            return state;
+        }
+        return deepslateVariant(BlockState.registry(), state);
+    }
+
+    /** {@code MathMan.floorZero}: a floor that keeps zero where it is. */
+    private static int floorZero(double value) {
+        int truncated = (int) value;
+        return value < truncated ? truncated - 1 : truncated;
+    }
+
+    /**
+     * {@code //ores}: the vanilla shaped ore distribution, which is FAWE's
+     * {@code addOres} - the same bands, vein sizes, frequencies and rarities.
+     *
+     * @param deepslate what happens to an ore that lands in the deepslate layers
+     */
+    public static int ores(World world, EditSession session, Region region, Mask mask, OreDeepslate deepslate,
+                           Random random) {
+        int changed = 0;
+        int minY = world.minY();
+        int maxY = world.maxY();
+        // The stone band.
+        changed += ore(world, session, region, mask, stone("minecraft:gravel"), 33, 14, 100, minY, maxY,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:andesite"), 33, 2, 100, 0, 60,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:andesite"), 33, 1, 17, 64, 128,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:diorite"), 33, 2, 100, 0, 60,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:diorite"), 33, 1, 17, 64, 128,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:granite"), 33, 2, 100, 0, 60,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:granite"), 33, 1, 17, 64, 128,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:tuff"), 33, 2, 100, minY, 0,
+                false, deepslate, random);
+        changed += ore(world, session, region, mask, stone("minecraft:dirt"), 33, 7, 100, 0, 160,
+                false, deepslate, random);
+
+        // Coal.
+        changed += ore(world, session, region, mask, ore("coal_ore"), 17, 20, 100, 0, 192, true, deepslate, random);
+        changed += ore(world, session, region, mask, ore("coal_ore"), 17, 30, 100, 136, maxY, false, deepslate, random);
+        // Copper.
+        changed += ore(world, session, region, mask, ore("copper_ore"), 13, 16, 100, -16, 112, true, deepslate, random);
+        // Iron.
+        changed += ore(world, session, region, mask, ore("iron_ore"), 9, 10, 100, minY, 72, false, deepslate, random);
+        changed += ore(world, session, region, mask, ore("iron_ore"), 9, 10, 100, -24, 56, true, deepslate, random);
+        changed += ore(world, session, region, mask, ore("iron_ore"), 9, 90, 100, 80, 384, true, deepslate, random);
+        // Gold.
+        changed += ore(world, session, region, mask, ore("gold_ore"), 9, 1, 50, -64, -48, false, deepslate, random);
+        changed += ore(world, session, region, mask, ore("gold_ore"), 9, 4, 100, -64, 32, true, deepslate, random);
+        // Redstone.
+        changed += ore(world, session, region, mask, ore("redstone_ore"), 8, 8, 100, -32, 32, true, deepslate, random);
+        changed += ore(world, session, region, mask, ore("redstone_ore"), 8, 4, 100, minY, 15, false, deepslate, random);
+        // Diamond, in the four bands vanilla uses.
+        int diamondMin = minY - 80;
+        int diamondMax = minY + 80;
+        changed += ore(world, session, region, mask, ore("diamond_ore"), 5, 7, 100, diamondMin, diamondMax,
+                true, deepslate, random);
+        changed += ore(world, session, region, mask, ore("diamond_ore"), 8, 2, 100, -64, -4, false, deepslate, random);
+        changed += ore(world, session, region, mask, ore("diamond_ore"), 23, 1, 11, diamondMin, diamondMax,
+                true, deepslate, random);
+        changed += ore(world, session, region, mask, ore("diamond_ore"), 10, 4, 100, diamondMin, diamondMax,
+                true, deepslate, random);
+        // Lapis and emerald.
+        changed += ore(world, session, region, mask, ore("lapis_ore"), 7, 2, 100, -32, 32, true, deepslate, random);
+        changed += ore(world, session, region, mask, ore("lapis_ore"), 7, 4, 100, minY, 64, false, deepslate, random);
+        changed += ore(world, session, region, mask, ore("emerald_ore"), 5, 100, 100, -16, 480,
+                true, deepslate, random);
+        return changed;
     }
 
     /** How {@code //ores} rewrites the ore of the deepslate layers. */
@@ -1290,47 +1451,15 @@ public final class Operations {
         }
     }
 
-    /**
-     * {@code //ore} / {@code //ores}: scatters the pattern through the selection
-     * the way FAWE's ore generator does. When a deepslate mode is set, the block
-     * that ends up below the deepslate line is replaced by its deepslate variant,
-     * so a stone ore never shows up in the deepslate layers.
-     */
-    public static int ore(World world, EditSession session, Region region, Pattern ore, Random random,
-                          OreDeepslate deepslate) {
-        int changed = 0;
-        BlockVector3 min = region.getMinimumPoint();
-        BlockVector3 max = region.getMaximumPoint();
-        BlockStateRegistry registry = BlockState.registry();
-        int attempts = Math.max(1, (int) (region.getVolume() / 500));
-        for (int i = 0; i < attempts; i++) {
-            session.checkTimeout();
-            int size = 2 + random.nextInt(5);
-            int x = min.x() + random.nextInt(Math.max(1, max.x() - min.x() + 1));
-            int y = min.y() + random.nextInt(Math.max(1, max.y() - min.y() + 1));
-            int z = min.z() + random.nextInt(Math.max(1, max.z() - min.z() + 1));
-            for (int block = 0; block < size; block++) {
-                int bx = x + random.nextInt(3) - 1;
-                int by = y + random.nextInt(3) - 1;
-                int bz = z + random.nextInt(3) - 1;
-                if (!region.contains(bx, by, bz)) {
-                    continue;
-                }
-                int target = world.getBlock(bx, by, bz);
-                if (deepslate == OreDeepslate.WHERE_DEEPSLATE
-                        && !"minecraft:deepslate".equals(registry.name(target))) {
-                    continue;
-                }
-                int state = ore.apply(bx, by, bz);
-                if (deepslate != OreDeepslate.NONE && by < 0) {
-                    state = deepslateVariant(registry, state);
-                }
-                if (session.setBlock(bx, by, bz, state)) {
-                    changed++;
-                }
-            }
-        }
-        return changed;
+    /** A pattern of one block, for the ore bands. */
+    private static Pattern stone(String name) {
+        int state = BlockState.registry().defaultState(name);
+        return new FixedPattern(state);
+    }
+
+    /** An ore pattern, which is the same state with a deepslate form beside it. */
+    private static Pattern ore(String name) {
+        return stone("minecraft:" + name);
     }
 
     /** The deepslate form of an ore, or the state itself when there is none. */

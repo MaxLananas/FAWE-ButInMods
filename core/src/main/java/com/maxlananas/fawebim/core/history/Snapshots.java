@@ -1,8 +1,6 @@
 package com.maxlananas.fawebim.core.history;
 
 import com.maxlananas.fawebim.core.extent.EditSession;
-import com.maxlananas.fawebim.core.math.BlockBox;
-import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.NbtIo;
 
@@ -166,17 +164,6 @@ public final class Snapshots {
             }
         }
         return restored;
-    }
-
-    /** The box covered by a snapshot, so {@code /snapshot sel} can select it. */
-    public static BlockBox bounds(NbtCompound snapshot) {
-        int[] min = snapshot.getIntArray("min");
-        int[] max = snapshot.getIntArray("max");
-        if (min == null || max == null || min.length < 3 || max.length < 3) {
-            return null;
-        }
-        return new BlockBox(new BlockVector3(min[0], min[1], min[2]),
-                new BlockVector3(max[0], max[1], max[2]));
     }
 
     /**

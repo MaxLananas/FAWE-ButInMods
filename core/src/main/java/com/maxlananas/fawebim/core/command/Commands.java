@@ -237,15 +237,6 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e9 = registry.register("//toggleplace");
-        e9.description = "Switch between placing at position 1 or at your position";
-        e9.group = "selection";
-        e9.handler = ctx -> {
-                    ctx.session().togglePlace();
-                    ctx.actor().message(Msg.info("Placing at "
-                            + (ctx.session().shouldPlaceAtPos1() ? "position 1" : "your position")));
-                };
-
 
         CommandRegistry.Entry e10 = registry.register("//drawsel");
         e10.description = "Draw the selection outline (uses particles, no client mod needed)";
@@ -1481,66 +1472,67 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e53 = registry.register("//ore");
-        e53.description = "Generate ores in the selection";
+        CommandRegistry.Entry e53 = registry.register("//ore", "/ore");
+        e53.description = "Generates ores";
         e53.group = "generation";
         e53.requiresSelection = true;
-        // -b and -d pick how the ores are written below the deepslate line.
-        e53.booleanFlags.add("b");
-        e53.booleanFlags.add("d");
-        e53.arguments.add("pattern");
+        e53.arguments.add("mask");
+        e53.arguments.add("material");
+        e53.arguments.add("size");
+        e53.arguments.add("[frequency]");
+        e53.arguments.add("[rarity]");
+        e53.arguments.add("[minY]");
+        e53.arguments.add("[maxY]");
         e53.handler = ctx -> {
+                    Mask mask = ctx.mask(0);
+                    Pattern material = ctx.pattern(1);
+                    int size = ctx.intArg(2);
+                    int frequency = ctx.intArg(3, 10);
+                    int rarity = ctx.intArg(4, 100);
+                    int worldMinY = ctx.world().minY();
+                    int worldMaxY = ctx.world().maxY();
+                    int minY = ctx.intArg(5, 0);
+                    int maxY = ctx.intArg(6, 63);
+                    if (minY < worldMinY) {
+                        throw CommandRegistry.error("Argument miny may not be less than " + worldMinY);
+                    }
+                    if (maxY > worldMaxY) {
+                        throw CommandRegistry.error("Argument maxy may not be greater than " + worldMaxY);
+                    }
+                    if (minY >= maxY) {
+                        throw CommandRegistry.error("Argument miny may not be greater than argument maxy");
+                    }
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Pattern ore = Parsers.pattern(ctx.arg(0), ctx);
-                    com.maxlananas.fawebim.core.function.Operations.OreDeepslate deepslate =
-                            com.maxlananas.fawebim.core.function.Operations.OreDeepslate.of(
-                                    ctx.hasFlag("b"), ctx.hasFlag("d"));
                     int changed = com.maxlananas.fawebim.core.function.Operations.ore(ctx.world(), session,
-                            ctx.selection(), ore, new java.util.Random(), deepslate);
-                    ctx.actor().message(Msg.success("Generated " + changed + " ore block(s)"));
+                            ctx.selection(), mask, material, size, frequency, rarity, minY, maxY, false,
+                            com.maxlananas.fawebim.core.function.Operations.OreDeepslate.NONE,
+                            java.util.concurrent.ThreadLocalRandom.current());
+                    ctx.actor().message(Msg.success(changed + " block(s) affected"));
                     flush(ctx, session);
                 };
 
 
-        // FAWE's own ore command takes the ores as a mask rather than a pattern,
-        // so `//ores diamond_ore,iron_ore` plants veins of those two. The veins
-        // and the deepslate switches are the ones //ore uses.
         CommandRegistry.Entry e53b = registry.register("//ores", "/ores");
-        e53b.description = "Generates ores in the selection";
+        e53b.description = "Generates ores";
         e53b.group = "generation";
         e53b.requiresSelection = true;
+        // -b makes every ore below y=0 its deepslate form, -d only the ores that
+        // land in deepslate, which are the two switches FAWE declares.
         e53b.booleanFlags.add("b");
         e53b.booleanFlags.add("d");
         e53b.arguments.add("mask");
         e53b.handler = ctx -> {
                     Mask mask = ctx.mask(0);
-                    List<Integer> ores = new ArrayList<>();
-                    if (mask instanceof Masks.BlockMask blockMask) {
-                        int[] named = blockMask.getStates().toArray();
-                        for (int state : named) {
-                            ores.add(state);
-                        }
-                        for (String input : blockMask.getInputs()) {
-                            int state = BlockState.registry().defaultState(input);
-                            if (state >= 0 && !ores.contains(state)) {
-                                ores.add(state);
-                            }
-                        }
-                    }
-                    if (ores.isEmpty()) {
-                        throw CommandRegistry.error("//ores takes the ore blocks to plant, such as"
-                                + " minecraft:diamond_ore or minecraft:iron_ore,minecraft:deepslate_iron_ore");
-                    }
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Pattern ore = new com.maxlananas.fawebim.core.pattern.Patterns.RandomState(ores);
                     com.maxlananas.fawebim.core.function.Operations.OreDeepslate deepslate =
                             com.maxlananas.fawebim.core.function.Operations.OreDeepslate.of(
                                     ctx.hasFlag("b"), ctx.hasFlag("d"));
-                    int changed = com.maxlananas.fawebim.core.function.Operations.ore(ctx.world(), session,
-                            ctx.selection(), ore, new java.util.Random(), deepslate);
-                    ctx.actor().message(Msg.success("Generated " + changed + " ore block(s)"));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.ores(ctx.world(), session,
+                            ctx.selection(), mask, deepslate,
+                            java.util.concurrent.ThreadLocalRandom.current());
+                    ctx.actor().message(Msg.success(changed + " block(s) affected"));
                     flush(ctx, session);
                 };
 
@@ -1758,10 +1750,7 @@ public final class Commands {
                     }
                     BlockArrayClipboard clipboard = holder.getClipboard();
                     BlockVector3 destination = ctx.args().isEmpty()
-                            ? (ctx.session().shouldPlaceAtPos1()
-                            ? ctx.session().getSelector(ctx.world()).getRegion().getMinimumPoint()
-                            : ctx.placement())
-                            : ctx.blockVector(0);
+                            ? ctx.placement() : ctx.blockVector(0);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Mask sourceMask = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
