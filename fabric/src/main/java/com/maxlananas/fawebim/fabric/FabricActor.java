@@ -77,13 +77,20 @@ public final class FabricActor implements Actor {
 
     @Override
     public BlockVector3 position() {
-        if (player == null) {
-            BlockPos pos = source.getEntity() instanceof net.minecraft.world.entity.Entity entity
-                    ? entity.blockPosition() : BlockPos.ZERO;
+        if (player != null) {
+            BlockPos pos = player.blockPosition();
             return new BlockVector3(pos.getX(), pos.getY(), pos.getZ());
         }
-        BlockPos pos = player.blockPosition();
-        return new BlockVector3(pos.getX(), pos.getY(), pos.getZ());
+        // The console, a command block and a function run as a source without an
+        // entity, so there is no position to build at. Answering with the world
+        // origin put every shape a console asked for at 0,0,0: the core falls back
+        // to the selection for those sources, and the commands that move a player
+        // say they need one, which needs this answer to be nothing at all.
+        if (source.getEntity() instanceof net.minecraft.world.entity.Entity entity) {
+            BlockPos pos = entity.blockPosition();
+            return new BlockVector3(pos.getX(), pos.getY(), pos.getZ());
+        }
+        return null;
     }
 
     @Override

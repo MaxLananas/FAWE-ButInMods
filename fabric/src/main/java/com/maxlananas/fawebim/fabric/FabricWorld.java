@@ -504,7 +504,9 @@ public final class FabricWorld implements World {
     public BlockVector3 getTargetBlock(com.maxlananas.fawebim.core.actor.Actor actor, int maxDistance) {
         BlockVector3 origin = actor.position();
         if (origin == null) {
-            return BlockVector3.ZERO;
+            // Nothing to look from, and the caller reports that: answering with
+            // the world origin made a console ray trace from 0,0,0.
+            return null;
         }
         Vector3 direction = actor.direction().normalize();
         double eyeHeight = actor.isPlayer() ? 1.62 : 0.0;
