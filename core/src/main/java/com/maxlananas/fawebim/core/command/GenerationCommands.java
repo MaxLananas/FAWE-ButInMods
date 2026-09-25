@@ -126,7 +126,7 @@ final class GenerationCommands {
      * is above it.
      */
     private void image() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("img", "/image");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//img", "/image");
         if (entry == null) {
             return;
         }
@@ -196,7 +196,7 @@ final class GenerationCommands {
      * {@code miny} and {@code maxy} and returns a biome id.
      */
     private void generateBiome() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("generatebiome", "/genbiome", "/gb");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//generatebiome", "/genbiome", "/gb");
         if (entry == null) {
             return;
         }
@@ -334,7 +334,7 @@ final class GenerationCommands {
      * lakes, ...
      */
     private void feature() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("feature");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//feature");
         if (entry == null) {
             return;
         }
@@ -356,7 +356,7 @@ final class GenerationCommands {
 
     /** {@code //structure} — generates a worldgen structure over the selection. */
     private void structure() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("structure", "/struct");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//structure", "/struct");
         if (entry == null) {
             return;
         }

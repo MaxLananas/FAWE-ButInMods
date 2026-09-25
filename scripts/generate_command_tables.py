@@ -180,7 +180,9 @@ def generate(inventory: list[dict], supported: dict[str, dict]) -> tuple[list, l
                 continue
             if any(key in supported for key in spellings(spelling)):
                 continue
-            routes.setdefault(spelling, anchor)
+            # A route written with a leading slash answers both spellings of the
+            # name: `/rem` and `//rem`, which is how upstream declares it.
+            routes.setdefault("/" + spelling, anchor)
     return list(routes.items()), list(stubs.items())
 
 

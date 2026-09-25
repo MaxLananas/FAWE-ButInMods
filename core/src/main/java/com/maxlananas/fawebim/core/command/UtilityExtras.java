@@ -58,7 +58,7 @@ final class UtilityExtras {
      * {@code //generate}.
      */
     private void calculate() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("calculate",
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//calculate",
                 "/calc", "/evaluate", "/eval", "/solve", "/!");
         if (entry == null) {
             return;
@@ -95,7 +95,7 @@ final class UtilityExtras {
 
     /** {@code //cancel} — aborts the next edit that reaches a timeout check. */
     private void cancel() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("cancel", "/fcancel");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//cancel", "/fcancel");
         if (entry == null) {
             return;
         }
@@ -113,7 +113,7 @@ final class UtilityExtras {
      * {@link LocalSession#setPendingCommand}.
      */
     private void confirm() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("confirm");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//confirm");
         if (entry == null) {
             return;
         }
@@ -197,7 +197,7 @@ final class UtilityExtras {
 
     /** {@code //watchdog} — whether long operations are stopped by the limiter. */
     private void watchdog() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("watchdog");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//watchdog");
         if (entry == null) {
             return;
         }
@@ -216,7 +216,7 @@ final class UtilityExtras {
      * player: at the first block, the last block or the origin.
      */
     private void placement() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("placement", "/toggleplace");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("placement", "/placement", "/toggleplace");
         if (entry == null) {
             return;
         }
@@ -249,7 +249,7 @@ final class UtilityExtras {
      * also reorders within the operation.
      */
     private void reorder() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("reorder");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//reorder");
         if (entry == null) {
             return;
         }
@@ -273,7 +273,7 @@ final class UtilityExtras {
 
     /** {@code //gsmask} — the mask applied to the blocks an operation reads. */
     private void sourceMask() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("gsmask");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//gsmask");
         if (entry == null) {
             return;
         }
@@ -297,7 +297,7 @@ final class UtilityExtras {
      * exposes to players debugging terrain edits.
      */
     private void heightmapInterface() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("heightmapinterface", "/hmi");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//heightmapinterface", "/hmi");
         if (entry == null) {
             return;
         }
@@ -313,7 +313,7 @@ final class UtilityExtras {
 
     /** {@code //registry} — counts the registered block states and biomes. */
     private void registry() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("registry");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//registry");
         if (entry == null) {
             return;
         }

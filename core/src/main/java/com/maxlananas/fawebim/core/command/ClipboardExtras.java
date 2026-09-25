@@ -39,7 +39,7 @@ final class ClipboardExtras {
      * FAWE uses this to copy huge selections without allocating a block array.
      */
     private void lazyCopy() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("lazycopy", "/lc");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//lazycopy", "/lc");
         if (entry == null) {
             return;
         }

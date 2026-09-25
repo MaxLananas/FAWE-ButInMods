@@ -55,7 +55,7 @@ final class RegionCommands {
 
     /** {@code //air} — clears the selection, the fast path of {@code //set air}. */
     private void air() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("air", "/0");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//air", "/0");
         if (entry == null) {
             return;
         }
@@ -81,7 +81,7 @@ final class RegionCommands {
 
     /** {@code //test} — the upstream diagnostic command that echoes its argument. */
     private void test() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("test");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//test");
         if (entry == null) {
             return;
         }
@@ -93,7 +93,7 @@ final class RegionCommands {
 
     /** {@code //fixlighting} — relights the selection after a bulk edit. */
     private void fixLighting() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("fixlighting");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//fixlighting");
         if (entry == null) {
             return;
         }
@@ -105,7 +105,7 @@ final class RegionCommands {
 
     /** {@code //removelighting} — drops the cached light of the selection. */
     private void removeLighting() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("removelighting", "/removelight");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//removelighting", "/removelight");
         if (entry == null) {
             return;
         }
@@ -116,7 +116,7 @@ final class RegionCommands {
     }
 
     private void setBlockLight() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("setblocklight");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//setblocklight");
         if (entry == null) {
             return;
         }
@@ -134,7 +134,7 @@ final class RegionCommands {
     }
 
     private void setSkyLight() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("setskylight");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//setskylight");
         if (entry == null) {
             return;
         }
@@ -172,7 +172,7 @@ final class RegionCommands {
 
     /** {@code //nbtinfo} — dumps the block entity of the targeted block. */
     private void nbtInfo() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("nbtinfo");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//nbtinfo");
         if (entry == null) {
             return;
         }
@@ -201,7 +201,7 @@ final class RegionCommands {
      * against their neighbours.
      */
     private void fixBlocks() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("fixblocks", "/updateblocks", "/fixconnect");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//fixblocks", "/updateblocks", "/fixconnect");
         if (entry == null) {
             return;
         }
@@ -230,7 +230,7 @@ final class RegionCommands {
     }
 
     private void worldEditAnywhere() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("wea", "/weanywhere", "/worldeditanywhere");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//wea", "/weanywhere", "/worldeditanywhere");
         if (entry == null) {
             return;
         }
@@ -241,7 +241,7 @@ final class RegionCommands {
     }
 
     private void worldEditRegion() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("wer", "/worldeditregion");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//wer", "/worldeditregion");
         if (entry == null) {
             return;
         }
@@ -257,7 +257,7 @@ final class RegionCommands {
      * with side effects disabled.
      */
     private void update() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("update");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//update");
         if (entry == null) {
             return;
         }
@@ -312,7 +312,7 @@ final class RegionCommands {
      * which is how WorldEdit "minimises" a selection around a build.
      */
     private void trim() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("trim");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//trim");
         if (entry == null) {
             return;
         }
@@ -362,7 +362,7 @@ final class RegionCommands {
      * the blocks that are "exposed" on the surface.
      */
     private void remove() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("remove", "rem", "rement");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("remove", "rem", "rement", "/remove", "/rem", "/rement");
         if (entry == null) {
             return;
         }
@@ -401,7 +401,7 @@ final class RegionCommands {
      * shortcut for <code>-abgnpt</code>.</p>
      */
     private void butcher() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("butcher");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("butcher", "/butcher");
         if (entry == null) {
             return;
         }
@@ -444,7 +444,7 @@ final class RegionCommands {
      * which is FAWE's "distorted sphere" generator.
      */
     private void blob() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("blob");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//blob");
         if (entry == null) {
             return;
         }
