@@ -179,13 +179,21 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e6 = registry.register("//sel");
+        // ";" is the spelling WorldEdit gives this command: the client sends the
+        // line without its leading slashes, so //; and /; reach it.
+        CommandRegistry.Entry e6 = registry.register("//sel", ";");
         e6.description = "Choose the selection type: cuboid, extend, poly, ellipsoid, sphere, cyl, convex";
         e6.group = "selection";
-        e6.arguments.add("type");
+        e6.arguments.add("[type]");
         // -d remembers the selector as the default for new sessions.
         e6.booleanFlags.add("d");
         e6.handler = ctx -> {
+                    if (ctx.args().isEmpty()) {
+                        ctx.actor().message(Msg.info("Selection type: ").append(Msg.value(
+                                ctx.session().getSelector(ctx.world()).getTypeName())));
+                        ctx.actor().message(Msg.info("Types: cuboid, extend, poly, ellipsoid, sphere, cyl, convex"));
+                        return;
+                    }
                     String type = ctx.arg(0).toLowerCase(Locale.ROOT);
                     if (type.equals("none")) {
                         ctx.session().getSelector(ctx.world()).clear();

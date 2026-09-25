@@ -108,6 +108,7 @@ public final class SelfTestMain {
         testBrushFactoryCoverage();
         testHardening();
         testCut();
+        testSelectionTypes();
         testChatFormatting();
         testConfigAndSettings();
         testRegen();
@@ -2901,6 +2902,53 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//cut");
         CommandManager.get().dispatch(actor, "//paste 20,64,20");
         check("the cut clipboard pastes back", world.getBlock(24, 66, 24) == stone);
+    }
+
+
+    /**
+     * {@code //sel} picks the selector and, with no argument, reports the one in
+     * use; {@code ;} is the spelling WorldEdit gives it, so {@code //;} has to be
+     * the same command.
+     */
+    private static void testSelectionTypes() {
+        section("selection types");
+        TestWorld world = new TestWorld("sel");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Sel", world, new BlockVector3(0, 71, 0));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sel");
+        check("//sel with no type reports the one in use", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Selection type: cuboid")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sel sphere");
+        check("//sel sphere sets it", actor.messages().stream()
+                .anyMatch(message -> message.contains("Selection type set to sphere")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sel");
+        check("//sel reports the new type", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Selection type: sphere")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//;");
+        check("//; is the same command", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Selection type: sphere")));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, ";");
+        check("; is answered as a command", !actor.messages().isEmpty() && actor.messages().stream()
+                .noneMatch(message -> message.contains("Unknown command")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sel nope");
+        check("an unknown type lists the ones that exist", actor.messages().stream()
+                .anyMatch(message -> message.contains("Unknown selection type 'nope'")));
+
+        // -d remembers the pick for new sessions, like WorldEdit's //sel -d.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sel -d cyl");
+        check("//sel -d sets the default", actor.messages().stream()
+                .anyMatch(message -> message.contains("Default selection type set to cyl")));
     }
 
     private static void testTimeLimiter() {

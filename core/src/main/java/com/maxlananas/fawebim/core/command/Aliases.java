@@ -120,10 +120,20 @@ final class Aliases {
         CommandRegistry.Entry delegate = registry.resolve(target);
         CommandRegistry.Entry entry = registry.register(spelling);
         entry.description = delegate == null ? target : delegate.description;
+        entry.help = delegate == null ? "" : delegate.help;
         entry.group = delegate == null ? "general" : delegate.group;
         entry.status = "alias";
         entry.requiresSelection = delegate != null && delegate.requiresSelection;
         entry.requiresPlayer = delegate != null && delegate.requiresPlayer;
+        // The spelling answers the same line as the command it routes to, so it
+        // carries the same signature: without it /mask has no arguments to offer
+        // and tab completion after /mask knows nothing about masks.
+        if (delegate != null) {
+            entry.arguments.addAll(delegate.arguments);
+            entry.booleanFlags.addAll(delegate.booleanFlags);
+            entry.valueFlags.addAll(delegate.valueFlags);
+            entry.suggestions = delegate.suggestions;
+        }
         entry.handler = ctx -> {
             String arguments = ctx.tail();
             registry.dispatch(ctx.actor(), target + (arguments.isEmpty() ? "" : " " + arguments));

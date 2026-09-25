@@ -186,14 +186,19 @@ public final class CommandRegistry {
         if (entry != null) {
             return entry;
         }
-        if (key.startsWith("//")) {
-            return byAlias.get(key.substring(1));
+        // The client sends "set" for both "/set" and "//set", and ";" for "//;":
+        // every spelling of the same name is tried before the name is unknown.
+        String bare = key;
+        while (bare.startsWith("/")) {
+            bare = bare.substring(1);
         }
-        if (key.startsWith("/")) {
-            return byAlias.get("/" + key);
+        for (String candidate : new String[] { bare, "/" + bare, "//" + bare }) {
+            entry = byAlias.get(candidate);
+            if (entry != null) {
+                return entry;
+            }
         }
-        entry = byAlias.get("/" + key);
-        return entry != null ? entry : byAlias.get("//" + key);
+        return null;
     }
 
     public java.util.Collection<Entry> all() {
