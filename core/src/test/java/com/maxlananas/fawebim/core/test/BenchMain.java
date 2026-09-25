@@ -219,9 +219,6 @@ public final class BenchMain {
      * asked about the same few states a world holds.</p>
      */
     private static void measureMasks(FastWorld world) {
-        int stone = BlockState.registry().defaultState("minecraft:stone");
-        int dirt = BlockState.registry().defaultState("minecraft:dirt");
-        int[] states = {stone, dirt, BlockState.registry().air()};
         long questions = 4_000_000L;
 
         com.maxlananas.fawebim.core.mask.Mask byName =

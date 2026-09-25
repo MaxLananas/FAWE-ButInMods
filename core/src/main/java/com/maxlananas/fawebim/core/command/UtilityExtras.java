@@ -101,6 +101,7 @@ final class UtilityExtras {
         }
         entry.description = "Cancel your current command";
         entry.group = "utility";
+        entry.requiresPlayer = true;
         entry.handler = ctx -> {
             ctx.session().cancel();
             ctx.actor().message(Msg.success("The running edit will stop at the next checkpoint"));

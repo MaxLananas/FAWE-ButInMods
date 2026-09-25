@@ -26,22 +26,28 @@ public final class TestActor implements Actor {
     private String heldItem = "minecraft:wooden_axe";
     private final List<String> messages = new ArrayList<>();
     private boolean screen;
+    private final boolean player;
 
     public TestActor(String name, World world, BlockVector3 position) {
+        this(name, world, position, true);
+    }
+
+    private TestActor(String name, World world, BlockVector3 position, boolean player) {
         this.name = name;
         this.uuid = UUID.nameUUIDFromBytes(name.getBytes());
         this.world = world;
         this.position = position;
+        this.player = player;
         this.session = SessionManager.get().of(uuid);
     }
 
-    public static TestActor console(World world) {
-        return new TestActor("CONSOLE", world, BlockVector3.ZERO);
-    }
-
-    /** The console a command block, a function or a script runs as: no position. */
+    /**
+     * The server console: not a player, and nowhere to stand. The commands
+     * WorldEdit binds to a Player refuse it, and the ones that only need
+     * somewhere to build answer with the selection.
+     */
     public static TestActor positionlessConsole(World world) {
-        return new TestActor("CONSOLE", world, null);
+        return new TestActor("CONSOLE", world, null, false);
     }
 
     /** Makes this actor answer the configuration screen hook, as a real client does. */
@@ -66,7 +72,7 @@ public final class TestActor implements Actor {
 
     @Override
     public boolean isPlayer() {
-        return true;
+        return player;
     }
 
     @Override

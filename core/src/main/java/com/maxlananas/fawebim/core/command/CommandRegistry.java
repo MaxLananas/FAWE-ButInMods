@@ -275,6 +275,13 @@ public final class CommandRegistry {
         }
         Entry entry = context.entry();
         try {
+            // WorldEdit binds these commands to a Player parameter, so a source
+            // without one - the server console, a command block, a function -
+            // cannot reach them at all. The commands that only need somewhere to
+            // build take an Actor and are answered below with the selection.
+            if (entry.requiresPlayer && !actor.isPlayer()) {
+                throw error("This command must be run by a player");
+            }
             if (entry.handler == null) {
                 actor.message(Msg.warn("Command '" + entry.name
                         + "' is registered but not implemented in this build (see docs/STATUS.md)."));

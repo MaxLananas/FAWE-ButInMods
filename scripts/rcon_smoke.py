@@ -39,9 +39,9 @@ CHECKS = [
     ("//version", "commands registered"),
     ("fawebim settings -s boolean", "Settings ("),
     ("fawebim nonsense", "Usage"),
-    # A command that needs a player is still a command the server knows: the
-    # answer must be about the wand, not about the command.
-    ("//wand", "wand"),
+    # A command WorldEdit binds to a player is refused by a source that has no
+    # body, which is what rcon is: the answer names the player, not the command.
+    ("//wand", "must be run by a player"),
     # The edit path itself, on a live server: a selection made from the console,
     # its size, a write into the world, the write counted, and the write taken
     # back. The region is at y=60, which is air in the flat world the job starts.
@@ -107,6 +107,13 @@ CHECKS = [
     ("//generate minecraft:stone 1", "Generated 768 block(s)"),
     ("//count minecraft:stone", "count: 768"),
     ("//air", "768 block(s) set to air"),
+    # The shapes are built around the selection for a source that has no
+    # position, so the box has to hold the whole shape before the count below can
+    # be the count of the shape: the pyramid of size 4 is 81 blocks over five
+    # layers, and the 16x3x16 box of the rows above would clip three of them.
+    ("//pos2 15,66,15", "position 2 set"),
+    ("//set minecraft:stone", "1792 block(s) affected"),
+    ("//air", "1792 block(s) set to air"),
     ("//hpyramid minecraft:stone 4", "Created pyramid: 81 block(s)"),
     ("//count minecraft:stone", "count: 81"),
     ("//air", "81 block(s) set to air"),
@@ -116,7 +123,7 @@ CHECKS = [
     ("//air", "block(s) set to air"),
     ("//forest oak 20", "Planted "),
     ("//forestgen 5 mega_redwood 10", "Planted "),
-    ("//tree oak", "Tree planted at"),
+    ("//tree oak", "must be run by a player"),
     ("//flora 5", "Planted "),
     ("//ores minecraft:iron_ore", "ore block(s)"),
     ("//count minecraft:iron_ore", "Count: "),
@@ -125,8 +132,9 @@ CHECKS = [
     ("//hcyl minecraft:stone 4 5", "Created shape: "),
     ("//gsmask minecraft:stone", "Source mask set to"),
     ("//gsmask", "Source mask cleared"),
-    ("smask minecraft:stone", "Brush source mask set to"),
-    ("smask", "Brush source mask cleared"),
+    ("smask minecraft:stone", "must be run by a player"),
+    ("//gsmask minecraft:stone", "Source mask set to"),
+    ("//gsmask", "Source mask cleared"),
     ("//up 5", "must be run by a player"),
 ]
 

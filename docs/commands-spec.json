@@ -94,7 +94,7 @@
       "booleanFlags": ["t", "p"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -169,7 +169,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -229,7 +229,7 @@
       "booleanFlags": ["c", "s"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -289,7 +289,7 @@
       "booleanFlags": ["h"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -394,7 +394,7 @@
       "booleanFlags": ["h", "r"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -619,7 +619,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -814,7 +814,7 @@
       "booleanFlags": ["h", "r"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -904,7 +904,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -919,7 +919,7 @@
       "booleanFlags": ["h", "r"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -1249,7 +1249,7 @@
       "booleanFlags": ["h"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -1564,7 +1564,7 @@
       "booleanFlags": ["h", "r"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -3334,7 +3334,7 @@
       "booleanFlags": ["a", "o", "s", "n", "e", "b", "x"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": true,
+      "requiresPlayer": false,
       "requiresWorld": true
     },
     {
@@ -3439,7 +3439,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {

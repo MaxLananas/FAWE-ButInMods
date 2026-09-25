@@ -134,7 +134,6 @@ final class ClipboardExtras {
         }
         entry.description = "Place the clipboard's contents without applying transformations";
         entry.group = "clipboard";
-        entry.requiresPlayer = true;
         entry.booleanFlags.add("a");
         entry.booleanFlags.add("o");
         entry.booleanFlags.add("s");

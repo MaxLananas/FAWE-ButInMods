@@ -93,6 +93,7 @@ public final class SelfTestMain {
         testCommands();
         testSourceMaskReads();
         testConsoleCommands();
+        testPlayerOnlyCommands();
         testSplitCommands();
         testBrushFactoryCoverage();
         testConfigAndSettings();
@@ -1797,6 +1798,46 @@ public final class SelfTestMain {
      * answers by reading a block itself. That read comes from the world: a mask
      * asked through itself has no base case and reads until the stack is gone.
      */
+    /**
+     * WorldEdit binds a command to a Player when it can only run with a body:
+     * the wand, the tools, the navigation, the brushes, {@code //tree}. Those
+     * refuse a console, a command block or a function, while the commands that
+     * take an Actor keep working from any of them by building at the selection.
+     */
+    private static void testPlayerOnlyCommands() {
+        section("player only");
+        TestWorld world = new TestWorld("player-only");
+        world.fillFlat(70);
+        TestActor console = TestActor.positionlessConsole(world);
+        CommandManager.get().dispatch(console, "//pos1 0,60,0");
+        CommandManager.get().dispatch(console, "//pos2 15,62,15");
+        for (String line : new String[] {"//tree oak", "//wand", "/smask minecraft:stone", "//up 5",
+                "//deltree", "//brush sphere minecraft:stone 3", "//cancel"}) {
+            console.clearMessages();
+            CommandManager.get().dispatch(console, line);
+            check(line + " needs a player",
+                    console.lastMessage().contains("must be run by a player"));
+        }
+        // The box has to be empty first: a shape that writes the state a cell
+        // already holds changes nothing and reports nothing.
+        CommandManager.get().dispatch(console, "//air");
+        console.clearMessages();
+        CommandManager.get().dispatch(console, "//hpyramid minecraft:stone 4");
+        check("a shape still builds for a source without a player",
+                console.lastMessage().contains("Created pyramid: 81 block(s)"));
+
+        // The same commands run for a player at the position they stand on.
+        TestActor player = new TestActor("Builder", world, new BlockVector3(40, 71, 0));
+        CommandManager.get().dispatch(player, "//tree oak");
+        check("//tree plants for a player", player.lastMessage().contains("Tree planted at"));
+        player.clearMessages();
+        CommandManager.get().dispatch(player, "//wand");
+        check("//wand hands the wand to a player", player.lastMessage().contains("Wand given"));
+        player.clearMessages();
+        CommandManager.get().dispatch(player, "/smask minecraft:stone");
+        check("/smask sets a player's brush mask", player.lastMessage().contains("source mask"));
+    }
+
     private static void testSourceMaskReads() {
         section("source mask");
         TestWorld world = new TestWorld("source-mask");

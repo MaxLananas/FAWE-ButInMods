@@ -472,7 +472,6 @@ public final class Operations {
         if (points.size() < 2 || thickness < 1) {
             return spline(session, points, pattern, thickness);
         }
-        int shell = 0;
         List<BlockVector3> positions = new ArrayList<>();
         for (int i = 0; i < points.size() - 1; i++) {
             BlockVector3 from = points.get(i);

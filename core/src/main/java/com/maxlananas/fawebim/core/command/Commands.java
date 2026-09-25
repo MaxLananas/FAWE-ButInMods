@@ -798,7 +798,6 @@ public final class Commands {
         CommandRegistry.Entry e30b = registry.register("//fillr", "/fillr");
         e30b.description = "Fill a hole recursively";
         e30b.group = "region";
-        e30b.requiresPlayer = true;
         e30b.arguments.add("<pattern>");
         e30b.arguments.add("<radius>");
         e30b.arguments.add("[depth]");
@@ -1247,13 +1246,6 @@ public final class Commands {
         return holder.getClipboard().getOrigin();
     }
 
-    private static int distanceToEdge(Region region, int x, int y, int z) {
-        BlockVector3 min = region.getMinimumPoint();
-        BlockVector3 max = region.getMaximumPoint();
-        return Math.min(Math.min(x - min.x(), max.x() - x),
-                Math.min(Math.min(y - min.y(), max.y() - y), Math.min(z - min.z(), max.z() - z)));
-    }
-
     // --------------------------------------------------------------- generation
 
     private void registerGeneration() {
@@ -1551,7 +1543,6 @@ public final class Commands {
                     CommandRegistry.Entry e56 = registry.register((String) shape[0]);
         e56.description = "Create a " + kind + " at your position";
         e56.group = "generation";
-        e56.requiresPlayer = true;
         e56.booleanFlags.add("h");
         // -r raises the bottom of the sphere to the placement position.
         e56.booleanFlags.add("r");
@@ -1581,7 +1572,6 @@ public final class Commands {
         CommandRegistry.Entry e57 = registry.register("//pyramid");
         e57.description = "Create a pyramid at your position";
         e57.group = "generation";
-        e57.requiresPlayer = true;
         e57.booleanFlags.add("h");
         e57.arguments.add("pattern");
         e57.arguments.add("size");
@@ -1601,7 +1591,6 @@ public final class Commands {
         CommandRegistry.Entry e57b = registry.register("//hpyramid", "/hpyramid");
         e57b.description = "Generate a hollow pyramid";
         e57b.group = "generation";
-        e57b.requiresPlayer = true;
         e57b.arguments.add("pattern");
         e57b.arguments.add("size");
         e57b.handler = ctx -> {
@@ -1619,7 +1608,6 @@ public final class Commands {
         CommandRegistry.Entry e58 = registry.register("//cone");
         e58.description = "Create a cone at your position";
         e58.group = "generation";
-        e58.requiresPlayer = true;
         e58.booleanFlags.add("h");
         e58.arguments.add("pattern");
         e58.arguments.add("radius");
@@ -2115,7 +2103,6 @@ public final class Commands {
         CommandRegistry.Entry e71 = registry.register("//biomeinfo", "//biomeinfo -p");
         e71.description = "Show the biome you are standing in";
         e71.group = "biome";
-        e71.requiresPlayer = true;
         // -t reads the biome of the block the player looks at, -p the one the
         // player stands in.
         e71.booleanFlags.add("t");
@@ -2194,7 +2181,6 @@ public final class Commands {
         CommandRegistry.Entry e75 = registry.register("//chunk");
         e75.description = "Select the chunk you are standing in";
         e75.group = "chunk";
-        e75.requiresPlayer = true;
         // -c reads the argument as chunk coordinates, -s expands the current
         // selection to whole chunks instead of replacing it.
         e75.booleanFlags.add("c");
@@ -2489,6 +2475,7 @@ public final class Commands {
         CommandRegistry.Entry e86b = registry.register("/smask", "//smask", "/sourcemask");
         e86b.description = "Set the brush source mask";
         e86b.group = "brush";
+        e86b.requiresPlayer = true;
         e86b.arguments.add("[mask]");
         e86b.handler = ctx -> {
                     com.maxlananas.fawebim.core.brush.Brush brush =
