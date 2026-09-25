@@ -46,7 +46,7 @@ final class Stubs {
             entry.requiresPlayer = PLAYER_ONLY.contains(name)
                     || (delegate != null && delegate.requiresPlayer);
             entry.handler = ctx -> {
-                String arguments = ctx.joined(0);
+                String arguments = ctx.tail();
                 registry.dispatch(ctx.actor(), target + (arguments.isEmpty() ? "" : " " + arguments));
             };
         }

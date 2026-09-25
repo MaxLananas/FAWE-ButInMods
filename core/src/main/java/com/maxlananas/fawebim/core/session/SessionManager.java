@@ -52,6 +52,13 @@ public final class SessionManager {
         return session;
     }
 
+    /** Every session there is, the console's included. */
+    public java.util.Collection<LocalSession> all() {
+        java.util.List<LocalSession> out = new java.util.ArrayList<>(sessions.values());
+        out.add(consoleSession);
+        return out;
+    }
+
     /**
      * The session of a player by name, which is what {@code //undo <player>} and
      * {@code /snapshot} need; {@code null} when that player has no session.

@@ -813,8 +813,8 @@ public final class Masks {
      */
     public static final class RandomMask implements Mask {
 
+        private final Noise noise = new Noise.RandomNoise(0);
         private final double density;
-        private final java.util.Random random = new java.util.Random();
 
         public RandomMask(double density) {
             this.density = density;
@@ -822,7 +822,7 @@ public final class Masks {
 
         @Override
         public boolean test(int x, int y, int z) {
-            return random.nextDouble() > density;
+            return noise.unit(x, y, z) <= density;
         }
 
         @Override
@@ -880,21 +880,28 @@ public final class Masks {
     }
 
     /** {@code #simplex}: simplex noise threshold, defaults to 50%. */
+    /**
+     * FAWE's {@code #simplex[scale][min][max]}: the mask passes where the noise
+     * sits inside the band the two percentages describe, {@code 50} being the
+     * middle of the noise.
+     */
     public static final class SimplexMask implements Mask {
 
         private final Noise noise = new Noise.Simplex(0);
-        private final double threshold;
+        private final double min;
+        private final double max;
         private final double scale;
 
-        public SimplexMask(double threshold, double scale) {
-            this.threshold = threshold;
+        public SimplexMask(double scale, double min, double max) {
             this.scale = scale <= 0 ? 0.02 : scale;
+            this.min = min;
+            this.max = max;
         }
 
         @Override
         public boolean test(int x, int y, int z) {
             double value = noise.noise(x * scale, y * scale, z * scale);
-            return (value + 1) / 2.0 >= threshold;
+            return value >= min && value <= max;
         }
     }
 

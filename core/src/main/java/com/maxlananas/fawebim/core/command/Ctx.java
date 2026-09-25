@@ -30,6 +30,7 @@ public final class Ctx {
     private final List<String> positional = new ArrayList<>();
     private final Map<String, List<String>> flags = new LinkedHashMap<>();
     private EditSession editSession;
+    private EditSession readSession;
     private Region selection;
 
     Ctx(CommandRegistry.Entry entry, Actor actor, List<String> tokens) {
@@ -142,6 +143,15 @@ public final class Ctx {
         return index < positional.size() ? positional.get(index) : fallback;
     }
 
+    /**
+     * The rest of the line exactly as it was typed, flags included. A command
+     * that routes to another one hands this over instead of the positional
+     * arguments, so {@code -h} and friends reach the command that reads them.
+     */
+    public String tail() {
+        return tokens.size() > 1 ? Str.join(tokens.subList(1, tokens.size()), " ") : "";
+    }
+
     public String joined(int from) {
         return Str.join(positional.subList(Math.min(from, positional.size()), positional.size()), " ");
     }
@@ -197,6 +207,19 @@ public final class Ctx {
             editSession = new EditSession(world(), session(), entry.name);
         }
         return editSession;
+    }
+
+    /**
+     * A session for the commands that only read blocks, such as {@code //count}
+     * and {@code //distr}. It carries the session's source mask so a mask parsed
+     * there sees the blocks the source mask lets through, and it records no
+     * history entry of its own.
+     */
+    public EditSession readSession() {
+        if (readSession == null) {
+            readSession = new EditSession(world(), session(), entry.name, false);
+        }
+        return readSession;
     }
 
     public EditSession editSession(String description) {

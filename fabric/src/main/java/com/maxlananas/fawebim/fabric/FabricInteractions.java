@@ -87,10 +87,10 @@ public final class FabricInteractions {
             }
         }
 
-        // 2. Super-pickaxe: break the area/recursive blocks. A wand that is not
-        // also a tool leaves the left click to the game.
-        if (held != null && held.equals(Config.get().wandItem) && Config.get().wandItemIsTool
-                && session.isSuperPickaxeEnabled()) {
+        // 2. Super-pickaxe: FAWE binds it to every pickaxe, not to the wand, and
+        // it only acts once it has been turned on. A left click with anything
+        // else - the wand included - falls through to the selection.
+        if (session.isSuperPickaxeEnabled() && isPickaxe(held)) {
             return superPickaxe(actor, FabricMessages.blockVector(pos)) ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
@@ -207,6 +207,14 @@ public final class FabricInteractions {
             actor.message(Msg.success("Brush changed " + Msg.formatNumber(changed) + " block(s)"));
         }
         return changed > 0;
+    }
+
+    /** The six items WorldEdit's {@code Player#isHoldingPickAxe} answers for. */
+    private static boolean isPickaxe(String item) {
+        return item != null && (item.equals("minecraft:wooden_pickaxe")
+                || item.equals("minecraft:stone_pickaxe") || item.equals("minecraft:iron_pickaxe")
+                || item.equals("minecraft:golden_pickaxe") || item.equals("minecraft:diamond_pickaxe")
+                || item.equals("minecraft:netherite_pickaxe"));
     }
 
     /** FAWE's super-pickaxe: instant break of an area or a whole tree. */

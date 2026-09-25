@@ -57,9 +57,50 @@ public final class Patterns {
             return chosen == null ? 0 : chosen.apply(x, y, z);
         }
 
+        /** The block a value in {@code [0, 1)} picks, used by the noise patterns. */
+        public int applyAt(int x, int y, int z, double value) {
+            Pattern chosen = children.next(value);
+            return chosen == null ? 0 : chosen.apply(x, y, z);
+        }
+
+        /** How many blocks the choice is spread over. */
+        public int size() {
+            return children.size();
+        }
+
         @Override
         public boolean isDeterministic() {
             return false;
+        }
+    }
+
+    /**
+     * FAWE's noise pattern, {@code #perlin[scale][dirt,stone]}: a noise generator
+     * decides which of the inner blocks a position gets, so the same position
+     * always answers the same way and the blocks come out in patches.
+     */
+    public static final class NoiseChoice implements Pattern {
+
+        private final com.maxlananas.fawebim.core.util.noise.Noise generator;
+        private final Weighted choices;
+        private final double scale;
+
+        public NoiseChoice(com.maxlananas.fawebim.core.util.noise.Noise generator,
+                           Weighted choices, double scale) {
+            this.generator = generator;
+            this.choices = choices;
+            this.scale = scale;
+        }
+
+        @Override
+        public int apply(int x, int y, int z) {
+            double value = generator.unit(x * scale, y * scale, z * scale);
+            return choices.applyAt(x, y, z, value);
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return true;
         }
     }
 

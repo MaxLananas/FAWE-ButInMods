@@ -17,6 +17,26 @@ public abstract class Noise {
 
     public abstract double noise(double x, double y, double z);
 
+    /**
+     * The noise as a value in {@code [0, 1]}, which is the range WorldEdit's
+     * generators work in: the ones that swing around zero are mapped onto it,
+     * the ones that are already positive are clamped.
+     */
+    public double unit(double x, double y, double z) {
+        return clamp(noise(x, y, z) * 0.5 + 0.5);
+    }
+
+    protected static double clamp(double value) {
+        if (value < 0) {
+            return 0;
+        }
+        if (value >= 1) {
+            // A value of exactly one would land outside the last weighted entry.
+            return 0.9999999999999999;
+        }
+        return value;
+    }
+
     public double noise(double x, double z) {
         return noise(x, 0, z);
     }
@@ -255,6 +275,12 @@ public abstract class Noise {
             return Math.sqrt(min);
         }
 
+        /** Voronoi measures distances, so it is already a value in {@code [0, 1]}. */
+        @Override
+        public double unit(double x, double y, double z) {
+            return clamp(noise(x, y, z));
+        }
+
         private double hash(int x, int y, int z) {
             int h = seed ^ (x * 374761393) ^ (y * 668265263) ^ (z * 2147483647);
             h = (h ^ (h >>> 13)) * 1274126177;
@@ -296,21 +322,43 @@ public abstract class Noise {
             }
             return sum;
         }
+
+        /** The ridged sum is positive by construction, so it is clamped only. */
+        @Override
+        public double unit(double x, double y, double z) {
+            return clamp(noise(x, y, z));
+        }
     }
 
-    /** Random noise (white noise), the default for {@code #noise} style masks. */
+    /**
+     * White noise: a value in {@code [0, 1)} that depends only on the position,
+     * which is what {@code %50} masks and the {@code #noise} patterns read. Being
+     * a hash of the coordinates it repeats exactly, so a mask answers the same
+     * way every time a block is tested.
+     */
     public static final class RandomNoise extends Noise {
-
-        private final Random random = new Random();
 
         public RandomNoise(long seed) {
             super(seed);
-            random.setSeed(seed);
         }
 
         @Override
         public double noise(double x, double y, double z) {
-            return random.nextDouble();
+            long hash = 0x9E3779B97F4A7C15L ^ (seed * 0x2545F4914F6CDD1DL);
+            hash ^= (long) Math.floor(x) * 0xBF58476D1CE4E5B9L;
+            hash ^= (long) Math.floor(y) * 0x94D049BB133111EBL;
+            hash ^= (long) Math.floor(z) * 0x2545F4914F6CDD1DL;
+            hash ^= hash >>> 31;
+            hash *= 0x7FB5D329728EA185L;
+            hash ^= hash >>> 27;
+            hash *= 0x81DAE7C9F3B1D1A7L;
+            hash ^= hash >>> 33;
+            return (hash >>> 11) * 0x1.0p-53;
+        }
+
+        @Override
+        public double unit(double x, double y, double z) {
+            return noise(x, y, z);
         }
     }
 }

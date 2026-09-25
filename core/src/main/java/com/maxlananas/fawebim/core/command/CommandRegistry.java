@@ -1,6 +1,7 @@
 package com.maxlananas.fawebim.core.command;
 
 import com.maxlananas.fawebim.core.actor.Actor;
+import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.Str;
 
@@ -123,6 +124,31 @@ public final class CommandRegistry {
 
     public Entry get(String name) {
         return byAlias.get(name.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Registers a second spelling of a command: the new entry shares the
+     * handler, the arguments and the flags of the one it copies.
+     *
+     * <p>Used for the names WorldEdit gives a tool at the top level, such as
+     * {@code /mask} for {@code /tool mask}: both spellings have to accept the
+     * same line, help text and completions.</p>
+     */
+    public Entry alias(String spelling, Entry target) {
+        Entry entry = register(spelling);
+        entry.description = target.description;
+        entry.help = target.help;
+        entry.group = target.group;
+        entry.status = "alias";
+        entry.arguments.addAll(target.arguments);
+        entry.booleanFlags.addAll(target.booleanFlags);
+        entry.valueFlags.addAll(target.valueFlags);
+        entry.requiresSelection = target.requiresSelection;
+        entry.requiresPlayer = target.requiresPlayer;
+        entry.requiresWorld = target.requiresWorld;
+        entry.suggestions = target.suggestions;
+        entry.handler = target.handler;
+        return entry;
     }
 
     /**
@@ -274,6 +300,11 @@ public final class CommandRegistry {
             return false;
         }
         Entry entry = context.entry();
+        // A command binds the extent its masks read blocks through, and several of
+        // them - //smooth, //replace, the brushes - leave it bound while they run.
+        // Without this the binding of one command is still in place for the next
+        // one, and a mask parsed there reads through a dead session.
+        Extent previous = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
         try {
             // WorldEdit binds these commands to a Player parameter, so a source
             // without one - the server console, a command block, a function -
@@ -302,6 +333,49 @@ public final class CommandRegistry {
         } catch (Exception e) {
             actor.message(Msg.error("Command failed: " + e.getMessage()));
             return true;
+        } finally {
+            if (previous == null) {
+                com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.clear();
+            } else {
+                com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.set(previous);
+            }
+        }
+    }
+
+    /**
+     * Extends a container's aliases to the commands inside it.
+     *
+     * <p>WorldEdit registers one spelling per sub-command ({@code /brush sphere})
+     * and gives the container its aliases ({@code /br}); in game the alias covers
+     * the whole subtree, so {@code //br sphere} has to be the sphere brush. The
+     * routing is done here rather than at every registration so a container only
+     * declares its own aliases once.</p>
+     */
+    public void expandContainerAliases() {
+        for (Entry child : new ArrayList<>(commands.values())) {
+            List<String> spellings = new ArrayList<>();
+            spellings.add(child.name);
+            spellings.addAll(child.aliases);
+            for (String spelling : spellings) {
+                int space = spelling.indexOf(' ');
+                if (space < 0) {
+                    continue;
+                }
+                Entry parent = byAlias.get(spelling.substring(0, space).toLowerCase(Locale.ROOT));
+                if (parent == null || parent == child) {
+                    continue;
+                }
+                String rest = spelling.substring(space);
+                for (String alias : new ArrayList<>(parent.aliases)) {
+                    if (alias.indexOf(' ') >= 0) {
+                        continue;
+                    }
+                    String derived = alias + rest;
+                    if (byAlias.putIfAbsent(derived.toLowerCase(Locale.ROOT), child) == null) {
+                        child.aliases.add(derived);
+                    }
+                }
+            }
         }
     }
 

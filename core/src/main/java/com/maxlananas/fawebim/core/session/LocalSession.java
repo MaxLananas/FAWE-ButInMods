@@ -27,7 +27,9 @@ public final class LocalSession {
     private Pattern pattern;
     private Placement placement = Placement.DEFAULT;
     private boolean fastMode = false;
-    private boolean superPickaxeEnabled = true;
+    // FAWE starts with the super pickaxe off: the pickaxe only breaks areas
+    // after //togglepickaxe (or //, ) turns it on.
+    private boolean superPickaxeEnabled = false;
     private int superPickaxeMode = 1; // 0 = single, 1 = area, 2 = recursive
     private int superPickaxeRadius = 1;
     private int maxBlocksChanged = com.maxlananas.fawebim.core.platform.Config.get().defaultChangeLimit;
@@ -41,7 +43,7 @@ public final class LocalSession {
     private boolean includeAir = false;
     private boolean tracing = false;
     private boolean cuiEnabled = true;
-    private boolean drawSelection = false;
+    private boolean drawSelection = true;
     private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
     private String toolBindingName;
     private Mask sourceMask;

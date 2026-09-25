@@ -284,21 +284,30 @@ public final class Parsers {
                 Pattern to = pattern(parts.get(1).replace("[", "").replace("]", ""), ctx);
                 return new Patterns.Linear(from, to, true, true, true);
             }
-            case "simplex", "perlin", "rmf", "voronoi" -> {
-                List<String> parts = Str.splitCommas(args);
+            case "simplex", "perlin", "voronoi", "rmf" -> {
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 2) {
+                    throw CommandRegistry.error("Syntax: #" + id + "[scale][pattern] (e.g. #"
+                            + id + "[5][dirt,stone])");
+                }
+                double scale = 1d / Math.max(1d, parseDouble(parts.get(0).trim()));
                 Noise noise = switch (id) {
                     case "simplex" -> new Noise.Simplex(0);
                     case "perlin" -> new Noise.Perlin(0);
                     case "voronoi" -> new Noise.Voronoi(0);
                     default -> new Noise.RidgedMultiFractal(0, 3, 2, 0.5);
                 };
-                Pattern low = new Patterns.Single(BlockState.registry().air());
-                Pattern high = new Patterns.Single(BlockState.registry().defaultState("minecraft:stone"));
-                if (parts.size() >= 2) {
-                    low = pattern(parts.get(0).trim(), ctx);
-                    high = pattern(parts.get(1).trim(), ctx);
+                Pattern inner = pattern(parts.get(1).trim(), ctx);
+                if (inner instanceof Patterns.Weighted weighted) {
+                    return new Patterns.NoiseChoice(noise, weighted, scale);
                 }
-                return new Patterns.NoisePattern(noise, 0.05, low, high);
+                if (inner instanceof Patterns.Single) {
+                    // A single block cannot be spread out by noise, so upstream
+                    // hands it back untouched.
+                    return inner;
+                }
+                throw CommandRegistry.error("Only a list of blocks can be used with #" + id
+                        + ", got '" + parts.get(1).trim() + "'");
             }
             case "swaptype", "ts", "typeswap" -> {
                 return new Patterns.TypeSwap();
@@ -358,7 +367,7 @@ public final class Parsers {
 
     private static Extent extOf(Ctx ctx) {
         Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
-        return extent == null ? ctx.world() : extent;
+        return extent == null ? ctx.readSession() : extent;
     }
 
     // ------------------------------------------------------------------- masks
@@ -486,6 +495,19 @@ public final class Parsers {
     }
 
     /** Degrees with the {@code d} suffix become tangents; anything else is a tangent. */
+    /** A percentage of the noise band as FAWE reads it: {@code 50} is the middle. */
+    private static double noisePercent(String value) {
+        return (Double.parseDouble(value.trim()) - 50d) / 50d;
+    }
+
+    private static double parseDouble(String value) {
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a number, got '" + value + "'");
+        }
+    }
+
     private static double slopeLimit(String value) {
         if (value.endsWith("d")) {
             return Math.tan(Math.toRadians(Double.parseDouble(value.substring(0, value.length() - 1))));
@@ -579,8 +601,14 @@ public final class Parsers {
                 return new Masks.OffsetMask(extent, delegate, dx, dy, dz);
             }
             case "simplex" -> {
-                double threshold = args.isEmpty() ? 0.5 : Double.parseDouble(args);
-                return new Masks.SimplexMask(threshold, 0.02);
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 3) {
+                    throw CommandRegistry.error("Syntax: #simplex[scale][min][max], min and max"
+                            + " being percentages of the noise band");
+                }
+                double scale = 1d / Math.max(1d, parseDouble(parts.get(0).trim()));
+                return new Masks.SimplexMask(scale, noisePercent(parts.get(1)),
+                        noisePercent(parts.get(2)));
             }
             default -> throw CommandRegistry.error("Unknown mask '" + input + "'");
         }

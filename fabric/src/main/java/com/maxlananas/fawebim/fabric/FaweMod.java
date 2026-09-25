@@ -301,22 +301,59 @@ public final class FaweMod implements ModInitializer {
     }
 
     /**
-     * The tab completions of a command: the argument names its signature declares,
-     * plus whatever the command computes from the text typed so far — the setting
-     * keys of {@code /fawebim} come from there.
+     * The tab completions of a command: for the argument being typed, what its
+     * signature says may be written there — the blocks of a pattern, the masks of
+     * a filter, the biomes of a biome argument — plus whatever the command
+     * computes from the text typed so far, which is where the setting keys of
+     * {@code /fawebim} come from.
      */
     private static CompletableFuture<Suggestions> suggest(CommandRegistry.Entry entry, SuggestionsBuilder builder) {
-        for (String suggestion : entry.arguments) {
-            if (!suggestion.startsWith("<")) {
+        // Depending on where the cursor is Brigadier hands back the text from
+        // the argument's start, which may still carry the separating space.
+        String remaining = builder.getRemaining();
+        if (remaining.startsWith(" ")) {
+            remaining = remaining.substring(1);
+        }
+        String[] tokens = remaining.split(" ", -1);
+        String typed = tokens[tokens.length - 1];
+        int index = tokens.length - 1;
+        String argument = index < entry.arguments.size() ? entry.arguments.get(index) : "";
+        boolean found = false;
+        for (String suggestion : com.maxlananas.fawebim.core.command.Suggestions.forArgument(argument, typed)) {
+            builder.suggest(suggestion);
+            found = true;
+        }
+        // An argument the engine cannot fill in - a radius, a count - still has
+        // the words its signature offers, e.g. the "list|info|distr" of
+        // //history, and those are worth completing.
+        if (!found) {
+            for (String suggestion : literalChoices(argument, typed)) {
                 builder.suggest(suggestion);
             }
         }
         if (entry.suggestions != null) {
-            for (String suggestion : entry.suggestions.apply(builder.getRemaining())) {
+            for (String suggestion : entry.suggestions.apply(remaining)) {
                 builder.suggest(suggestion);
             }
         }
         return builder.buildFuture();
+    }
+
+    /** The {@code a|b|c} alternatives of an argument, filtered by what is typed. */
+    private static List<String> literalChoices(String argument, String typed) {
+        String plain = argument.replace("[", "").replace("]", "").replace("<", "").replace(">", "");
+        if (plain.indexOf('|') < 0) {
+            return List.of();
+        }
+        String prefix = typed.toLowerCase(java.util.Locale.ROOT);
+        List<String> choices = new java.util.ArrayList<>();
+        for (String choice : plain.split("\\|")) {
+            String word = choice.trim();
+            if (!word.isEmpty() && word.toLowerCase(java.util.Locale.ROOT).startsWith(prefix)) {
+                choices.add(word);
+            }
+        }
+        return choices;
     }
 
     private int run(CommandSourceStack source, String line) {

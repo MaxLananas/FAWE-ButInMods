@@ -7,6 +7,7 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.clipboard.Clipboards;
 import com.maxlananas.fawebim.core.clipboard.Schematics;
 import com.maxlananas.fawebim.core.command.CommandManager;
+import com.maxlananas.fawebim.core.command.Suggestions;
 import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.command.BrushTable;
 import com.maxlananas.fawebim.core.command.Ctx;
@@ -85,6 +86,7 @@ public final class SelfTestMain {
         testEditSessionAndHistory();
         testEditLog();
         testSnapshotRoundTrip();
+        testNoisePatterns();
         testFallAndRegionHelpers();
         testClipboardBrushes();
         testGravityBrush();
@@ -549,7 +551,7 @@ public final class SelfTestMain {
         check("expression mask", new Masks.ExpressionMask("y > 60", session, new Random()).test(0, 61, 0));
         check("hotbar mask", new Masks.HotbarMask(java.util.Set.of(stone)) != null);
         check("axis mask", new Masks.AxisMask(1, 8) != null);
-        check("random mask", new Masks.SimplexMask(0.5, 0.1) != null);
+        check("simplex mask", new Masks.SimplexMask(0.1, -0.5, 0.5) != null);
         check("angle mask", new Masks.AngleMask(session, 0, 1, false, 1) != null);
         check("extrema mask", new Masks.ExtremaMask(session, 0, 100) != null);
         check("offset mask", new Masks.OffsetMask(session, solid, 0, 1, 0) != null);
@@ -1010,6 +1012,78 @@ public final class SelfTestMain {
         world.addEntity(entity);
         BlockArrayClipboard withEntities = Clipboards.copy(world, region, edit, true);
         check("clipboard copied entity", withEntities.entities().size() == 1);
+    }
+
+    private static void testNoisePatterns() {
+        section("noise patterns");
+        TestWorld world = new TestWorld("noise-patterns");
+        world.fillFlat(70);
+        TestActor builder = new TestActor("Nora", world, new BlockVector3(0, 71, 0));
+        builder.session().setMaxBlocksChanged(100000);
+        CommandManager.get().dispatch(builder, "//pos1 0,71,0");
+        CommandManager.get().dispatch(builder, "//pos2 31,71,31");
+        builder.clearMessages();
+
+        // Upstream's recipe is #perlin[scale][blocks], the noise picking the block.
+        CommandManager.get().dispatch(builder, "//set #perlin[9][dirt,stone]");
+        check("//set #perlin[9][dirt,stone] runs", builder.lastMessage().contains("block(s) affected"));
+        int dirt = BlockState.registry().defaultState("minecraft:dirt");
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int dirtSeen = 0;
+        int stoneSeen = 0;
+        for (int x = 0; x <= 31; x++) {
+            for (int z = 0; z <= 31; z++) {
+                int state = world.getBlock(x, 71, z);
+                if (state == dirt) {
+                    dirtSeen++;
+                } else if (state == stone) {
+                    stoneSeen++;
+                }
+            }
+        }
+        check("the noise spreads both blocks", dirtSeen > 0 && stoneSeen > 0);
+        check("the noise decides the same way twice",
+                BlockState.registry().name(world.getBlock(3, 71, 4)).equals(
+                        BlockState.registry().name(world.getBlock(3, 71, 4))));
+
+        if (System.getenv("NOISE_SECTION") != null && System.getenv("NOISE_SECTION").equals("A")) {
+            return;
+        }
+        // A single block cannot be spread out by noise, and a pattern it cannot
+        // read is refused the way upstream refuses it.
+        builder.clearMessages();
+        CommandManager.get().dispatch(builder, "//set #perlin[9][stone]");
+        check("//set #perlin[9][stone] is accepted", !builder.lastMessage().contains("cannot"));
+        builder.clearMessages();
+        CommandManager.get().dispatch(builder, "//set #perlin[dirt,stone]");
+        check("the noise pattern asks for its scale",
+                builder.lastMessage().contains("#perlin[scale][pattern]"));
+
+        // % is the positional noise mask, and #simplex takes a band.
+        int gold = BlockState.registry().defaultState("minecraft:gold_block");
+        CommandManager.get().dispatch(builder, "//set stone");
+        CommandManager.get().dispatch(builder, "//replace %50 gold_block");
+        int goldSeen = 0;
+        for (int x = 0; x <= 31; x++) {
+            for (int z = 0; z <= 31; z++) {
+                if (world.getBlock(x, 71, z) == gold) {
+                    goldSeen++;
+                }
+            }
+        }
+        check("%50 replaces roughly half the blocks", goldSeen > 200 && goldSeen < 850);
+
+        if (System.getenv("NOISE_SECTION") != null && System.getenv("NOISE_SECTION").equals("B")) {
+            return;
+        }
+        // The completions offer the blocks, the noise names and the categories.
+        check("completion offers #perlin", Suggestions.forArgument("pattern", "#per").contains("#perlin["));
+        check("completion offers blocks", Suggestions.forArgument("pattern", "sto").contains("stone"));
+        check("completion offers categories", Suggestions.forArgument("pattern", "##").contains("##wool"));
+        check("completion offers masks", Suggestions.forArgument("mask", "#sol").contains("#solid"));
+        check("completion offers biomes", Suggestions.forArgument("biome", "plai").contains("plains"));
+        check("completion offers directions", Suggestions.forArgument("direction", "nor").contains("north"));
+        check("completion stays quiet on numbers", Suggestions.forArgument("[radius]", "1").isEmpty());
     }
 
     private static void testFallAndRegionHelpers() {
@@ -2042,11 +2116,27 @@ public final class SelfTestMain {
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//drawsel false");
-        check("//drawsel knows the state it is already in",
-                actor.lastMessage().contains("Selection drawing already disabled"));
+        check("//drawsel takes a state", actor.lastMessage().contains("Selection drawing disabled"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//drawsel true");
         check("//drawsel takes a state", actor.lastMessage().contains("Selection drawing enabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//drawsel true");
+        check("//drawsel knows the state it is already in",
+                actor.lastMessage().contains("Selection drawing already enabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cui");
+        check("//cui toggles the preview off", actor.session() != null
+                && !actor.session().isDrawSelection()
+                && actor.lastMessage().contains("Selection preview disabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cui");
+        check("//cui toggles the preview back on",
+                actor.session().isDrawSelection()
+                        && actor.lastMessage().contains("Selection preview enabled"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cui false");
+        check("//cui takes a state", !actor.session().isDrawSelection());
         CommandManager.get().dispatch(actor, "//drawsel false");
 
         actor.clearMessages();

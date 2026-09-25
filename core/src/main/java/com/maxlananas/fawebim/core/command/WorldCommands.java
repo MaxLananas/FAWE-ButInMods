@@ -1,6 +1,7 @@
 package com.maxlananas.fawebim.core.command;
 
 import com.maxlananas.fawebim.core.platform.Config;
+import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.util.Msg;
 
 import java.io.IOException;
@@ -235,21 +236,34 @@ final class WorldCommands {
     }
 
     /**
-     * {@code /we cui} — the CUI handshake used by the client side mod. A vanilla
-     * client cannot receive it, so the handshake is answered locally and the
-     * selection preview is drawn by the mod itself.
+     * {@code //cui} — the CUI handshake. A vanilla client cannot answer it, so the
+     * handshake is completed locally and the selection preview is drawn by this
+     * mod; the command shows or hides that preview, and toggles it when the line
+     * gives no argument.
      */
     private void cui() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/we cui", "/cui");
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("//cui", "/we cui", "/cui");
         if (entry == null) {
             return;
         }
-        entry.description = "Complete the CUI handshake";
+        entry.description = "Complete the CUI handshake and toggle the selection preview";
         entry.group = "worldedit";
         entry.requiresPlayer = true;
+        entry.arguments.add("[true|false]");
         entry.handler = ctx -> {
-            ctx.session().setCuiEnabled(true);
-            ctx.actor().message(Msg.success("Selection outline enabled; the preview is drawn by FAWE-BIM"));
+            LocalSession session = ctx.session();
+            boolean enabled = ctx.args().isEmpty() ? !session.isDrawSelection()
+                    : Parsers.booleanArg(ctx, 0, false);
+            session.setCuiEnabled(enabled);
+            if (enabled == session.isDrawSelection()) {
+                ctx.actor().message(Msg.info("Selection preview already "
+                        + (enabled ? "enabled" : "disabled")));
+                return;
+            }
+            session.setDrawSelection(enabled);
+            ctx.actor().updateSelectionOutline();
+            ctx.actor().message(Msg.success("Selection preview "
+                    + (enabled ? "enabled" : "disabled")));
         };
     }
 }

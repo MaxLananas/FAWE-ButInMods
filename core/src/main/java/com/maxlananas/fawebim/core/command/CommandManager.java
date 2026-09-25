@@ -31,6 +31,11 @@ public final class CommandManager {
         }
         initialised = true;
         new Commands(registry).registerAll();
+        // The top-level spellings of the tool sub-commands are added once every
+        // command is known, so a spelling that already exists keeps its own
+        // implementation instead of being routed to a tool.
+        Aliases.register(registry);
+        registry.expandContainerAliases();
         BrushCommands.setDispatcher(registry::dispatch);
     }
 

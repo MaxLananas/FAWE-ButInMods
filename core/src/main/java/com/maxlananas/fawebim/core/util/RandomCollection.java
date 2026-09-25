@@ -32,6 +32,25 @@ public final class RandomCollection<E> {
         return total;
     }
 
+    /**
+     * The entry a value in {@code [0, 1)} falls in, which is how a noise-driven
+     * pattern picks its block: the same position always answers the same way.
+     */
+    public E next(double value) {
+        if (values.isEmpty()) {
+            return null;
+        }
+        double target = Math.max(0, Math.min(0.9999999999999999, value)) * total;
+        int idx = java.util.Collections.binarySearch(weights, target);
+        if (idx < 0) {
+            idx = -idx - 1;
+        }
+        if (idx >= values.size()) {
+            idx = values.size() - 1;
+        }
+        return values.get(idx);
+    }
+
     public E next(Random random) {
         if (values.isEmpty()) {
             return null;

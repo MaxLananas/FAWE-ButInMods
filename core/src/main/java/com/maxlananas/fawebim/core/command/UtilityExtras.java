@@ -580,9 +580,11 @@ final class UtilityExtras {
         entry.valueFlags.add("r");
         // -f restores instead of rolling back, exactly as FAWE's flag does.
         entry.booleanFlags.add("f");
+        // The actions FAWE spreads over /history and its sub-commands: the
+        // search ones, the rollback pair and the three the shortcuts cover.
         entry.arguments.add("list|info|summary|summarize|distr|distribution|find|inspect|search|near"
                 + "|rollback|restore|rerun|import|clear|size"
-                + "|rollback|restore|rerun|import|clear");
+                + "|undo|redo|clearhistory");
         entry.arguments.add("[-u <user>]");
         entry.arguments.add("[-t <time>]");
         entry.arguments.add("[-r <radius>]");
@@ -591,6 +593,11 @@ final class UtilityExtras {
             LocalSession session = ctx.session();
             String action = ctx.arg(0, "list").toLowerCase(Locale.ROOT);
             switch (action) {
+                // /history undo and friends are the shortcuts under the same
+                // container in FAWE, so they run the command that owns them.
+                case "undo" -> CommandManager.get().dispatch(ctx.actor(), "//undo");
+                case "redo" -> CommandManager.get().dispatch(ctx.actor(), "//redo");
+                case "clearhistory" -> CommandManager.get().dispatch(ctx.actor(), "//clearhistory");
                 case "list" -> list(ctx);
                 case "info", "summary", "summarize" -> {
                     History.Record current = session.getHistory().getCurrent();
