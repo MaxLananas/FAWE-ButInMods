@@ -33,7 +33,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Run the engine tests and the command inventory check
-        run: ./gradlew --no-daemon :core:verify
+        run: |
+          ./gradlew --no-daemon :core:verify 2>&1 | tee /tmp/verify.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # The log lives behind a signed URL the run page can reach; the
+            # annotation keeps the reason visible where the checks are listed.
+            tail -c 3000 /tmp/verify.log | python3 -c "import sys; print('::error title=core verify::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+          fi
+          exit "$status"
 
       - name: Build the mod
         run: ./gradlew --no-daemon build
