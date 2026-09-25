@@ -78,6 +78,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Chunk tools that work on whole chunks of the world";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.arguments.add("clear|unset|copy|paste|count|countall|distr|replace|r|replaceall|rea|repall"
                 + "|replacepattern|preplace|rp|set|removelayers|trimallair|trimallplots|deletebiomechunks"
@@ -109,6 +110,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Clear the chunks in a selection (delete without defrag)";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.handler = ctx -> {
@@ -126,6 +128,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Lazily copy chunks to your anvil clipboard";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.handler = ctx -> {
@@ -152,6 +155,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Paste chunks from your anvil clipboard";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.booleanFlags.add("c");
         entry.handler = ctx -> {
@@ -177,6 +181,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Count blocks in a selection";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
@@ -200,6 +205,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Count all blocks in a world";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.booleanFlags.add("d");
         entry.handler = ctx -> {
@@ -229,6 +235,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Show the block distribution of a selection";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.handler = ctx -> distribution(ctx, countSelection(ctx, null));
@@ -241,6 +248,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Replace all blocks in the selection with another";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
@@ -257,6 +265,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Replace all blocks in the selection with another";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
@@ -276,6 +285,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Replace all blocks in the selection with a pattern";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
@@ -292,6 +302,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Set all blocks in the selection with a pattern";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.arguments.add("pattern");
@@ -314,6 +325,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Removes matching chunk layers, only in chunks holding the block";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.arguments.add("block");
@@ -351,6 +363,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Trim all air in the world";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.booleanFlags.add("u");
         entry.handler = ctx -> {
@@ -372,6 +385,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Trim chunks in a plot world";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.booleanFlags.add("v");
         // FAWE deletes unclaimed and unmodified plot chunks. Without a plot
@@ -394,6 +408,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Delete chunks matching a specific biome";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.booleanFlags.add("u");
         entry.arguments.add("biome");
@@ -417,6 +432,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Delete all chunks which haven't been occupied";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.arguments.add("inhabitedTicks");
         entry.arguments.add("[fileDurationMillis]");
@@ -431,6 +447,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Delete every chunk that was never occupied";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.booleanFlags.add("d");
         entry.arguments.add("inhabitedTicks");
@@ -450,6 +467,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Delete every chunk of the selection that was never occupied";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.requiresSelection = true;
         entry.booleanFlags.add("d");
@@ -467,6 +485,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Delete regions which haven't been accessed in a certain amount of time";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.arguments.add("time");
         entry.handler = ctx -> {
@@ -491,6 +510,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "Remap the world between MCPE/PC values";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.handler = ctx -> {
             List<int[]> chunks = matchingChunks(ctx, chunk -> holdsUnknownBlocks(chunk.data()));
@@ -517,6 +537,7 @@ final class AnvilCommands {
             return;
         }
         entry.description = "debug - do not use";
+        entry.requiresPlayer = true;
         entry.group = "anvil";
         entry.handler = ctx -> ctx.actor().message(Msg.info(
                 "debugfixroads is a diagnostic command of the old PlotSquared road format; nothing to do"));

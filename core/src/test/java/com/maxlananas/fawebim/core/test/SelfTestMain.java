@@ -1771,10 +1771,21 @@ public final class SelfTestMain {
                     failures.add(line + " threw " + failure);
                     continue;
                 }
+                boolean refused = false;
                 for (String message : console.messages()) {
                     if (message.startsWith("Command failed")) {
                         failures.add(line + ": " + message);
                     }
+                    refused |= message.contains("must be run by a player");
+                }
+                // A command is either runnable from the console or refused for
+                // being bound to a player; answering with both, or with neither
+                // for a command that registered no handler, is the bug this
+                // sweep is here to catch.
+                if (entry.requiresPlayer != refused) {
+                    failures.add(line + (entry.requiresPlayer
+                            ? " is player-only but the console reached it"
+                            : " runs from the console but is not flagged player-only"));
                 }
             }
         }
@@ -1783,6 +1794,8 @@ public final class SelfTestMain {
             System.out.println("FAIL: " + failure);
         }
         check("no command fails from a source without a position", failures.isEmpty());
+        check("every command either runs or reports that it needs a player",
+                failures.stream().noneMatch(failure -> failure.contains("player-only")));
     }
 
     /**

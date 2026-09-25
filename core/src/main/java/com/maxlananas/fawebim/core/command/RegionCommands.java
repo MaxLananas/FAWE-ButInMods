@@ -243,6 +243,7 @@ final class RegionCommands {
         }
         entry.description = "Select your allowed region (there are none in the standalone mod)";
         entry.group = "region";
+        entry.requiresPlayer = true;
         entry.handler = ctx -> ctx.actor().message(Msg.info(
                 "Region restrictions are a plugin feature; a standalone mod has no regions to select"));
     }

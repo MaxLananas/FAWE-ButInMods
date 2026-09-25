@@ -16,6 +16,10 @@ import com.maxlananas.fawebim.core.util.Msg;
  */
 final class Stubs {
 
+    /** The routed spellings WorldEdit binds to a player, as a set for lookup. */
+    private static final java.util.Set<String> PLAYER_ONLY =
+            java.util.Set.of(SubCommandTable.PLAYER_ONLY);
+
     private Stubs() {
     }
 
@@ -39,7 +43,8 @@ final class Stubs {
             entry.group = delegate == null ? groupFor(name) : delegate.group;
             entry.status = "alias";
             entry.requiresSelection = delegate != null && delegate.requiresSelection;
-            entry.requiresPlayer = delegate != null && delegate.requiresPlayer;
+            entry.requiresPlayer = PLAYER_ONLY.contains(name)
+                    || (delegate != null && delegate.requiresPlayer);
             entry.handler = ctx -> {
                 String arguments = ctx.joined(0);
                 registry.dispatch(ctx.actor(), target + (arguments.isEmpty() ? "" : " " + arguments));

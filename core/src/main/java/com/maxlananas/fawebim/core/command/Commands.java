@@ -225,6 +225,7 @@ public final class Commands {
 
         CommandRegistry.Entry e8 = registry.register("//toggleeditwand");
         e8.description = "Toggle the wand's function (only the commands remain active)";
+        e8.requiresPlayer = true;
         e8.group = "selection";
         e8.handler = ctx -> {
                     LocalSession session = ctx.session();
@@ -246,6 +247,7 @@ public final class Commands {
 
         CommandRegistry.Entry e10 = registry.register("//drawsel");
         e10.description = "Draw the selection outline (uses particles, no client mod needed)";
+        e10.requiresPlayer = true;
         e10.group = "selection";
         e10.handler = ctx -> {
                     LocalSession session = ctx.session();
@@ -2778,6 +2780,7 @@ public final class Commands {
         }
         none.description = "Unbind the brush from your current item";
         none.group = "brush";
+        none.requiresPlayer = true;
         none.handler = ctx -> {
             com.maxlananas.fawebim.core.brush.BrushFactory.unbind(ctx.session());
             ctx.session().getBindings().remove("brush-command");
@@ -2794,6 +2797,7 @@ public final class Commands {
         if (save != null) {
             save.description = "Save the current brush as a preset";
             save.group = "brush";
+        save.requiresPlayer = true;
             save.arguments.add("name");
             // -g saves into the shared preset folder instead of the player's.
             save.booleanFlags.add("g");
@@ -2834,6 +2838,7 @@ public final class Commands {
         if (list != null) {
             list.description = "List the saved brush presets";
             list.group = "brush";
+        list.requiresPlayer = true;
             list.valueFlags.add("p");
             list.arguments.add("[-p <page>]");
             list.handler = ctx -> {

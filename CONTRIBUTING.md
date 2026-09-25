@@ -87,6 +87,7 @@ python3 scripts/generate_command_tables.py
 ./gradlew :core:selfTest
 ./gradlew :core:genDocs     # picks up the updated tables
 python3 scripts/flag_audit.py
+python3 scripts/player_audit.py
 ```
 
 `scripts/flag_audit.py` is the flag gate: it compares every upstream `@Switch` and `@ArgFlag` with
@@ -145,6 +146,7 @@ A change is ready when all of the following hold:
 
 1. `./gradlew :core:selfTest` passes, and `./gradlew :core:checkInventory` reports no unresolved
    WorldEdit or FAWE name. `python3 scripts/flag_audit.py` reports no missing, mistyped or unread
+   WorldEdit or FAWE name. `python3 scripts/player_audit.py` reports no missing, mistyped or unread
    flag, and `python3 scripts/settings_audit.py` no configuration key that nothing reads.
 2. `./gradlew build` succeeds.
 3. `./gradlew :core:genDocs` shows no unexpected change in

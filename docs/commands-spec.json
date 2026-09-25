@@ -34,7 +34,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -514,7 +514,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1654,7 +1654,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1879,7 +1879,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1909,7 +1909,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1924,7 +1924,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1939,7 +1939,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1954,7 +1954,7 @@
       "booleanFlags": ["d"],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1969,7 +1969,7 @@
       "booleanFlags": ["d"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1984,7 +1984,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -1999,7 +1999,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2014,7 +2014,7 @@
       "booleanFlags": ["d"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2029,7 +2029,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2044,7 +2044,7 @@
       "booleanFlags": ["u"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2059,7 +2059,7 @@
       "booleanFlags": ["d"],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2074,7 +2074,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2089,7 +2089,7 @@
       "booleanFlags": ["c"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2104,7 +2104,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2119,7 +2119,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2134,7 +2134,7 @@
       "booleanFlags": ["d"],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2149,7 +2149,7 @@
       "booleanFlags": ["d", "m"],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2164,7 +2164,7 @@
       "booleanFlags": ["d", "m"],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2179,7 +2179,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": true,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2194,7 +2194,7 @@
       "booleanFlags": ["u"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2209,7 +2209,7 @@
       "booleanFlags": ["v"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2614,7 +2614,7 @@
       "booleanFlags": [],
       "valueFlags": ["p"],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2674,7 +2674,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -2764,7 +2764,7 @@
       "booleanFlags": ["g"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3034,7 +3034,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3409,7 +3409,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3604,7 +3604,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3619,7 +3619,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3634,7 +3634,7 @@
       "booleanFlags": ["h"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3649,7 +3649,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3664,7 +3664,7 @@
       "booleanFlags": ["h"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3679,7 +3679,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3694,7 +3694,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3709,7 +3709,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3724,7 +3724,7 @@
       "booleanFlags": ["h"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3739,7 +3739,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3754,7 +3754,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3769,7 +3769,7 @@
       "booleanFlags": ["h"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3784,7 +3784,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3799,7 +3799,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3814,7 +3814,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3829,7 +3829,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3844,7 +3844,7 @@
       "booleanFlags": ["h"],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {
@@ -3859,7 +3859,7 @@
       "booleanFlags": [],
       "valueFlags": [],
       "requiresSelection": false,
-      "requiresPlayer": false,
+      "requiresPlayer": true,
       "requiresWorld": true
     },
     {

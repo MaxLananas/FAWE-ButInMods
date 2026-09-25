@@ -237,6 +237,7 @@ final class WorldCommands {
         }
         entry.description = "Complete the CUI handshake";
         entry.group = "worldedit";
+        entry.requiresPlayer = true;
         entry.handler = ctx -> {
             ctx.session().setCuiEnabled(true);
             ctx.actor().message(Msg.success("Selection outline enabled; the preview is drawn by FAWE-BIM"));

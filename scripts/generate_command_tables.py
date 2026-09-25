@@ -130,14 +130,33 @@ def family_keys(row: dict) -> list[str]:
     return keys
 
 
+def upstream_player_only(row: dict) -> bool:
+    """True when the declaration cannot run without a body.
+
+    WorldEdit writes the parameter as a ``Player``. FAWE reaches the player
+    through the injected value access for several brushes, so a declaration with
+    one of those is player-only in the same way.
+    """
+    for parameter in row.get("params", []):
+        kind = parameter.get("type") or ""
+        if kind.endswith("Player") or kind.endswith("InjectedValueAccess"):
+            return True
+    return False
+
+
 def generate(inventory: list[dict], supported: dict[str, dict]) -> tuple[list, list]:
     """Every declared name either routes to a command that exists, or is a stub."""
     routes: OrderedDict[str, str] = OrderedDict()
     stubs: OrderedDict[str, str] = OrderedDict()
+    player_only: list[str] = []
     for row in inventory:
         bare = plain(row.get("name"))
         if not is_literal(bare):
             continue
+        if upstream_player_only(row):
+            for spelling in family_keys(row):
+                if spelling.startswith("/") and spelling not in player_only:
+                    player_only.append(spelling)
         description = row.get("desc") or ""
         container = CONTAINERS.get(Path(row.get("file", "")).name)
         if container:
@@ -183,10 +202,10 @@ def generate(inventory: list[dict], supported: dict[str, dict]) -> tuple[list, l
             # A route written with a leading slash answers both spellings of the
             # name: `/rem` and `//rem`, which is how upstream declares it.
             routes.setdefault("/" + spelling, anchor)
-    return list(routes.items()), list(stubs.items())
+    return list(routes.items()), list(stubs.items()), player_only
 
 
-def write_routes(routes: list[tuple[str, str]]) -> None:
+def write_routes(routes: list[tuple[str, str]], player_only: list[str]) -> None:
     body = [
         "package com.maxlananas.fawebim.core.command;",
         "",
@@ -211,6 +230,17 @@ def write_routes(routes: list[tuple[str, str]]) -> None:
     ]
     for alias, target in routes:
         body.append(f"            {java_string(alias)}, {java_string(target)},")
+    body += [
+        "    };",
+        "",
+        "    /**",
+        "     * The routed spellings WorldEdit binds to a player, so the route refuses",
+        "     * a source without a body the way the command it runs does.",
+        "     */",
+        "    static final String[] PLAYER_ONLY = {",
+    ]
+    for name in player_only:
+        body.append(f"            {java_string(name)},")
     body += ["    };", "}", ""]
     (COMMAND_DIR / "SubCommandTable.java").write_text("\n".join(body))
 
@@ -401,11 +431,12 @@ def main() -> None:
         for alias in command.get("aliases") or []:
             supported.setdefault(alias, command)
 
-    routes, stubs = generate(inventory, supported)
-    write_routes(routes)
+    routes, stubs, player_only = generate(inventory, supported)
+    write_routes(routes, player_only)
     write_stubs(stubs)
     write_brush_table(inventory)
-    print(f"SubCommandTable: {len(routes)} spellings routed to an existing command")
+    print(f"SubCommandTable: {len(routes)} spellings routed to an existing command,"
+          f" {len(player_only)} of them player-only")
     print(f"StubTable: {len(stubs)} names still to port")
 
 

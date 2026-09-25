@@ -80,7 +80,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the brush destination mask";
+        entry.description =
+                "Set the brush destination mask";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.booleanFlags.add("h");
         entry.arguments.add("[mask]");
@@ -103,7 +105,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the brush material";
+        entry.description =
+                "Set the brush material";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.booleanFlags.add("h");
         entry.arguments.add("pattern");
@@ -122,7 +126,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the brush range";
+        entry.description =
+                "Set the brush range";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("range");
         entry.handler = ctx -> {
@@ -142,7 +148,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the brush size";
+        entry.description =
+                "Set the brush size";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("size");
         entry.handler = ctx -> {
@@ -163,7 +171,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the mask used to stop tool traces";
+        entry.description =
+                "Set the mask used to stop tool traces";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("[mask]");
         entry.handler = ctx -> {
@@ -184,7 +194,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the transform applied to what the brush places";
+        entry.description =
+                "Set the transform applied to what the brush places";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.booleanFlags.add("h");
         entry.arguments.add("[transform]");
@@ -233,7 +245,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Toggle between the different target modes";
+        entry.description =
+                "Toggle between the different target modes";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("[mode]");
         entry.handler = ctx -> {
@@ -266,7 +280,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the targeting offset";
+        entry.description =
+                "Set the targeting offset";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("offset");
         entry.handler = ctx -> {
@@ -287,7 +303,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the right click brush";
+        entry.description =
+                "Set the right click brush";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("type");
         entry.arguments.add("[args...]");
@@ -306,7 +324,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Toggle between different target modes";
+        entry.description =
+                "Toggle between different target modes";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.booleanFlags.add("h");
         entry.arguments.add("[action]");
@@ -356,7 +376,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the left click brush";
+        entry.description =
+                "Set the left click brush";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("type");
         entry.arguments.add("[args...]");
@@ -407,7 +429,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the brush source mask";
+        entry.description =
+                "Set the brush source mask";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.booleanFlags.add("h");
         entry.arguments.add("[mask]");
@@ -433,7 +457,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Block information tool";
+        entry.description =
+                "Block information tool";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.handler = ctx -> registry.dispatch(ctx.actor(), "tool info");
     }
@@ -443,7 +469,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Bind a tool that places a worldgen feature on click";
+        entry.description =
+                "Bind a tool that places a worldgen feature on click";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("feature");
         entry.handler = ctx -> {
@@ -458,7 +486,9 @@ final class ToolUtilCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Bind a tool that generates a structure on click";
+        entry.description =
+                "Bind a tool that generates a structure on click";
+        entry.requiresPlayer = true;
         entry.group = "tool";
         entry.arguments.add("structure");
         entry.handler = ctx -> {

@@ -38,6 +38,8 @@ final class ScriptCommands {
         if (entry != null) {
             entry.description = "Execute a CraftScript";
             entry.group = "utility";
+            // Upstream runs a CraftScript as the player who typed it.
+            entry.requiresPlayer = true;
             entry.arguments.add("filename");
             entry.arguments.add("[args]");
             entry.handler = this::run;
@@ -49,6 +51,7 @@ final class ScriptCommands {
         }
         last.description = "Execute last CraftScript";
         last.group = "utility";
+        last.requiresPlayer = true;
         last.arguments.add("[args]");
         last.handler = ctx -> {
             String name = ctx.session().getLastScript();
