@@ -34,7 +34,6 @@ public final class Config {
     /** Everything a user can tune, mirroring WorldEdit's and FAWE's keys. */
     public String wandItem = "minecraft:wooden_axe";
     public String navigationWandItem = "minecraft:compass";
-    public boolean wandItemIsTool = true;
     public int defaultChangeLimit = -1;
     public int maxChangeLimit = -1;
     public int defaultMaxBrushRadius = 6;
@@ -82,9 +81,6 @@ public final class Config {
         text("navigation-wand-item", "navigation-wand.item", navigationWandItem,
                 "Item used as the navigation wand.", () -> navigationWandItem,
                 value -> navigationWandItem = value);
-        bool("wand-item-tool", "wand-item-tool", wandItemIsTool,
-                "Whether the wand also acts as a tool, so a right click uses the bound tool.",
-                () -> wandItemIsTool, value -> wandItemIsTool = value);
         integer("default-change-limit", "limits.max-blocks-changed.default", defaultChangeLimit,
                 "Blocks a new player may change per command, -1 for no limit.",
                 () -> defaultChangeLimit, value -> defaultChangeLimit = value);

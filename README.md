@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-610%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-609%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
 [![Commands](https://img.shields.io/badge/commands-299%20registered-58a6ff?style=flat-square)](#status)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](reference/commands-inventory.json)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](scripts/flag_audit.py)
@@ -70,7 +70,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 610-test suite, runs without launching Minecraft.
+> the whole editing engine, including its 609-test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -266,14 +266,14 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 
 | | |
 |---|---|
-| Engine tests | **610 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **609 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **299** |
 | Implemented | **252** |
 | Aliases of an implemented command | **47** |
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
 | Flags declared but never read | **0** |
-| Settings in `config/fawebim.yml` | **39, all read by the code** |
+| Settings in `config/fawebim.yml` | **38, all read by the code** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
 | Commands a console, a command block or a function can run | **159**, the other 110 are bound to a player |
