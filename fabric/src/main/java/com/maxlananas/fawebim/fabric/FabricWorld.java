@@ -435,23 +435,17 @@ public final class FabricWorld implements World {
 
     @Override
     public boolean generateTree(BlockVector3 pos, String treeType, Random random) {
-        String key = treeType == null || treeType.isEmpty()
-                ? "tree" : treeType.toLowerCase(java.util.Locale.ROOT);
-        String id = switch (key) {
-            case "tree", "oak" -> "minecraft:oak_checked";
-            case "bigtree", "big_oak" -> "minecraft:fancy_oak_checked";
-            case "dark_oak" -> "minecraft:dark_oak_checked";
-            case "redwood", "spruce" -> "minecraft:spruce_checked";
-            case "mega_spruce", "tallredwood" -> "minecraft:mega_spruce_checked";
-            case "birch", "tallbirch" -> "minecraft:birch_checked";
-            case "jungle" -> "minecraft:jungle_tree";
-            case "acacia" -> "minecraft:acacia_checked";
-            case "mangrove" -> "minecraft:mangrove_checked";
-            case "cherry" -> "minecraft:cherry_checked";
-            case "azalea" -> "minecraft:azalea_tree";
-            default -> key.contains(":") ? key : "minecraft:" + key;
-        };
-        return placeFeature(pos, id, random);
+        String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(treeType);
+        if (type == null) {
+            // Not a WorldEdit tree type: a placed feature id plants what it names.
+            String id = treeType == null || !treeType.contains(":") ? null
+                    : treeType.toLowerCase(java.util.Locale.ROOT);
+            return id != null && placeFeature(pos, id, random);
+        }
+        // A feature a Minecraft version does not have any more plants a plain oak
+        // rather than failing the command that asked for a tree.
+        return placeFeature(pos, com.maxlananas.fawebim.core.world.TreeTypes.feature(type, random), random)
+                || placeFeature(pos, "minecraft:oak_checked", random);
     }
 
     @Override

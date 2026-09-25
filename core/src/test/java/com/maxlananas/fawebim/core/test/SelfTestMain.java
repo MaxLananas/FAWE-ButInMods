@@ -1987,6 +1987,40 @@ public final class SelfTestMain {
         check("/gmask clears only the global mask",
                 session.getMask() == null && session.getSourceMask() != null);
         maskUser.clearMessages();
+
+        // WorldEdit's tree types answer to their own name and to every alias it
+        // declares, so a command line written for WorldEdit keeps working.
+        checkEquals("a tree type answers to its name", "mega_redwood",
+                com.maxlananas.fawebim.core.world.TreeTypes.canonical("mega_redwood"));
+        checkEquals("a tree type answers to its alias", "mega_redwood",
+                com.maxlananas.fawebim.core.world.TreeTypes.canonical("largespruce"));
+        checkEquals("a tree type answers in any case", "dark_oak",
+                com.maxlananas.fawebim.core.world.TreeTypes.canonical("Dark_Oak"));
+        checkEquals("an unknown tree type is unknown", null,
+                com.maxlananas.fawebim.core.world.TreeTypes.canonical("palm"));
+        TestWorld forest = new TestWorld("own-name-forestgen");
+        forest.fillFlat(70);
+        TestActor planter = new TestActor("Rowan", forest, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(planter, "//pos1 0,70,0");
+        CommandManager.get().dispatch(planter, "//pos2 7,79,7");
+        CommandManager.get().dispatch(planter, "//forestgen 5 mega_redwood 5");
+        check("//forestgen takes a WorldEdit tree type", planter.lastMessage().contains("Planted"));
+        planter.clearMessages();
+        CommandManager.get().dispatch(planter, "//forestgen 5 palm 5");
+        check("//forestgen refuses an unknown tree type",
+                planter.lastMessage().contains("Unknown tree type"));
+        planter.clearMessages();
+
+        // //air clears the selection; WorldEdit gives it no mask argument at all.
+        TestWorld cleared = new TestWorld("own-name-air");
+        cleared.fillFlat(70);
+        TestActor sweeper = new TestActor("Sky", cleared, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(sweeper, "//pos1 0,70,0");
+        CommandManager.get().dispatch(sweeper, "//pos2 3,70,3");
+        CommandManager.get().dispatch(sweeper, "//set stone");
+        CommandManager.get().dispatch(sweeper, "//air");
+        check("//air clears the selection", sweeper.lastMessage().contains("16 block(s) set to air"));
+        check("//air left the selection empty", count(sweeper).equals("Count: 0"));
     }
 
     /**

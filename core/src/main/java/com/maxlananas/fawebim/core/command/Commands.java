@@ -1355,7 +1355,14 @@ public final class Commands {
         e49b.arguments.add("[density]");
         e49b.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    String type = ctx.arg(0).toLowerCase(java.util.Locale.ROOT);
+                    // WorldEdit defaults the type to a regular tree and takes any
+                    // name it declares for one, so the argument is optional.
+                    String type = com.maxlananas.fawebim.core.world.TreeTypes
+                            .canonical(ctx.arg(0, "tree"));
+                    if (type == null) {
+                        throw CommandRegistry.error("Unknown tree type '" + ctx.arg(0)
+                                + "'. Try: " + com.maxlananas.fawebim.core.world.TreeTypes.names());
+                    }
                     double density = ctx.doubleArg(1, 5) / 100.0;
                     int changed = com.maxlananas.fawebim.core.function.Operations.forest(ctx.world(), session,
                             ctx.selection(), type, density);
@@ -1401,10 +1408,14 @@ public final class Commands {
         e51.booleanFlags.add("t");
         e51.arguments.add("[type]");
         e51.handler = ctx -> {
-                    String type = ctx.arg(0, "tree");
+                    String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(ctx.arg(0, "tree"));
+                    if (type == null) {
+                        throw CommandRegistry.error("Unknown tree type '" + ctx.arg(0, "")
+                                + "'. Try: " + com.maxlananas.fawebim.core.world.TreeTypes.names());
+                    }
                     boolean ok = ctx.world().generateTree(ctx.placement(), type, new java.util.Random());
                     ctx.actor().message(ok ? Msg.success("Tree planted at ").append(Msg.value(ctx.placement()))
-                            : Msg.error("Unknown tree type '" + type + "'"));
+                            : Msg.error("The world cannot plant a " + type + " tree here"));
                 };
 
 

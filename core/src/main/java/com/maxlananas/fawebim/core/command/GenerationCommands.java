@@ -16,7 +16,6 @@ import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 
@@ -30,10 +29,6 @@ import java.util.Random;
  * {@code //structure} and {@code //generate}.</p>
  */
 final class GenerationCommands {
-
-    private static final List<String> TREE_TYPES = List.of(
-            "tree", "pine", "jungle", "mega_jungle", "mega_pine", "mega_spruce", "brown_mushroom",
-            "red_mushroom", "crimson_fungus", "warped_fungus", "azalea", "mangrove");
 
     private final CommandRegistry registry;
 
@@ -135,7 +130,7 @@ final class GenerationCommands {
         entry.requiresSelection = true;
         entry.arguments.add("image");
         entry.arguments.add("[pattern]");
-        entry.booleanFlags.addAll(List.of("a", "r"));
+        entry.booleanFlags.addAll(java.util.List.of("a", "r"));
         entry.handler = ctx -> {
             Path file = Schematics.directory().resolve(ctx.arg(0));
             Images.PixelSource image = Images.load(file);
@@ -300,9 +295,12 @@ final class GenerationCommands {
             if (size < 1 || size > 50) {
                 throw CommandRegistry.error("Tree size must be between 1 and 50");
             }
-            if (!TREE_TYPES.contains(type)) {
-                throw CommandRegistry.error("Unknown tree type '" + type + "'. Try: " + String.join(", ", TREE_TYPES));
+            String canonical = com.maxlananas.fawebim.core.world.TreeTypes.canonical(type);
+            if (canonical == null) {
+                throw CommandRegistry.error("Unknown tree type '" + type + "'. Try: "
+                        + com.maxlananas.fawebim.core.world.TreeTypes.names());
             }
+            type = canonical;
             if (density <= 0 || density > 0.5) {
                 throw CommandRegistry.error("Density is a percentage between 0.1 and 50");
             }

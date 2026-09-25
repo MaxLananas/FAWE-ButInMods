@@ -66,12 +66,8 @@ final class RegionCommands {
             EditSession session = ctx.editSession();
             Region region = ctx.selection();
             Pattern air = new Patterns.Single(BlockState.registry().air());
-            Mask mask = ctx.mask(0, null);
             int changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
-                if (mask != null && !mask.test(x, y, z)) {
-                    return false;
-                }
                 return session.setBlock(x, y, z, air.apply(x, y, z));
             });
             session.flushQueue();
