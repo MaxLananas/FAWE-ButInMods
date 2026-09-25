@@ -1774,13 +1774,18 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Mask exclude = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
                     Region region = ctx.selection();
-                    BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
-                            region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, false);
-                    ctx.session().setClipboard(clipboard);
                     Pattern leave = ctx.args().isEmpty() ? Parsers.pattern("air", ctx)
                             : Parsers.pattern(ctx.arg(0), ctx);
-                    fill(session, region, leave, null);
-                    ctx.actor().message(Msg.success("Cut " + Msg.formatNumber(clipboard.volume()) + " block(s)"));
+                    // The copy and the replacing share one traversal, so the
+                    // answer can say how long the whole cut took.
+                    com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
+                    BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
+                            region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
+                    ctx.session().setClipboard(clipboard);
+                    ctx.actor().message(Msg.success("Cut ")
+                            .append(Msg.value(Msg.formatNumber(clipboard.volume()) + " block(s)"))
+                            .append(" to your clipboard in ")
+                            .append(Msg.value(timer.phrase())));
                     flush(ctx, session);
                 };
 

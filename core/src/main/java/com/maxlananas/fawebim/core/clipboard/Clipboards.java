@@ -3,6 +3,7 @@ package com.maxlananas.fawebim.core.clipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.transform.Transform;
@@ -45,27 +46,25 @@ public final class Clipboards {
         Mask mask = sessionMask == null || sessionMask == include ? include
                 : include == null ? sessionMask
                 : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(sessionMask, include));
-        for (int y = min.y(); y <= max.y(); y++) {
-            for (int z = min.z(); z <= max.z(); z++) {
-                for (int x = min.x(); x <= max.x(); x++) {
-                    if (!region.contains(x, y, z)) {
-                        continue;
-                    }
-                    int state = world.getBlock(x, y, z);
-                    if (state == BlockStateHolder.air() || (mask != null && !mask.test(x, y, z))) {
-                        continue;
-                    }
-                    clipboard.setBlock(x, y, z, state);
-                    // Block entities travel with the clipboard, like FAWE's NBT copy.
-                    if (withEntities) {
-                        NbtCompound nbt = world.getBlockEntity(x, y, z);
-                        if (nbt != null) {
-                            clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
-                        }
-                    }
+        // The region walks itself in section order, which keeps both the world's
+        // chunk cache and the clipboard's sections warm for a whole section at a
+        // time; asking it about every coordinate of the bounding box was the slow
+        // way round for a shape that is not a cuboid.
+        region.forEachPosition((x, y, z) -> {
+            int state = world.getBlock(x, y, z);
+            if (state == BlockStateHolder.air() || (mask != null && !mask.test(x, y, z))) {
+                return false;
+            }
+            clipboard.setBlock(x, y, z, state);
+            // Block entities travel with the clipboard, like FAWE's NBT copy.
+            if (withEntities) {
+                NbtCompound nbt = world.getBlockEntity(x, y, z);
+                if (nbt != null) {
+                    clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
                 }
             }
-        }
+            return true;
+        });
         if (withBiomes) {
             copyBiomes(world, region, clipboard);
         }
@@ -80,6 +79,61 @@ public final class Clipboards {
             BlockVector3 middle = new BlockVector3((min.x() + max.x()) / 2, (min.y() + max.y()) / 2,
                     (min.z() + max.z()) / 2);
             clipboard.setOrigin(middle);
+        }
+        clipboard.setName("clipboard");
+        return clipboard;
+    }
+
+    /**
+     * Cuts a region into a clipboard and leaves a pattern behind, in one pass.
+     *
+     * <p>{@code //cut} used to copy the region and then walk it a second time to
+     * do the replacing. Reading a position before writing over it gives the same
+     * clipboard and the same result, so the second traversal - the one the
+     * player waits on with a large selection - is not needed.</p>
+     *
+     * @param withEntities keep the entities of the region
+     * @param withBiomes   keep the biomes of the region ({@code //cut -b})
+     * @param include      blocks that fail the mask stay out of the clipboard ({@code -m})
+     * @param leave        the pattern the selection is left as
+     */
+    public static BlockArrayClipboard cut(World world, Region region, EditSession session, boolean withEntities,
+                                          boolean withBiomes, Mask include, Pattern leave) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        BlockArrayClipboard clipboard = new BlockArrayClipboard(min);
+        Mask sessionMask = session == null ? null : session.getMask();
+        Mask mask = sessionMask == null || sessionMask == include ? include
+                : include == null ? sessionMask
+                : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(sessionMask, include));
+        // The region walks itself: the cuboid's own traversal goes section by
+        // section, which is both faster than asking it about every coordinate
+        // and what the plain copy already used.
+        region.forEachPosition((x, y, z) -> {
+            int state = world.getBlock(x, y, z);
+            if (state != BlockStateHolder.air() && (mask == null || mask.test(x, y, z))) {
+                clipboard.setBlock(x, y, z, state);
+                // Block entities travel with the clipboard, like FAWE's NBT copy.
+                if (withEntities) {
+                    NbtCompound nbt = world.getBlockEntity(x, y, z);
+                    if (nbt != null) {
+                        clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
+                    }
+                }
+            }
+            session.limiter().check(1);
+            session.setBlock(x, y, z, leave.apply(x, y, z));
+            return true;
+        });
+        if (withBiomes) {
+            copyBiomes(world, region, clipboard);
+        }
+        if (withEntities) {
+            List<EntityData> entities = world.getEntities(
+                    com.maxlananas.fawebim.core.world.Extent.Region3i.of(min, max.add(1, 1, 1)));
+            for (EntityData entity : entities) {
+                clipboard.addEntity(entity.clone());
+            }
         }
         clipboard.setName("clipboard");
         return clipboard;

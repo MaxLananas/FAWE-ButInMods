@@ -555,7 +555,14 @@ public final class EditSession implements Extent {
 
     /** Convenience for messages: format the operation summary. */
     public Msg summary() {
-        return Msg.success("Operation completed: " + blocksChanged + " block(s) affected");
+        // The time is what tells a player whether a selection is one they can
+        // work with: a million blocks is a second or a minute depending on the
+        // machine, the size and the side effects they left on.
+        return Msg.success("Operation completed: ")
+                .append(Msg.value(blocksChanged + " block(s)"))
+                .append(" affected in ")
+                .append(Msg.value(com.maxlananas.fawebim.core.util.Timer.phrase(
+                        (System.currentTimeMillis() - openedAt) / 1000.0)));
     }
 
     /** Thrown when the session's block change limit is hit. */

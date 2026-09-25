@@ -107,6 +107,7 @@ public final class SelfTestMain {
         testSplitCommands();
         testBrushFactoryCoverage();
         testHardening();
+        testCut();
         testChatFormatting();
         testConfigAndSettings();
         testRegen();
@@ -2848,6 +2849,58 @@ public final class SelfTestMain {
             sb.append(c);
         }
         return sb.toString();
+    }
+
+
+    /**
+     * {@code //cut} reads the region and leaves the pattern behind in one walk.
+     * The blocks that reach the clipboard, the world and the history have to be
+     * the ones the two separate walks produced.
+     */
+    private static void testCut() {
+        section("cut");
+        TestWorld world = new TestWorld("cut");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Cut", world, new BlockVector3(0, 71, 0));
+        actor.session().setMaxBlocksChanged(1_000_000);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int air = BlockState.registry().air();
+        CommandManager.get().dispatch(actor, "//pos1 0,64,0");
+        CommandManager.get().dispatch(actor, "//pos2 7,69,7");
+        CommandManager.get().dispatch(actor, "//set stone");
+        check("an edit summary says how long the edit took",
+                actor.messages().stream().anyMatch(message -> plain(message)
+                        .contains("block(s) affected in ")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cut");
+        String answer = actor.messages().isEmpty() ? "" : plain(actor.messages().get(0));
+        check("//cut reports the blocks and the time",
+                answer.startsWith("Cut ") && answer.contains("block(s) to your clipboard in "));
+
+        int left = 0;
+        for (int y = 64; y <= 69; y++) {
+            for (int x = 0; x <= 7; x++) {
+                for (int z = 0; z <= 7; z++) {
+                    if (world.getBlock(x, y, z) != air) {
+                        left++;
+                    }
+                }
+            }
+        }
+        check("//cut left the selection empty", left == 0);
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//undo");
+        check("//undo puts the cut blocks back", world.getBlock(4, 66, 4) == stone);
+        check("the undo was reported", actor.messages().stream()
+                .anyMatch(message -> message.contains("Undid")));
+
+        // What the cut put in the clipboard pastes back where it is asked to.
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cut");
+        CommandManager.get().dispatch(actor, "//paste 20,64,20");
+        check("the cut clipboard pastes back", world.getBlock(24, 66, 24) == stone);
     }
 
     private static void testTimeLimiter() {

@@ -28,6 +28,10 @@ public final class BlockArrayClipboard implements Extent {
     private final java.util.Map<BlockVector3, com.maxlananas.fawebim.core.util.NbtCompound> blockEntities =
             new java.util.LinkedHashMap<>();
     private int minY = Integer.MAX_VALUE;
+    /** The section of the last block read or written: a walk stays in one for
+     *  thousands of positions, and looking it up again costs a hash each time. */
+    private long lastSectionKey = Long.MIN_VALUE;
+    private int[] lastSection;
     private int maxY = Integer.MIN_VALUE;
     private World lazyWorld;
 
@@ -163,7 +167,7 @@ public final class BlockArrayClipboard implements Extent {
         if (lazyWorld != null) {
             return lazyWorld.getBlock(x, y, z);
         }
-        int[] section = sections.get(sectionKey(x, y, z));
+        int[] section = sectionFor(sectionKey(x, y, z));
         if (section == null) {
             return 0;
         }
@@ -174,13 +178,25 @@ public final class BlockArrayClipboard implements Extent {
         return getBlock(position.x(), position.y(), position.z());
     }
 
+    private int[] sectionFor(long key) {
+        if (key == lastSectionKey) {
+            return lastSection;
+        }
+        int[] section = sections.get(key);
+        lastSectionKey = key;
+        lastSection = section;
+        return section;
+    }
+
     @Override
     public boolean setBlock(int x, int y, int z, int stateId) {
         long key = sectionKey(x, y, z);
-        int[] section = sections.get(key);
+        int[] section = sectionFor(key);
         if (section == null) {
             section = new int[4096];
             sections.put(key, section);
+            lastSectionKey = key;
+            lastSection = section;
         }
         section[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)] = stateId;
         box.set(
