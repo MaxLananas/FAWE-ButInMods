@@ -173,15 +173,11 @@ public interface BlockStateRegistry {
      */
     int blockFromItem(String itemName);
 
-    // ------------------------------------------------------------------ biomes
-
     int biome(String name);
 
     String biomeName(int biomeId);
 
     List<String> biomeNames();
-
-    // ------------------------------------------------------------------- items
 
     List<String> itemNames();
 

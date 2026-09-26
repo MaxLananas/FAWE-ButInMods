@@ -268,11 +268,6 @@ public final class CommandRegistry {
     }
 
     /**
-     * Parses and runs a command line.
-     *
-     * @return true when a command handled the input
-     */
-    /**
      * Builds the context of a command line without running it: the same lookup and
      * token split {@link #dispatch} uses, for callers that parse arguments of a
      * command rather than run it.
@@ -306,6 +301,11 @@ public final class CommandRegistry {
         return entry == null ? null : new Ctx(entry, actor, tokens);
     }
 
+    /**
+     * Parses and runs a command line.
+     *
+     * @return true when a command handled the input
+     */
     public boolean dispatch(Actor actor, String line) {
         Ctx context = context(actor, line);
         if (context == null) {

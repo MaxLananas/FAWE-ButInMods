@@ -142,8 +142,6 @@ public final class Brushes {
         }
     }
 
-    // -------------------------------------------------------------- solid shapes
-
     /** {@code /brush sphere <pattern> [radius]}. */
     public static class SphereBrush extends BaseBrush {
 
@@ -325,21 +323,17 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush height} and {@code /brush cliff}.
-     *
-     * <p>FAWE drives these two from a height map whose value is scaled by the
-     * brush size: a cone for the height brush (it raises a rounded hill) and a
-     * flat cylinder for the cliff brush (it raises a plateau, which is what makes
-     * the sharp edge). The terrain is moved towards the target height, so the
-     * brush both fills and clears.</p>
-     */
-    /**
      * {@code /brush height}, {@code /brush cliff} and {@code /brush flatten}: the
      * three brushes FAWE builds from one terrain shape.
      *
-     * <p>The shape is a cone (height, flatten) or a cylinder (cliff); an image
-     * replaces the shape with the heights of the image, rotated by the
-     * {@code rotation} argument and by a random quarter turn per click when
+     * <p>FAWE drives them from a height map whose value is scaled by the brush
+     * size: a cone for the height and flatten brushes, which raises a rounded
+     * hill, and a flat cylinder for the cliff brush, which raises a plateau - the
+     * sharp edge. The terrain is moved towards the target height, so the brush
+     * both fills and clears.</p>
+     *
+     * <p>An image replaces the shape with the heights of the image, rotated by
+     * the {@code rotation} argument and by a random quarter turn per click when
      * {@code -r} is given. {@code -l} moves the snow layers along with the
      * terrain and the smoothing pass can be turned off with {@code -s}.</p>
      */
@@ -600,8 +594,6 @@ public final class Brushes {
         }
     }
 
-    // --------------------------------------------------------------- line brushes
-
     /** {@code /brush line [pattern] [radius] [thickness]} — needs pos1/pos2. */
     public static final class LineBrush extends BaseBrush {
 
@@ -730,8 +722,6 @@ public final class Brushes {
         }
     }
 
-    // ------------------------------------------------------------- scatter family
-
     /** {@code /brush scatter}. */
     public static final class ScatterBrush extends BaseBrush {
 
@@ -813,7 +803,6 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush rock} — random noise shaped like rock. */
     /**
      * {@code /brush rock}: a distorted sphere. {@code sphericity} is how close to
      * a perfect sphere the low frequency noise stays, {@code frequency} how fast
@@ -1034,7 +1023,6 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush stencil} — draws a repeating pattern in a sphere. */
     /**
      * {@code /brush stencil <pattern> <radius> <image> [rotation] [yscale]} —
      * paints the image onto the surface around the click. The rotation is a
@@ -1364,7 +1352,6 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush butcher} — removes nearby entities. */
     /**
      * {@code /brush butcher} — kills the entities in the brush. Which categories
      * it may touch is the {@link Creatures.Category} set the flags built: without
@@ -1550,7 +1537,6 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush sweep} — sweeps the clipboard along the click path. */
     /**
      * {@code /brush surfacespline}: the same path as the spline brush, drawn on
      * the surface, with the tension, bias, continuity and quality controls of a
@@ -1713,7 +1699,6 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush extinguish} — removes fire and stops lava. */
     /**
      * {@code /brush item <item> [direction]}: uses the item the way a player
      * would, which for a block item means placing it on the surface below the

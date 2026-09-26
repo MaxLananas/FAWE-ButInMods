@@ -48,8 +48,6 @@ public final class Masks {
         }
     }
 
-    // -------------------------------------------------------------- block masks
-
     /** Matches any of the given blocks/states/tags/categories. */
     public static final class BlockMask implements Mask {
 
@@ -286,8 +284,6 @@ public final class Masks {
             return extent;
         }
     }
-
-    // ------------------------------------------------------------- geometry masks
 
     public static final class RegionMask implements Mask {
 
@@ -1101,8 +1097,6 @@ public final class Masks {
             return extent;
         }
     }
-
-    // ------------------------------------------------------------------ combinators
 
     public static final class UnionMask implements Mask {
 

@@ -143,8 +143,6 @@ public final class NbtIo {
     }
 
 
-    // ------------------------------------------------------------------ reader
-
     public static final class Reader {
 
         private final DataInputStream in;
@@ -352,8 +350,6 @@ public final class NbtIo {
             };
         }
     }
-
-    // ------------------------------------------------------------------ writer
 
     public static final class Writer {
 

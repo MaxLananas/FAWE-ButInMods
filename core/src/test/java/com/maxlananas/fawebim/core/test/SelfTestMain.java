@@ -262,8 +262,6 @@ public final class SelfTestMain {
         }
     }
 
-    // ------------------------------------------------------------------ helpers
-
     static void check(String name, boolean condition) {
         if (condition) {
             passed++;
@@ -313,8 +311,6 @@ public final class SelfTestMain {
     static void section(String name) {
         System.out.println("== " + name);
     }
-
-    // -------------------------------------------------------------------- tests
 
     private static void testMath() {
         section("math");

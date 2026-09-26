@@ -324,15 +324,6 @@ public final class Ctx {
     }
 
     /**
-     * The block a command that works from where the player stands anchors on.
-     *
-     * <p>The console has no position, and a command run from it — a script, a
-     * command block, the server console — still has to build its sphere or its
-     * pyramid somewhere: the centre of the selection is WorldEdit's own answer
-     * for those sources, and the world origin is the last resort when no region
-     * is selected either.</p>
-     */
-    /**
      * Refuses a command that moves the player when the source has no position:
      * the console, a command block and a function cannot be teleported.
      */
@@ -351,6 +342,15 @@ public final class Ctx {
         return target;
     }
 
+    /**
+     * The block a command that works from where the player stands anchors on.
+     *
+     * <p>The console has no position, and a command run from it — a script, a
+     * command block, the server console — still has to build its sphere or its
+     * pyramid somewhere: the centre of the selection is WorldEdit's own answer
+     * for those sources, and the world origin is the last resort when no region
+     * is selected either.</p>
+     */
     public BlockVector3 placement() {
         BlockVector3 placed = session().getPlacement().position(world(), actor());
         if (placed != null) {
@@ -470,7 +470,6 @@ public final class Ctx {
         return value;
     }
 
-    /** Resolves a pattern argument using the session's global pattern as fallback. */
     /**
      * A vector argument: either the three components separated by commas or one
      * number repeated on all three axes, which is how WorldEdit reads
@@ -494,6 +493,7 @@ public final class Ctx {
                 Parsers.finiteArg(parts[2], what));
     }
 
+    /** Resolves a pattern argument using the session's global pattern as fallback. */
     public Pattern pattern(int index) {
         if (index >= positional.size()) {
             Pattern global = session().getPattern();

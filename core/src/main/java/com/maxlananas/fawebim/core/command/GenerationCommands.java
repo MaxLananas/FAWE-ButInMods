@@ -348,11 +348,6 @@ final class GenerationCommands {
     }
 
     /**
-     * {@code //generate} — fills the selection with a pattern, optionally only
-     * where a formula is true. Without a formula the pattern replaces the whole
-     * selection, which is what {@code //g <pattern>} does in FAWE.
-     */
-    /**
      * {@code //generate} — builds the part of the selection a formula picks out.
      *
      * <p>This is WorldEdit's shape generator: the formula is evaluated once per

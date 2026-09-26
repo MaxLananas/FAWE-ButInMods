@@ -106,8 +106,6 @@ public final class Parsers {
         return (int) Math.floor(value);
     }
 
-    // ------------------------------------------------------------------ blocks
-
     /**
      * A radii argument: one number, or a comma separated pair, which is how
      * WorldEdit's {@code @Radii} arguments read.
@@ -227,8 +225,6 @@ public final class Parsers {
         }
         return id;
     }
-
-    // ---------------------------------------------------------------- patterns
 
     /** Parses a pattern: blocks, weighted lists, {@code #clipboard}, {@code ^} ... */
     public static Pattern pattern(String input, Ctx ctx) {
@@ -470,8 +466,6 @@ public final class Parsers {
         Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
         return extent == null ? ctx.session().worldReader() : extent;
     }
-
-    // ------------------------------------------------------------------- masks
 
     /** Parses a mask expression: unions ({@code ,}), intersections ({@code &}) and {@code #id}s. */
     public static Mask mask(String input, Ctx ctx) {

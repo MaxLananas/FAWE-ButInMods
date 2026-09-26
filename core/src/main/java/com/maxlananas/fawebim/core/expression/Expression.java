@@ -116,8 +116,6 @@ public final class Expression {
         }
     }
 
-    // ---------------------------------------------------------------- nodes
-
     private interface Node {
         double eval(Variables vars);
     }
@@ -350,8 +348,6 @@ public final class Expression {
             default -> throw new ExpressionException("Unknown function '" + name + "'");
         };
     }
-
-    // ---------------------------------------------------------------- parser
 
     private static final class Parser {
 

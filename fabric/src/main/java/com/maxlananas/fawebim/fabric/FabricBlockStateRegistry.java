@@ -521,8 +521,6 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         return idOf(block.defaultBlockState());
     }
 
-    // ------------------------------------------------------------------ biomes
-
     @Override
     public int biome(String name) {
         return FabricRegistries.biomeId(name.contains(":") ? name : "minecraft:" + name);
@@ -538,8 +536,6 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     public List<String> biomeNames() {
         return FabricRegistries.biomeNames();
     }
-
-    // ------------------------------------------------------------------- items
 
     @Override
     public List<String> itemNames() {

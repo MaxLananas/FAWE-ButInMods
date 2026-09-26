@@ -21,10 +21,8 @@ import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.World;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.BitSet;
-import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -407,8 +405,6 @@ public final class Operations {
         return ((y + 1) * padLength + (z + 1)) * padWidth + (x + 1);
     }
 
-    // ------------------------------------------------------------------ shapes
-
     /** {@code //sphere} and {@code /brush sphere}. */
     public static int sphere(EditSession session, BlockVector3 center, double radius, Pattern pattern, boolean hollow) {
         return sphere(session, center, new double[]{radius, radius, radius}, pattern, hollow);
@@ -576,8 +572,6 @@ public final class Operations {
         }
         return changed;
     }
-
-    // ------------------------------------------------------------- lines/curves
 
     /**
      * Straight segments through the points, as WorldEdit's drawLine behind
@@ -796,13 +790,12 @@ public final class Operations {
         return changed;
     }
 
-    // ---------------------------------------------------------------- flood fill
-
-    /** {@code //fill}/{@code //drain} — 3D flood fill of the connected blocks. */
     /**
-     * A flood fill that, given a depth, is WorldEdit's {@code /fillr}: it fills
-     * no higher than the start and stops {@code depth} blocks below it, which
-     * keeps a recursive fill from following a hole to the bottom of the world.
+     * The 3D flood fill of {@code //fill} and {@code //drain}: the connected
+     * blocks the replace mask accepts. Given a depth it is WorldEdit's {@code
+     * /fillr}: it fills no higher than the start and stops {@code depth} blocks
+     * below it, which keeps a recursive fill from following a hole to the bottom
+     * of the world.
      *
      * @param depth       how many blocks below the start may be filled, 0 for a
      *                    fill in every direction
@@ -990,8 +983,6 @@ public final class Operations {
                 && session.setBlock(x, y, z, source));
     }
 
-    // ------------------------------------------------------------------- smooth
-
     /** {@code /brush blendball} — blends the brush area with its surroundings. */
     public static int blendBall(EditSession session, BlockVector3 center, int radius, Mask mask) {
         return blendBall(session, center, radius, mask, false, 1);
@@ -1128,8 +1119,6 @@ public final class Operations {
         }
         return changed;
     }
-
-    // ------------------------------------------------------------- deform/generate
 
     /**
      * The coordinates a deform expression works in: a block at {@code p} is

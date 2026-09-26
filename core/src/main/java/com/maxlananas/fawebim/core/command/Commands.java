@@ -46,8 +46,6 @@ public final class Commands {
         this.registry = registry;
     }
 
-    // ------------------------------------------------------------------ helpers
-
     /**
      * Flushes the queued blocks and answers with one line naming what the
      * command did - a label, the count and the time - or with nothing at all
@@ -109,8 +107,6 @@ public final class Commands {
         new WorldCommands(registry).register();
         Stubs.register(registry);
     }
-
-    // ---------------------------------------------------------------- selection
 
     private void registerSelection() {
         CommandRegistry.Entry e1 = registry.register("//pos1", "//p1");
@@ -1491,8 +1487,6 @@ public final class Commands {
         return holder.getClipboard().getOrigin();
     }
 
-    // --------------------------------------------------------------- generation
-
     private void registerGeneration() {
         registerShapes();
         CommandRegistry.Entry e45 = registry.register("//line");
@@ -1917,8 +1911,6 @@ public final class Commands {
 
     }
 
-    // ---------------------------------------------------------------- clipboard
-
     private void registerClipboard() {
         CommandRegistry.Entry e59 = registry.register("//copy", "//cp");
         e59.description = "Copy the selection to your clipboard";
@@ -2307,8 +2299,6 @@ public final class Commands {
 
     }
 
-    // ------------------------------------------------------------------ history
-
     private void registerHistory() {
         CommandRegistry.Entry e66 = registry.register("//undo", "/undo", "//u");
         e66.description = "Undoes the last action (from history)";
@@ -2416,8 +2406,6 @@ public final class Commands {
         return changed;
     }
 
-    // -------------------------------------------------------------------- biome
-
     private void registerBiome() {
         CommandRegistry.Entry e69 = registry.register("/setbiome", "//setbiome", "//biome");
         e69.description = "Set the biome in the selection, or at your position with -p";
@@ -2492,8 +2480,6 @@ public final class Commands {
                 };
 
     }
-
-    // -------------------------------------------------------------------- chunk
 
     private void registerChunk() {
         CommandRegistry.Entry e72 = registry.register("//chunkinfo");
@@ -2630,8 +2616,6 @@ public final class Commands {
                 };
 
     }
-
-    // --------------------------------------------------------------- navigation
 
     private void registerNavigation() {
         CommandRegistry.Entry e76 = registry.register("//jumpto", "//j");
@@ -2788,8 +2772,6 @@ public final class Commands {
         }
         return !ctx.actor().isFlying();
     }
-
-    // ------------------------------------------------------------------ utility
 
     private void registerUtility() {
         CommandRegistry.Entry e81 = registry.register("/fast");

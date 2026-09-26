@@ -141,8 +141,6 @@ public interface Region extends Iterable<BlockVector3> {
         return getMinimumY() == getMaximumY();
     }
 
-    // ------------------------------------------------------------ transform ops
-
     /** Expands the region in place by a signed amount per axis. */
     boolean expand(BlockVector3 amount);
 

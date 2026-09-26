@@ -28,8 +28,6 @@ public class NbtCompound implements Cloneable {
     public NbtCompound() {
     }
 
-    // ------------------------------------------------------------------ writes
-
     public NbtCompound put(String key, Object value) {
         values.put(key, value);
         return this;
@@ -90,8 +88,6 @@ public class NbtCompound implements Cloneable {
     public Object remove(String key) {
         return values.remove(key);
     }
-
-    // ------------------------------------------------------------------- reads
 
     public boolean contains(String key) {
         return values.containsKey(key);

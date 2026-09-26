@@ -553,8 +553,6 @@ final class AnvilCommands {
                 "debugfixroads is a diagnostic command of the old PlotSquared road format; nothing to do"));
     }
 
-    // ---------------------------------------------------------------- helpers
-
     private void replaceInSelection(Ctx ctx, Mask mask, Pattern pattern) {
         EditSession session = ctx.editSession("anvil replace");
         Map<String, Pattern> mapped = ctx.hasFlag("m") ? mapOf(ctx, mask) : null;
