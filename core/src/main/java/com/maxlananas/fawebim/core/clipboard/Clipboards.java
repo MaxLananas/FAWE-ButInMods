@@ -40,7 +40,10 @@ public final class Clipboards {
      * @param withEntities keep the entities of the region
      * @param withBiomes   keep the biomes of the region ({@code //copy -b})
      * @param include      blocks that fail the mask are stored as air ({@code -m})
-     * @param centre       move the clipboard origin to the centre ({@code -c})
+     * @param centre       move the clipboard origin to the centre of the region's
+     *                     lowest layer ({@code -c}), as FAWE does; otherwise it is
+     *                     the lowest corner until the command sets the player's
+     *                     position
      */
     public static BlockArrayClipboard copy(World world, Region region, EditSession session, boolean withEntities,
                                            boolean withBiomes, Mask include, boolean centre) {
@@ -64,8 +67,7 @@ public final class Clipboards {
                 copyEntities(world, region, clipboard);
             }
             if (centre) {
-                clipboard.setOrigin(new BlockVector3((min.x() + max.x()) / 2, (min.y() + max.y()) / 2,
-                        (min.z() + max.z()) / 2));
+                clipboard.setOrigin(centreOfFloor(min, max));
             }
             clipboard.setName("clipboard");
             return clipboard;
@@ -89,12 +91,19 @@ public final class Clipboards {
             copyEntities(world, region, clipboard);
         }
         if (centre) {
-            BlockVector3 middle = new BlockVector3((min.x() + max.x()) / 2, (min.y() + max.y()) / 2,
-                    (min.z() + max.z()) / 2);
-            clipboard.setOrigin(middle);
+            clipboard.setOrigin(centreOfFloor(min, max));
         }
         clipboard.setName("clipboard");
         return clipboard;
+    }
+
+    /**
+     * FAWE's {@code //copy -c} origin: the centre of the region, rounded down,
+     * on its lowest layer, so a paste stands the build on the placement rather
+     * than sinking half of it.
+     */
+    private static BlockVector3 centreOfFloor(BlockVector3 min, BlockVector3 max) {
+        return new BlockVector3(Math.floorDiv(min.x() + max.x(), 2), min.y(), Math.floorDiv(min.z() + max.z(), 2));
     }
 
     /**

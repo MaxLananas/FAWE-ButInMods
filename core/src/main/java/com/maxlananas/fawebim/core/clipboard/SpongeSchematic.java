@@ -112,18 +112,18 @@ final class SpongeSchematic {
         body.putInt("Version", version);
         body.putInt("DataVersion", Config.DATA_VERSION);
         BlockVector3 origin = clipboard.getOrigin();
-        // A copy is in world coordinates; a loaded schematic is not, but its
-        // biome grid says where the world's was, which is what a reader needs
-        // to put biomes back on their cells.
-        int[] grid = clipboard.biomeGrid();
+        // A copy is in world coordinates; a loaded schematic keeps where it
+        // was in its world, which is what a reader needs for //paste -o and to
+        // put biomes back on their cells.
+        BlockVector3 world = clipboard.worldOffset();
         NbtCompound metadata = new NbtCompound();
         if (version >= 3) {
             // WorldEdit and FAWE read a v3 file this way and ignore WEOffset:
             // written the v2 way, a paste of this file there put the origin at
             // the world's 0,0,0 and the build that far from the player.
+            BlockVector3 worldOrigin = clipboard.worldOrigin();
             NbtCompound worldEdit = new NbtCompound();
-            worldEdit.putIntArray("Origin", new int[]{origin.x() + grid[0], origin.y() + grid[1],
-                origin.z() + grid[2]});
+            worldEdit.putIntArray("Origin", new int[]{worldOrigin.x(), worldOrigin.y(), worldOrigin.z()});
             metadata.put("WorldEdit", worldEdit);
         } else {
             metadata.putInt("WEOffsetX", box.minX() - origin.x());
@@ -136,7 +136,7 @@ final class SpongeSchematic {
         body.putShort("Length", length);
         body.putIntArray("Offset", version >= 3
                 ? new int[]{box.minX() - origin.x(), box.minY() - origin.y(), box.minZ() - origin.z()}
-                : new int[]{box.minX() + grid[0], box.minY() + grid[1], box.minZ() + grid[2]});
+                : new int[]{box.minX() + world.x(), box.minY() + world.y(), box.minZ() + world.z()});
 
         List<NbtCompound> blockEntities = blockEntities(clipboard, box, version);
         List<NbtCompound> entities = version >= 2 ? entities(clipboard, box, version) : List.of();
@@ -182,7 +182,8 @@ final class SpongeSchematic {
      * biome the clipboard holds most.
      */
     private static void writeBiomes(BlockArrayClipboard clipboard, BlockBox box, int version, NbtCompound body) {
-        int[] grid = clipboard.biomeGrid();
+        BlockVector3 world = clipboard.worldOffset();
+        int[] grid = {world.x(), world.y(), world.z()};
         int cellMinX = (box.minX() + grid[0]) >> 2;
         int cellMinY = (box.minY() + grid[1]) >> 2;
         int cellMinZ = (box.minZ() + grid[2]) >> 2;
@@ -414,9 +415,9 @@ final class SpongeSchematic {
         if (offset == null) {
             offset = new int[3];
         }
-        // Where the lowest corner was in the world, which puts the biomes back
-        // on the cells of the grid they were read from.
-        int[] corner = offset;
+        // Where the lowest corner was in the world, which puts //paste -o back
+        // there and the biomes on the cells of the grid they were read from.
+        long[] corner = {offset[0], offset[1], offset[2]};
         if (metadata != null && metadata.contains("WEOffsetX")) {
             // v1 and v2, and v3 as earlier builds of this mod wrote it.
             clipboard.setOrigin(new BlockVector3(-metadata.getInt("WEOffsetX", 0),
@@ -427,12 +428,15 @@ final class SpongeSchematic {
             NbtCompound worldEdit = metadata == null ? null : metadata.getCompoundOrNull("WorldEdit");
             int[] origin = worldEdit == null ? null : SchematicData.intTriple(worldEdit.get("Origin"));
             if (origin != null) {
-                corner = new int[]{offset[0] + origin[0], offset[1] + origin[1], offset[2] + origin[2]};
+                corner = new long[]{(long) offset[0] + origin[0], (long) offset[1] + origin[1],
+                    (long) offset[2] + origin[2]};
             }
         } else {
             clipboard.normalize();
         }
-        clipboard.setBiomeGrid(corner[0], corner[1], corner[2]);
+        if (SchematicData.inWorld(corner[0], corner[1], corner[2])) {
+            clipboard.setWorldOffset(new BlockVector3((int) corner[0], (int) corner[1], (int) corner[2]));
+        }
         readBiomes(name, clipboard, extras, width, height, length);
         return clipboard;
     }
@@ -482,7 +486,8 @@ final class SpongeSchematic {
                     + " left out: " + String.join(", ", unknown.stream().limit(5).toList())
                     + (unknown.size() > 5 ? ", ..." : ""));
         }
-        int[] grid = clipboard.biomeGrid();
+        BlockVector3 world = clipboard.worldOffset();
+        int[] grid = {world.x(), world.y(), world.z()};
         int layers = perBlock ? height : 1;
         int cursor = 0;
         for (int y = 0; y < layers; y++) {
@@ -511,7 +516,7 @@ final class SpongeSchematic {
                         // A column's biome goes to every cell above it: the
                         // first one ends where the grid does, the others are
                         // four blocks high.
-                        for (int cellY = 0; cellY < height; cellY += cellY == 0 ? 4 - grid[1] : 4) {
+                        for (int cellY = 0; cellY < height; cellY += cellY == 0 ? 4 - (grid[1] & 3) : 4) {
                             clipboard.setBiome(x, cellY, z, biome);
                         }
                     }

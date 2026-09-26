@@ -93,9 +93,10 @@ final class McEditSchematic {
         root.putByteArray("Blocks", blocks);
         root.putByteArray("Data", data);
         BlockVector3 origin = clipboard.getOrigin();
-        root.putInt("WEOriginX", box.minX());
-        root.putInt("WEOriginY", box.minY());
-        root.putInt("WEOriginZ", box.minZ());
+        BlockVector3 world = clipboard.worldOffset();
+        root.putInt("WEOriginX", box.minX() + world.x());
+        root.putInt("WEOriginY", box.minY() + world.y());
+        root.putInt("WEOriginZ", box.minZ() + world.z());
         root.putInt("WEOffsetX", box.minX() - origin.x());
         root.putInt("WEOffsetY", box.minY() - origin.y());
         root.putInt("WEOffsetZ", box.minZ() - origin.z());
@@ -119,8 +120,10 @@ final class McEditSchematic {
         for (EntityData entity : clipboard.entities()) {
             NbtCompound tag = SchematicData.entityData(entity);
             tag.putString("id", entity.type());
+            // In the world, like WEOrigin: the reader takes that away.
             Vector3 position = entity.position();
-            tag.putList("Pos", List.of(position.x(), position.y(), position.z()));
+            tag.putList("Pos", List.of(position.x() + world.x(), position.y() + world.y(),
+                    position.z() + world.z()));
             entities.add(tag);
         }
         root.putList("Entities", entities);
@@ -191,6 +194,9 @@ final class McEditSchematic {
                     -root.getInt("WEOffsetZ", 0)));
         } else {
             clipboard.normalize();
+        }
+        if (root.contains("WEOriginX") && SchematicData.inWorld(originX, originY, originZ)) {
+            clipboard.setWorldOffset(new BlockVector3(originX, originY, originZ));
         }
         return clipboard;
     }

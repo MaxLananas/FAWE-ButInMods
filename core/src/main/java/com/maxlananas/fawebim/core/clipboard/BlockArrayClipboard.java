@@ -145,23 +145,30 @@ public final class BlockArrayClipboard implements Extent {
     private int biomeShiftX;
     private int biomeShiftY;
     private int biomeShiftZ;
+    private BlockVector3 worldOffset = BlockVector3.ZERO;
 
     /**
-     * Lays the biome grid on this clipboard's positions: position {@code x} is
-     * in the cell of the world's position {@code x + worldX}. A copy keeps the
-     * world's coordinates and needs no call; a schematic loads with its lowest
-     * corner at 0 and says where that corner was. Only the remainder of the
-     * division by four matters.
+     * Says where this clipboard's position 0,0,0 was in the world it came
+     * from. A copy keeps the world's coordinates and needs no call; a
+     * schematic loads with its lowest corner at 0 and says where that corner
+     * was, when the file knows. It is what puts {@code //paste -o} back where
+     * the build stood and the biomes back on the cells of the game's grid.
      */
-    public void setBiomeGrid(int worldX, int worldY, int worldZ) {
-        biomeShiftX = Math.floorMod(worldX, 4);
-        biomeShiftY = Math.floorMod(worldY, 4);
-        biomeShiftZ = Math.floorMod(worldZ, 4);
+    public void setWorldOffset(BlockVector3 offset) {
+        worldOffset = offset;
+        biomeShiftX = Math.floorMod(offset.x(), 4);
+        biomeShiftY = Math.floorMod(offset.y(), 4);
+        biomeShiftZ = Math.floorMod(offset.z(), 4);
     }
 
-    /** How far the biome grid is moved along each axis, as {@link #setBiomeGrid} left it. */
-    public int[] biomeGrid() {
-        return new int[]{biomeShiftX, biomeShiftY, biomeShiftZ};
+    /** Where position 0,0,0 was in the world, as {@link #setWorldOffset} left it. */
+    public BlockVector3 worldOffset() {
+        return worldOffset;
+    }
+
+    /** Where the origin was in the world: the destination of {@code //paste -o}. */
+    public BlockVector3 worldOrigin() {
+        return origin.add(worldOffset);
     }
 
     /** Stores the biome of the cell holding a position, filled by {@code //copy -b}. */

@@ -1760,6 +1760,7 @@ public final class SelfTestMain {
         farActor.session().setMaxBlocksChanged(1_000_000);
         CommandManager.get().dispatch(farActor, "//pos1 -22,-40,-22");
         CommandManager.get().dispatch(farActor, "//pos2 -5,-30,-5");
+        farActor.setPosition(new BlockVector3(-22, -40, -22));
         CommandManager.get().dispatch(farActor, "//copy");
         CommandManager.get().dispatch(farActor, "//paste -a 100,100,100");
         int wrong = 0;
@@ -3605,6 +3606,9 @@ public final class SelfTestMain {
         section.clearMessages();
         CommandManager.get().dispatch(section, "//pos1 0,64,0");
         CommandManager.get().dispatch(section, "//pos2 15,79,15");
+        // The clipboard's origin is where the player stands: the corner, so
+        // the pastes below put the corner at their destination.
+        section.setPosition(new BlockVector3(0, 64, 0));
         CommandManager.get().dispatch(section, "//cut");
         check("a whole-section cut copies the section",
                 section.session().getClipboard().getClipboard().volume() == 4096);
@@ -3653,6 +3657,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(wanderer, "//pos2 15,73,15");
         CommandManager.get().dispatch(wanderer, "//set stone");
         wanderer.clearMessages();
+        wanderer.setPosition(new BlockVector3(-16, 71, -16));
         CommandManager.get().dispatch(wanderer, "//cut");
         check("a cut over four chunks moves every block of the selection",
                 wanderer.session().getClipboard().getClipboard().volume() == 32 * 3 * 32);
@@ -3687,6 +3692,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(copier, "//pos1 3,74,3");
         CommandManager.get().dispatch(copier, "//pos2 12,77,12");
         copier.clearMessages();
+        copier.setPosition(new BlockVector3(3, 74, 3));
         CommandManager.get().dispatch(copier, "//copy");
         check("a copy that only reaches into a section holds the selection",
                 copier.session().getClipboard().getClipboard().volume() == 10 * 4 * 10);
@@ -3697,9 +3703,9 @@ public final class SelfTestMain {
         check("a partial copy holds nothing outside the selection",
                 copier.session().getClipboard().getClipboard().getBlock(0, 64, 0) == air
                         && copier.session().getClipboard().getClipboard().getBlock(15, 79, 15) == air);
-        // The paste lands where the clipboard is asked to: its own minimum
-        // corner goes to the destination, so the box it writes is
-        // (40..49, 74..77, 40..49).
+        // The paste lands where the clipboard is asked to: its origin, the
+        // corner the player stood on, goes to the destination, so the box it
+        // writes is (40..49, 74..77, 40..49).
         CommandManager.get().dispatch(copier, "//paste 40,74,40");
         check("a partial copy pastes its blocks back",
                 boxed.getBlock(40, 74, 40) == stone && boxed.getBlock(49, 77, 49) == stone);
@@ -3718,6 +3724,7 @@ public final class SelfTestMain {
         cutter.clearMessages();
         CommandManager.get().dispatch(cutter, "//pos1 -3,71,-3");
         CommandManager.get().dispatch(cutter, "//pos2 12,75,12");
+        cutter.setPosition(new BlockVector3(-3, 71, -3));
         CommandManager.get().dispatch(cutter, "//cut");
         check("a corner cut copies its box", cutter.session().getClipboard()
                 .getClipboard().volume() == 16 * 5 * 16);

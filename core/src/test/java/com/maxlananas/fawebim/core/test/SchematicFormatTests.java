@@ -54,6 +54,7 @@ final class SchematicFormatTests {
             readsVarIntsOfSeveralBytes();
             readsTheLayoutsEarlierBuildsWrote();
             biomesTravelOnTheirGrid();
+            theOriginIsThePlayersAndPasteOGoesBack();
             blockEntitiesTravelWithoutChangingTheClipboard();
             refusesBrokenAndHostileFiles();
             nbtIsStrictAndBounded();
@@ -450,6 +451,62 @@ final class SchematicFormatTests {
             }
         }
         checkEquals("a turned paste gives a biome to every cell its blocks land in", 0, missed);
+    }
+
+    /**
+     * {@code //copy} takes where the player stands as its origin, as
+     * WorldEdit and FAWE do, and {@code -c} the centre of the lowest layer; it
+     * took the lowest corner, so a paste did not put the build where it had
+     * been from the player. {@code //paste -o} was accepted and ignored; it
+     * puts the build back where it stood now, from a file too.
+     */
+    private static void theOriginIsThePlayersAndPasteOGoesBack() throws IOException {
+        TestWorld world = new TestWorld("paste-origin");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("PasteOrigin", world, new BlockVector3(11, 80, 21));
+        actor.session().setMaxBlocksChanged(1_000_000);
+        int gold = state("minecraft:gold_block");
+        int air = BlockState.registry().air();
+        for (int x = 10; x <= 12; x++) {
+            for (int z = 20; z <= 22; z++) {
+                world.setBlock(x, 80, z, gold);
+            }
+        }
+        world.setBlock(12, 81, 22, state("minecraft:stone"));
+        CommandManager.get().dispatch(actor, "//pos1 10,80,20");
+        CommandManager.get().dispatch(actor, "//pos2 12,81,22");
+        CommandManager.get().dispatch(actor, "//copy");
+        checkEquals("//copy takes where the player stands as the origin", new BlockVector3(11, 80, 21),
+                actor.session().getClipboard().getClipboard().getOrigin());
+        CommandManager.get().dispatch(actor, "//copy -c");
+        checkEquals("and -c the centre of the lowest layer", new BlockVector3(11, 80, 21),
+                actor.session().getClipboard().getClipboard().getOrigin());
+        CommandManager.get().dispatch(actor, "//pos2 13,81,23");
+        CommandManager.get().dispatch(actor, "//copy -c");
+        checkEquals("rounded down", new BlockVector3(11, 80, 21),
+                actor.session().getClipboard().getClipboard().getOrigin());
+        CommandManager.get().dispatch(actor, "//pos2 12,81,22");
+        CommandManager.get().dispatch(actor, "//copy");
+        actor.setPosition(new BlockVector3(101, 90, 201));
+        CommandManager.get().dispatch(actor, "//paste");
+        check("a paste puts the build where it was from the player",
+                world.getBlock(100, 90, 200) == gold && world.getBlock(102, 91, 202) == state("minecraft:stone"));
+
+        java.util.function.Supplier<Boolean> restored = () -> world.getBlock(10, 80, 20) == gold
+                && world.getBlock(12, 80, 22) == gold && world.getBlock(12, 81, 22) == state("minecraft:stone");
+        CommandManager.get().dispatch(actor, "//set air");
+        CommandManager.get().dispatch(actor, "//paste -o");
+        check("//paste -o puts the build back where it was copied, wherever the player is", restored.get());
+        BlockArrayClipboard copied = actor.session().getClipboard().getClipboard();
+        for (String format : List.of("sponge.3", "sponge.2", "mcedit")) {
+            String name = "paste-origin-" + format.replace('.', '_');
+            Schematics.save(copied, name, format);
+            actor.session().setClipboard(Schematics.load(fileOf(Schematics.directory(), name)));
+            CommandManager.get().dispatch(actor, "//set air");
+            check("the region is cleared first (" + format + ")", world.getBlock(10, 80, 20) == air);
+            CommandManager.get().dispatch(actor, "//paste -o");
+            check("and puts it back from a " + format + " file", restored.get());
+        }
     }
 
     /** How many columns of a 12x8 area from (x0, z0) disagree with the world's biome there. */

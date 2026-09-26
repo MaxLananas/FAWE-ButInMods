@@ -174,6 +174,7 @@ final class EntityTests {
         world.addEntity(pig(1.5, 70, 1.5, "Turn"));
         run(actor, "//pos1 0,69,0");
         run(actor, "//pos2 3,72,3");
+        actor.setPosition(new BlockVector3(0, 69, 0));
         run(actor, "//copy -e");
         boolean onTheirBlock = true;
         StringBuilder seen = new StringBuilder();

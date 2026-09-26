@@ -81,6 +81,8 @@ final class BlockEntityTests {
         placeChest(actor, new BlockVector3(2, 70, 2), "minecraft:diamond", 5);
         run(actor, "//pos1 0,70,0");
         run(actor, "//pos2 4,72,4");
+        // The copy's origin is where the player stands.
+        actor.setPosition(new BlockVector3(0, 70, 0));
         run(actor, "//copy");
         checkEquals("//copy without -e keeps the chest's items", "minecraft:diamond x5",
                 itemOf(actor.session().getClipboard().getClipboard().getBlockEntity(new BlockVector3(2, 70, 2))));
@@ -117,6 +119,7 @@ final class BlockEntityTests {
         placeChest(actor, new BlockVector3(10, 70, 10), "minecraft:iron_ingot", 9);
         run(actor, "//pos1 0,70,0");
         run(actor, "//pos2 0,70,0");
+        actor.setPosition(new BlockVector3(0, 70, 0));
         run(actor, "//copy");
         run(actor, "//paste 10,70,10");
         checkEquals("a chest pasted over the same chest brings its items", "minecraft:gold_ingot x3",

@@ -343,6 +343,19 @@ public final class Ctx {
     }
 
     /**
+     * The placement the source itself gives - pos1 under {@code //toggleplace},
+     * else where it stands - or {@code fallback} for one with no position.
+     */
+    public BlockVector3 placementOr(BlockVector3 fallback) {
+        BlockVector3 placed = session().getPlacement().position(world(), actor());
+        if (placed != null) {
+            return placed;
+        }
+        BlockVector3 position = actor.position();
+        return position != null ? position : fallback;
+    }
+
+    /**
      * The block a command that works from where the player stands anchors on.
      *
      * <p>The console has no position, and a command run from it — a script, a
@@ -352,13 +365,9 @@ public final class Ctx {
      * is selected either.</p>
      */
     public BlockVector3 placement() {
-        BlockVector3 placed = session().getPlacement().position(world(), actor());
-        if (placed != null) {
-            return placed;
-        }
-        BlockVector3 position = actor.position();
-        if (position != null) {
-            return position;
+        BlockVector3 own = placementOr(null);
+        if (own != null) {
+            return own;
         }
         if (hasSelection()) {
             Vector3 center = selection().getCenter();

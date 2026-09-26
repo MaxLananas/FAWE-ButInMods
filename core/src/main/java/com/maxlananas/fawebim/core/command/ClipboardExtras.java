@@ -55,6 +55,7 @@ final class ClipboardExtras {
             if (ctx.hasFlag("b")) {
                 com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
             }
+            clipboard.setOrigin(Commands.copyOrigin(ctx, clipboard));
             ctx.session().setClipboard(clipboard);
             ctx.actor().message(Msg.result("Lazily copied", Msg.count(clipboard.volume())
                     + " block(s) to the clipboard"
@@ -81,6 +82,7 @@ final class ClipboardExtras {
             if (ctx.hasFlag("b")) {
                 com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
             }
+            clipboard.setOrigin(Commands.copyOrigin(ctx, clipboard));
             ctx.session().setClipboard(clipboard);
             EditSession session = ctx.editSession("lazycut");
             int air = BlockState.registry().air();
@@ -148,7 +150,7 @@ final class ClipboardExtras {
                 throw CommandRegistry.error("No clipboard: copy something first");
             }
             BlockArrayClipboard clipboard = holder.getClipboard();
-            BlockVector3 destination = ctx.hasFlag("o") ? clipboard.getOrigin() : ctx.placement();
+            BlockVector3 destination = ctx.hasFlag("o") ? clipboard.worldOrigin() : ctx.placement();
             EditSession session = ctx.editSession("place");
             Masks.ExtentHolder.set(session);
             boolean onlySelect = ctx.hasFlag("n");

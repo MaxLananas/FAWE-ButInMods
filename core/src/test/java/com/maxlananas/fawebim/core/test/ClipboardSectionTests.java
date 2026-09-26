@@ -159,6 +159,8 @@ final class ClipboardSectionTests {
         fill(world, -3, 71, 5, 1, 75, 17);
         CommandManager.get().dispatch(actor, "//pos1 -3,71,5");
         CommandManager.get().dispatch(actor, "//pos2 1,75,17");
+        // The copy's origin is where the player stands: the corner here.
+        actor.setPosition(new BlockVector3(-3, 71, 5));
         String copied = answer(actor, "//copy");
         check("the copy answers without an error: " + copied, !copied.contains("internal"));
         CommandManager.get().dispatch(actor, "//paste 100,71,100");

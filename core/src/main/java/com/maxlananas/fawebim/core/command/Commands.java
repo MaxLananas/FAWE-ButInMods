@@ -1364,6 +1364,17 @@ public final class Commands {
     }
 
     /**
+     * The origin of a copy or a cut: where the player stands, or pos1 under
+     * {@code //toggleplace}, as in WorldEdit and FAWE, so that a paste puts the
+     * build where it was from the player. A source with no position - the
+     * console, rcon - keeps the lowest corner the clipboard starts with, so a
+     * paste at coordinates puts that corner there.
+     */
+    static BlockVector3 copyOrigin(Ctx ctx, BlockArrayClipboard clipboard) {
+        return ctx.placementOr(clipboard.getOrigin());
+    }
+
+    /**
      * How many leading arguments of {@code //move} and {@code //stack} are the
      * count: none when the first is not a number, so {@code //stack up} makes
      * one copy upwards the way {@code //stack 1 up} does.
@@ -1924,6 +1935,9 @@ public final class Commands {
                     Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
                             ctx.selection(), session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, ctx.hasFlag("c"));
+                    if (!ctx.hasFlag("c")) {
+                        clipboard.setOrigin(copyOrigin(ctx, clipboard));
+                    }
                     ctx.session().setClipboard(clipboard);
                     // What the clipboard holds, not how big the selection was:
                     // a copy of an empty region stores nothing, and the size in
@@ -1964,6 +1978,7 @@ public final class Commands {
                     com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
                             region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
+                    clipboard.setOrigin(copyOrigin(ctx, clipboard));
                     ctx.session().setClipboard(clipboard);
                     // The queue is applied before the answer is written, so the
                     // time the line reports is the time the cut really took.
@@ -2019,8 +2034,10 @@ public final class Commands {
                                 java.util.concurrent.ThreadLocalRandom.current().nextInt(4) * 90.0));
                     }
                     BlockArrayClipboard clipboard = holder.getClipboard();
-                    BlockVector3 destination = ctx.args().isEmpty()
-                            ? ctx.placement() : ctx.blockVector(0);
+                    // -o, as in WorldEdit: the origin goes back where it was
+                    // in the world, which puts the build back where it stood.
+                    BlockVector3 destination = ctx.hasFlag("o") ? clipboard.worldOrigin()
+                            : ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Mask sourceMask = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;

@@ -139,6 +139,16 @@ final class SchematicData {
     }
 
     /** Three integers from an int array, a list of numbers or an {@code {x, y, z}} compound. */
+    /**
+     * True when a position a file gives for where it was in its world could
+     * be one: the game's worlds end thirty million blocks out. A file that
+     * says otherwise is ignored on that point rather than trusted with the
+     * arithmetic that follows.
+     */
+    static boolean inWorld(long x, long y, long z) {
+        return Math.abs(x) <= 30_000_000 && Math.abs(y) <= 30_000_000 && Math.abs(z) <= 30_000_000;
+    }
+
     static int[] intTriple(Object value) {
         if (value instanceof int[] array) {
             return array.length == 3 ? array.clone() : null;
