@@ -39,10 +39,6 @@ public final class Suggestions {
             "#zaxis", "#true", "#false", "#exposed", "#biome[", "#region", "#sel", "#dregion",
             "#dsel", "#offset[", "#simplex[", "%", "!", "=");
 
-    private static final List<String> DIRECTIONS = List.of(
-            "north", "south", "east", "west", "up", "down", "me", "back", "+x", "-x", "+y", "-y",
-            "+z", "-z");
-
     private static final List<String> SHAPES = List.of(
             "sphere", "hsphere", "cyl", "hcyl", "cuboid", "pyramid", "hpyramid", "cone", "hcone");
 
@@ -70,8 +66,11 @@ public final class Suggestions {
         if (name.contains("block") || name.contains("image") || name.contains("item")) {
             return filtered(BlockState.registry().blockNames(), prefix);
         }
+        if (name.equals("offset")) {
+            return filtered(Directions.DIAGONAL_SUGGESTIONS, prefix);
+        }
         if (name.contains("direction") || name.contains("dir")) {
-            return filtered(DIRECTIONS, prefix);
+            return filtered(Directions.SUGGESTIONS, prefix);
         }
         if (name.contains("shape") || name.contains("region") || name.contains("type")) {
             return filtered(SHAPES, prefix);

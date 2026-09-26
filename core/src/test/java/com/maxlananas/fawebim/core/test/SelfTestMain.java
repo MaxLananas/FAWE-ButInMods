@@ -147,6 +147,7 @@ public final class SelfTestMain {
         ToolTests.run();
         TerrainTests.run();
         ClipboardSectionTests.run();
+        RegionCopyTests.run();
         MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;

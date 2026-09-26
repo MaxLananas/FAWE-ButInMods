@@ -24,7 +24,6 @@ import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.World;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
-import com.maxlananas.fawebim.core.world.Direction;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -587,10 +586,10 @@ public final class Commands {
     }
 
     /**
-     * The directions {@code //expand} grows in: a named direction, several of
-     * them separated by commas, an explicit {@code x,y,z} vector, or {@code me}
-     * for the way the player is looking. WorldEdit takes a list here where
-     * {@code //contract} takes one direction.
+     * The directions {@code //expand}, {@code //contract} and {@code //shift}
+     * work in: WorldEdit's list of directions separated by commas, each a name
+     * or a word relative to where the player looks, without diagonals. An
+     * explicit {@code x,y,z} vector is read as the one direction it is.
      */
     private List<BlockVector3> expandDirections(Ctx ctx, String input) {
         String text = input.trim().toLowerCase(Locale.ROOT);
@@ -613,7 +612,7 @@ public final class Commands {
         }
         List<BlockVector3> out = new ArrayList<>();
         for (String part : parts) {
-            out.add(directionVector(ctx, part.trim(), 1));
+            out.add(Directions.parse(ctx.actor(), part, false));
         }
         return out;
     }
@@ -645,29 +644,6 @@ public final class Commands {
         return 128;
     }
 
-    private BlockVector3 directionVector(Ctx ctx, String direction, int amount) {
-        String dir = direction.toLowerCase(Locale.ROOT);
-        if (dir.equals("me")) {
-            Direction facing = ctx.actor().facing();
-            return facing.toVector().multiply(amount);
-        }
-        if (dir.equals("back")) {
-            return ctx.actor().facing().opposite().toVector().multiply(amount);
-        }
-        if (dir.equals("north") || dir.equals("south") || dir.equals("east") || dir.equals("west")
-                || dir.equals("up") || dir.equals("down")) {
-            return Parsers.direction(dir).toVector().multiply(amount);
-        }
-        if (dir.contains(",")) {
-            String[] parts = dir.split(",");
-            return new BlockVector3(Integer.parseInt(parts[0].trim()) * amount,
-                    Integer.parseInt(parts[1].trim()) * amount,
-                    Integer.parseInt(parts[2].trim()) * amount);
-        }
-        return new BlockVector3(0, amount, 0);
-    }
-
-    // ------------------------------------------------------------------- region
 
     private void registerRegion() {
         CommandRegistry.Entry e19 = registry.register("//set");
@@ -1296,7 +1272,7 @@ public final class Commands {
 
 
         CommandRegistry.Entry e43 = registry.register("//move");
-        e43.description = "Move the selection's contents in a direction";
+        e43.description = "Move the contents of the selection";
         e43.group = "region";
         e43.requiresSelection = true;
         e43.booleanFlags.add("s");
@@ -1304,118 +1280,114 @@ public final class Commands {
         e43.booleanFlags.add("e");
         e43.booleanFlags.add("b");
         e43.valueFlags.add("m");
-        e43.arguments.add("amount");
-        e43.arguments.add("direction");
-        e43.arguments.add("[pattern]");
+        e43.arguments.add("[multiplier]");
+        e43.arguments.add("[offset]");
+        e43.arguments.add("[replace]");
         e43.arguments.add("[-m <mask>]");
         e43.handler = ctx -> {
                     Region region = ctx.selection();
-                    int amount = ctx.intArg(0);
-                    String direction = ctx.arg(1);
-                    BlockVector3 offset = directionVector(ctx, direction, amount);
+                    int next = leadingCount(ctx);
+                    int multiplier = next == 0 ? 1 : ctx.intArg(0);
+                    if (multiplier < 1) {
+                        throw CommandRegistry.error("The multiplier must be at least 1");
+                    }
+                    BlockVector3 offset = Directions.offset(ctx.actor(), ctx.arg(next, "forward"));
+                    long reach = Math.max(Math.max(Math.abs((long) offset.x()), Math.abs((long) offset.y())),
+                            Math.abs((long) offset.z())) * multiplier;
+                    if (reach == 0) {
+                        throw CommandRegistry.error("The offset " + Msg.value(offset).raw() + " moves nothing");
+                    }
+                    if (reach > 2L * WORLD_BORDER) {
+                        throw CommandRegistry.error("That moves the selection out of the world");
+                    }
+                    offset = offset.multiply(multiplier);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
-                    BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
-                            region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, false);
-                    Pattern pattern = ctx.args().size() > 2 ? Parsers.pattern(ctx.joined(2), ctx) : null;
-                    // Clear the source region.
-                    int empty = air();
-                    region.forEachPosition((x, y, z) -> {
-                        session.setBlock(x, y, z, empty, false);
-                        return false;
-                    });
-                    // Paste at the offset.
-                    BlockVector3 origin = clipboard.getOrigin();
-                    BlockVector3 target = region.getMinimumPoint();
-                    boolean keepSource = ctx.hasFlag("a");
-                    int targetX = target.x() + offset.x();
-                    int targetY = target.y() + offset.y();
-                    int targetZ = target.z() + offset.z();
-                    clipboard.forEachPosition((x, y, z, state) -> {
-                        int bx = x - origin.x() + targetX;
-                        int by = y - origin.y() + targetY;
-                        int bz = z - origin.z() + targetZ;
-                        if (BlockState.registry().isAirLike(state)) {
-                            if (keepSource) {
-                                // -a keeps the blocks the copy would erase.
-                                return false;
-                            }
-                            if (pattern != null) {
-                                session.setBlock(bx, by, bz, pattern.apply(bx, by, bz));
-                                return false;
-                            }
-                        }
-                        session.setBlock(bx, by, bz, state);
-                        return false;
-                    });
+                    Pattern leave = ctx.args().size() > next + 1 ? Parsers.pattern(ctx.joined(next + 1), ctx)
+                            : new com.maxlananas.fawebim.core.pattern.Patterns.Single(air());
+                    Mask mask = sourceMask(ctx, session);
+                    long moved = com.maxlananas.fawebim.core.function.RegionCopies.move(session, region, offset,
+                            mask, leave, ctx.hasFlag("e"), ctx.hasFlag("b"));
                     // -s moves the selection along with the blocks.
                     if (ctx.hasFlag("s")) {
                         region.shift(offset);
                     }
-                    flush(ctx, session, "Moved", session.getBlocksChanged(), "block(s)");
-                    ctx.actor().message(Msg.result("Selection", "moved by " + Msg.count(amount)
-                            + " block(s) towards " + Msg.value(direction.toLowerCase(Locale.ROOT)).raw()));
+                    flush(ctx, session, "Moved", moved, "block(s)");
                 };
 
 
         CommandRegistry.Entry e44 = registry.register("//stack");
-        e44.description = "Stack the selection's contents";
+        e44.description = "Repeat the contents of the selection";
         e44.group = "region";
         e44.requiresSelection = true;
         e44.booleanFlags.add("s");
         e44.booleanFlags.add("a");
         e44.booleanFlags.add("e");
         e44.booleanFlags.add("b");
-        // -r counts the copies in blocks instead of selections.
+        // -r steps by the offset itself instead of by the size of the selection.
         e44.booleanFlags.add("r");
         e44.valueFlags.add("m");
         e44.arguments.add("[count]");
-        e44.arguments.add("[direction]");
+        e44.arguments.add("[offset]");
         e44.arguments.add("[-m <mask>]");
         e44.handler = ctx -> {
                     Region region = ctx.selection();
-                    int count = ctx.intArg(0, 1);
+                    int next = leadingCount(ctx);
+                    int count = next == 0 ? 1 : ctx.intArg(0);
                     if (count < 1) {
                         throw CommandRegistry.error("The count must be at least 1");
                     }
-                    String dir = ctx.arg(1, "me");
-                    Direction direction = dir.equalsIgnoreCase("me") ? ctx.actor().facing() : Parsers.direction(dir);
-                    EditSession session = ctx.editSession();
-                    Masks.ExtentHolder.set(session);
-                    Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
-                    BlockArrayClipboard original = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(), region,
-                            session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, false);
+                    BlockVector3 offset = Directions.offset(ctx.actor(), ctx.arg(next, "forward"));
                     // Each copy steps by the size of the selection along the
-                    // direction, like WorldEdit: the height was used on every
-                    // axis, so stacking a wide selection sideways overlapped it.
-                    int dx = direction.x() * (ctx.hasFlag("r") ? 1 : region.getWidth());
-                    int dy = direction.y() * (ctx.hasFlag("r") ? 1 : region.getHeight());
-                    int dz = direction.z() * (ctx.hasFlag("r") ? 1 : region.getLength());
+                    // offset, as in WorldEdit, or by the offset itself with -r.
+                    BlockVector3 step = ctx.hasFlag("r") ? offset : new BlockVector3(
+                            offset.x() * region.getWidth(), offset.y() * region.getHeight(),
+                            offset.z() * region.getLength());
+                    if (com.maxlananas.fawebim.core.function.RegionCopies.overlaps(region, step)) {
+                        throw CommandRegistry.error("A step of " + Msg.value(step).raw()
+                                + " puts the copies inside the selection: step at least its size along one axis");
+                    }
                     // The copies past the edge of the world write nothing; walking
                     // them was two billion passes over the selection, and their
                     // offsets overflowed into copies on the far side of the world.
-                    count = copiesInWorld(region, ctx.world(), dx, dy, dz, count);
-                    boolean skipAir = ctx.hasFlag("a");
-                    for (int i = 1; i <= count; i++) {
-                        int offsetX = dx * i;
-                        int offsetY = dy * i;
-                        int offsetZ = dz * i;
-                        original.forEachPosition((x, y, z, state) -> {
-                            if (skipAir && BlockState.registry().isAirLike(state)) {
-                                return false;
-                            }
-                            session.checkTimeout();
-                            return session.setBlock(x + offsetX, y + offsetY, z + offsetZ, state);
-                        });
-                    }
+                    count = copiesInWorld(region, ctx.world(), step.x(), step.y(), step.z(), count);
+                    EditSession session = ctx.editSession();
+                    Masks.ExtentHolder.set(session);
+                    Mask mask = sourceMask(ctx, session);
+                    long changed = count == 0 ? 0 : com.maxlananas.fawebim.core.function.RegionCopies.stack(session,
+                            region, step, count, mask, ctx.hasFlag("e"), ctx.hasFlag("b"));
                     // -s moves the selection onto the last copy.
-                    if (ctx.hasFlag("s")) {
-                        region.shift(new BlockVector3(dx * count, dy * count, dz * count));
+                    if (ctx.hasFlag("s") && count > 0) {
+                        region.shift(step.multiply(count));
                     }
-                    flush(ctx, session, "Stacked");
+                    flush(ctx, session, "Stacked", changed, "block(s)");
                 };
 
+    }
+
+    /**
+     * How many leading arguments of {@code //move} and {@code //stack} are the
+     * count: none when the first is not a number, so {@code //stack up} makes
+     * one copy upwards the way {@code //stack 1 up} does.
+     */
+    private static int leadingCount(Ctx ctx) {
+        Ctx.Argument first = ctx.argument(0);
+        return first != null && first.isNumber() ? 1 : 0;
+    }
+
+    /**
+     * The positions {@code //move} and {@code //stack} copy: the {@code -m}
+     * mask, and with {@code -a} only the ones holding a block, both tested on
+     * the source as in WorldEdit.
+     */
+    private static Mask sourceMask(Ctx ctx, EditSession session) {
+        Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
+        if (!ctx.hasFlag("a")) {
+            return include;
+        }
+        Mask existing = new com.maxlananas.fawebim.core.mask.Masks.ExistingMask(session, true);
+        return include == null ? existing
+                : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(include, existing));
     }
 
     /**
@@ -1446,10 +1418,20 @@ public final class Commands {
     }
 
     /**
-     * The thickness of {@code //line} and {@code //curve}: a radius around the
-     * path, walked as a sphere at every step of it, so it answers to the
-     * radius ceiling. WorldEdit refuses a negative one.
+     * The axis {@code //flip} mirrors along: that of a direction, as in
+     * WorldEdit, looking up or down included, or one named by its letter.
      */
+    private static com.maxlananas.fawebim.core.transform.Axis flipAxis(Ctx ctx, String input) {
+        String word = input.trim().toLowerCase(Locale.ROOT);
+        if (word.equals("x") || word.equals("y") || word.equals("z")) {
+            return com.maxlananas.fawebim.core.transform.Axis.parse(word);
+        }
+        BlockVector3 direction = Directions.parse(ctx.actor(), word, false);
+        return direction.x() != 0 ? com.maxlananas.fawebim.core.transform.Axis.X
+                : direction.y() != 0 ? com.maxlananas.fawebim.core.transform.Axis.Y
+                : com.maxlananas.fawebim.core.transform.Axis.Z;
+    }
+
     /**
      * What {@code //line} joins, as in WorldEdit: the vertices of a convex
      * selection, or the two corners of a cuboid one in the order they were
@@ -2091,13 +2073,7 @@ public final class Commands {
                     if (!ctx.session().hasClipboard()) {
                         throw CommandRegistry.error("No clipboard");
                     }
-                    String direction = ctx.arg(0, "me");
-                    com.maxlananas.fawebim.core.transform.Axis axis = direction.equalsIgnoreCase("me")
-                            ? switch (ctx.actor().facing()) {
-                        case NORTH, SOUTH -> com.maxlananas.fawebim.core.transform.Axis.Z;
-                        case EAST, WEST -> com.maxlananas.fawebim.core.transform.Axis.X;
-                        default -> com.maxlananas.fawebim.core.transform.Axis.Y;
-                    } : Parsers.axis(direction);
+                    com.maxlananas.fawebim.core.transform.Axis axis = flipAxis(ctx, ctx.arg(0, "me"));
                     var holder = ctx.session().getClipboard();
                     holder.setTransform(holder.getTransform().combine(
                             com.maxlananas.fawebim.core.transform.Transforms.flip(holder.getClipboard().getOrigin(), axis)));
