@@ -17,6 +17,13 @@ import java.util.List;
 /** Copy/paste helpers shared by the commands, brushes and tools. */
 public final class Clipboards {
 
+    /**
+     * How much of a 16x16x16 section a box must cover before the section is
+     * worth reading whole. Under a quarter the walk reads fewer cells from the
+     * world one at a time than the section-wide read would touch.
+     */
+    private static final int SECTION_READ_MINIMUM = 1024;
+
     private Clipboards() {
     }
 
@@ -162,7 +169,8 @@ public final class Clipboards {
             // The session counts the writes it makes; this only consults the
             // clock, so a configured timeout still stops a long cut.
             session.limiter().check(0);
-            if (state == constant) {
+            if (state == constant || (mask != null && state != BlockStateHolder.air()
+                    && !mask.test(x, y, z))) {
                 return true;
             }
             session.setBlockKnown(x, y, z, state,
@@ -216,7 +224,12 @@ public final class Clipboards {
                     boolean whole = fromX == (chunkX << 4) && toX == (chunkX << 4) + 15
                             && fromY == (sectionY << 4) && toY == (sectionY << 4) + 15
                             && fromZ == (chunkZ << 4) && toZ == (chunkZ << 4) + 15;
-                    boolean read = world.readSection(chunkX, sectionY, chunkZ, sectionBlocks);
+                    // A section the selection barely reaches is read cell by
+                    // cell: reading it whole would touch 4096 cells of the
+                    // palette to pick out a handful of them.
+                    long covered = (long) (toX - fromX + 1) * (toY - fromY + 1) * (toZ - fromZ + 1);
+                    boolean read = covered >= SECTION_READ_MINIMUM
+                            && world.readSection(chunkX, sectionY, chunkZ, sectionBlocks);
                     if (read && whole && mask == null && !withEntities) {
                         clearSection(session, sectionBlocks, chunkX << 4, sectionY << 4, chunkZ << 4);
                         clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
@@ -238,8 +251,9 @@ public final class Clipboards {
                                             clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
                                         }
                                     }
-                                }
-                                if (state != air) {
+                                    // What the mask keeps out of the clipboard
+                                    // stays in the world: a masked cut leaves
+                                    // the blocks it does not match.
                                     session.setBlockKnown(x, y, z, state, air, true);
                                 }
                                 // The session counts its own writes; this is the
@@ -286,7 +300,9 @@ public final class Clipboards {
                     boolean whole = fromX == (chunkX << 4) && toX == (chunkX << 4) + 15
                             && fromY == (sectionY << 4) && toY == (sectionY << 4) + 15
                             && fromZ == (chunkZ << 4) && toZ == (chunkZ << 4) + 15;
-                    if (!world.readSection(chunkX, sectionY, chunkZ, sectionBlocks)) {
+                    long covered = (long) (toX - fromX + 1) * (toY - fromY + 1) * (toZ - fromZ + 1);
+                    if (covered < SECTION_READ_MINIMUM
+                            || !world.readSection(chunkX, sectionY, chunkZ, sectionBlocks)) {
                         for (int y = fromY; y <= toY; y++) {
                             for (int z = fromZ; z <= toZ; z++) {
                                 for (int x = fromX; x <= toX; x++) {

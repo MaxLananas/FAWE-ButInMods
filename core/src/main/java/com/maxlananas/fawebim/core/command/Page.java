@@ -67,20 +67,22 @@ final class Page {
         if (pages <= 1) {
             return;
         }
+        boolean forward = number < pages;
+        int target = forward ? number + 1 : number - 1;
         StringBuilder line = new StringBuilder(Msg.MARKER);
         line.append("§7Page §b").append(number).append("§8/§b").append(pages);
-        if (number < pages) {
-            line.append(" §8- §7next §b").append(command).append(" -p ")
-                    .append(number + 1);
+        if (forward) {
+            line.append(" §8- §7next §b").append(command).append(" -p ").append(target);
+        } else {
+            line.append(" §8- §7back to page §b").append(target);
         }
-        if (number > 1) {
-            line.append(" §8- §7previous §b").append(command).append(" -p ")
-                    .append(number - 1);
+        if (number > 1 && forward) {
+            line.append(" §8- §7back to page §b").append(number - 1);
         }
         // Clicking the line runs the command it prints, which is what makes a
-        // listing longer than the chat readable.
-        String next = number < pages ? command + " -p " + (number + 1)
-                : command + " -p " + (number - 1);
-        ctx.actor().commandLink(line.toString(), next, "Go to page " + (number + 1));
+        // listing longer than the chat readable. The tooltip names the page the
+        // click really opens.
+        ctx.actor().commandLink(line.toString(), command + " -p " + target,
+                forward ? "Go to page " + target : "Go back to page " + target);
     }
 }

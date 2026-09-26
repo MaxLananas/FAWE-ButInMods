@@ -117,6 +117,8 @@ public final class SelfTestMain {
         testTimeLimiter();
         testUtil();
         testAnvilRegionFiles();
+        testHelp();
+        testCui();
         testEveryAnswerIsColoured();
         testEveryCommandAnswersInColour();
 
@@ -674,6 +676,17 @@ public final class SelfTestMain {
             check("the test registry knows " + colour + "_wool", wool >= 0);
             checkEquals("the " + colour + " shorthand is its wool", wool,
                     BlockState.registry().parse(colour));
+        }
+        // Upstream spells grey and light blue two ways each, and light grey four.
+        Map<String, String> spellings = Map.of(
+                "grey", "gray_wool",
+                "lightblue", "light_blue_wool",
+                "lightgray", "light_gray_wool",
+                "lightgrey", "light_gray_wool");
+        for (Map.Entry<String, String> spelling : spellings.entrySet()) {
+            checkEquals("the " + spelling.getKey() + " spelling is its wool",
+                    BlockState.registry().defaultState(spelling.getValue()),
+                    BlockState.registry().parse(spelling.getKey()));
         }
         TestWorld wool = new TestWorld("wool");
         wool.fillFlat(70);
@@ -2900,6 +2913,182 @@ public final class SelfTestMain {
         check("the settings listing is headed by the gradient",
                 actor.messages().stream().anyMatch(message -> message.contains("\u00a7x")
                         && plain(message).contains("Settings (")));
+    }
+
+    /**
+     * {@code //cui}: the line the selection preview writes, and the answers the
+     * command gives when it is turned on, off, and asked for the same state
+     * twice.
+     */
+    private static void testCui() {
+        section("selection preview");
+        TestWorld world = new TestWorld("cui");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Preview", world, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(actor, "//pos1 1,2,3");
+        CommandManager.get().dispatch(actor, "//pos2 12,71,14");
+        Msg size = com.maxlananas.fawebim.core.util.Cui.size(actor.session().getSelection(world));
+        check("the size line shows the three dimensions", size.plain().contains("12x70x12"));
+        check("the size line counts the blocks", size.plain().contains("10,080"));
+        check("the size line names both corners", size.plain().contains("1, 2, 3")
+                && size.plain().contains("12, 71, 14"));
+        check("the size line is coloured", size.raw().contains("\u00a7"));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cui false");
+        check("//cui false turns the preview off", !actor.session().isDrawSelection());
+        check("//cui answers with a result line", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Selection preview")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cui");
+        check("//cui without an argument turns the preview on", actor.session().isDrawSelection());
+        check("//cui says where the outline is drawn", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("cyan")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cui false");
+        check("//cui false turns it off again", !actor.session().isDrawSelection());
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//cui false");
+        check("//cui says when the preview is already off", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("already off")));
+    }
+
+    /**
+     * The listing behind {@code //help}: it pages, it searches, and the pages
+     * really hold different commands. The listing is longer than the chat, so
+     * this is what keeps it readable.
+     */
+    private static void testHelp() {
+        section("help");
+        TestWorld world = new TestWorld("help");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Helper", world, new BlockVector3(0, 71, 0));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//help");
+        List<String> first = new ArrayList<>(actor.messages());
+        String heading = first.stream().map(SelfTestMain::plain)
+                .filter(message -> message.contains("FAWE-BIM commands")).findFirst().orElse("");
+        check("the listing is headed by a heading line", !heading.isEmpty());
+        check("the heading is a gradient", first.stream().anyMatch(message ->
+                plain(message).contains("FAWE-BIM commands") && message.contains("\u00a7x")));
+        check("the heading counts the page", heading.contains("page 1/"));
+        int pages = integerBetween(heading, "page 1/", ")");
+        check("the command list runs over several pages", pages > 1);
+        check("a page lists commands", first.stream().anyMatch(message ->
+                plain(message).startsWith("  ·")));
+        check("the first page points at the next one", first.stream().anyMatch(message ->
+                plain(message).contains("next //help -p 2")));
+
+        // The count in the heading is the number of commands the listing covers:
+        // walking every page has to come back with exactly that many rows.
+        int total = integerBetween(heading, "(", " commands");
+        check("the heading counts the commands", total > 200);
+        java.util.Set<String> listed = new java.util.LinkedHashSet<>();
+        int rows = 0;
+        for (int number = 1; number <= pages; number++) {
+            actor.clearMessages();
+            CommandManager.get().dispatch(actor, "//help -p " + number);
+            for (String message : actor.messages()) {
+                String text = plain(message);
+                if (text.startsWith("  ·")) {
+                    rows++;
+                    listed.add(text);
+                }
+            }
+        }
+        checkEquals("every page lists its own commands", total, rows);
+        checkEquals("the pages do not repeat a command", rows, listed.size());
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//help -p 2");
+        List<String> second = new ArrayList<>(actor.messages());
+        check("page two is a page of its own", second.stream().map(SelfTestMain::plain)
+                .filter(message -> message.startsWith("  ·")).noneMatch(first.stream()
+                        .map(SelfTestMain::plain).filter(message -> message.startsWith("  ·"))
+                        .collect(java.util.stream.Collectors.toSet())::contains));
+        check("page two is called page two", second.stream().anyMatch(message ->
+                plain(message).contains("page 2/")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//help -p 9999");
+        check("a page past the end lands on the last one", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("page " + pages + "/" + pages)));
+        check("the last page leads back", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("back to page")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//help set");
+        check("a search says what it searched for", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Commands matching 'set'")));
+        // The search pages too, and the command it is looking for may sit on any
+        // of its pages.
+        boolean found = false;
+        for (String message : actor.messages()) {
+            found |= plain(message).contains("//set ");
+        }
+        for (int number = 2; !found && number <= 8; number++) {
+            actor.clearMessages();
+            CommandManager.get().dispatch(actor, "//help set -p " + number);
+            for (String message : actor.messages()) {
+                found |= plain(message).contains("//set ");
+            }
+        }
+        check("a search finds the command", found);
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//help -s tool");
+        check("a sub-command listing names them", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Sub-commands of tool")));
+        check("a sub-command listing lists them", actor.messages().stream()
+                .anyMatch(message -> plain(message).startsWith("  · /tool")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//help zznotacommand");
+        check("a search that finds nothing says so", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("No command matches")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "/fawebim-discord");
+        check("the discord command carries the invite", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("https://discord.gg/pnJhKuU2QK")));
+
+        // The banner a player is handed on joining: the same invite, the way to
+        // the commands, and a click for each.
+        List<com.maxlananas.fawebim.core.platform.Welcome.Line> banner =
+                com.maxlananas.fawebim.core.platform.Welcome.lines();
+        check("the banner names the mod", banner.stream().anyMatch(line ->
+                plain(line.text().raw()).contains("FAWE-BIM")));
+        check("the banner says thanks", banner.stream().anyMatch(line ->
+                line.text().plain().contains("thanks for downloading")));
+        check("the banner shows the commands", banner.stream().anyMatch(line ->
+                line.text().plain().contains("//help")));
+        check("the banner runs the help when clicked", banner.stream().anyMatch(line ->
+                "//help".equals(line.runCommand())));
+        check("the banner carries the invite", banner.stream().anyMatch(line ->
+                com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE.equals(line.openUrl())));
+        check("every banner line is coloured", banner.stream().allMatch(line ->
+                line.text().raw().contains("\u00a7")));
+    }
+
+    /** The number between two markers of a message, or -1 when they are absent. */
+    private static int integerBetween(String message, String from, String to) {
+        int start = message.indexOf(from);
+        if (start < 0) {
+            return -1;
+        }
+        start += from.length();
+        int end = message.indexOf(to, start);
+        if (end < 0) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(message.substring(start, end).trim());
+        } catch (NumberFormatException notANumber) {
+            return -1;
+        }
     }
 
     /** The text of a message without its colour codes. */

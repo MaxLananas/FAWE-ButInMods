@@ -30,17 +30,25 @@ public interface BlockStateRegistry {
      */
     int parse(String input);
 
-    /** The sixteen dye colours, and the wool each of them names. */
+    /**
+     * The sixteen dye colours, and the wool each of them names, including the
+     * spellings upstream accepts for grey and light blue.
+     */
     Map<String, String> COLOUR_WOOL = Map.ofEntries(
             Map.entry("white", "minecraft:white_wool"),
             Map.entry("orange", "minecraft:orange_wool"),
             Map.entry("magenta", "minecraft:magenta_wool"),
             Map.entry("light_blue", "minecraft:light_blue_wool"),
+            Map.entry("lightblue", "minecraft:light_blue_wool"),
             Map.entry("yellow", "minecraft:yellow_wool"),
             Map.entry("lime", "minecraft:lime_wool"),
             Map.entry("pink", "minecraft:pink_wool"),
             Map.entry("gray", "minecraft:gray_wool"),
+            Map.entry("grey", "minecraft:gray_wool"),
             Map.entry("light_gray", "minecraft:light_gray_wool"),
+            Map.entry("light_grey", "minecraft:light_gray_wool"),
+            Map.entry("lightgray", "minecraft:light_gray_wool"),
+            Map.entry("lightgrey", "minecraft:light_gray_wool"),
             Map.entry("cyan", "minecraft:cyan_wool"),
             Map.entry("purple", "minecraft:purple_wool"),
             Map.entry("blue", "minecraft:blue_wool"),

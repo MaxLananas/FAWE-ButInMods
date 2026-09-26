@@ -18,8 +18,8 @@ import java.util.Locale;
  */
 final class Help {
 
-    /** Rows one page holds: a header, a group line, ten commands and a footer. */
-    private static final int PAGE_SIZE = 10;
+    /** Rows one page holds: a header, a group line, eight commands and a footer. */
+    private static final int PAGE_SIZE = 8;
 
     /**
      * One colour pair per group, so the same part of the command surface always
@@ -53,18 +53,17 @@ final class Help {
             return;
         }
         Page page = Page.of(ctx, matches.size(), PAGE_SIZE);
-        ctx.actor().message(header("Commands", matches.size(), page));
+        ctx.actor().message(header("FAWE-BIM commands", matches.size(), page));
         String group = null;
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
             if (!entry.group.equals(group)) {
                 group = entry.group;
                 ctx.actor().message(Msg.of("  " + groupTitle(group)));
             }
-            ctx.actor().message(row(entry));
+            ctx.actor().suggestLink(row(entry), entry.name,
+                    "Put " + entry.name + " in the chat box");
         }
-        page.hint(ctx, "//help");
-        ctx.actor().message(Msg.of("§8» §7Settings screen: " + Msg.value("/fawebim").raw()
-                + " §8- §7Discord: " + Msg.value("/fawebim-discord").raw()));
+        footer(ctx, "//help", page);
     }
 
     /** {@code //help <word>}: everything whose name or description holds the word. */
@@ -93,9 +92,10 @@ final class Help {
                 group = entry.group;
                 ctx.actor().message(Msg.of("  " + groupTitle(group)));
             }
-            ctx.actor().message(row(entry));
+            ctx.actor().suggestLink(row(entry), entry.name,
+                    "Put " + entry.name + " in the chat box");
         }
-        page.hint(ctx, "//help " + filter);
+        footer(ctx, "//help " + filter, page);
     }
 
     /** {@code //help -s <command>}: the sub-commands registered under one name. */
@@ -116,20 +116,57 @@ final class Help {
         Page page = Page.of(ctx, matches.size(), PAGE_SIZE);
         ctx.actor().message(header("Sub-commands of " + filter, matches.size(), page));
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
-            ctx.actor().message(row(entry));
+            ctx.actor().suggestLink(row(entry), entry.name,
+                    "Put " + entry.name + " in the chat box");
         }
-        page.hint(ctx, "//help -s " + filter);
+        footer(ctx, "//help -s " + filter, page);
+    }
+
+    /**
+     * The lines under a page: the way to the pages around it, then the three
+     * things a reader of a listing looks for - the search, the settings screen
+     * and the Discord server. Every one of them is a click target, so a page can
+     * be read without typing a path.
+     */
+    private static void footer(Ctx ctx, String command, Page page) {
+        page.hint(ctx, command);
+        ctx.actor().commandLink(Msg.MARKER + "§7Search " + Msg.value("//help <word>").raw()
+                        + " §8- §7sub-commands " + Msg.value("//help -s <command>").raw()
+                        + " §8- §7pages " + Msg.value("-p <page>").raw(),
+                "//help ", "Search the command list");
+        ctx.actor().commandLink(Msg.MARKER + "§7Settings " + Msg.value("/fawebim").raw()
+                        + " §8- §7Discord " + Msg.value("/fawebim-discord").raw()
+                        + " §8- §7click a command to put it in the chat box",
+                "/fawebim", "Open the settings screen");
     }
 
     /** The heading of a page: the title, how many there are, and which page this is. */
     private static Msg header(String label, int total, Page page) {
-        return Msg.of(Msg.title(label).raw() + " §8(§b" + total
-                + "§7, page §b" + page.number() + "§8/§b" + page.pages() + "§8)");
+        return Msg.of(Msg.title(label).raw() + " §8(§b" + total + "§7 commands, page §b"
+                + page.number() + "§8/§b" + page.pages() + "§8) " + rule(30));
     }
 
-    /** One command: its usage in the command colour, its description under it. */
-    private static Msg row(CommandRegistry.Entry entry) {
-        return Msg.of("§8 - §b" + entry.usage() + " §8- §7" + entry.description);
+    /** One command: its usage in the command colour, then what it does. */
+    private static String row(CommandRegistry.Entry entry) {
+        return "  §8· §b" + usage(entry) + " §8- §7" + entry.description;
+    }
+
+    /**
+     * A usage line with its command name and its arguments in two colours, so the
+     * name the row is about reads first.
+     */
+    private static String usage(CommandRegistry.Entry entry) {
+        String usage = entry.usage();
+        int space = usage.indexOf(' ');
+        if (space < 0) {
+            return usage;
+        }
+        return "§b" + usage.substring(0, space) + "§8" + usage.substring(space);
+    }
+
+    /** A dim rule, made of the struck-through spaces the vanilla font draws solid. */
+    private static String rule(int width) {
+        return "§8§m" + " ".repeat(width);
     }
 
     /** The name of a group, in that group's own colour. */

@@ -170,6 +170,15 @@ public final class FabricActor implements Actor {
     }
 
     @Override
+    public void suggestLink(String text, String command, String hover) {
+        Style line = Style.EMPTY
+                .withClickEvent(new net.minecraft.network.chat.ClickEvent.SuggestCommand(command))
+                .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
+                        Component.literal(hover)));
+        source.sendSuccess(() -> FabricMessages.component(Msg.of(text), line), false);
+    }
+
+    @Override
     public boolean openConfigurationScreen() {
         // Only the integrated client can draw the screen; on a remote server the
         // request finds no opener and the command prints the values instead.
@@ -240,9 +249,20 @@ public final class FabricActor implements Actor {
     }
 
     @Override
+    public void status(Msg message) {
+        if (player == null) {
+            return;
+        }
+        player.displayClientMessage(FabricMessages.component(message), true);
+    }
+
+    @Override
     public void updateSelectionOutline() {
-        // The selection is drawn by the server-side particle preview below.
+        // The selection is drawn by the server-side particle preview below, and
+        // its size goes to the action bar: the two corners were just picked, and
+        // the size is what the player is looking at while they pick them.
         SelectionPreview.refresh(this);
+        SelectionPreview.size(this);
     }
 
     public CommandSourceStack source() {

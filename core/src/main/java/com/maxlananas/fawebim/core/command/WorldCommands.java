@@ -268,12 +268,19 @@ final class WorldCommands {
                 return;
             }
             ctx.actor().message(Msg.result("Selection preview", "on"));
-            ctx.actor().message(Msg.of("\u00a78\u00bb \u00a77Every edge in \u00a7b\u00a7lblue\u00a77, position 1 in "
-                    + "\u00a7c\u00a7lred\u00a77 and position 2 in \u00a79\u00a7lblue\u00a77."));
+            ctx.actor().message(Msg.of("\u00a78» \u00a77The box is drawn every \u00a7b"
+                    + "quarter second\u00a77: \u00a7b\u00a7lcyan §7edges, \u00a79\u00a7ldeep blue"
+                    + "\u00a77 uprights, \u00a7c\u00a7lred\u00a77 position 1 and \u00a79\u00a7lblue"
+                    + "\u00a77 position 2, with \u00a7f\u00a7lwhite\u00a77 corners."));
+            ctx.actor().message(Msg.of("\u00a78» \u00a77Its size and the two corners are shown on the"
+                    + " line above the hotbar while you pick."));
             if (!session.isSelectionDefined(ctx.world())) {
-                ctx.actor().message(Msg.of("\u00a78\u00bb \u00a77Pick two corners with "
+                ctx.actor().message(Msg.of("\u00a78» \u00a77Pick two corners with "
                         + Msg.value("//pos1").raw() + "\u00a77 and " + Msg.value("//pos2").raw()
                         + "\u00a77 to see the outline."));
+            } else {
+                ctx.actor().status(com.maxlananas.fawebim.core.util.Cui.size(
+                        session.getSelection(ctx.world())));
             }
         };
     }

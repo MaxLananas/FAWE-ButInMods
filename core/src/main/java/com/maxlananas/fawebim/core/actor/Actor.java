@@ -64,6 +64,25 @@ public interface Actor {
         message(Msg.of(text));
     }
 
+    /**
+     * Sends a line whose click puts a command in the chat box instead of running
+     * it, which is what a listed usage wants: the arguments still have to be
+     * filled in, and running {@code //set} on its own only answers with its
+     * usage.
+     */
+    default void suggestLink(String text, String command, String hover) {
+        message(Msg.of(text));
+    }
+
+    /**
+     * The line above the hotbar, which is where a value that changes while the
+     * player works - the selection being dragged out - belongs: it is read at a
+     * glance and leaves the chat alone. Nothing but a player has one, so the
+     * default is to say nothing.
+     */
+    default void status(Msg message) {
+    }
+
     default void message(String text) {
         message(Msg.of(text));
     }

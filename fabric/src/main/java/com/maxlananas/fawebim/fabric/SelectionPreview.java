@@ -20,15 +20,23 @@ import java.util.List;
  */
 public final class SelectionPreview {
 
-    /** Particles one edge is worth: a dotted line, denser as the edge grows. */
-    private static final int MIN_SAMPLES = 2;
-    private static final int MAX_SAMPLES = 24;
+    /**
+     * Particles one edge is worth. Two per block makes a line that reads as a
+     * line rather than as dots, and the cap keeps a thousand-block edge from
+     * putting a thousand particles in one packet.
+     */
+    private static final int SAMPLES_PER_BLOCK = 2;
+    private static final int MIN_SAMPLES = 6;
+    private static final int MAX_SAMPLES = 64;
 
-    /** The colour of the outline, its two corner marks, and their size. */
+    /** The colour of the outline, its corners, and the two picked positions. */
     private static final int EDGE_COLOUR = 0x6CC6FF;
+    private static final int VERTICAL_COLOUR = 0x3F8CFF;
+    private static final int CORNER_COLOUR = 0xB6EAFF;
     private static final int POSITION_1_COLOUR = 0xFF5555;
     private static final int POSITION_2_COLOUR = 0x5599FF;
     private static final float MARK_SIZE = 0.9F;
+    private static final float CORNER_SIZE = 0.35F;
 
     private SelectionPreview() {
     }
@@ -57,6 +65,7 @@ public final class SelectionPreview {
         // the selection rather than through its middle.
         BlockVector3 max = region.getMaximumPoint().add(1, 1, 1);
         ParticleOptions edge = dust(EDGE_COLOUR);
+        ParticleOptions vertical = dust(VERTICAL_COLOUR);
 
         for (int axis = 0; axis < 3; axis++) {
             for (int[] corner : corners(axis)) {
@@ -71,13 +80,42 @@ public final class SelectionPreview {
                 double dx = axis == 0 ? max.x() - min.x() : 0;
                 double dy = axis == 1 ? max.y() - min.y() : 0;
                 double dz = axis == 2 ? max.z() - min.z() : 0;
-                int samples = Math.max(MIN_SAMPLES, Math.min(MAX_SAMPLES, length));
-                level(player).sendParticles(player, edge, true, false,
+                int samples = Math.max(MIN_SAMPLES,
+                        Math.min(MAX_SAMPLES, length * SAMPLES_PER_BLOCK));
+                // The four uprights run a tone deeper, which is what makes the box
+                // read as a box rather than as a square seen from an angle.
+                level(player).sendParticles(player, axis == 1 ? vertical : edge, true, false,
                         x + dx / 2, y + dy / 2, z + dz / 2, samples, dx, dy, dz, 0);
             }
         }
+        for (int corner = 0; corner < 8; corner++) {
+            mark(player,
+                    new BlockVector3((corner & 1) == 0 ? min.x() : max.x(),
+                            (corner & 2) == 0 ? min.y() : max.y(),
+                            (corner & 4) == 0 ? min.z() : max.z()),
+                    CORNER_COLOUR);
+        }
         mark(player, min, POSITION_1_COLOUR);
         mark(player, region.getMaximumPoint(), POSITION_2_COLOUR);
+    }
+
+    /**
+     * The size of the selection, on the line above the hotbar.
+     *
+     * <p>This is what the client half of the CUI shows while a selection is
+     * dragged out: the three dimensions and how many blocks they hold. The engine
+     * writes it, so the same line is covered by the engine tests.</p>
+     */
+    public static void size(FabricActor actor) {
+        if (!actor.isPlayer()) {
+            return;
+        }
+        var session = actor.session();
+        Region region = session.isSelectionDefined(actor.world()) ? session.getSelection(actor.world()) : null;
+        if (region == null) {
+            return;
+        }
+        actor.status(com.maxlananas.fawebim.core.util.Cui.size(region));
     }
 
     /** The four corners an edge of the given axis can start from. */

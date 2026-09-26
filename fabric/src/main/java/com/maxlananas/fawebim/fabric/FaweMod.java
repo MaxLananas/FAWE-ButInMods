@@ -174,13 +174,17 @@ public final class FaweMod implements ModInitializer {
                 return;
             }
             FabricActor actor = new FabricActor(handler.getPlayer());
-            for (com.maxlananas.fawebim.core.util.Msg line
+            for (com.maxlananas.fawebim.core.platform.Welcome.Line line
                     : com.maxlananas.fawebim.core.platform.Welcome.lines()) {
-                actor.message(line);
+                if (line.openUrl() != null) {
+                    actor.link(line.text().raw(), line.openUrl());
+                } else if (line.runCommand() != null) {
+                    actor.commandLink(line.text().raw(), line.runCommand(), line.hover());
+                } else {
+                    actor.message(line.text());
+                }
             }
-            actor.link("\u00a78\u00bb \u00a77Discord invite: \u00a7b\u00a7n"
-                            + com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE,
-                    com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE);
+
         });
 
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
