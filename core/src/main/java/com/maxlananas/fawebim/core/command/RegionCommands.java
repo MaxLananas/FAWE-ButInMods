@@ -94,28 +94,43 @@ final class RegionCommands {
         entry.handler = ctx -> ctx.actor().message(Msg.info("test: " + ctx.arg(0)));
     }
 
-    /** {@code //fixlighting} — relights the selection after a bulk edit. */
+    /**
+     * {@code //fixlighting} — relights every chunk the selection touches, from
+     * the bottom of the world to the top, as FAWE does. A chunk that is not
+     * loaded is left out rather than loaded, or generated, for it.
+     */
     private void fixLighting() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//fixlighting");
         if (entry == null) {
             return;
         }
-        entry.description = "Propagate lighting through the selection";
+        entry.description = "Relight the chunks of the selection";
         entry.group = "region";
         entry.requiresSelection = true;
-        entry.handler = ctx -> relight(ctx, "Lighting fixed");
+        entry.handler = ctx -> {
+            List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
+            ctx.world().relight(chunks);
+            ctx.actor().message(Msg.result("Lighting propagated", Msg.count(chunks.size()) + " chunk(s)"));
+        };
     }
 
-    /** {@code //removelighting} — drops the cached light of the selection. */
+    /**
+     * {@code //removelighting} — zeroes the light of every chunk the selection
+     * touches, as FAWE does; {@code //fixlighting} brings it back.
+     */
     private void removeLighting() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//removelighting", "/removelight");
         if (entry == null) {
             return;
         }
-        entry.description = "Remove lighting data from the selection";
+        entry.description = "Remove the lighting of the chunks of the selection";
         entry.group = "region";
         entry.requiresSelection = true;
-        entry.handler = ctx -> relight(ctx, "Lighting removed and recomputed");
+        entry.handler = ctx -> {
+            List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
+            ctx.world().removeLight(chunks);
+            ctx.actor().message(Msg.result("Lighting removed", Msg.count(chunks.size()) + " chunk(s)"));
+        };
     }
 
     private void setBlockLight() {
@@ -123,17 +138,10 @@ final class RegionCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the block light level in the selection";
+        entry.description = "Set block lighting in a selection (deprecated, use light blocks)";
         entry.group = "region";
         entry.requiresSelection = true;
-        entry.arguments.add("level");
-        entry.handler = ctx -> {
-            int level = ctx.intArg(0, 15);
-            if (level < 0 || level > 15) {
-                throw CommandRegistry.error("Light level must be between 0 and 15");
-            }
-            relight(ctx, "Block light set to " + level);
-        };
+        entry.handler = RegionCommands::lightBlocksInstead;
     }
 
     private void setSkyLight() {
@@ -141,36 +149,38 @@ final class RegionCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the sky light level in the selection";
+        entry.description = "Set sky lighting in a selection (deprecated, use light blocks)";
         entry.group = "region";
         entry.requiresSelection = true;
-        entry.arguments.add("level");
-        entry.handler = ctx -> {
-            int level = ctx.intArg(0, 15);
-            if (level < 0 || level > 15) {
-                throw CommandRegistry.error("Light level must be between 0 and 15");
-            }
-            relight(ctx, "Sky light set to " + level);
-        };
+        entry.handler = RegionCommands::lightBlocksInstead;
     }
 
     /**
-     * Lighting is computed by the engine since 1.18: a mod cannot pin an exact
-     * level, so the light data of the affected chunks is invalidated and rebuilt,
-     * which is the only operation that has a visible effect.
+     * FAWE deprecated the two commands that wrote light levels and only
+     * answers them with this: the game recomputes light from blocks, and a
+     * light block is a source it keeps.
      */
-    private void relight(Ctx ctx, String message) {
-        Region region = ctx.selection();
-        World world = ctx.world();
-        for (var chunk : region.getChunks()) {
-            world.relight(List.of(chunk));
-        }
-        for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x += 16) {
-            for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z += 16) {
-                world.queueBlockUpdate(x, region.getMinimumPoint().y(), z);
+    private static void lightBlocksInstead(Ctx ctx) {
+        ctx.actor().message(Msg.warn("Light levels are not set directly; light blocks are more reliable:"
+                + " //replace air light[level=15]"));
+    }
+
+    /**
+     * The loaded chunks between the corners of a selection, every one of them
+     * for any shape, which is the set FAWE relights.
+     */
+    private static List<BlockVector2> loadedChunks(World world, Region region) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        List<BlockVector2> chunks = new java.util.ArrayList<>();
+        for (int x = min.x() >> 4; x <= max.x() >> 4; x++) {
+            for (int z = min.z() >> 4; z <= max.z() >> 4; z++) {
+                if (world.isChunkLoaded(x, z)) {
+                    chunks.add(new BlockVector2(x, z));
+                }
             }
         }
-        ctx.actor().message(Msg.result(message, "light is engine-managed since 1.18, chunks relit"));
+        return chunks;
     }
 
     /** {@code //nbtinfo} — dumps the block entity of the targeted block. */

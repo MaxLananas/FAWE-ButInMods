@@ -76,6 +76,12 @@ public final class SelfTestMain {
     static final List<String> loggedErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public static void main(String[] args) throws Exception {
+        // What the commands write - schematics, reports, the configuration - goes
+        // to a folder of the run, not to the directory the run starts in, which
+        // is a checkout.
+        Path scratch = Files.createTempDirectory("fawebim-selftest");
+        Config.get().load(scratch);
+        Schematics.setDirectory(scratch.resolve("schematics"));
         BlockState.setRegistry(new TestBlockStateRegistry());
         EditSession.BlockStateRegistryHolder.set(BlockState.registry());
         com.maxlananas.fawebim.core.platform.Log.install((level, message, error) -> {
@@ -1864,6 +1870,24 @@ public final class SelfTestMain {
 
     private static void testConfigAndSettings() throws Exception {
         section("configuration");
+        // The version the chat, /version and the join banner print is the one the
+        // build stamps into fabric.mod.json and the jar name.
+        Path properties = Path.of("").toAbsolutePath();
+        while (properties != null && !Files.isRegularFile(properties.resolve("gradle.properties"))) {
+            properties = properties.getParent();
+        }
+        check("gradle.properties is found above " + Path.of("").toAbsolutePath(), properties != null);
+        if (properties != null) {
+            java.util.Properties build = new java.util.Properties();
+            try (var in = Files.newBufferedReader(properties.resolve("gradle.properties"))) {
+                build.load(in);
+            }
+            checkEquals("Config.VERSION is the mod_version of the build", build.getProperty("mod_version"),
+                    Config.VERSION);
+            checkEquals("Config.MINECRAFT_VERSION is the minecraft_version of the build",
+                    build.getProperty("minecraft_version"), Config.MINECRAFT_VERSION);
+        }
+
         Path directory = Files.createTempDirectory("fawebim-config");
         Config config = Config.get();
         config.load(directory);
@@ -2392,14 +2416,17 @@ public final class SelfTestMain {
         check("an unknown side effect lists the ones the engine has",
                 plain(actor.lastMessage()).contains("Unknown side effect 'nope'"));
 
-        // The lighting pass the side effect gates is the one the flush runs.
+        // The side effect reaches the write of every chunk, which is where the
+        // world lights what it writes; the flush relights no chunk as a whole.
+        world.litChunks().clear();
         world.relitChunks().clear();
         CommandManager.get().dispatch(actor, "//set minecraft:stone");
-        check("lighting off leaves the chunks it wrote unlit", world.relitChunks().isEmpty());
+        check("lighting off writes the chunks without light", world.litChunks().isEmpty());
         CommandManager.get().dispatch(actor, "//perf lighting on");
-        world.relitChunks().clear();
+        world.litChunks().clear();
         CommandManager.get().dispatch(actor, "//set minecraft:dirt");
-        check("lighting on relights the chunks of the edit", !world.relitChunks().isEmpty());
+        check("lighting on writes the chunks with their light", !world.litChunks().isEmpty());
+        check("an edit relights no whole chunk", world.relitChunks().isEmpty());
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//perf off");
@@ -2424,6 +2451,42 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//update nonsense");
         check("an unknown side effect is refused by //update",
                 plain(actor.lastMessage()).contains("Unknown side effect 'nonsense'"));
+
+        // The light commands act on every loaded chunk between the corners, as
+        // FAWE's on every chunk, and count them; the two that wrote levels only
+        // point to light blocks.
+        for (int chunkX = -1; chunkX <= 1; chunkX++) {
+            world.loadChunk(chunkX, 0);
+        }
+        CommandManager.get().dispatch(actor, "//pos1 -1,30,0");
+        CommandManager.get().dispatch(actor, "//pos2 40,30,8");
+        check("the selection reaches a chunk that is not loaded", !world.isChunkLoaded(2, 0));
+        world.relitChunks().clear();
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//fixlighting");
+        checkEquals("//fixlighting relights the loaded chunks between the corners",
+                java.util.Set.of(new BlockVector2(-1, 0), new BlockVector2(0, 0), new BlockVector2(1, 0)),
+                world.relitChunks());
+        check("//fixlighting counts them", plain(actor.lastMessage()).contains("Lighting propagated")
+                && plain(actor.lastMessage()).contains("3 chunk(s)"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//removelight");
+        checkEquals("//removelighting zeroes the light of the same chunks", world.relitChunks(),
+                world.darkenedChunks());
+        check("//removelighting counts them", plain(actor.lastMessage()).contains("Lighting removed")
+                && plain(actor.lastMessage()).contains("3 chunk(s)"));
+        for (String command : new String[] {"//setblocklight", "//setlight", "//setskylight"}) {
+            world.relitChunks().clear();
+            int before = world.setCount();
+            actor.clearMessages();
+            CommandManager.get().dispatch(actor, command);
+            check(command + " points to light blocks, as FAWE does",
+                    plain(actor.lastMessage()).contains("light[level=15]"));
+            check(command + " changes no block and no light",
+                    world.setCount() == before && world.relitChunks().isEmpty());
+        }
+        CommandManager.get().dispatch(actor, "//pos1 0,30,0");
+        CommandManager.get().dispatch(actor, "//pos2 8,30,8");
 
         // //reorder takes upstream's three names and, as upstream does, keeps the
         // mode at fast.

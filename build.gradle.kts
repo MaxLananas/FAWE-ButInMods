@@ -2,10 +2,13 @@ plugins {
     java
 }
 
-group = "com.maxlananas.fawebim"
-version = property("mod_version") as String
-
 allprojects {
+    // On every project, not only the root: the Fabric project expands the
+    // version into fabric.mod.json and its jar name, which read "unspecified"
+    // when only the root had it.
+    group = "com.maxlananas.fawebim"
+    version = property("mod_version") as String
+
     repositories {
         mavenCentral()
         maven("https://maven.fabricmc.net/") { name = "FabricMC" }

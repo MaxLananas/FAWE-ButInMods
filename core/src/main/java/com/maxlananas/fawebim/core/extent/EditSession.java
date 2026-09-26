@@ -3,7 +3,6 @@ package com.maxlananas.fawebim.core.extent;
 import com.maxlananas.fawebim.core.history.ChangeSet;
 import com.maxlananas.fawebim.core.history.History;
 import com.maxlananas.fawebim.core.mask.Mask;
-import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -15,9 +14,7 @@ import com.maxlananas.fawebim.core.world.World;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * The editing extent.
@@ -64,7 +61,6 @@ public final class EditSession implements Extent {
 
     private final com.maxlananas.fawebim.core.util.LongObjectMap<ChunkSet> chunks =
             new com.maxlananas.fawebim.core.util.LongObjectMap<>();
-    private final Set<BlockVector2> dirtyChunks = new LinkedHashSet<>();
 
     private Mask mask;
     private Transform transform = Transform.identity();
@@ -627,7 +623,10 @@ public final class EditSession implements Extent {
     /** Chunks the queue holds before it is written out, whatever their size. */
     private static final int MAX_BUFFERED_CHUNKS = 64;
 
-    /** Applies every buffered chunk to the world and relights what changed. */
+    /**
+     * Applies every buffered chunk to the world, with the side effects of the
+     * edit: the world lights what it writes as it writes it.
+     */
     public void flushQueue() {
         bufferedWrites = 0;
         lastFlushAt = System.currentTimeMillis();
@@ -642,14 +641,7 @@ public final class EditSession implements Extent {
                 world.loadChunk(chunk.chunkX(), chunk.chunkZ());
                 recordBlockEntities(chunk);
                 world.applyChunk(chunk, sideEffects);
-                dirtyChunks.add(new BlockVector2(chunk.chunkX(), chunk.chunkZ()));
             }
-        }
-        if (!dirtyChunks.isEmpty()) {
-            if (sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.LIGHTING)) {
-                world.relight(dirtyChunks);
-            }
-            dirtyChunks.clear();
         }
     }
 

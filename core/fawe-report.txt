@@ -1,4 +1,0 @@
-version: 1.0.0 for Minecraft 1.21.10
-java: 21.0.8
-players-world: console @ null
-commands: 300

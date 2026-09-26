@@ -189,6 +189,20 @@ public final class PackedBlockArray {
         return visited;
     }
 
+    /**
+     * Whether a state of the palette matches. The palette keeps the states of
+     * cells written over since, so a true answer means the buffer may hold one,
+     * and a false answer that it holds none.
+     */
+    public boolean anyPaletteState(java.util.function.IntPredicate predicate) {
+        for (int i = 0; i < paletteSize; i++) {
+            if (predicate.test(palette[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private int paletteLookup(int stateId) {
         int key = stateId + 1;
         int slot = spread(stateId) & indexMask;

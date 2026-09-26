@@ -34,7 +34,11 @@ public final class TestWorld implements World {
     private int blockEntityReads;
     private final List<EntityData> entities = new ArrayList<>();
     private final java.util.Set<Long> loadedChunks = new java.util.HashSet<>();
+    /** The chunks written with the lighting side effect on. */
+    private final java.util.Set<BlockVector2> lit = new java.util.LinkedHashSet<>();
+    /** The chunks handed to {@link #relight} and to {@link #removeLight}. */
     private final java.util.Set<BlockVector2> relit = new java.util.LinkedHashSet<>();
+    private final java.util.Set<BlockVector2> darkened = new java.util.LinkedHashSet<>();
     private final String name;
     private long seed = 1234L;
     private int setCount;
@@ -210,6 +214,14 @@ public final class TestWorld implements World {
     }
 
     @Override
+    public int applyChunk(ChunkSet set, com.maxlananas.fawebim.core.session.SideEffectSet sideEffects) {
+        if (sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.LIGHTING)) {
+            lit.add(new BlockVector2(set.chunkX(), set.chunkZ()));
+        }
+        return applyChunk(set);
+    }
+
+    @Override
     public int applyChunk(ChunkSet set) {
         applyCounts.merge(((long) set.chunkX() << 32) | (set.chunkZ() & 0xFFFFFFFFL), 1, Integer::sum);
         int applied = 0;
@@ -303,6 +315,11 @@ public final class TestWorld implements World {
     @Override
     public void relight(Collection<BlockVector2> chunks) {
         relit.addAll(chunks);
+    }
+
+    @Override
+    public void removeLight(Collection<BlockVector2> chunks) {
+        darkened.addAll(chunks);
     }
 
     /**
@@ -457,8 +474,16 @@ public final class TestWorld implements World {
         }
     }
 
+    public java.util.Set<BlockVector2> litChunks() {
+        return lit;
+    }
+
     public java.util.Set<BlockVector2> relitChunks() {
         return relit;
+    }
+
+    public java.util.Set<BlockVector2> darkenedChunks() {
+        return darkened;
     }
 
     /**

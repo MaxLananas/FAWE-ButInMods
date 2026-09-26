@@ -23,6 +23,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -58,13 +59,6 @@ public final class FabricWorld implements World {
 
     private static final int UPDATE_NEIGHBORS = 1;
     private static final int UPDATE_CLIENTS = 2;
-    /**
-     * Changed blocks in one chunk above which the chunk is re-lit as a whole
-     * instead of queueing every position: the light engine keeps the positions it
-     * is handed in a set, and a set with a million entries in it costs more time
-     * and more memory than recomputing the chunk's light in one pass.
-     */
-    private static final int LIGHT_CHUNK_THRESHOLD = 512;
 
     private final ServerLevel level;
     /** The chunk of the previous read or write, and its position. */
@@ -84,8 +78,8 @@ public final class FabricWorld implements World {
     private int[] blockEntitySlots = new int[16];
     private int[] blockEntityBefore = new int[16];
     private int blockEntityCount;
-    /** One position object for a whole flush: nothing keeps what it is handed. */
-    private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+    /** The positions of the section being written whose light has to be checked. */
+    private final LightChecks lightChecks = new LightChecks();
     private int cachedChunkX = Integer.MIN_VALUE;
     private int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -423,9 +417,9 @@ public final class FabricWorld implements World {
         //    keyed by a block vector: a large edit changes millions of them and
         //    this runs on every flush. The arrays are kept between flushes - a
         //    large edit flushes a chunk after another - and only grow. A flush
-        //    that will re-send the chunk needs the positions and nothing else -
-        //    the clients get the chunk, not a packet per block - so the states are
-        //    only collected below that.
+        //    that will re-send the chunk sends no update per block - the clients
+        //    get the chunk - so the states before and after are only collected
+        //    for those updates or for the neighbours.
         int count = set.size();
         boolean resend = network && count >= Math.max(1, Config.get().chunkResendThreshold);
         if (changedX.length < count) {
@@ -439,10 +433,10 @@ public final class FabricWorld implements World {
         int[] changedZs = changedZ;
         int[] slot = {0};
         blockEntityCount = 0;
-        boolean perBlockNotify = !resend && (notify || neighbors);
+        boolean perBlockUpdate = notify && !resend;
+        boolean perBlockNotify = perBlockUpdate || neighbors;
         BlockState[] before = perBlockNotify ? new BlockState[count] : null;
         BlockState[] after = perBlockNotify ? new BlockState[count] : null;
-        boolean perBlockLight = lighting && count < LIGHT_CHUNK_THRESHOLD;
         var chunkSource = level.getChunkSource();
         var lightEngine = chunkSource.getLightEngine();
         boolean ticking = chunk.getFullStatus().isOrAfter(
@@ -458,9 +452,12 @@ public final class FabricWorld implements World {
         // 2. Bulk section write: one palette update per section instead of one
         //    world.setBlock call (with its 6 neighbour updates) per block, plus
         //    the bookkeeping vanilla does for a written cell - the heightmaps of
-        //    its column, the sky light source of its column, the light queue and,
-        //    when the section stops being empty, the light engine's own view of
-        //    it.
+        //    its column, the sky light source of its column, the light check,
+        //    the point of interest a bed, a workstation or a portal is to the
+        //    villagers and the portal search and, when the section stops being
+        //    empty, the light engine's own view of it. The palettes of the
+        //    section and of the buffer tell whether any state involved can be a
+        //    point of interest, so a section without one never asks per block.
         for (int index = 0; index < sections.length; index++) {
             PackedBlockArray buffered = sections[index];
             if (buffered == null) {
@@ -473,6 +470,8 @@ public final class FabricWorld implements World {
             }
             LevelChunkSection section = chunk.getSection(sectionIndex);
             boolean wasEmpty = section.hasOnlyAir();
+            boolean pointsOfInterest = section.maybeHas(PoiTypes::hasPoi)
+                    || buffered.anyPaletteState(FabricWorld::isPointOfInterest);
             int written = buffered.forEachWritten(local -> {
                 int localX = local & 15;
                 int localY = (local >> 8) & 15;
@@ -496,9 +495,12 @@ public final class FabricWorld implements World {
                 motionBlockingNoLeaves.update(localX, y, localZ, now);
                 oceanFloor.update(localX, y, localZ, now);
                 worldSurface.update(localX, y, localZ, now);
-                if (perBlockLight && LightEngine.hasDifferentLightProperties(was, now)) {
+                if (lighting && LightEngine.hasDifferentLightProperties(was, now)) {
                     chunk.getSkyLightSources().update(chunk, localX, y, localZ);
-                    lightEngine.checkBlock(cursor.set(baseX + localX, y, baseZ + localZ));
+                    lightChecks.add(local);
+                }
+                if (pointsOfInterest && was != now && (PoiTypes.hasPoi(was) || PoiTypes.hasPoi(now))) {
+                    level.updatePOIOnBlockStateChange(new BlockPos(baseX + localX, y, baseZ + localZ), was, now);
                 }
             });
             applied += written;
@@ -512,6 +514,9 @@ public final class FabricWorld implements World {
                     chunkSource.onSectionEmptinessChanged(
                             set.chunkX(), sectionY >> 4, set.chunkZ(), isEmpty);
                 }
+            }
+            if (lighting) {
+                lightChecks.submit(lightEngine, set.chunkX(), sectionY >> 4, set.chunkZ());
             }
         }
 
@@ -554,14 +559,13 @@ public final class FabricWorld implements World {
             applyBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
         }
 
-        // 4. Lighting, and the client sync for the changed blocks only. Vanilla
-        //    would have queued 6 neighbour updates per block; the bulk write skips
-        //    that and relies on the light engine plus the game's own block-change
-        //    bookkeeping, the way WorldEdit's native access does it. A flush that
-        //    changed a large part of a chunk is re-lit whole instead of position
-        //    by position: the light engine keeps the positions it is handed in a
-        //    set, and a set of a million entries costs more than recomputing the
-        //    chunk's light.
+        // 4. The client sync for the changed blocks only. Vanilla would have
+        //    queued 6 neighbour updates per block; the bulk write skips that
+        //    unless the edit asks for the neighbours, and relies on the game's
+        //    own block-change bookkeeping, the way WorldEdit's native access
+        //    does it. The light engine was handed its checks section by section
+        //    above; the light it computes reaches the clients with the game's
+        //    own light updates, after the chunk a large flush re-sends.
         int changedCount = slot[0];
         for (int index = 0; perBlockNotify && index < changedCount; index++) {
             BlockState was = before[index];
@@ -574,20 +578,22 @@ public final class FabricWorld implements World {
             // update can schedule a block tick, which keeps the position it was
             // given, so this path hands it one of its own.
             BlockPos at = new BlockPos(changedXs[index], changedYs[index], changedZs[index]);
-            if (notify) {
+            if (perBlockUpdate) {
                 level.sendBlockUpdated(at, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
             }
             if (neighbors) {
                 level.updateNeighborsAt(at, now.getBlock());
             }
         }
-        if (lighting && !perBlockLight) {
-            lightEngine.lightChunk(chunk, false);
-        }
         if (resend) {
             sendChunk(chunk, lightEngine);
         }
         return applied;
+    }
+
+    /** Whether a buffered state is one the villagers or the portal search keep track of. */
+    private static boolean isPointOfInterest(int stateId) {
+        return PoiTypes.hasPoi(Block.stateById(stateId));
     }
 
     /** Remembers a change whose block entity has to follow its block, see step 2b of {@link #applyChunk}. */
@@ -660,11 +666,68 @@ public final class FabricWorld implements World {
         }
     }
 
+    /**
+     * Relights whole chunks from their blocks: the sky light sources of every
+     * column are found again, then every position goes to the light engine,
+     * which drops the light no source explains and spreads the light the
+     * sources give, into the neighbouring chunks too. A chunk that is not
+     * loaded is skipped, never loaded for this. Server thread only.
+     */
     @Override
     public void relight(Collection<BlockVector2> chunks) {
-        for (BlockVector2 chunk : chunks) {
-            level.getChunkSource().getLightEngine()
-                    .setLightEnabled(new ChunkPos(chunk.x(), chunk.z()), true);
+        var lightEngine = level.getChunkSource().getLightEngine();
+        for (BlockVector2 position : chunks) {
+            LevelChunk chunk = level.getChunkSource().getChunkNow(position.x(), position.z());
+            if (chunk == null) {
+                continue;
+            }
+            chunk.initializeLightSources();
+            for (int index = 0; index < chunk.getSectionsCount(); index++) {
+                LightChecks.submitSection(lightEngine, position.x(), chunk.getSectionYFromSectionIndex(index),
+                        position.z());
+            }
+        }
+    }
+
+    /**
+     * Zeroes the block and sky light of whole chunks, as FAWE does, then sends
+     * the chunks again once the light engine holds the zeroes. A chunk that is
+     * not loaded is skipped. Server thread only.
+     *
+     * <p>Only a section with blocks in it or next to it holds light data. Data
+     * queued for any other section would wait in the engine and land on it the
+     * day a block is put there, so those are left alone.</p>
+     */
+    @Override
+    public void removeLight(Collection<BlockVector2> chunks) {
+        var lightEngine = level.getChunkSource().getLightEngine();
+        for (BlockVector2 position : chunks) {
+            LevelChunk chunk = level.getChunkSource().getChunkNow(position.x(), position.z());
+            if (chunk == null) {
+                continue;
+            }
+            int sections = chunk.getSectionsCount();
+            for (int index = 0; index < sections; index++) {
+                boolean holdsLight = false;
+                for (int near = Math.max(0, index - 1); near <= Math.min(sections - 1, index + 1); near++) {
+                    holdsLight |= !chunk.getSection(near).hasOnlyAir();
+                }
+                if (!holdsLight) {
+                    continue;
+                }
+                net.minecraft.core.SectionPos section = net.minecraft.core.SectionPos.of(
+                        position.x(), chunk.getSectionYFromSectionIndex(index), position.z());
+                lightEngine.queueSectionData(net.minecraft.world.level.LightLayer.BLOCK, section,
+                        new net.minecraft.world.level.chunk.DataLayer());
+                lightEngine.queueSectionData(net.minecraft.world.level.LightLayer.SKY, section,
+                        new net.minecraft.world.level.chunk.DataLayer());
+            }
+            lightEngine.waitForPendingTasks(position.x(), position.z()).thenRunAsync(() -> {
+                LevelChunk loaded = level.getChunkSource().getChunkNow(position.x(), position.z());
+                if (loaded != null) {
+                    sendChunk(loaded, lightEngine);
+                }
+            }, level.getServer());
         }
     }
 

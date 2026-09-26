@@ -135,8 +135,22 @@ public interface World extends Extent {
     default void applyBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
     }
 
-    /** Ensures the given chunks get relit after a bulk edit. */
+    /**
+     * Relights whole chunks from their blocks, which is what {@code //fixlighting}
+     * asks for: light left behind by blocks that are gone is dropped and the light
+     * of what is there spreads again. {@link #applyChunk(ChunkSet, com.maxlananas.fawebim.core.session.SideEffectSet)}
+     * keeps the light of what it writes by itself; this is for light that went
+     * wrong some other way.
+     */
     void relight(Collection<BlockVector2> chunks);
+
+    /**
+     * Zeroes the block and sky light of whole chunks, as FAWE's
+     * {@code //removelighting} does. The light comes back where blocks change,
+     * or everywhere with {@link #relight}.
+     */
+    default void removeLight(Collection<BlockVector2> chunks) {
+    }
 
     /** Sends the given chunks, with their light, to everyone who can see them. */
     default void resendChunks(Collection<BlockVector2> chunks) {
