@@ -8,11 +8,11 @@
         "MaxLananas"
     ],
     "contact": {
-        "homepage": "https://github.com/MaxLananas/FAWE-BIM",
-        "sources": "https://github.com/MaxLananas/FAWE-BIM",
-        "issues": "https://github.com/MaxLananas/FAWE-BIM/issues"
+        "homepage": "https://github.com/MaxLananas/FAWE-ButInMods",
+        "sources": "https://github.com/MaxLananas/FAWE-ButInMods",
+        "issues": "https://github.com/MaxLananas/FAWE-ButInMods/issues"
     },
-    "license": "GPL-3.0",
+    "license": "GPL-3.0-only",
     "environment": "*",
     "entrypoints": {
         "main": [

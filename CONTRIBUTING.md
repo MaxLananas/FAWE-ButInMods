@@ -21,8 +21,8 @@ is ported, and what a change is expected to look like.
 ## Setting up
 
 ```bash
-git clone https://github.com/MaxLananas/FAWE-BIM
-cd FAWE-BIM
+git clone https://github.com/MaxLananas/FAWE-ButInMods
+cd FAWE-ButInMods
 ./gradlew build
 ```
 
