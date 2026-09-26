@@ -264,8 +264,11 @@ public final class Config {
         }
         try {
             apply(MiniYaml.parse(Files.readString(file)));
-        } catch (IOException e) {
-            // A broken config must never stop the mod from loading.
+        } catch (IOException | RuntimeException e) {
+            // A broken config must never stop the mod from loading, and must
+            // not go unnoticed either.
+            Log.warn("Could not read the configuration " + file
+                    + "; the settings it did not give keep their previous values", e);
         }
     }
 
