@@ -1189,8 +1189,13 @@ public final class Brushes {
             }
             var holder = actor.session().getClipboard();
             var clipboard = holder.getClipboard();
-            BlockVector3 destination = pasteOnTop ? position : position.add(
-                    -clipboard.getWidth() / 2, -clipboard.getHeight() / 2, -clipboard.getLength() / 2);
+            // WorldEdit's centring: the centre of the clipboard's box goes on
+            // the click, wherever its origin is. Counting half the size from
+            // the origin only centred a clipboard whose origin was its corner.
+            var box = clipboard.getBox();
+            BlockVector3 centre = new BlockVector3(Math.floorDiv(box.minX() + box.maxX(), 2),
+                    Math.floorDiv(box.minY() + box.maxY(), 2), Math.floorDiv(box.minZ() + box.maxZ(), 2));
+            BlockVector3 destination = pasteOnTop ? position : position.subtract(centre.subtract(clipboard.getOrigin()));
             // -r composes a quarter turn with whatever transform the clipboard
             // already carries, exactly like FAWE's brush does.
             Transform transform = holder.getTransform();

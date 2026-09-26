@@ -309,8 +309,10 @@ public final class Parsers {
                     throw CommandRegistry.error("No clipboard: copy something first");
                 }
                 var holder = ctx.session().getClipboard();
-                BlockVector3 origin = holder.getClipboard().getOrigin();
-                return new Patterns.ClipboardPattern(holder.getClipboard(), origin, id.equals("fullcopy"), false);
+                // The pattern reads the clipboard from its lowest corner, which
+                // is not where the origin is since //copy takes the player's.
+                BlockVector3 corner = holder.getClipboard().getBox().min();
+                return new Patterns.ClipboardPattern(holder.getClipboard(), corner, id.equals("fullcopy"), false);
             }
             case "existing" -> {
                 return new Patterns.Existing(extent);

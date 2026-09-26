@@ -1409,6 +1409,17 @@ public final class SelfTestMain {
         check("clipboard brush pastes the clipboard's air", world.getBlock(10, 80, 10) == air
                 && world.getBlock(9, 80, 10) == stone && world.getBlock(11, 80, 10) == stone);
 
+        // Centred whatever the origin: //copy takes the player's position,
+        // which may be anywhere around the box.
+        source.setOrigin(new BlockVector3(5, 3, -2));
+        EditSession offOrigin = new EditSession(world, session, "brush");
+        plain.apply(offOrigin, new BlockVector3(10, 90, 10), actor);
+        offOrigin.flushQueue();
+        check("clipboard brush centres a clipboard whose origin is not its corner",
+                world.getBlock(9, 90, 10) == stone && world.getBlock(11, 90, 10) == stone
+                        && world.getBlock(14, 87, 12) != stone);
+        source.setOrigin(new BlockVector3(0, 0, 0));
+
         // -a skips the clipboard's air cells instead of erasing the target.
         world.setBlock(9, 82, 10, stone);
         world.setBlock(10, 82, 10, stone);
