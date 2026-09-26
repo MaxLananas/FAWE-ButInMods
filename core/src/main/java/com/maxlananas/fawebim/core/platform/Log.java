@@ -53,6 +53,10 @@ public final class Log {
         sink.log(Level.INFO, message, null);
     }
 
+    public static void warn(String message) {
+        sink.log(Level.WARN, message, null);
+    }
+
     public static void warn(String message, Throwable error) {
         sink.log(Level.WARN, message, error);
     }

@@ -2227,16 +2227,19 @@ public final class Commands {
                                 Schematics.saveAsync(saving, name, format, ctx.world().executor())
                                         .whenComplete((file, error) -> ctx.world().sync(() -> {
                                             if (error != null) {
-                                                ctx.actor().message(Msg.error("Could not save schematic '"
-                                                        + name + "': " + error.getCause()));
+                                                Throwable cause = error.getCause() != null ? error.getCause() : error;
+                                                ctx.actor().message(CommandRegistry.failureMessage(
+                                                        cause instanceof Exception exception ? exception
+                                                                : new RuntimeException(cause),
+                                                        ctx.actor(), "//schem save"));
                                             } else {
                                                 ctx.actor().message(Msg.success("Saved schematic '"
                                                         + file.getFileName() + "'"));
                                             }
                                         }));
                             } else {
-                                Schematics.save(saving, name, format);
-                                ctx.actor().message(Msg.success("Saved schematic '" + name + "'"));
+                                java.nio.file.Path file = Schematics.save(saving, name, format);
+                                ctx.actor().message(Msg.success("Saved schematic '" + file.getFileName() + "'"));
                             }
                         }
                         case "load" -> {

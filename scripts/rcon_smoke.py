@@ -71,7 +71,7 @@ CHECKS = [
     # region holds stone at this point, and it is cleared before the load so the
     # count afterwards can only come from the file.
     ("//copy", "copied: 256 block(s)"),
-    ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke'"),
+    ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke.schem'"),
     ("//schem list", "fawebim-smoke"),
     ("//set minecraft:air", "256 block(s) affected"),
     ("//count minecraft:stone", "count: 0"),

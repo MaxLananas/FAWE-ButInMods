@@ -140,6 +140,7 @@ public final class SelfTestMain {
         RegionGeometryTests.run();
         CommandLimitTests.run();
         SecurityTests.run();
+        SchematicFormatTests.run();
         MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
