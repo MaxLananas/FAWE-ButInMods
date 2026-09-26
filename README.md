@@ -15,8 +15,8 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-609%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
-[![Commands](https://img.shields.io/badge/commands-299%20registered-58a6ff?style=flat-square)](#status)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-1489%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
+[![Commands](https://img.shields.io/badge/commands-300%20registered-58a6ff?style=flat-square)](#status)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](reference/commands-inventory.json)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](scripts/flag_audit.py)
 [![Switches](https://img.shields.io/badge/upstream%20switches-0%20missing-3fb950?style=flat-square)](scripts/flag_audit.py)
@@ -130,7 +130,7 @@ Both spellings of every command work, because Minecraft strips one slash from wh
 /tool material -h stone      the same settings for the brush in the offhand
 //undo  //redo                history
 /history find -u Steve -t 2h the edits of the last two hours, by any player name starting with Steve
-//regen                       regenerate the selected chunks
+//regen 1234                  regenerate the selection, here with another seed
 //generatebiome desert abs(x) < 20
 ```
 
@@ -264,17 +264,17 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 
 | | |
 |---|---|
-| Engine tests | **609 passing, 0 failing** (`./gradlew :core:selfTest`) |
-| Commands registered | **299** |
-| Implemented | **252** |
+| Engine tests | **1489 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Commands registered | **300** |
+| Implemented | **253** |
 | Aliases of an implemented command | **47** |
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
 | Flags declared but never read | **0** |
-| Settings in `config/fawebim.yml` | **38, all read by the code** |
+| Settings in `config/fawebim.yml` | **41, all read by the code** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
-| Commands a console, a command block or a function can run | **159**, the other 110 are bound to a player |
+| Commands a console, a command block or a function can run | **146**, the other 107 are bound to a player |
 
 Every name WorldEdit 7.3.17 and FastAsyncWorldEdit declare is registered and resolves, with no stub
 left in the registry. `./gradlew :core:verify` runs the self-tests and then feeds the 255 declared
@@ -298,11 +298,6 @@ case, the command says so instead of failing silently.
 > [!IMPORTANT]
 > **CraftScripts** (`//cs`, `//.s`) run through a JSR-223 engine. Modern JVMs ship none, so the
 > command reports that no engine is available rather than pretending the script ran.
-
-> [!NOTE]
-> **Custom regeneration seeds** (`//regen <seed>`) need a second chunk source. Minecraft builds one
-> from the level seed, so the command regenerates with the world seed and tells the player the seed
-> was ignored. `-b` (regenerate biomes) works: the adapter keeps the biome grid when it is absent.
 
 > [!NOTE]
 > **`/anvil`** reads the dimension's region files (read-only) to decide which chunks qualify, then

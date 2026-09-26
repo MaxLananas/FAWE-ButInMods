@@ -217,8 +217,14 @@ in game (rendering, click handling, world access), say so explicitly in the pull
   really holds before anything is allocated. A format lives in its own class (`SpongeSchematic`,
   `McEditSchematic`, `StructureSchematic`) and is tested against files laid out the way WorldEdit and
   the game write them.
+* An operation that holds a buffer sized by a selection or a radius - one that reads a whole area
+  before writing it, like `//deform` or the morph brushes - checks it with `Buffers.checkInts` before
+  it reads anything, and reads every source before it writes any block, so the result does not depend
+  on the order of the walk.
 * Whatever places blocks through a `Transform` turns their states with `BlockStateTransform` and the
   data of entities with `EntityTransforms`; a rotation by a multiple of 90 degrees must stay exact.
+  Blocks turn as points around the origin, entities around the centre of the origin's block, and a
+  hanging entity's `block_pos` moves with the blocks (`Clipboards.attachedTo`).
 * Block entities and entities are edits like blocks: they go through the `EditSession`
   (`setBlockEntity`, `addEntity`, `removeEntity`), which records them so an undo brings them back.
 
