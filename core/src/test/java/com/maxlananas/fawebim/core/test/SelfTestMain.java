@@ -2310,9 +2310,11 @@ public final class SelfTestMain {
         check("//reorder only accepts upstream's names",
                 actor.lastMessage().contains("Reorder mode must be none, multi or fast"));
 
+        // The drawing is off until the player turns it on.
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//drawsel false");
-        check("//drawsel takes a state", actor.lastMessage().contains("Selection drawing disabled"));
+        check("//drawsel knows the drawing starts off",
+                actor.lastMessage().contains("Selection drawing already disabled"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//drawsel true");
         check("//drawsel takes a state", actor.lastMessage().contains("Selection drawing enabled"));
@@ -2752,7 +2754,10 @@ public final class SelfTestMain {
         TestWorld vein = new TestWorld("own-name-ores");
         vein.fillFlat(70);
         TestActor miner = new TestActor("Vale", vein, new BlockVector3(0, 71, 0));
-        CommandManager.get().dispatch(miner, "//pos1 0,60,0");
+        // The veins are placed at random, as in the game: a column from y 0 to
+        // 70 is tall enough for the coal, copper and iron bands to always land
+        // some, where eleven layers sometimes held none.
+        CommandManager.get().dispatch(miner, "//pos1 0,0,0");
         CommandManager.get().dispatch(miner, "//pos2 15,70,15");
         CommandManager.get().dispatch(miner, "//set stone");
         miner.clearMessages();
@@ -2760,7 +2765,7 @@ public final class SelfTestMain {
         check("//ores writes the ore bands into the matching rock", actorBlockCount(miner) > 0);
         int oreBlocks = 0;
         for (int x = 0; x <= 15; x++) {
-            for (int y = 60; y <= 70; y++) {
+            for (int y = 0; y <= 70; y++) {
                 for (int z = 0; z <= 15; z++) {
                     String name = BlockState.registry().name(vein.getBlock(x, y, z));
                     if (name.endsWith("_ore") || name.equals("minecraft:coal_ore")) {
@@ -3185,17 +3190,19 @@ public final class SelfTestMain {
         check("the size line is short", size.plain().length() <= 40);
         check("the size line is coloured", size.raw().contains("\u00a7"));
 
+        // The preview is off until a player asks for it.
+        check("a new session does not draw the selection", !new LocalSession().isDrawSelection());
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui false");
-        check("//cui false turns the preview off", !actor.session().isDrawSelection());
+        check("//cui false leaves the preview off", !actor.session().isDrawSelection());
         check("//cui answers with a result line", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("Selection preview")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui");
         check("//cui without an argument turns the preview on", actor.session().isDrawSelection());
-        check("//cui says where the outline is drawn", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("cyan")));
+        check("//cui says how the selection is drawn", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("particles")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui false");

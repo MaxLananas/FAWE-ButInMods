@@ -86,7 +86,7 @@ public final class ConfigUi {
             return "Brushes";
         }
         if (path.startsWith("wand-item") || path.startsWith("navigation-wand.")
-                || path.startsWith("super-pickaxe.")) {
+                || path.startsWith("super-pickaxe.") || path.startsWith("selection.")) {
             return "Tools";
         }
         if (path.startsWith("history.") || path.startsWith("snapshots.")) {

@@ -238,15 +238,17 @@ final class WorldCommands {
      *
      * <p>WorldEdit asks the client to draw the selection and a client mod
      * answers; a vanilla client cannot, so the handshake is completed locally and
-     * this mod draws the outline in the world itself. The command shows, hides
-     * and toggles that outline, and says which colours mark the two corners.</p>
+     * this mod draws the selection in the world itself, with particles. The
+     * drawing is off until a player asks for it - {@code selection.preview} in
+     * the configuration decides for the players who have not - and the command
+     * shows, hides and toggles it.</p>
      */
     private void cui() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//cui", "/we cui", "/cui");
         if (entry == null) {
             return;
         }
-        entry.description = "Complete the CUI handshake, which draws the selection outline";
+        entry.description = "Complete the CUI handshake, which draws the selection with particles";
         entry.group = "worldedit";
         entry.requiresPlayer = true;
         entry.arguments.add("[true|false]");
@@ -267,16 +269,11 @@ final class WorldCommands {
                 return;
             }
             ctx.actor().message(Msg.result("Selection preview", "on"));
-            ctx.actor().message(Msg.hint("The box is drawn every quarter second: cyan edges, deep blue"
-                    + " uprights, red position 1 and blue position 2, with white corners."));
-            ctx.actor().message(Msg.hint("Its size and the two corners are shown on the line above the"
-                    + " hotbar while you pick."));
+            ctx.actor().message(Msg.hint("The shape is outlined with particles: the first point in red,"
+                    + " the others in blue."));
             if (!session.isSelectionDefined(ctx.world())) {
-                ctx.actor().message(Msg.hint("Pick two corners with " + Msg.value("//pos1").raw() + " and "
-                        + Msg.value("//pos2").raw() + " to see the outline."));
-            } else {
-                ctx.actor().status(com.maxlananas.fawebim.core.util.Cui.size(
-                        session.getSelector(ctx.world())));
+                ctx.actor().message(Msg.hint("Select something with the wand or " + Msg.value("//pos1").raw()
+                        + " and " + Msg.value("//pos2").raw() + " to see it."));
             }
         };
     }

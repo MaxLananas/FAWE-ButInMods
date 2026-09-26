@@ -316,26 +316,27 @@ public final class FabricInteractions {
         return CommandRegistry.interact(actor, "brush", () -> stroke(actor, brush, position));
     }
 
+    /**
+     * One stroke of a brush. It answers nothing when it went well, as in
+     * WorldEdit: a player painting with a brush clicks hundreds of times, and a
+     * line per click buried the chat. A failure - the block limit, a missing
+     * clipboard - still answers, through {@link #applyBrush}.
+     *
+     * <p>The click is the brush's whatever the stroke changed: a stroke that
+     * changed nothing must not fall through to the game, which would place the
+     * block in hand or run the brush a second time from the item callback.</p>
+     */
     private static boolean stroke(FabricActor actor, Brush brush, BlockVector3 position) {
         EditSession session = new EditSession(actor.world(), actor.session(), "brush");
-        int changed;
         try {
-            changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, position, actor);
+            com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, position, actor);
         } finally {
             session.close();
         }
-        if (changed > 0 && actor.player() != null) {
+        if (actor.player() != null) {
             markHandled(actor.player());
         }
-        if (changed > 0) {
-            actor.message(Msg.result("Brush", Msg.count(changed) + " block(s) changed around "
-                    + Msg.value(position).raw()));
-        } else {
-            // A brush that ran and changed nothing used to be completely silent,
-            // which is indistinguishable from a click that never arrived.
-            actor.message(Msg.warn("The brush changed no block around " + Msg.value(position).raw()));
-        }
-        return changed > 0;
+        return true;
     }
 
     /** The six items WorldEdit's {@code Player#isHoldingPickAxe} answers for. */
@@ -438,7 +439,7 @@ public final class FabricInteractions {
         return scroll.increment(amount);
     }
 
-    /** Used by {@code /brush command} and the tool bindings. */
+    /** Redraws the selection of a player who has the preview on; the server calls it twice a second. */
     public static void tick(ServerPlayer player) {
         FabricActor actor = new FabricActor(player);
         if (actor.mayEdit() && actor.session().isDrawSelection()) {

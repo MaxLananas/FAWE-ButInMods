@@ -44,7 +44,8 @@ public final class LocalSession {
     private String lastFailedMessage;
     private boolean includeAir = false;
     private boolean tracing = false;
-    private boolean drawSelection = true;
+    /** Whether the selection is drawn with particles: {@code //cui} turns it on and off. */
+    private boolean drawSelection = com.maxlananas.fawebim.core.platform.Config.get().selectionPreview;
     private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
     private String toolBindingName;
     private Mask sourceMask;

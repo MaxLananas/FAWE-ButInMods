@@ -74,6 +74,7 @@ public final class Config {
     public int chunkResendThreshold = 128;
     public boolean commandBlockSupport = false;
     public boolean welcomeMessage = true;
+    public boolean selectionPreview = false;
     public boolean debug = false;
 
     private List<Setting<?>> settings = new ArrayList<>();
@@ -195,6 +196,9 @@ public final class Config {
         bool("welcome-message", "join.show-welcome-message", welcomeMessage,
                 "Show the welcome banner, with the way to the commands, when a player joins.",
                 () -> welcomeMessage, value -> welcomeMessage = value);
+        bool("selection-preview", "selection.preview", selectionPreview,
+                "Draw the selection with particles for a player who has not turned it on or off with"
+                        + " //cui.", () -> selectionPreview, value -> selectionPreview = value);
         bool("command-block-support", "command-block-support", commandBlockSupport,
                 "Let command blocks run the mod's commands.", () -> commandBlockSupport,
                 value -> commandBlockSupport = value);

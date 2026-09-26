@@ -193,10 +193,11 @@ public final class Tools {
     }
 
     /**
-     * {@code /tool repl <pattern>}, WorldEdit's block replacer: a right click
-     * turns the clicked block into the pattern, a left click makes the clicked
-     * block the pattern, with its data - the items of a chest, the text of a
-     * sign - which every later right click writes again.
+     * {@code /tool repl <pattern>}, WorldEdit's block replacer: a left click
+     * turns the clicked block into the pattern, whatever it was and whatever
+     * the held item is, and a right click makes the clicked block the pattern,
+     * with its data - the items of a chest, the text of a sign - which every
+     * later left click writes again.
      */
     public static final class ReplaceTool implements Tool {
 
@@ -215,7 +216,7 @@ public final class Tools {
         }
 
         @Override
-        public boolean onRightClick(ToolContext context) {
+        public boolean onLeftClick(ToolContext context) {
             if (!context.aimsAtBlock()) {
                 context.message(Msg.error("No block in sight"));
                 return true;
@@ -235,7 +236,11 @@ public final class Tools {
         }
 
         @Override
-        public boolean onLeftClick(ToolContext context) {
+        public boolean onRightClick(ToolContext context) {
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
+            }
             BlockVector3 at = context.position;
             com.maxlananas.fawebim.core.world.World world = context.actor.world();
             pickedState = world.getBlock(at.x(), at.y(), at.z());

@@ -184,10 +184,16 @@ final class ToolTests {
         answer(actor, "/tool repl gold_block");
         Tool tool = Tools.current(actor.session());
         check("the replacer is bound to the held item, not to its pattern", bound(actor).equals(actor.heldItem()));
-        use(actor, () -> tool.onRightClick(click(actor, 0, 68, 0, Direction.UP)));
-        checkEquals("a right click places the pattern", state("minecraft:gold_block"), world.getBlock(0, 68, 0));
-        use(actor, () -> tool.onRightClick(new Tool.ToolContext(actor, new BlockVector3(0, 90, 0), null, null)));
+        // WorldEdit's replacer: the left click - the one that breaks a block -
+        // replaces it with the pattern, and the right click picks.
+        use(actor, () -> tool.onLeftClick(click(actor, 0, 68, 0, Direction.UP)));
+        checkEquals("a left click replaces the block with the pattern", state("minecraft:gold_block"),
+                world.getBlock(0, 68, 0));
+        use(actor, () -> tool.onLeftClick(new Tool.ToolContext(actor, new BlockVector3(0, 90, 0), null, null)));
         check("nothing in sight places nothing", BlockState.registry().isAirLike(world.getBlock(0, 90, 0)));
+        use(actor, () -> tool.onRightClick(new Tool.ToolContext(actor, new BlockVector3(0, 90, 0), null, null)));
+        use(actor, () -> tool.onLeftClick(click(actor, 1, 68, 0, Direction.UP)));
+        checkEquals("and picks nothing either", state("minecraft:gold_block"), world.getBlock(1, 68, 0));
 
         EditSession edit = new EditSession(world, actor.session(), "chest", false);
         try {
@@ -199,9 +205,9 @@ final class ToolTests {
         } finally {
             edit.close();
         }
-        use(actor, () -> tool.onLeftClick(click(actor, 5, 70, 5, Direction.UP)));
-        use(actor, () -> tool.onRightClick(click(actor, 8, 69, 8, Direction.UP)));
-        checkEquals("a left click picks the clicked block", state("minecraft:chest"), world.getBlock(8, 69, 8));
+        use(actor, () -> tool.onRightClick(click(actor, 5, 70, 5, Direction.UP)));
+        use(actor, () -> tool.onLeftClick(click(actor, 8, 69, 8, Direction.UP)));
+        checkEquals("a right click picks the clicked block", state("minecraft:chest"), world.getBlock(8, 69, 8));
         NbtCompound copied = world.getBlockEntity(8, 69, 8);
         check("with its data", copied != null && copied.getCompoundList("Items").size() == 1
                 && copied.getCompoundList("Items").get(0).getString("id", "").equals("minecraft:diamond"));
