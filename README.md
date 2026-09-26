@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-1489%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-1693%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
 [![Commands](https://img.shields.io/badge/commands-300%20registered-58a6ff?style=flat-square)](#status)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](reference/commands-inventory.json)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](scripts/flag_audit.py)
@@ -56,7 +56,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 | | |
 |---|---|
 | **Commands** | The full `//` and `/` namespaces: `//set`, `//copy`, `//paste`, `//brush`, `/tool`, `/schem`, `/snapshot`, `/we`, `/anvil`, and 255 of 255 upstream names |
-| **Selections** | Cuboid, polygon, ellipsoid, sphere, cylinder, convex polyhedron, extend, fuzzy — plus the wand and position limits |
+| **Selections** | Cuboid, extend, polygon, ellipsoid, sphere, cylinder, convex polyhedron, and FAWE's polyhedral and fuzzy (magic wand) — each answering the wand the way WorldEdit does, and drawn as its own shape |
 | **Masks & patterns** | `#`/`%`/`##`/`|`/`~`/`{`/`/` mask parsers, `#nx`/`*`/`$`/`#mask`/`#buffer` patterns, `//gmask`, `//gsmask`, angle and expression masks |
 | **Clipboards** | Sponge v1/v2/v3, MCEdit `.schematic`, structure `.nbt`; entities, biomes and structure voids survive a copy |
 | **Brushes** | 46 brushes with FAWE's arguments and switches, saved as presets, bound per hand |
@@ -68,7 +68,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 > [!NOTE]
 > The engine (`core/`) has **no Minecraft types at all**. It talks to the game through
 > `BlockStateRegistry` and `World`, which the Fabric adapter (`fabric/`) implements — which is why
-> the whole editing engine, including its 609-test suite, runs without launching Minecraft.
+> the whole editing engine, including its test suite, runs without launching Minecraft.
 
 ## Install
 
@@ -134,8 +134,10 @@ Both spellings of every command work, because Minecraft strips one slash from wh
 //generatebiome desert abs(x) < 20
 ```
 
-Selection outlines are drawn by the mod itself with server-side particles, so a vanilla client
-needs nothing beyond Fabric API.
+A selection can be drawn by the mod itself with server-side particles, so a vanilla client needs
+nothing beyond Fabric API: `/cui` turns the drawing on for a player. It is off until they do, and
+`selection.preview` in the configuration changes that default. The size of the selection shows on
+the line above the hotbar whenever a corner is picked, drawing or not.
 
 ## Feature matrix
 
@@ -146,7 +148,7 @@ needs nothing beyond Fabric API.
 | Brush | 51 | Sphere, cylinder, smooth, blendball, terrain (`height`, `cliff`, `flatten`, `heightmap`), clipboard, copypaste, catenary, stencil, scatter, spline, gravity, recurse, butcher, … |
 | Tool | 24 | `/tool` bindings, super-pickaxe, `farwand`, `lrbuild`, `deltree`, `tree`, `inspect`, scroll actions |
 | Clipboard | 14 | `//copy`, `//cut`, `//paste`, `//rotate`, `//flip`, `//stack`, `//move`, `//place`, lazy copy/cut |
-| Selection | 19 | `//sel` for six selector types, `//pos1`, `//pos2`, `//hpos1`, `//hpos2`, `//wand`, `//drawsel`, `//chunk` |
+| Selection | 19 | `//sel` with WorldEdit's seven types and FAWE's polyhedral and fuzzy, `//pos1`, `//pos2`, `//hpos1`, `//hpos2`, `//wand`, `//drawsel`, `//chunk` |
 | Anvil | 21 | `clear`, `copy`, `paste`, `count`, `countall`, `distr`, `replace*`, `removelayers`, `trimallair`, `trimallplots`, `deletebiomechunks`, `deleteallunvisited`, `deleteunclaimed`, … |
 | Navigation | 8 | `/nav`, `/up`, `/ceil`, `/descend`, `/thru`, `/unstuck`, `/jumpto`, `/ascend` |
 | Utility | 25 | `/worldedit`, `/we`, `/brush`, `/tool`, `/we report`, `/searchitem`, `/calculate`, `//registry`, `//cancel` |
@@ -264,14 +266,14 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 
 | | |
 |---|---|
-| Engine tests | **1489 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **1693 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **300** |
 | Implemented | **253** |
 | Aliases of an implemented command | **47** |
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
 | Flags declared but never read | **0** |
-| Settings in `config/fawebim.yml` | **41, all read by the code** |
+| Settings in `config/fawebim.yml` | **42, all read by the code** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
 | Commands a console, a command block or a function can run | **146**, the other 107 are bound to a player |
@@ -310,8 +312,10 @@ case, the command says so instead of failing silently.
 > test decides on its own and the report says the claim check was skipped.
 
 > [!NOTE]
-> **CUI** (`/cui`) targets FAWE's client mod, which a vanilla client does not run; the command
-> reports the state it would advertise.
+> **CUI** (`/cui`) is answered by the mod itself: WorldEdit's handshake expects a client mod
+> (WorldEditCUI) that a vanilla client does not run, so the mod draws the selection with particles
+> instead. The drawing is exact for every shape but is a server-side approximation of what the
+> client mod renders: dotted edges, redrawn twice a second.
 
 ## Development
 

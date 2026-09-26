@@ -221,6 +221,19 @@ in game (rendering, click handling, world access), say so explicitly in the pull
   before writing it, like `//deform` or the morph brushes - checks it with `Buffers.checkInts` before
   it reads anything, and reads every source before it writes any block, so the result does not depend
   on the order of the walk.
+* A direction or an offset typed on a command line goes through `Directions`: `parse` for the
+  direction words (every start of a compass name, the diagonals where the command takes them, and
+  `me`, `forward`, `back`, `left`, `right` relative to where the player looks, with WorldEdit's
+  67.5 degree rule for up and down), `offset` for the `x,y,z` and `^x,y,z` forms of `//move` and
+  `//stack`. A word that is none of these is refused, never read as a default direction.
+* A selection shape is a `RegionSelector` in `Selectors`: its clicks answer with `explainPrimary`
+  and `explainSecondary`, `//sel` converts the previous selection into it where it can, and
+  `Cui.outline` says how the preview draws it. The wand, `//pos1` and `//pos2` all go through
+  `Tools.select`, so the three answer the same way.
+* Something a player does many times in a row - a brush stroke, a wand click on the same block -
+  answers nothing in chat when it goes well, as in WorldEdit; its failures still answer. The line
+  above the hotbar (`Actor.status`) is for what changes with every click, such as the size of the
+  selection.
 * Whatever places blocks through a `Transform` turns their states with `BlockStateTransform` and the
   data of entities with `EntityTransforms`; a rotation by a multiple of 90 degrees must stay exact.
   Blocks turn as points around the origin, entities around the centre of the origin's block, and a
