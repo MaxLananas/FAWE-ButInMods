@@ -137,12 +137,16 @@ final class GenerationCommands {
     /** The {@code x,z} size {@code //img} scales its image to. */
     private static int[] parseDimensions(String value) {
         String[] parts = value.split(",", -1);
-        if (parts.length == 2) {
-            return new int[]{Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim())};
+        if (parts.length != 2) {
+            parts = value.split("x", -1);
         }
-        String[] cross = value.split("x", -1);
-        if (cross.length == 2) {
-            return new int[]{Integer.parseInt(cross[0].trim()), Integer.parseInt(cross[1].trim())};
+        if (parts.length == 2) {
+            int width = Parsers.intArg(parts[0].trim(), "the image width");
+            int length = Parsers.intArg(parts[1].trim(), "the image length");
+            if (width < 1 || length < 1) {
+                throw CommandRegistry.error("The image size must be at least 1x1, got '" + value + "'");
+            }
+            return new int[]{width, length};
         }
         throw CommandRegistry.error("Expected the image size as x,z, got '" + value + "'");
     }

@@ -2149,6 +2149,7 @@ public final class Commands {
         e65.booleanFlags.add("n");
         e65.valueFlags.add("f");
         e65.valueFlags.add("p");
+        e65.switchesUnder.put("save", java.util.Set.of("f"));
         e65.arguments.add("list|ls|all|save|load|loadall|delete|d|formats|listformats|f|move|m|share|clear|unload");
         e65.arguments.add("[name]");
         e65.arguments.add("[format]");

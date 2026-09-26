@@ -42,6 +42,13 @@ public final class CommandRegistry {
         public String group = "general";
         public final Set<String> booleanFlags = new LinkedHashSet<>();
         public final Set<String> valueFlags = new LinkedHashSet<>();
+        /**
+         * Value flags that are switches under one sub-command of a family:
+         * {@code //schem list -f <format>} filters, while WorldEdit's
+         * {@code //schem save -f <name>} overwrites, and reading that -f as a
+         * value handed it the name.
+         */
+        public final java.util.Map<String, Set<String>> switchesUnder = new java.util.HashMap<>();
         public final List<String> arguments = new ArrayList<>();
         public boolean requiresSelection;
         public boolean requiresPlayer;
@@ -143,6 +150,7 @@ public final class CommandRegistry {
         entry.arguments.addAll(target.arguments);
         entry.booleanFlags.addAll(target.booleanFlags);
         entry.valueFlags.addAll(target.valueFlags);
+        entry.switchesUnder.putAll(target.switchesUnder);
         entry.requiresSelection = target.requiresSelection;
         entry.requiresPlayer = target.requiresPlayer;
         entry.requiresWorld = target.requiresWorld;

@@ -6,7 +6,6 @@ import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 
-import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -39,8 +38,11 @@ public final class ImageGen {
     public static final int MAX_IMAGE_SIZE = 500 * 500;
 
     /** How long an image may take to arrive before the command gives up. */
-    private static final int CONNECT_TIMEOUT_MS = 5_000;
-    private static final int READ_TIMEOUT_MS = 30_000;
+    private static final int CONNECT_TIMEOUT_MS = 3_000;
+    private static final int READ_TIMEOUT_MS = 3_000;
+    /** The whole download, which the server thread waits for. */
+    private static final long DOWNLOAD_BUDGET_MS = 5_000;
+    private static final int MAX_DOWNLOAD_BYTES = 16 * 1024 * 1024;
 
     private static final String[] BLOCKS = {
         "minecraft:white_wool", "minecraft:orange_wool", "minecraft:magenta_wool",
@@ -122,19 +124,26 @@ public final class ImageGen {
         if (source.startsWith("http://") || source.startsWith("https://")) {
             image = readUrl(source);
         } else {
-            Path file = Path.of(source);
-            if (!Files.isRegularFile(file)) {
-                file = imagesDirectory.resolve(source);
-            }
+            // Only the images directory: a path of the server's disk, absolute or
+            // climbing out with "..", is not a picture a player may read.
+            Path file = com.maxlananas.fawebim.core.util.SafePaths.inside(imagesDirectory, source,
+                    com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks, "image");
             if (!Files.isRegularFile(file)) {
                 throw new IOException("No image named '" + source + "' in " + imagesDirectory);
             }
-            image = ImageIO.read(file.toFile());
+            try (InputStream stream = Files.newInputStream(file)) {
+                image = Images.decode(stream, Images.MAX_DECODED_PIXELS);
+            }
         }
         if (image == null) {
             throw new IOException("'" + source + "' is not an image this runtime can read");
         }
         if (dimensions != null) {
+            // Checked before the scaled copy is allocated, not after.
+            if ((long) dimensions[0] * dimensions[1] > MAX_IMAGE_SIZE) {
+                throw new IOException("A size of " + dimensions[0] + "x" + dimensions[1] + " is larger than the "
+                        + MAX_IMAGE_SIZE + " pixels an image may cover");
+            }
             image = scale(image, dimensions[0], dimensions[1]);
         }
         int width = image.getWidth();
@@ -148,6 +157,12 @@ public final class ImageGen {
         return Images.of(width, height, pixels);
     }
 
+    /**
+     * Downloads an image, within a size and a time budget for the whole
+     * transfer. The command waits for it on the server thread, and a read
+     * timeout alone is per read: a host sending a byte every few seconds held
+     * the server for as long as it liked.
+     */
     private static BufferedImage readUrl(String url) throws IOException {
         HttpURLConnection connection = null;
         try {
@@ -156,13 +171,29 @@ public final class ImageGen {
             connection.setReadTimeout(READ_TIMEOUT_MS);
             connection.setInstanceFollowRedirects(true);
             connection.setRequestProperty("User-Agent", "FAWE-BIM");
+            long deadline = System.nanoTime() + DOWNLOAD_BUDGET_MS * 1_000_000L;
+            java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
             try (InputStream stream = connection.getInputStream()) {
-                BufferedImage image = ImageIO.read(stream);
-                if (image == null) {
-                    throw new IOException("'" + url + "' did not answer with an image");
+                byte[] buffer = new byte[16 * 1024];
+                int read;
+                while ((read = stream.read(buffer)) != -1) {
+                    body.write(buffer, 0, read);
+                    if (body.size() > MAX_DOWNLOAD_BYTES) {
+                        throw new IOException("'" + url + "' is larger than " + MAX_DOWNLOAD_BYTES / (1024 * 1024)
+                                + " MiB");
+                    }
+                    if (System.nanoTime() - deadline > 0) {
+                        throw new IOException("'" + url + "' took longer than " + DOWNLOAD_BUDGET_MS / 1000
+                                + " seconds to download");
+                    }
                 }
-                return image;
             }
+            BufferedImage image = Images.decode(new java.io.ByteArrayInputStream(body.toByteArray()),
+                    Images.MAX_DECODED_PIXELS);
+            if (image == null) {
+                throw new IOException("'" + url + "' did not answer with an image");
+            }
+            return image;
         } catch (IllegalArgumentException e) {
             throw new IOException("'" + url + "' is not a valid image address");
         } finally {

@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Everything a command implementation needs: parsed arguments, flags, the
@@ -42,11 +43,20 @@ public final class Ctx {
 
     private void parse() {
         List<String> raw = tokens.size() > 1 ? tokens.subList(1, tokens.size()) : List.of();
+        Set<String> switches = Set.of();
+        if (!entry.switchesUnder.isEmpty()) {
+            for (String token : raw) {
+                if (!isSwitch(token)) {
+                    switches = entry.switchesUnder.getOrDefault(token.toLowerCase(Locale.ROOT), Set.of());
+                    break;
+                }
+            }
+        }
         for (int i = 0; i < raw.size(); i++) {
             String token = raw.get(i);
             if (isSwitch(token)) {
                 String flag = token.substring(1);
-                boolean valueFlag = entry.valueFlags.contains(flag);
+                boolean valueFlag = entry.valueFlags.contains(flag) && !switches.contains(flag);
                 if (valueFlag) {
                     // -flag value, or -flag=value
                     int eq = flag.indexOf('=');

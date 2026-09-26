@@ -269,8 +269,9 @@ public final class BrushFactory {
         if (file == null || file.isEmpty()) {
             return null;
         }
-        Images.PixelSource image = Images.load(
-                com.maxlananas.fawebim.core.clipboard.Schematics.directory().resolve(file));
+        Images.PixelSource image = Images.load(com.maxlananas.fawebim.core.util.SafePaths.inside(
+                com.maxlananas.fawebim.core.clipboard.Schematics.directory(), file,
+                com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks, "image"));
         if (image == null) {
             throw CommandRegistry.error("Image '" + file + "' not found in "
                     + com.maxlananas.fawebim.core.clipboard.Schematics.directory());

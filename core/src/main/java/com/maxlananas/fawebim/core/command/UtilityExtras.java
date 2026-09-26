@@ -160,12 +160,22 @@ final class UtilityExtras {
         entry.arguments.add("[args...]");
         entry.handler = ctx -> {
             Path folder = Config.get().resolveDirectory(Config.get().macroDirectory);
-            Path file = folder.resolve(ctx.arg(0));
+            Path file = com.maxlananas.fawebim.core.util.SafePaths.inside(folder, ctx.arg(0),
+                    Config.get().allowSymlinks, "macro");
             if (!Files.isRegularFile(file)) {
                 throw CommandRegistry.error("No macro named '" + ctx.arg(0) + "' in " + folder);
             }
+            // A macro that runs itself, directly or through another, would
+            // recurse until the server thread's stack gave out.
+            if (MACRO_DEPTH.get() >= MAX_MACRO_DEPTH) {
+                throw CommandRegistry.error("Macros may call each other " + MAX_MACRO_DEPTH + " deep at most");
+            }
             List<String> lines;
             try {
+                if (Files.size(file) > MAX_MACRO_BYTES) {
+                    throw CommandRegistry.error("The macro '" + ctx.arg(0) + "' is larger than "
+                            + MAX_MACRO_BYTES / 1024 + " KiB");
+                }
                 lines = Files.readAllLines(file);
             } catch (IOException e) {
                 throw CommandRegistry.error("Could not read macro: " + e.getMessage());
@@ -188,12 +198,24 @@ final class UtilityExtras {
                 }
                 // Macros run in the same session, so selections and history stay
                 // consistent with what the player would have typed.
-                registry.dispatch(ctx.actor(), command);
+                MACRO_DEPTH.set(MACRO_DEPTH.get() + 1);
+                try {
+                    registry.dispatch(ctx.actor(), command);
+                } finally {
+                    MACRO_DEPTH.set(MACRO_DEPTH.get() - 1);
+                }
                 executed++;
             }
             ctx.actor().message(Msg.success("Ran " + executed + " command(s) from macro " + ctx.arg(0)));
         };
     }
+
+    /** How deep macros that run macros may nest, counted on the thread that runs them. */
+    private static final int MAX_MACRO_DEPTH = 8;
+    private static final ThreadLocal<Integer> MACRO_DEPTH = ThreadLocal.withInitial(() -> 0);
+
+    /** A macro is a list of commands typed by hand, not a data file. */
+    private static final long MAX_MACRO_BYTES = 256 * 1024;
 
     private void tips() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("/tips");
