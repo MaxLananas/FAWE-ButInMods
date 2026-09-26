@@ -3,7 +3,7 @@
     "id": "fawebim",
     "version": "${version}",
     "name": "FAWE-BIM",
-    "description": "FastAsyncWorldEdit as a Fabric mod for singleplayer and servers: complete WorldEdit 7.3 + FAWE command set, FAWE's engine (bulk chunk queue, palette-packed sections, deferred side effects, history), brushes, tools, masks, patterns, transforms and schematics - no WorldEdit/FAWE plugin required.",
+    "description": "The WorldEdit 7.3 and FastAsyncWorldEdit command set as a standalone Fabric mod for singleplayer and servers: a buffered engine in FAWE's style (bulk chunk queue, palette-packed sections, deferred side effects, history), brushes, tools, masks, patterns, transforms and schematics. Unofficial: not affiliated with EngineHub or IntellectualSites.",
     "authors": [
         "MaxLananas"
     ],
@@ -28,14 +28,24 @@
     "suggests": {
         "modmenu": "*"
     },
+    "conflicts": {
+        "worldedit": "*"
+    },
+    "custom": {
+        "modmenu": {
+            "links": {
+                "modmenu.discord": "https://discord.gg/pnJhKuU2QK"
+            }
+        }
+    },
     "mixins": [
         "fawebim.mixins.json"
     ],
     "accessWidener": "fawebim.accesswidener",
     "depends": {
-        "fabricloader": ">=0.17.0",
-        "fabric-api": "*",
-        "minecraft": "~1.21.10",
+        "fabricloader": ">=0.17.3",
+        "fabric-api": ">=0.136.0",
+        "minecraft": "1.21.10",
         "java": ">=21"
     }
 }

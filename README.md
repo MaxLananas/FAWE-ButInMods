@@ -23,6 +23,7 @@ placeholder commands.
 [![Stubs](https://img.shields.io/badge/stubs-0-3fb950?style=flat-square)](.github/workflows/build.yml)
 
 [![Issues](https://img.shields.io/github/issues/MaxLananas/FAWE-ButInMods?style=flat-square)](https://github.com/MaxLananas/FAWE-ButInMods/issues)
+[![Discord](https://img.shields.io/badge/discord-join-5865f2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/pnJhKuU2QK)
 [![Pull requests](https://img.shields.io/badge/PRs-welcome-8957e5?style=flat-square)](CONTRIBUTING.md)
 [![Stars](https://img.shields.io/github/stars/MaxLananas/FAWE-ButInMods?style=flat-square)](https://github.com/MaxLananas/FAWE-ButInMods/stargazers)
 
@@ -381,5 +382,10 @@ aliases, switches, argument order, parsers and messages follow those projects; s
 [`NOTICE`](NOTICE) for the full attribution and
 [`reference/commands-inventory.json`](reference/commands-inventory.json) for the extracted upstream
 surface.
+
+FAWE-BIM is an unofficial project: it is not affiliated with, endorsed by or supported by EngineHub
+or IntellectualSites. Report problems with it on this repository's
+[issue tracker](https://github.com/MaxLananas/FAWE-ButInMods/issues) or on the
+[Discord server](https://discord.gg/pnJhKuU2QK), not to them.
 
 Author and maintainer: **MaxLananas**.

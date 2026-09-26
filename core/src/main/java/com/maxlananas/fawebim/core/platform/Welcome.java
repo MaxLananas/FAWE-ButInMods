@@ -51,8 +51,8 @@ public final class Welcome {
         return List.of(
                 Line.of(RULE),
                 Line.of(Msg.result("FAWE-BIM v" + Config.VERSION, "thanks for downloading the mod!")),
-                Line.of(Msg.hint("FastAsyncWorldEdit built into the game: every command runs in single player,"
-                        + " with no plugin and no server.")),
+                Line.of(Msg.hint("The WorldEdit and FAWE commands as a mod: no plugin, in singleplayer"
+                        + " and on servers.")),
                 Line.runsCommand(Msg.hint("Run " + Msg.value("//help").raw() + " for every command, or "
                                 + Msg.value("//help <word>").raw() + " to search them. " + Msg.value("Click here").raw()
                                 + " to run it."),
