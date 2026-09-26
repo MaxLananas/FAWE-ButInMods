@@ -1,0 +1,28 @@
+# Gradle / build output
+.gradle/
+build/
+*/build/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+run/
+.loom-cache/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# Local test worlds / schematics / reports produced by the test-suite
+/testrun/
+/schematics/
+/brushes/
+/fawe-reports/
+/fawe-report.txt
+*.class
+
+# Python bytecode from the doc generators
+__pycache__/
+*.pyc

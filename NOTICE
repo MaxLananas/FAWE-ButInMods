@@ -1,0 +1,37 @@
+FAWE-BIM
+========
+
+FAWE-BIM ("FastAsyncWorldEdit, but in mods") is an independent port of the
+feature set and command surface of FastAsyncWorldEdit and WorldEdit to the
+Fabric mod loader for Minecraft 1.21.10, with no plugin or server platform
+dependency. It is maintained by MaxLananas.
+
+It reproduces:
+  * the WorldEdit 7.3.17 command surface for Minecraft 1.21.10 plus the
+    commands FastAsyncWorldEdit adds on top of it,
+  * WorldEdit's selection, mask, pattern, transform, brush and tool model,
+  * FAWE's data model: palette-packed chunk sections, bulk chunk application,
+    deferred "side effects" (lighting, block updates), history recorded per
+    chunk section, block change limits and operation timeouts,
+  * the schematic formats (Sponge v1/v2/v3, legacy MCEdit .schematic and
+    structure .nbt) with their FAWE clipboard semantics.
+
+Reference upstream projects, both licensed GPL-3.0:
+  * FastAsyncWorldEdit - https://github.com/IntellectualSites/FastAsyncWorldEdit
+      Copyright (C) IntellectualSites and contributors
+  * WorldEdit          - https://github.com/EngineHub/WorldEdit
+      Copyright (C) sk89q and contributors
+
+The upstream sources were used as the behavioural specification: command names,
+aliases, flags, argument lists, parser ids (masks, patterns, transforms), brush
+and tool semantics and default configuration values come from them so that FAWE
+users find the same commands and the same results. The implementation in this
+repository was written for this project; no upstream source file is copied
+verbatim, so no upstream file carries over its original authorship. The behaviour
+is derived from the GPL-3.0 licensed projects above, and this project is
+therefore licensed GPL-3.0 as well (see LICENSE.txt).
+
+Neither FastAsyncWorldEdit nor WorldEdit is required at runtime: the mod ships
+its own engine.
+
+FAWE-BIM author and maintainer: MaxLananas.

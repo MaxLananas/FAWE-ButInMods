@@ -1,0 +1,222 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per branch: a new push cancels the older, still-queued or still-running
+# build of the same branch, so the newest jar is always the one being verified.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Engine, tests and mod jar
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache the Gradle distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run the engine tests and the command inventory check
+        run: |
+          ./gradlew --no-daemon :core:verify 2>&1 | tee /tmp/verify.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # The log lives behind a signed URL the run page can reach; the
+            # annotation keeps the reason visible where the checks are listed.
+            tail -c 3000 /tmp/verify.log | python3 -c "import sys; print('::error title=core verify::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+          fi
+          exit "$status"
+
+      # javac refuses a member declared twice, and the adapter is only compiled
+      # here: this reads the sources first so that mistake costs a second, not a
+      # whole Gradle run.
+      - name: Check the adapter declares no member twice
+        run: python3 scripts/member_audit.py
+
+      - name: Build the mod
+        run: |
+          ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Same reason as the engine step above: the log itself is behind a
+            # signed URL, the annotation is what the run page shows.
+            tail -c 3000 /tmp/build.log | python3 -c "import sys; print('::error title=mod build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+          fi
+          exit "$status"
+
+      - name: Check the generated command tables are up to date
+        run: |
+          ./gradlew --no-daemon :core:commandSpec
+          python3 scripts/generate_command_tables.py
+          git diff --exit-code -- core/src/main/java/com/maxlananas/fawebim/core/command/BrushTable.java \
+            core/src/main/java/com/maxlananas/fawebim/core/command/SubCommandTable.java \
+            core/src/main/java/com/maxlananas/fawebim/core/command/StubTable.java
+
+      - name: Audit the command surface against WorldEdit and FAWE
+        run: |
+          python3 scripts/argument_audit.py
+          python3 scripts/spelling_audit.py
+          python3 scripts/flag_audit.py
+          python3 scripts/player_audit.py
+
+      # The runtime job below drives a live server over rcon and checks the same
+      # answers. This runs the rows through the engine before the server boots,
+      # so a row that drifted reports in a minute rather than in ten.
+      - name: Check the smoke run's expected answers against the engine
+        run: |
+          python3 scripts/smoke_lint.py --java "$JAVA_HOME/bin/java" \
+            --classpath core/build/classes/java/main:core/build/classes/java/selfTest
+
+      - name: Check the bench rows' expected answers against the engine
+        run: |
+          python3 scripts/rcon_bench.py --lint --java "$JAVA_HOME/bin/java" \
+            --classpath core/build/classes/java/main:core/build/classes/java/selfTest
+
+      - name: Check every configuration setting is read
+        run: python3 scripts/settings_audit.py
+
+      - name: Check every line sent to a player carries a colour
+        run: python3 scripts/colour_audit.py
+
+      - name: Check the annotations javac would refuse
+        run: python3 scripts/annotation_check.py
+
+      - name: Check the Fabric adapter imports what it uses
+        run: python3 scripts/adapter_check.py
+
+
+      - name: Upload the mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: FAWE-BIM
+          path: fabric/build/libs/*.jar
+          if-no-files-found: warn
+
+  runtime:
+    name: Running server
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # A jar that does not build cannot boot a server: run this heavy job only
+    # once the build job has produced one.
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache the Gradle distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The smoke test boots the game with the mod in it and drives the running
+      # server over rcon: it is the only check that the mixin applies, that the
+      # commands are registered with the game, and that a value written from the
+      # chat ends up in the configuration file.
+      - name: Prepare the server directory
+        run: |
+          for dir in fabric/run run; do
+            mkdir -p "$dir"
+            printf '%s\n' 'eula=true' > "$dir/eula.txt"
+            printf '%s\n' \
+              'enable-rcon=true' \
+              'rcon.port=25575' \
+              'rcon.password=fawebim' \
+              'online-mode=false' \
+              'level-type=minecraft:flat' \
+              'level-name=world' \
+              'spawn-protection=0' \
+              'view-distance=3' \
+              'simulation-distance=3' \
+              'max-players=2' \
+              'sync-chunk-writes=false' \
+              'motd=FAWE-BIM smoke test' > "$dir/server.properties"
+          done
+
+      - name: Start the dedicated server in the background
+        run: |
+          nohup ./gradlew --no-daemon :fabric:runServer > /tmp/server.log 2>&1 &
+          echo $! > /tmp/server.pid
+          for i in $(seq 1 220); do
+            if grep -q 'Done (' /tmp/server.log; then
+              echo "the server is up after ${i} checks"
+              break
+            fi
+            if ! kill -0 "$(cat /tmp/server.pid)" 2>/dev/null; then
+              echo "the server stopped before it was ready"
+              break
+            fi
+            sleep 2
+          done
+          grep -E 'FAWE-BIM|Done \(|Mixin|Exception|Error' /tmp/server.log | tail -40
+
+      - name: Ask the running server for its settings and its commands
+        run: |
+          set +e
+          python3 scripts/rcon_smoke.py --wait 300 > /tmp/smoke.log 2>&1
+          status=$?
+          cat /tmp/smoke.log
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/smoke.log').read_text(errors='replace')[-7000:];print('::error title=rcon smoke::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+          exit $status
+
+      # The engine tests run against a double; this is the only place a large
+      # edit runs on real chunk sections, with the real light engine and the real
+      # client sync behind it, and it prints what each edit costs.
+      - name: Time the large edits on the running server
+        run: |
+          set +e
+          python3 scripts/rcon_bench.py --wait 60 > /tmp/bench.log 2>&1
+          status=$?
+          cat /tmp/bench.log
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/bench.log').read_text(errors='replace')[-7000:];print('::error title=rcon bench::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+          exit $status
+
+      - name: Read what the mod wrote to the configuration file
+        run: |
+          file=$(find . -name fawebim.yml -path '*config*' | head -1)
+          echo "the mod wrote $file"
+          head -20 "$file"
+          grep -q 'max-blocks-changed' "$file"
+
+      - name: Stop the server
+        if: always()
+        run: |
+          python3 scripts/rcon_smoke.py --wait 20 --only stop 2>&1 | tail -3 || true
+          sleep 5
+          kill "$(cat /tmp/server.pid)" 2>/dev/null || true
+          pkill -f devlaunchinjector 2>/dev/null || true
+
+      - name: Report the server log when something failed
+        if: failure()
+        run: |
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-6000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
