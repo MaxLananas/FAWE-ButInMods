@@ -1754,6 +1754,9 @@ public final class Commands {
                     if (clipboard.hasBiomes()) {
                         detail.append(", \u00a77biomes");
                     }
+                    detail.append(" \u00a78(").append(clipboard.getWidth()).append('x')
+                            .append(clipboard.getHeight()).append('x').append(clipboard.getLength())
+                            .append(')');
                     ctx.actor().message(Msg.result("Copied", detail.toString()));
                 };
 
@@ -1780,6 +1783,9 @@ public final class Commands {
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
                             region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
                     ctx.session().setClipboard(clipboard);
+                    // The queue is applied before the answer is written, so the
+                    // time the line reports is the time the cut really took.
+                    session.flushQueue();
                     StringBuilder detail = new StringBuilder(Msg.count(clipboard.volume()))
                             .append("\u00a77 block(s) to your clipboard");
                     if (!clipboard.entities().isEmpty()) {
@@ -1790,8 +1796,10 @@ public final class Commands {
                         detail.append(", \u00a77biomes");
                     }
                     detail.append(" in \u00a7b").append(timer.phrase());
+                    detail.append(" \u00a78(").append(clipboard.getWidth()).append('x')
+                            .append(clipboard.getHeight()).append('x').append(clipboard.getLength())
+                            .append(')');
                     ctx.actor().message(Msg.result("Cut", detail.toString()));
-                    session.flushQueue();
                 };
 
 

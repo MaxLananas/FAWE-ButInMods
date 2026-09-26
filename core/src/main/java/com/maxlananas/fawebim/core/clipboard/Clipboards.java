@@ -106,9 +106,22 @@ public final class Clipboards {
         Mask mask = sessionMask == null || sessionMask == include ? include
                 : include == null ? sessionMask
                 : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(sessionMask, include));
-        // The region walks itself: the cuboid's own traversal goes section by
-        // section, which is both faster than asking it about every coordinate
-        // and what the plain copy already used.
+        // A leave pattern that is one fixed block - the default air, and the
+        // common case - is resolved once instead of per position, and the write
+        // then folds into the same read the copy already did.
+        int constant = leave instanceof com.maxlananas.fawebim.core.pattern.Patterns.Single single
+                ? single.stateId() : -1;
+        // A cuboid selection - what //cut is used on - is walked a section at a
+        // time, so a section the world reports as all air costs one check
+        // instead of 4096 reads and 4096 no-op writes. That only holds when the
+        // selection is left as air: a leave pattern with blocks in it has
+        // something to write even where the region is empty.
+        if (session != null && region instanceof com.maxlananas.fawebim.core.region.CuboidRegion
+                && constant == BlockStateHolder.air()) {
+            return cutBox(world, region, min, max, clipboard, session, mask, withEntities, withBiomes);
+        }
+        // Every other shape walks itself: the traversal of a polyhedron is not
+        // a box, and the selections it is used on are not the million-block ones.
         region.forEachPosition((x, y, z) -> {
             int state = world.getBlock(x, y, z);
             if (state != BlockStateHolder.air() && (mask == null || mask.test(x, y, z))) {
@@ -121,8 +134,17 @@ public final class Clipboards {
                     }
                 }
             }
-            session.limiter().check(1);
-            session.setBlock(x, y, z, leave.apply(x, y, z));
+            if (session == null) {
+                return true;
+            }
+            // The session counts the writes it makes; this only consults the
+            // clock, so a configured timeout still stops a long cut.
+            session.limiter().check(0);
+            if (state == constant) {
+                return true;
+            }
+            session.setBlockKnown(x, y, z, state,
+                    constant >= 0 ? constant : leave.apply(x, y, z), true);
             return true;
         });
         if (withBiomes) {
@@ -136,6 +158,67 @@ public final class Clipboards {
             }
         }
         clipboard.setName("clipboard");
+        return clipboard;
+    }
+
+    /**
+     * The cut of a box selection, section by section.
+     *
+     * <p>Each 16x16x16 section of the box is skipped whole when the world says
+     * it holds nothing but air, which is the answer for most sections of a
+     * selection drawn around a build. The rest is the same fused pass as the
+     * generic walk: read once, copy what is not air, clear what is left.</p>
+     */
+    private static BlockArrayClipboard cutBox(World world, Region region, BlockVector3 min,
+                                              BlockVector3 max, BlockArrayClipboard clipboard,
+                                              EditSession session, Mask mask, boolean withEntities,
+                                              boolean withBiomes) {
+        int air = BlockStateHolder.air();
+        int changed = 0;
+        for (int chunkX = min.x() >> 4; chunkX <= max.x() >> 4; chunkX++) {
+            int fromX = Math.max(min.x(), chunkX << 4);
+            int toX = Math.min(max.x(), (chunkX << 4) + 15);
+            for (int chunkZ = min.z() >> 4; chunkZ <= max.z() >> 4; chunkZ++) {
+                int fromZ = Math.max(min.z(), chunkZ << 4);
+                int toZ = Math.min(max.z(), (chunkZ << 4) + 15);
+                for (int sectionY = min.y() >> 4; sectionY <= max.y() >> 4; sectionY++) {
+                    int fromY = Math.max(min.y(), sectionY << 4);
+                    int toY = Math.min(max.y(), (sectionY << 4) + 15);
+                    // An empty section has neither a block to copy nor one to
+                    // clear, whether the selection covers all of it or part.
+                    if (world.isSectionEmpty(chunkX, sectionY, chunkZ)) {
+                        continue;
+                    }
+                    for (int y = fromY; y <= toY; y++) {
+                        for (int z = fromZ; z <= toZ; z++) {
+                            for (int x = fromX; x <= toX; x++) {
+                                int state = world.getBlock(x, y, z);
+                                if (state != air && (mask == null || mask.test(x, y, z))) {
+                                    clipboard.setBlock(x, y, z, state);
+                                    if (withEntities) {
+                                        NbtCompound nbt = world.getBlockEntity(x, y, z);
+                                        if (nbt != null) {
+                                            clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
+                                        }
+                                    }
+                                }
+                                if (state != air) {
+                                    session.setBlockKnown(x, y, z, state, air, true);
+                                }
+                                // The session counts its own writes; this is the
+                                // clock a configured timeout watches.
+                                if ((++changed & 0x3FF) == 0) {
+                                    session.limiter().check(0);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (withBiomes) {
+            copyBiomes(world, region, clipboard);
+        }
         return clipboard;
     }
 

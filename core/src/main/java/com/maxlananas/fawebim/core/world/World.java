@@ -34,6 +34,26 @@ public interface World extends Extent {
     boolean isChunkLoaded(int chunkX, int chunkZ);
 
     /**
+     * Whether a whole section holds nothing but air.
+     *
+     * <p>A copy walks a selection a section at a time, and a selection holds far
+     * more air than blocks in the common case - the bounding box of a build is
+     * mostly empty. Asking once per section what would otherwise take 4096 reads,
+     * 4096 clipboard writes and 4096 world writes is what FAWE's chunk-section
+     * copy is built around.</p>
+     *
+     * <p>{@code false} means "not known to be empty", which costs a walk but
+     * never a wrong answer: an implementation that cannot answer cheaply, or a
+     * chunk that is not loaded, says no.</p>
+     *
+     * @param sectionY the section's own coordinate: the blocks from
+     *                 {@code sectionY * 16} to {@code sectionY * 16 + 15}
+     */
+    default boolean isSectionEmpty(int chunkX, int sectionY, int chunkZ) {
+        return false;
+    }
+
+    /**
      * The dimension's {@code region} folder, used by {@code /anvil} to inspect
      * chunks the server has not loaded. Null when the platform has no world files.
      */

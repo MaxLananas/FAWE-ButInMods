@@ -2917,6 +2917,65 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//cut");
         CommandManager.get().dispatch(actor, "//paste 20,64,20");
         check("the cut clipboard pastes back", world.getBlock(24, 66, 24) == stone);
+
+        // A selection that is mostly air - the box of a build - is walked a
+        // section at a time, and only the section holding the build costs
+        // anything: the clipboard must still hold exactly that build, and the
+        // selection must still be left empty.
+        TestWorld airy = new TestWorld("cut-air");
+        airy.fillFlat(70);
+        TestActor builder = new TestActor("Airy", airy, new BlockVector3(0, 71, 0));
+        builder.session().setMaxBlocksChanged(1_000_000);
+        for (int chunk = 0; chunk < 4; chunk++) {
+            CommandManager.get().dispatch(builder, "//pos1 " + (chunk * 16) + ",71,0");
+            CommandManager.get().dispatch(builder, "//pos2 " + (chunk * 16 + 15) + ",73,15");
+            CommandManager.get().dispatch(builder, "//set stone");
+        }
+        builder.clearMessages();
+        CommandManager.get().dispatch(builder, "//pos1 0,71,0");
+        CommandManager.get().dispatch(builder, "//pos2 63,90,15");
+        CommandManager.get().dispatch(builder, "//cut");
+        int kept = 0;
+        for (int x = 0; x <= 63; x++) {
+            for (int y = 71; y <= 90; y++) {
+                for (int z = 0; z <= 15; z++) {
+                    if (airy.getBlock(x, y, z) != air) {
+                        kept++;
+                    }
+                }
+            }
+        }
+        check("a mostly air cut leaves the selection empty", kept == 0);
+        check("a mostly air cut keeps the build", builder.session().getClipboard()
+                .getClipboard().volume() == 4 * 3 * 16 * 16);
+
+        // The same cut with a leave pattern writes the pattern everywhere the
+        // selection is, air included, so no section may be skipped.
+        TestWorld filled = new TestWorld("cut-leave");
+        filled.fillFlat(70);
+        TestActor leaving = new TestActor("Leave", filled, new BlockVector3(0, 71, 0));
+        leaving.session().setMaxBlocksChanged(1_000_000);
+        CommandManager.get().dispatch(leaving, "//pos1 0,71,0");
+        CommandManager.get().dispatch(leaving, "//pos2 31,73,15");
+        CommandManager.get().dispatch(leaving, "//set stone");
+        CommandManager.get().dispatch(leaving, "//pos1 0,71,0");
+        CommandManager.get().dispatch(leaving, "//pos2 63,96,15");
+        CommandManager.get().dispatch(leaving, "//cut minecraft:glass");
+        int glass = 0;
+        int missed = 0;
+        for (int x = 0; x <= 63; x++) {
+            for (int y = 71; y <= 96; y++) {
+                for (int z = 0; z <= 15; z++) {
+                    if (filled.getBlock(x, y, z) == BlockState.registry()
+                            .defaultState("minecraft:glass")) {
+                        glass++;
+                    } else {
+                        missed++;
+                    }
+                }
+            }
+        }
+        check("a cut with a leave pattern fills the whole selection", glass == 64 * 26 * 16 && missed == 0);
     }
 
 

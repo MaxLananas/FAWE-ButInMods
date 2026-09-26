@@ -131,6 +131,20 @@ public final class FabricWorld implements World {
         return Block.getId(section.getBlockState(x & 15, y & 15, z & 15));
     }
 
+    @Override
+    public boolean isSectionEmpty(int chunkX, int sectionY, int chunkZ) {
+        int index = ((sectionY << 4) - minY()) >> 4;
+        if (index < 0 || index >= level.getSectionsCount()) {
+            // Outside the level there is nothing to read or to write.
+            return true;
+        }
+        // A chunk that is not loaded must not be generated just to answer this;
+        // an unknown section is walked like a full one.
+        net.minecraft.world.level.chunk.LevelChunk chunk =
+                level.getChunkSource().getChunkNow(chunkX, chunkZ);
+        return chunk != null && chunk.getSection(index).hasOnlyAir();
+    }
+
     /**
      * The section a position lives in, without the position object the game's
      * own accessor allocates and without its second chunk lookup.

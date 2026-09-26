@@ -21,6 +21,12 @@ import java.util.Random;
 public final class TestWorld implements World {
 
     private final Map<Long, Integer> blocks = new HashMap<>();
+    /**
+     * How many blocks of a section are not air, the way a real chunk section
+     * counts them: {@link #isSectionEmpty} answers from this, so the double sees
+     * the same one-check-per-section skips the game does.
+     */
+    private final Map<Long, Integer> sectionBlocks = new HashMap<>();
     private final Map<Long, Integer> biomes = new HashMap<>();
     private final Map<Long, NbtCompound> blockEntities = new LinkedHashMap<>();
     private final List<EntityData> entities = new ArrayList<>();
@@ -36,6 +42,31 @@ public final class TestWorld implements World {
 
     private static long key(int x, int y, int z) {
         return ((long) (x & 0x3FFFFFF) << 38) | ((long) (y & 0xFFF) << 26) | (z & 0x3FFFFFF);
+    }
+
+    /** The section a position belongs to, as a key of {@link #sectionBlocks}. */
+    private static long sectionKey(int x, int y, int z) {
+        return ((long) (x >> 4) & 0x3FFFFFF) << 38 | ((long) (y >> 4) & 0xFFF) << 26
+                | ((z >> 4) & 0x3FFFFFF);
+    }
+
+    /** Keeps the per-section count in step with a written block. */
+    private void countSection(int x, int y, int z, boolean wasAir, boolean isAir) {
+        if (wasAir == isAir) {
+            return;
+        }
+        long key = sectionKey(x, y, z);
+        sectionBlocks.merge(key, isAir ? -1 : 1, Integer::sum);
+    }
+
+    private boolean air(int stateId) {
+        return stateId < 0 || BlockState.registry().isAirLike(stateId);
+    }
+
+    @Override
+    public boolean isSectionEmpty(int chunkX, int sectionY, int chunkZ) {
+        Integer count = sectionBlocks.get(sectionKey(chunkX << 4, sectionY << 4, chunkZ << 4));
+        return count == null || count == 0;
     }
 
     private final java.util.concurrent.ExecutorService executor =
@@ -73,7 +104,8 @@ public final class TestWorld implements World {
         if (y < minY() || y > maxY()) {
             return false;
         }
-        blocks.put(key(x, y, z), stateId);
+        Integer previous = blocks.put(key(x, y, z), stateId);
+        countSection(x, y, z, air(previous == null ? -1 : previous), air(stateId));
         setCount++;
         return true;
     }
@@ -124,7 +156,9 @@ public final class TestWorld implements World {
                         if (state == -1) {
                             continue;
                         }
-                        blocks.put(key(worldX, worldY, worldZ), state);
+                        Integer previous = blocks.put(key(worldX, worldY, worldZ), state);
+                        countSection(worldX, worldY, worldZ, air(previous == null ? -1 : previous),
+                                air(state));
                         applied++;
                     }
                 }

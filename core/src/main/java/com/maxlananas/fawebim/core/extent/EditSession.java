@@ -335,6 +335,35 @@ public final class EditSession implements Extent {
         if (previous == stateId) {
             return false;
         }
+        return write(x, y, z, previous, stateId, recordChange);
+    }
+
+    /**
+     * The same write for a caller that already knows what the position holds.
+     *
+     * <p>A copy-and-clear pass - {@code //cut} above all - reads the block it is
+     * about to overwrite, so handing that value over saves a second trip into
+     * the world for every position of the selection, and the common cell that is
+     * already the value being written costs nothing at all.</p>
+     *
+     * @param previous the state the position holds, as the caller read it
+     * @return whether the world changed
+     */
+    public boolean setBlockKnown(int x, int y, int z, int previous, int stateId, boolean recordChange) {
+        if (cancelled || previous == stateId || stateId < 0) {
+            return false;
+        }
+        if (y < world.minY() || y > world.maxY()) {
+            return false;
+        }
+        if (mask != null && !mask.isRegion() && !mask.test(x, y, z)) {
+            return false;
+        }
+        return write(x, y, z, previous, stateId, recordChange);
+    }
+
+    /** The back half of the write path, shared by both entry points. */
+    private boolean write(int x, int y, int z, int previous, int stateId, boolean recordChange) {
         if (changeLimit > 0 && blocksChanged >= changeLimit) {
             throw new MaxChangedBlocksException(changeLimit);
         }
