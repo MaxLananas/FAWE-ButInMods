@@ -41,8 +41,15 @@ final class LightChecks {
         pending[count++] = (short) local;
     }
 
-    /** Queues the cells gathered for a section, then starts the next section empty. */
-    void submit(ThreadedLevelLightEngine engine, int chunkX, int sectionY, int chunkZ) {
+    /**
+     * Queues the cells gathered for a section, then starts the next section empty.
+     *
+     * @return whether there was any cell to queue
+     */
+    boolean submit(ThreadedLevelLightEngine engine, int chunkX, int sectionY, int chunkZ) {
+        if (count == 0) {
+            return false;
+        }
         int baseX = chunkX << 4;
         int baseY = sectionY << 4;
         int baseZ = chunkZ << 4;
@@ -59,6 +66,7 @@ final class LightChecks {
             }
         }
         count = 0;
+        return true;
     }
 
     /** Queues every cell of a section, a layer per task, with no position to copy. */

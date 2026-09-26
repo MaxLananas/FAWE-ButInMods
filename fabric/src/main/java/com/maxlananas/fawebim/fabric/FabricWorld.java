@@ -80,6 +80,15 @@ public final class FabricWorld implements World {
     private int blockEntityCount;
     /** The positions of the section being written whose light has to be checked. */
     private final LightChecks lightChecks = new LightChecks();
+    /**
+     * Per chunk, the number of the last flush that queued light work for it,
+     * see {@link #lightPending}. Shared by every adapter of a level, since an
+     * adapter lives for one command; weak, so a chunk the game dropped leaves
+     * with its instance. Server thread only, like the flushes and the
+     * callbacks that read it.
+     */
+    private static final Map<LevelChunk, Integer> LIGHT_FLUSHES = new java.util.WeakHashMap<>();
+    private static int lightFlush;
     private int cachedChunkX = Integer.MIN_VALUE;
     private int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -439,6 +448,7 @@ public final class FabricWorld implements World {
         BlockState[] after = perBlockNotify ? new BlockState[count] : null;
         var chunkSource = level.getChunkSource();
         var lightEngine = chunkSource.getLightEngine();
+        boolean lightQueued = false;
         boolean ticking = chunk.getFullStatus().isOrAfter(
                 net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
         // The four heightmaps vanilla updates for every block it writes. Looking
@@ -513,11 +523,15 @@ public final class FabricWorld implements World {
                     lightEngine.updateSectionStatus(sectionPos, isEmpty);
                     chunkSource.onSectionEmptinessChanged(
                             set.chunkX(), sectionY >> 4, set.chunkZ(), isEmpty);
+                    lightQueued = true;
                 }
             }
             if (lighting) {
-                lightChecks.submit(lightEngine, set.chunkX(), sectionY >> 4, set.chunkZ());
+                lightQueued |= lightChecks.submit(lightEngine, set.chunkX(), sectionY >> 4, set.chunkZ());
             }
+        }
+        if (lighting && lightQueued) {
+            lightPending(chunk, lightEngine);
         }
 
         // 2b. The block entities of the blocks that changed, kept as the game
@@ -589,6 +603,32 @@ public final class FabricWorld implements World {
             sendChunk(chunk, lightEngine);
         }
         return applied;
+    }
+
+    /**
+     * Marks the light of a chunk as not computed until the light engine has run
+     * the work just queued for it, as the game's own {@code lightChunk} does.
+     *
+     * <p>A chunk nothing keeps loaded - an edit away from every player, a paste
+     * wider than the view distance - is unloaded and saved a tick or two after
+     * the edit loaded it, while the light thread may still be working on it.
+     * Saved as correct, the chunk came back with the light from before the
+     * edit: sky light under a new roof, dark where one was taken away. Saved as
+     * not correct, the game lights it again when it loads it, as it does a
+     * chunk from an older version. The flag comes back once the work is done,
+     * unless a later flush queued more; on a chunk unloaded meanwhile it lands
+     * on the instance the game dropped. Server thread only.</p>
+     */
+    private void lightPending(LevelChunk chunk, net.minecraft.server.level.ThreadedLevelLightEngine engine) {
+        int flush = ++lightFlush;
+        LIGHT_FLUSHES.put(chunk, flush);
+        chunk.setLightCorrect(false);
+        ChunkPos pos = chunk.getPos();
+        engine.waitForPendingTasks(pos.x, pos.z).thenRunAsync(() -> {
+            if (LIGHT_FLUSHES.remove(chunk, flush)) {
+                chunk.setLightCorrect(true);
+            }
+        }, level.getServer());
     }
 
     /** Whether a buffered state is one the villagers or the portal search keep track of. */
@@ -686,6 +726,7 @@ public final class FabricWorld implements World {
                 LightChecks.submitSection(lightEngine, position.x(), chunk.getSectionYFromSectionIndex(index),
                         position.z());
             }
+            lightPending(chunk, lightEngine);
         }
     }
 
