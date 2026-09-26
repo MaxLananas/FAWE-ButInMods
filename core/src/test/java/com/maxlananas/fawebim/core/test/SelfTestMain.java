@@ -156,6 +156,7 @@ public final class SelfTestMain {
         RegionCopyTests.run();
         SelectionTests.run();
         MessageStyleTests.run();
+        LayerTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -3541,7 +3542,7 @@ public final class SelfTestMain {
     }
 
     /** The text of a message without its colour codes. */
-    private static String plain(String message) {
+    static String plain(String message) {
         StringBuilder sb = new StringBuilder(message.length());
         for (int i = 0; i < message.length(); i++) {
             char c = message.charAt(i);

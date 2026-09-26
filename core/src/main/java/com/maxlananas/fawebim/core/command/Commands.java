@@ -68,6 +68,11 @@ public final class Commands {
         return BlockState.registry().air();
     }
 
+    /** WorldEdit's MathUtils.roundHalfUp: a half rounds away from zero. */
+    private static int roundHalfUp(double value) {
+        return (int) (Math.signum(value) * Math.round(Math.abs(value)));
+    }
+
     /** Replaces every block in a region matching {@code mask} with {@code pattern}. */
     private long fill(EditSession session, Region region, Pattern pattern, Mask mask) {
         return region.forEachPosition((x, y, z) -> {
@@ -683,7 +688,7 @@ public final class Commands {
 
 
         CommandRegistry.Entry e21 = registry.register("//overlay");
-        e21.description = "Overlay the top layer of blocks with a pattern";
+        e21.description = "Set a block on top of blocks in the region";
         e21.group = "region";
         e21.requiresSelection = true;
         e21.arguments.add("pattern");
@@ -691,26 +696,9 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    Region region = ctx.selection();
-                    // FAWE overlays the top block of every column of the
-                    // selection's footprint: walk down from the ceiling and stop at
-                    // the first block. A column the selection does not hold - the
-                    // corner of the box around a cylinder, say - has nothing to
-                    // overlay, so it is skipped rather than walked.
-                    for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                        for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                            for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!region.contains(x, y, z)) {
-                                    continue;
-                                }
-                                if (!BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    session.setBlock(x, y, z, pattern.apply(x, y, z));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Overlaid");
+                    int changed = com.maxlananas.fawebim.core.function.Layers.overlay(session, ctx.selection(),
+                            pattern);
+                    flush(ctx, session, "Overlaid", changed, "block(s)");
                 };
 
 
@@ -793,15 +781,13 @@ public final class Commands {
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     Region region = ctx.selection();
                     Vector3 center = region.getCenter();
-                    int minX = (int) Math.floor(center.x());
-                    int minY = (int) Math.floor(center.y());
-                    int minZ = (int) Math.floor(center.z());
-                    int maxX = (int) Math.round(center.x());
-                    int maxY = (int) Math.round(center.y());
-                    int maxZ = (int) Math.round(center.z());
-                    for (int x = minX; x <= maxX; x++) {
-                        for (int y = minY; y <= maxY; y++) {
-                            for (int z = minZ; z <= maxZ; z++) {
+                    // FAWE's box: from the centre cut towards zero to the centre
+                    // rounded half away from zero, whichever way round that is.
+                    int[] from = {(int) center.x(), (int) center.y(), (int) center.z()};
+                    int[] to = {roundHalfUp(center.x()), roundHalfUp(center.y()), roundHalfUp(center.z())};
+                    for (int x = Math.min(from[0], to[0]); x <= Math.max(from[0], to[0]); x++) {
+                        for (int y = Math.min(from[1], to[1]); y <= Math.max(from[1], to[1]); y++) {
+                            for (int z = Math.min(from[2], to[2]); z <= Math.max(from[2], to[2]); z++) {
                                 session.setBlock(x, y, z, pattern.apply(x, y, z));
                             }
                         }
@@ -853,39 +839,18 @@ public final class Commands {
 
 
         CommandRegistry.Entry e28 = registry.register("//naturalize");
-        e28.description = "Turn the terrain into grass over dirt over stone";
+        e28.description = "3 layers of dirt on top then rock below";
         e28.group = "region";
         e28.requiresSelection = true;
         e28.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockStateRegistry blockRegistry = BlockState.registry();
-                    int grass = blockRegistry.defaultState("minecraft:grass_block");
-                    int dirt = blockRegistry.defaultState("minecraft:dirt");
-                    int stone = blockRegistry.defaultState("minecraft:stone");
-                    Region region = ctx.selection();
-                    for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                        for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                            int layer = 0;
-                            for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!region.contains(x, y, z)
-                                        || blockRegistry.isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    continue;
-                                }
-                                session.setBlock(x, y, z, switch (layer) {
-                                    case 0 -> grass;
-                                    case 1, 2 -> dirt;
-                                    default -> stone;
-                                });
-                                layer++;
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Naturalized");
+                    int changed = com.maxlananas.fawebim.core.function.Layers.naturalize(session, ctx.selection());
+                    flush(ctx, session, "Naturalized", changed, "block(s)");
                 };
 
 
         CommandRegistry.Entry e29 = registry.register("//lay");
-        e29.description = "Lay a pattern on the ground, keeping natural layers below";
+        e29.description = "Set the top block in the region";
         e29.group = "region";
         e29.requiresSelection = true;
         e29.arguments.add("pattern");
@@ -893,31 +858,8 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    int layers = 1;
-                    Region region = ctx.selection();
-                    for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                        for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                            int placed = 0;
-                            for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!region.contains(x, y, z)
-                                        || BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    continue;
-                                }
-                                if (placed < layers) {
-                                    session.setBlock(x, y, z, air());
-                                    placed++;
-                                } else if (region.contains(x, y + 1, z)) {
-                                    // The layer goes on top of the ground, which
-                                    // has to be inside the selection: a selection
-                                    // filled to its ceiling gets nothing put above
-                                    // it.
-                                    session.setBlock(x, y + 1, z, pattern.apply(x, y + 1, z));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Laid");
+                    int columns = com.maxlananas.fawebim.core.function.Layers.lay(session, ctx.selection(), pattern);
+                    flush(ctx, session, "Laid", columns, "block(s)");
                 };
 
 

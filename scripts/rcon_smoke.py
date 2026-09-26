@@ -162,6 +162,29 @@ CHECKS = [
     ("//pos2 41,60,41", "position 2: set"),
     ("//count minecraft:gold_block", "count: 4"),
     ("//set minecraft:air", "4 block(s) affected"),
+    # Light, as the game itself reads it. A 64x64 roof three blocks thick over
+    # the open sky of the flat world - 768 blocks in each of its chunks - darkens
+    # the air under its middle, 32 blocks from any open column, and taking it
+    # away lights that air again; the rows between an edit and its reading give
+    # the light thread its time. Flushes that large used to be re-lit from the
+    # light sources the game already knew, which kept the sky light under a new
+    # roof and the dark under a removed one. The vanilla commands in here are
+    # left out by the smoke lint.
+    ("weather clear", "weather"),
+    ("time set noon", "time"),
+    ("//pos1 -32,80,-32", "position 1: set"),
+    ("//pos2 31,82,31", "position 2: set"),
+    ("//set minecraft:stone", "12,288 block(s) affected"),
+    ("//size", "volume"),
+    ("//size", "volume"),
+    ('execute positioned 0 79 0 if predicate '
+     '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed"),
+    ("//set minecraft:air", "12,288 block(s) affected"),
+    ("//size", "volume"),
+    ("//size", "volume"),
+    ('execute positioned 0 79 0 if predicate '
+     '{condition:"minecraft:location_check",predicate:{light:{light:{min:13}}}}', "passed"),
+    ("//fixlighting", "Lighting propagated"),
 ]
 
 

@@ -30,6 +30,9 @@ JAVA = "java"
 CLASSPATH = "core/build/classes/java/main:core/build/classes/java/selfTest"
 # Rows whose answer depends on the machine the server runs on.
 SKIP = {"fawebim path", "//fawebim path"}
+# The game's own commands, which the smoke run uses to set a scene or to read
+# the world back, and which the engine alone does not have.
+VANILLA = ("weather ", "time ", "execute ")
 
 
 def rows():
@@ -49,7 +52,7 @@ def main():
     options = parser.parse_args()
     work = Path(options.work)
     work.mkdir(parents=True, exist_ok=True)
-    checks = rows()
+    checks = [(command, expected) for command, expected in rows() if not command.startswith(VANILLA)]
     commands = work / "commands.txt"
     commands.write_text("\n".join(command for command, _ in checks) + "\n")
     run = subprocess.run([options.java, "-cp", options.classpath, "com.maxlananas.fawebim.core.test.SmokeProbe",
