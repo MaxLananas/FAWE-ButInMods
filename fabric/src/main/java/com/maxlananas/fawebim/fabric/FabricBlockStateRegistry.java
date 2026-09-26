@@ -317,6 +317,10 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         return sb.toString();
     }
 
+    /**
+     * The values of a state, as the game writes them in a state string. The
+     * map is cached and shared, so it cannot be changed.
+     */
     @Override
     public Map<String, String> properties(int stateId) {
         return propertyCache.computeIfAbsent(stateId, id -> {
@@ -324,11 +328,17 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
             Map<String, String> map = new LinkedHashMap<>();
             if (state != null) {
                 for (Map.Entry<Property<?>, Comparable<?>> entry : state.getValues().entrySet()) {
-                    map.put(entry.getKey().getName(), String.valueOf(entry.getValue()));
+                    map.put(entry.getKey().getName(), valueName(entry.getKey(), entry.getValue()));
                 }
             }
-            return map;
+            return java.util.Collections.unmodifiableMap(map);
         });
+    }
+
+    /** A property value by the property's own name for it, which toString does not promise. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static String valueName(Property property, Comparable value) {
+        return property.getName(value);
     }
 
     @Override

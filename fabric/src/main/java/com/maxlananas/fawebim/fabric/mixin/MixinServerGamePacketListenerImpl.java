@@ -22,6 +22,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * bindings can too. WorldEdit's own Fabric adapter injects into the same
  * method, so this mirrors its behaviour: a swing that belongs to block mining
  * is ignored, everything else is handed to the engine.</p>
+ *
+ * <p>The injections sit at the head of the handlers, before the game's own
+ * {@code PacketUtils.ensureRunningOnSameThread}: a handler is first called on
+ * the network thread, which that check turns back to be called again on the
+ * server thread. Only the server thread's call acts, so a click edits the
+ * world from the thread that owns it, once, and a scroll moves a binding one
+ * step, not two.</p>
  */
 @Mixin(ServerGamePacketListenerImpl.class)
 public abstract class MixinServerGamePacketListenerImpl {
@@ -32,8 +39,17 @@ public abstract class MixinServerGamePacketListenerImpl {
     @Unique
     private int bim$ignoreSwingPackets;
 
+    /** True on the server thread, which is where the handler's work happens. */
+    @Unique
+    private boolean bim$onServerThread() {
+        return this.player.level().getServer().isSameThread();
+    }
+
     @Inject(method = "handleAnimate", at = @At("HEAD"))
     private void bim$onAnimate(ServerboundSwingPacket packet, CallbackInfo callback) {
+        if (!bim$onServerThread()) {
+            return;
+        }
         if (!this.player.gameMode.isDestroyingBlock) {
             if (this.bim$ignoreSwingPackets > 0) {
                 this.bim$ignoreSwingPackets--;
@@ -50,6 +66,9 @@ public abstract class MixinServerGamePacketListenerImpl {
      */
     @Inject(method = "handleSetCarriedItem", at = @At("HEAD"))
     private void bim$onSetCarriedItem(ServerboundSetCarriedItemPacket packet, CallbackInfo callback) {
+        if (!bim$onServerThread()) {
+            return;
+        }
         int previous = this.player.getInventory().getSelectedSlot();
         int slot = packet.getSlot();
         if (slot == previous || slot < 0 || slot > 8) {
@@ -63,6 +82,9 @@ public abstract class MixinServerGamePacketListenerImpl {
 
     @Inject(method = "handlePlayerAction", at = @At("HEAD"))
     private void bim$onPlayerAction(ServerboundPlayerActionPacket packet, CallbackInfo callback) {
+        if (!bim$onServerThread()) {
+            return;
+        }
         switch (packet.getAction()) {
             case DROP_ITEM, DROP_ALL_ITEMS, START_DESTROY_BLOCK -> this.bim$ignoreSwingPackets++;
             default -> {

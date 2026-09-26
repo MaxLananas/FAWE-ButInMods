@@ -158,8 +158,10 @@ public final class FaweMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             Config.get().save();
             // Clearing the sessions logs the edits that were still open, which
-            // queues their files on the writer; then the writer is waited for.
+            // queues their files on the writer; then the schematic writes and
+            // the writer are waited for.
             SessionManager.get().clear();
+            FabricWorld.drainWorkers();
             drainWriter();
             FabricRegistries.clear();
         });

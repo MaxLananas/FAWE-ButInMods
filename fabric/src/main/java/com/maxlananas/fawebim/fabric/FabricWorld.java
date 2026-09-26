@@ -120,6 +120,33 @@ public final class FabricWorld implements World {
         return pool;
     }
 
+    /**
+     * Waits for the work handed to the pool - a schematic being written - when
+     * the server stops, then lets the next server of the JVM build a pool of
+     * its own. A daemon pool that is not waited for dropped a write in flight
+     * with the server. Bounded, like the wait for the history writer.
+     */
+    static void drainWorkers() {
+        java.util.concurrent.ExecutorService pool;
+        synchronized (FabricWorld.class) {
+            pool = executor;
+            executor = null;
+        }
+        if (pool == null) {
+            return;
+        }
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                FaweMod.LOGGER.warn("Background writes were still running 30 seconds after the stop; the rest is skipped");
+                pool.shutdownNow();
+            }
+        } catch (InterruptedException interrupted) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
     public FabricWorld(ServerLevel level) {
         this.level = level;
     }

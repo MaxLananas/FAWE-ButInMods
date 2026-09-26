@@ -140,6 +140,32 @@ way:
   consequence of the game being absent. Anything it prints is a real defect; the Gradle build
   compiles the adapter properly and is still the source of truth.
 
+## Threads
+
+Every edit runs on the server thread, from start to finish: a command, a tool click, a brush stroke,
+an undo. Reading the world, writing it through an `EditSession` and flushing the buffered chunks all
+happen there, because the game's chunks, block entities, entities and light engine belong to that
+thread. What leaves it is work that no longer needs the world: bytes to write, a sealed history
+record to serialise. Nothing is made asynchronous that has to be handed back to the world afterwards.
+
+| What | Where | Class |
+| --- | --- | --- |
+| Chunks, sections, heightmaps, light engine, block entities, entities (`LevelChunk`, `ServerLevel`) | `FabricWorld`, `FabricWorldRegen`, `FabricInteractions` | server-thread-only |
+| The temporary level of `//regen` | `FabricWorldRegen` | server-thread-only; the game's workers generate inside it |
+| Players: position, rotation, inventory, permissions, messages (`ServerPlayer`, `CommandSourceStack`) | `FabricActor`, `FabricInteractions`, `FaweMod` | server-thread-only |
+| Packets handled by the mixin | `MixinServerGamePacketListenerImpl` | called on the network thread first; acts only on the server thread's call |
+| Block states by id, their properties, the block and biome registries after start | `FabricBlockStateRegistry`, `FabricRegistries` | immutable once the server runs: thread-safe |
+| The registry's caches | `FabricBlockStateRegistry` | `ConcurrentHashMap`, and the cached maps are unmodifiable: thread-safe |
+| A block entity's or an entity's data | `FabricWorld.getBlockEntity`, `getEntities` | read on the server thread; the compound is a copy: safe after capture |
+| A sealed history record | `Snapshots`, `EditLog` | immutable snapshot, serialised on the writer thread |
+| The bytes of a schematic | `Schematics.saveAsync` | serialised on the server thread (it reads the clipboard), written on a worker |
+| Settings | `Config` | written on the server thread, read anywhere; a value one edit late is acceptable for every setting |
+| `World.sync` | `FabricWorld` | the server's task queue: thread-safe |
+
+Nothing is *unsafe* on purpose: a worker never reads a chunk, and an `EditSession`, its buffers
+(`ChunkSet`) and a clipboard belong to the thread of the edit that owns them. The worker pool and the
+writer are waited for, a bounded time, when the server stops.
+
 ## Verifying a change
 
 A change is ready when all of the following hold:
@@ -178,7 +204,23 @@ in game (rendering, click handling, world access), say so explicitly in the pull
   that does not follow this.
 * Whoever opens an `EditSession` closes it, in a `finally`: closing writes what is buffered and
   publishes the history record. The dispatcher closes the sessions of a command; a tool or a brush
-  closes its own.
+  closes its own. Something a player does outside a command line - a click, a stroke - runs through
+  `CommandRegistry.interact`, which answers its failure in chat and makes `/cancel` reach it.
+* A command validates its arguments before it does any work: `Ctx.intArg(index, fallback, min, max,
+  name)`, `Ctx.sizeArg` and `Ctx.radiusArg` refuse a value out of range with a message naming the
+  limit, instead of the edit discovering it half way.
+* A file named on a command line is resolved with `SafePaths.inside(folder, name, ...)`, never with
+  `Path.of`: the name may go down into sub-folders, never up or out, and symbolic links follow
+  `files.allow-symbolic-links`.
+* Files and NBT from outside are untrusted: `NbtIo` reads with a memory budget and a nesting limit,
+  and a schematic's size is checked against `limits.max-schematic-size` and against the data it
+  really holds before anything is allocated. A format lives in its own class (`SpongeSchematic`,
+  `McEditSchematic`, `StructureSchematic`) and is tested against files laid out the way WorldEdit and
+  the game write them.
+* Whatever places blocks through a `Transform` turns their states with `BlockStateTransform` and the
+  data of entities with `EntityTransforms`; a rotation by a multiple of 90 degrees must stay exact.
+* Block entities and entities are edits like blocks: they go through the `EditSession`
+  (`setBlockEntity`, `addEntity`, `removeEntity`), which records them so an undo brings them back.
 
 ## Submitting
 
