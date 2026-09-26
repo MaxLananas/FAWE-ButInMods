@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-1693%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-1744%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
 [![Commands](https://img.shields.io/badge/commands-300%20registered-58a6ff?style=flat-square)](#status)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](reference/commands-inventory.json)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](scripts/flag_audit.py)
@@ -239,7 +239,10 @@ object for every cell of the clipboard and looked each one up by position afterw
 clipboard and takes the state of each cell as it goes now, which is why it went from a little over
 half the rate of `//set` to the same rate. Copying with biomes read the biome of every block of the
 selection and stored all of them, sixty-four identical entries for one cell of a world that keeps
-its biomes per 4x4x4 cell; it samples the cells now.
+its biomes per 4x4x4 cell; it samples the cells now. Expressions (`//generate`, `//deform`, `=`
+masks) found every function by name and every operator by comparing strings at each block, and
+allocated an array per call; they resolve both when the formula is read and pass arguments on a
+stack, and `sin(x/10) + cos(z/10) > y/20` went from 260 ns to 112 ns per evaluation.
 
 The shapes walked the box around themselves and tested every cell of it: a sphere of radius 40 asked
 about 531k cells to write 268k, and its hollow form asked about all of them to write the 20k of its
@@ -266,7 +269,7 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 
 | | |
 |---|---|
-| Engine tests | **1693 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **1744 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **300** |
 | Implemented | **253** |
 | Aliases of an implemented command | **47** |
