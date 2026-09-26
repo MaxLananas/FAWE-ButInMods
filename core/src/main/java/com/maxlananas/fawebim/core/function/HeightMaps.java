@@ -54,9 +54,10 @@ public final class HeightMaps {
         }
 
         float[] smoothed = toFloats(heights);
+        float[] pass = new float[smoothed.length];
         float[] kernel = gaussianKernel(5, 1.0);
         for (int iteration = 0; iteration < iterations; iteration++) {
-            float[] pass = filter(smoothed, width, length, kernel, 0.5f);
+            filter(smoothed, pass, width, length, kernel, 0.5f);
             if (java.util.Arrays.equals(pass, smoothed)) {
                 // A blur that changed nothing keeps changing nothing, and the
                 // number of passes is an argument a player can ask a billion of:
@@ -64,7 +65,9 @@ public final class HeightMaps {
                 // command was given.
                 break;
             }
+            float[] previous = smoothed;
             smoothed = pass;
+            pass = previous;
         }
         return apply(world, session, region, heights, smoothed);
     }
@@ -116,14 +119,17 @@ public final class HeightMaps {
         }
 
         float[] smoothed = heights.clone();
+        float[] pass = new float[smoothed.length];
         float[] kernel = gaussianKernel(kernelRadius, 1.0);
         for (int iteration = 0; iteration < iterations; iteration++) {
             // The half layer offset keeps the layer count of a flat field stable.
-            float[] pass = filter(smoothed, width, length, kernel, 0.0625f);
+            filter(smoothed, pass, width, length, kernel, 0.0625f);
             if (java.util.Arrays.equals(pass, smoothed)) {
                 break;
             }
+            float[] previous = smoothed;
             smoothed = pass;
+            pass = previous;
         }
         return applySnow(world, session, region, heights, smoothed, layerBlocks);
     }
@@ -175,9 +181,19 @@ public final class HeightMaps {
      * the border row or column, which is how WorldEdit treats the edges.
      */
     public static float[] filter(float[] input, int width, int height, float[] kernel, float offset) {
+        float[] output = new float[input.length];
+        filter(input, output, width, height, kernel, offset);
+        return output;
+    }
+
+    /**
+     * Blurs a height map into another array of its size. The passes of a
+     * smoothing go back and forth between two arrays: a new one per pass was
+     * the size of the whole map again, as many times as the passes asked.
+     */
+    public static void filter(float[] input, float[] output, int width, int height, float[] kernel, float offset) {
         int radius = (int) Math.sqrt(kernel.length) / 2;
         int diameter = radius * 2 + 1;
-        float[] output = new float[input.length];
         int index = 0;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -202,7 +218,6 @@ public final class HeightMaps {
                 output[index++] = total + offset;
             }
         }
-        return output;
     }
 
     /** Stretches or shrinks every column of a region to its new height. */
