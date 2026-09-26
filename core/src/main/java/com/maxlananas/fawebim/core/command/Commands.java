@@ -392,7 +392,7 @@ public final class Commands {
         e14.handler = ctx -> {
                     Region region = ctx.selection();
                     if (ctx.arg(0).equalsIgnoreCase("vert") || ctx.arg(0).equalsIgnoreCase("vertical")) {
-                        region.setY(ctx.world().minY(), ctx.world().maxY());
+                        region.expandToY(ctx.world().minY(), ctx.world().maxY());
                         ctx.actor().message(Msg.result("Region expanded vertically",
                                 Msg.value(region.describe()).raw()));
                         return;
@@ -650,11 +650,17 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     Region region = ctx.selection();
-                    // FAWE overlays the top block of every column: walk down from
-                    // the selection's ceiling and stop at the first block.
+                    // FAWE overlays the top block of every column of the
+                    // selection's footprint: walk down from the ceiling and stop at
+                    // the first block. A column the selection does not hold - the
+                    // corner of the box around a cylinder, say - has nothing to
+                    // overlay, so it is skipped rather than walked.
                     for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
                         for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
                             for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
+                                if (!region.contains(x, y, z)) {
+                                    continue;
+                                }
                                 if (!BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
                                     session.setBlock(x, y, z, pattern.apply(x, y, z));
                                     break;
@@ -678,6 +684,26 @@ public final class Commands {
                     Region region = ctx.selection();
                     BlockVector3 min = region.getMinimumPoint();
                     BlockVector3 max = region.getMaximumPoint();
+                    if (!(region instanceof com.maxlananas.fawebim.core.region.CuboidRegion)) {
+                        // The walls of a shape are the cells of the shape with a
+                        // neighbour outside it - FAWE's WallMakeMask - and not the
+                        // planes of the box around it.
+                        int walls = 0;
+                        for (BlockVector3 cell : region) {
+                            if (region.contains(cell.x() + 1, cell.y(), cell.z())
+                                    && region.contains(cell.x() - 1, cell.y(), cell.z())
+                                    && region.contains(cell.x(), cell.y(), cell.z() + 1)
+                                    && region.contains(cell.x(), cell.y(), cell.z() - 1)) {
+                                continue;
+                            }
+                            if (session.setBlock(cell.x(), cell.y(), cell.z(),
+                                    pattern.apply(cell.x(), cell.y(), cell.z()))) {
+                                walls++;
+                            }
+                        }
+                        flush(ctx, session, "Walls", walls, "block(s)");
+                        return;
+                    }
                     // One plane at a time. The two planes of a direction used to
                     // be written alternately, which left the chunk the previous
                     // write went into on every block; a plane walks sixteen
@@ -799,7 +825,8 @@ public final class Commands {
                         for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
                             int layer = 0;
                             for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (blockRegistry.isAirLike(ctx.world().getBlock(x, y, z))) {
+                                if (!region.contains(x, y, z)
+                                        || blockRegistry.isAirLike(ctx.world().getBlock(x, y, z))) {
                                     continue;
                                 }
                                 session.setBlock(x, y, z, switch (layer) {
@@ -830,14 +857,20 @@ public final class Commands {
                         for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
                             int placed = 0;
                             for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    if (placed < layers) {
-                                        session.setBlock(x, y, z, air());
-                                        placed++;
-                                    } else {
-                                        session.setBlock(x, y + 1, z, pattern.apply(x, y + 1, z));
-                                        break;
-                                    }
+                                if (!region.contains(x, y, z)
+                                        || BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
+                                    continue;
+                                }
+                                if (placed < layers) {
+                                    session.setBlock(x, y, z, air());
+                                    placed++;
+                                } else if (region.contains(x, y + 1, z)) {
+                                    // The layer goes on top of the ground, which
+                                    // has to be inside the selection: a selection
+                                    // filled to its ceiling gets nothing put above
+                                    // it.
+                                    session.setBlock(x, y + 1, z, pattern.apply(x, y + 1, z));
+                                    break;
                                 }
                             }
                         }
@@ -1447,12 +1480,15 @@ public final class Commands {
                     for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
                         for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
                             for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    if (random.nextDouble() < density && session.setBlock(x, y + 1, z, pumpkin)) {
-                                        changed++;
-                                    }
-                                    break;
+                                if (!region.contains(x, y, z)
+                                        || BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
+                                    continue;
                                 }
+                                if (random.nextDouble() < density && region.contains(x, y + 1, z)
+                                        && session.setBlock(x, y + 1, z, pumpkin)) {
+                                    changed++;
+                                }
+                                break;
                             }
                         }
                     }
@@ -2267,11 +2303,16 @@ public final class Commands {
                     // A biome cell covers 4x4x4 blocks, so each column is asked
                     // once per cell instead of once per block.
                     int changed = 0;
-                    for (int x = ctx.selection().getMinimumPoint().x(); x <= ctx.selection().getMaximumPoint().x(); x++) {
-                        for (int z = ctx.selection().getMinimumPoint().z();
-                                z <= ctx.selection().getMaximumPoint().z(); z++) {
-                            for (int y = ctx.world().minY(); y < ctx.world().maxY(); y += 4) {
-                                if (session.setBiome(x, y, z, biomeId)) {
+                    BlockVector3 min = ctx.selection().getMinimumPoint();
+                    BlockVector3 max = ctx.selection().getMaximumPoint();
+                    for (int x = min.x(); x <= max.x(); x++) {
+                        for (int z = min.z(); z <= max.z(); z++) {
+                            for (int y = min.y(); y <= max.y(); y += 4) {
+                                if (!ctx.selection().contains(x, y, z)) {
+                                    continue;
+                                }
+                                if (session.setBiome(x - Math.floorMod(x, 4), y - Math.floorMod(y, 4),
+                                        z - Math.floorMod(z, 4), biomeId)) {
                                     changed++;
                                 }
                             }

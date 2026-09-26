@@ -119,6 +119,7 @@ public final class SelfTestMain {
         testAnvilRegionFiles();
         testHelp();
         testCui();
+        testSelectionBounds();
         testEveryAnswerIsColoured();
         testEveryCommandAnswersInColour();
 
@@ -3003,6 +3004,88 @@ public final class SelfTestMain {
      * command gives when it is turned on, off, and asked for the same state
      * twice.
      */
+    /**
+     * A selection that is not a box is still a boundary: no command may touch a
+     * block the player never selected. Each command below runs on a cylinder
+     * inside a solid slab and the cells of the slab outside the cylinder are
+     * compared with what they held before it ran.
+     */
+    private static void testSelectionBounds() throws Exception {
+        section("selection bounds");
+        TestWorld world = new TestWorld("bounds");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Bounds", world, new BlockVector3(16, 80, 16));
+        actor.session().setMaxBlocksChanged(1_000_000);
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int dirt = BlockState.registry().defaultState("minecraft:dirt");
+        // The slab is solid so a write outside the selection has something to
+        // damage, and it is taller and wider than the cylinder that selects.
+        for (int y = 71; y <= 79; y++) {
+            for (int z = 8; z <= 24; z++) {
+                for (int x = 8; x <= 24; x++) {
+                    world.setBlock(x, y, z, (x + z) % 3 == 0 ? dirt : stone);
+                }
+            }
+        }
+        CommandManager.get().dispatch(actor, "//sel cyl");
+        CommandManager.get().dispatch(actor, "//pos1 16,72,16");
+        CommandManager.get().dispatch(actor, "//pos2 20,78,20");
+        Region cylinder = actor.session().getSelection(world);
+        List<String> commands = List.of("//set stone", "//replace stone dirt", "//air",
+                "//faces stone", "//overlay dirt", "//naturalize", "//smooth", "//walls stone",
+                "//outline stone", "//hollow", "//lay stone", "//pumpkins 100", "//setbiome plains",
+                "//generate 1", "//generatebiome 1", "//center stone");
+        int minX = 8;
+        int minY = 71;
+        int minZ = 8;
+        int maxX = 24;
+        int maxY = 79;
+        int maxZ = 24;
+        int width = maxX - minX + 1;
+        int length = maxZ - minZ + 1;
+        check("a cylinder selection keeps the height of its two points",
+                cylinder.getMinimumPoint().y() == 72 && cylinder.getMaximumPoint().y() == 78);
+        for (String command : commands) {
+            int[] before = snapshotBox(world, minX, minY, minZ, maxX, maxY, maxZ);
+            CommandManager.get().dispatch(actor, command);
+            int outside = 0;
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    for (int x = minX; x <= maxX; x++) {
+                        if (cylinder.contains(x, y, z)) {
+                            continue;
+                        }
+                        if (world.getBlock(x, y, z)
+                                != before[cellIndex(x, minX, y, minY, z, minZ, width, length)]) {
+                            outside++;
+                        }
+                    }
+                }
+            }
+            check(command + " stays inside the selection", outside == 0);
+            CommandManager.get().dispatch(actor, "//undo");
+        }
+    }
+
+    /** The blocks of a box, for a test that has to know what changed in it. */
+    private static int[] snapshotBox(TestWorld world, int minX, int minY, int minZ,
+                                    int maxX, int maxY, int maxZ) {
+        int[] cells = new int[(maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1)];
+        for (int y = minY; y <= maxY; y++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int x = minX; x <= maxX; x++) {
+                    cells[cellIndex(x, minX, y, minY, z, minZ, maxX - minX + 1, maxZ - minZ + 1)]
+                            = world.getBlock(x, y, z);
+                }
+            }
+        }
+        return cells;
+    }
+
+    private static int cellIndex(int x, int minX, int y, int minY, int z, int minZ, int width, int length) {
+        return ((y - minY) * length + (z - minZ)) * width + (x - minX);
+    }
+
     private static void testCui() {
         section("selection preview");
         TestWorld world = new TestWorld("cui");

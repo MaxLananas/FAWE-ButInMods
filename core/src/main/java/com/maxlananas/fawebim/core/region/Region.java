@@ -136,10 +136,13 @@ public interface Region extends Iterable<BlockVector3> {
     }
 
     /**
-     * Expands/contracts the region vertically to the given bounds, used by
-     * {@code //expand vert} and {@code /brush} style helpers.
+     * Grows the region towards the given vertical bounds, used by
+     * {@code //expand vert}: the amounts hand {@link #expand(BlockVector3)} the
+     * side of the region to move, so it reaches bounds that lie outside the
+     * region and can only move a bound that is already past them further. A
+     * region whose height is a value of its own sets that value instead.
      */
-    default boolean setY(int minY, int maxY) {
+    default boolean expandToY(int minY, int maxY) {
         BlockVector3 min = getMinimumPoint();
         BlockVector3 max = getMaximumPoint();
         return expand(new BlockVector3(0, minY - min.y(), 0))

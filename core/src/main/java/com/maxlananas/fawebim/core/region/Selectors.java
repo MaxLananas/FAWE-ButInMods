@@ -479,7 +479,10 @@ public final class Selectors {
             if (center != null && radii != null) {
                 region.setCenter(new Vector2(center.x() + 0.5, center.z() + 0.5));
                 region.setRadius(radii.x(), radii.z());
-                region.setY(minY, maxY);
+                // The region starts at the world's full height, so the y range has
+                // to be set rather than grown: Region.setY() expands towards the
+                // bounds, which can never take the world height back off.
+                region.setYRange(minY, maxY);
             }
         }
 

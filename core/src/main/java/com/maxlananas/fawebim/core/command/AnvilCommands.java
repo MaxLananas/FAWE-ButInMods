@@ -352,6 +352,9 @@ final class AnvilCommands {
             for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
                 for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
                     for (int y = region.getMinimumPoint().y(); y <= region.getMaximumPoint().y(); y++) {
+                        if (!region.contains(x, y, z)) {
+                            continue;
+                        }
                         if (registry.name(session.getBlock(x, y, z)).equals(registry.name(target))
                                 && session.setBlock(x, y, z, registry.air())) {
                             changed++;

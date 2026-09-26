@@ -171,6 +171,9 @@ final class GenerationCommands {
                 for (int z = min.z(); z <= max.z(); z++) {
                     session.checkTimeout();
                     for (int y = world.minY(); y < world.maxY(); y += 4) {
+                        if (!region.contains(x, y, z)) {
+                            continue;
+                        }
                         variables.set("x", (x - origin[0]) / scale[0]);
                         variables.set("y", (y - origin[1]) / scale[1]);
                         variables.set("z", (z - origin[2]) / scale[2]);
