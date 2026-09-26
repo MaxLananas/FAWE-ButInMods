@@ -423,6 +423,33 @@ final class SchematicFormatTests {
             }
         }
         checkEquals("a paste off the grid gives a biome to every cell it covers, the far ones too", 0, untouched);
+
+        // Turned a quarter, the cells go where their blocks go.
+        TestActor turner = new TestActor("BiomesTurned", world, new BlockVector3(0, 71, 0));
+        com.maxlananas.fawebim.core.extent.EditSession turned =
+                new com.maxlananas.fawebim.core.extent.EditSession(world, turner.session(), "paste biomes");
+        com.maxlananas.fawebim.core.transform.Transform quarter =
+                com.maxlananas.fawebim.core.transform.Transforms.rotate(clipboard.getOrigin(), 90);
+        BlockVector3 destination = new BlockVector3(141, 64, 181);
+        com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, destination, turned, quarter, true, null,
+                false, true, false, false);
+        turned.flushQueue();
+        int missed = 0;
+        for (int x = 2; x <= 13; x++) {
+            for (int z = 2; z <= 9; z++) {
+                Vector3 target = quarter.apply(new Vector3(x, 64, z));
+                int worldX = (int) Math.floor(target.x() - 2 + destination.x());
+                int worldZ = (int) Math.floor(target.z() - 2 + destination.z());
+                for (int cellX = worldX & ~3; cellX <= (worldX | 3); cellX++) {
+                    for (int cellZ = worldZ & ~3; cellZ <= (worldZ | 3); cellZ++) {
+                        if (world.getBiome(cellX, 64, cellZ) == 1) {
+                            missed++;
+                        }
+                    }
+                }
+            }
+        }
+        checkEquals("a turned paste gives a biome to every cell its blocks land in", 0, missed);
     }
 
     /** How many columns of a 12x8 area from (x0, z0) disagree with the world's biome there. */

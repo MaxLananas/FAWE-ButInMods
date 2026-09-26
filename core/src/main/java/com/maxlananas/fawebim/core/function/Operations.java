@@ -1175,6 +1175,11 @@ public final class Operations {
         Expression.Variables variables = new Expression.Variables();
         int[] cursor = {0};
         region.forEachPosition((x, y, z) -> {
+            // The expression picks where each block is read from, as far away
+            // as it likes, and a chunk that is not loaded is loaded, or
+            // generated, to answer: /cancel and the watchdog have to be able
+            // to stop a formula that sends every block somewhere new.
+            session.checkTimeout();
             variables.set("x", (x - zero.x()) / unit.x());
             variables.set("y", (y - zero.y()) / unit.y());
             variables.set("z", (z - zero.z()) / unit.z());
