@@ -82,6 +82,7 @@ public final class FaweMod implements ModInitializer {
         registry = new FabricBlockStateRegistry();
         BlockState.setRegistry(registry);
         EditSession.BlockStateRegistryHolder.set(registry);
+        com.maxlananas.fawebim.core.pattern.MapColors.setProvider(registry::mapColor);
         CommandManager.get().initialise();
     }
 

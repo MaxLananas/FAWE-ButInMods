@@ -2,6 +2,7 @@ package com.maxlananas.fawebim.core.function;
 
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.pattern.MapColors;
 import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
@@ -26,8 +27,8 @@ import java.util.Random;
  * pixel against the block palette.
  *
  * <p>FAWE samples the real block textures of the running game, which a head-less
- * core cannot do, so the palette below is the map colour of every block an image
- * is usually built from. The search is the same: the nearest colour in RGB
+ * core cannot do; the blocks and colours are {@link MapColors}'s, the ones the
+ * colour patterns use too. The search is the same: the nearest colour in RGB
  * space, with {@code threshold} as the distance beyond which a pixel is left
  * alone and {@code randomize} spreading the choice over the blocks that are
  * close enough.</p>
@@ -44,71 +45,7 @@ public final class ImageGen {
     private static final long DOWNLOAD_BUDGET_MS = 5_000;
     private static final int MAX_DOWNLOAD_BYTES = 16 * 1024 * 1024;
 
-    private static final String[] BLOCKS = {
-        "minecraft:white_wool", "minecraft:orange_wool", "minecraft:magenta_wool",
-        "minecraft:light_blue_wool", "minecraft:yellow_wool", "minecraft:lime_wool",
-        "minecraft:pink_wool", "minecraft:gray_wool", "minecraft:light_gray_wool",
-        "minecraft:cyan_wool", "minecraft:purple_wool", "minecraft:blue_wool",
-        "minecraft:brown_wool", "minecraft:green_wool", "minecraft:red_wool",
-        "minecraft:black_wool",
-        "minecraft:white_concrete", "minecraft:orange_concrete", "minecraft:magenta_concrete",
-        "minecraft:light_blue_concrete", "minecraft:yellow_concrete", "minecraft:lime_concrete",
-        "minecraft:pink_concrete", "minecraft:gray_concrete", "minecraft:light_gray_concrete",
-        "minecraft:cyan_concrete", "minecraft:purple_concrete", "minecraft:blue_concrete",
-        "minecraft:brown_concrete", "minecraft:green_concrete", "minecraft:red_concrete",
-        "minecraft:black_concrete",
-        "minecraft:terracotta", "minecraft:white_terracotta", "minecraft:orange_terracotta",
-        "minecraft:yellow_terracotta", "minecraft:brown_terracotta", "minecraft:red_terracotta",
-        "minecraft:stone", "minecraft:cobblestone", "minecraft:andesite", "minecraft:diorite",
-        "minecraft:granite", "minecraft:deepslate", "minecraft:blackstone", "minecraft:obsidian",
-        "minecraft:dirt", "minecraft:coarse_dirt", "minecraft:grass_block", "minecraft:podzol",
-        "minecraft:sand", "minecraft:red_sand", "minecraft:sandstone", "minecraft:gravel",
-        "minecraft:oak_planks", "minecraft:spruce_planks", "minecraft:birch_planks",
-        "minecraft:dark_oak_planks", "minecraft:oak_log", "minecraft:spruce_log",
-        "minecraft:oak_leaves", "minecraft:spruce_leaves", "minecraft:birch_leaves",
-        "minecraft:water", "minecraft:lava", "minecraft:ice", "minecraft:snow_block",
-        "minecraft:packed_ice", "minecraft:blue_ice", "minecraft:moss_block", "minecraft:clay",
-        "minecraft:bricks", "minecraft:netherrack", "minecraft:nether_bricks", "minecraft:soul_sand",
-        "minecraft:end_stone", "minecraft:purpur_block", "minecraft:quartz_block",
-        "minecraft:iron_block", "minecraft:gold_block", "minecraft:diamond_block",
-        "minecraft:emerald_block", "minecraft:redstone_block", "minecraft:lapis_block",
-        "minecraft:coal_block", "minecraft:copper_block", "minecraft:amethyst_block",
-        "minecraft:glass", "minecraft:bookshelf", "minecraft:hay_block", "minecraft:melon",
-        "minecraft:pumpkin", "minecraft:bone_block", "minecraft:sea_lantern", "minecraft:glowstone",
-    };
-
-    private static final int[] COLORS = {
-        0xE9ECEC, 0xF07613, 0xBD44B3, 0x3AAFD9, 0xF8C627, 0x70B919, 0xED8DAC, 0x3E4447,
-        0x8E8E86, 0x158991, 0x792AAC, 0x35399D, 0x724728, 0x546D1B, 0xA12722, 0x141519,
-        0xCFD5D6, 0xE06101, 0xA9309F, 0x248FC1, 0xF0AF15, 0x5EA818, 0xD5658E, 0x54585A,
-        0x7D7D73, 0x157788, 0x64209C, 0x2D2F8F, 0x603C20, 0x495B24, 0x8E2121, 0x080A0F,
-        0x985E43, 0xD2B1A1, 0xA15325, 0xBA8523, 0x4D3223, 0x8E3C2E,
-        0x7D7D7D, 0x7A7A7A, 0x8A8A8D, 0xBCBCBC, 0x9A6A4F, 0x646464, 0x2B2926, 0x101019,
-        0x976D4D, 0x7F6144, 0x6A7039, 0x5B4C31, 0xDBD3A0, 0xB86A28, 0xD5C98D, 0x847E7C,
-        0xB8945F, 0x73553B, 0xC7B584, 0x4A3219, 0x6A5025, 0x4A3A22, 0x4C7B32, 0x3B5B2C,
-        0x5E7A45, 0x3F76E4, 0xD45A12, 0x7DADEB, 0xF0FCFC, 0x8EB4E8, 0x74A8F0, 0x59A74A,
-        0x9FA3A6, 0x985B45, 0x6B2A2A, 0x2D1717, 0x54402F, 0xDBDEA0, 0xA97BA8, 0xE5E0D8,
-        0xD8D8D8, 0xF9EF4E, 0x4AEDD9, 0x2CCB5A, 0xAA0F0F, 0x1C48A0, 0x101010, 0xC0724A,
-        0x8A6EC7, 0xFFFFFF, 0x6B4F31, 0xB0A03C, 0x7A9B2E, 0xD18E21, 0xD9D3A1, 0x9BE7E7,
-        0xB9A24C,
-    };
-
-    private static final List<int[]> PALETTE = new ArrayList<>();
-
     private ImageGen() {
-    }
-
-    private static synchronized List<int[]> palette() {
-        if (PALETTE.isEmpty()) {
-            BlockStateRegistry registry = BlockState.registry();
-            for (int i = 0; i < BLOCKS.length; i++) {
-                int state = registry.defaultState(BLOCKS[i]);
-                if (state >= 0) {
-                    PALETTE.add(new int[]{COLORS[i], state});
-                }
-            }
-        }
-        return PALETTE;
     }
 
     /**
@@ -259,18 +196,20 @@ public final class ImageGen {
 
     private static int nearest(BlockStateRegistry registry, int rgb, int threshold,
                                boolean randomize, Random random) {
-        List<int[]> palette = palette();
+        MapColors.Palette palette = MapColors.palette(registry);
+        int[] states = palette.states();
+        int[] colors = palette.colors();
         int bestDistance = Integer.MAX_VALUE;
         int bestState = -1;
         List<Integer> close = randomize ? new ArrayList<>() : null;
-        for (int[] entry : palette) {
-            int distance = distance(entry[0], rgb);
+        for (int i = 0; i < states.length; i++) {
+            int distance = MapColors.distance(colors[i], rgb);
             if (distance < bestDistance) {
                 bestDistance = distance;
-                bestState = entry[1];
+                bestState = states[i];
             }
             if (close != null && distance <= threshold * threshold) {
-                close.add(entry[1]);
+                close.add(states[i]);
             }
         }
         if (threshold > 0 && bestDistance > threshold * threshold) {
@@ -283,10 +222,4 @@ public final class ImageGen {
     }
 
     /** Squared RGB distance, which is enough to pick the nearest block. */
-    private static int distance(int first, int second) {
-        int red = ((first >> 16) & 0xFF) - ((second >> 16) & 0xFF);
-        int green = ((first >> 8) & 0xFF) - ((second >> 8) & 0xFF);
-        int blue = (first & 0xFF) - (second & 0xFF);
-        return red * red + green * green + blue * blue;
-    }
 }

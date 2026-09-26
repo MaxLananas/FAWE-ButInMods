@@ -4,7 +4,6 @@ import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
-import com.maxlananas.fawebim.core.pattern.MapColors;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.util.RandomCollection;
@@ -416,7 +415,7 @@ public final class Parsers {
                             | (Integer.parseInt(parts.get(1).trim()) << 8)
                             | Integer.parseInt(parts.get(2).trim());
                 }
-                return new Patterns.Color(rgb, MapColors.palette(BlockState.registry()));
+                return new Patterns.Color(rgb);
             }
             case "lighten", "darken", "saturate", "desaturate" -> {
                 double amount = args.isEmpty() ? 0.1 : Double.parseDouble(args);

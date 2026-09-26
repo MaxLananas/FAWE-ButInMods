@@ -740,6 +740,7 @@ public final class SelfTestMain {
         check("expression pattern", new Patterns.ExpressionPattern("y + 1").apply(new BlockVector3(0, 5, 0)) == 6);
         check("random state pattern", new Patterns.RandomState(new int[]{stone, dirt}) != null);
         check("type apply pattern", new Patterns.TypeOrStateApplying(new Patterns.Single(stone)) != null);
+        colourPatterns();
 
         // A dye colour on its own is the wool of that colour: the shorthand FAWE
         // accepts, read through the block registry like every other name.
@@ -780,6 +781,38 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(painter, "//set redstone");
         check("a word that is not a colour is refused", painter.messages().stream()
                 .anyMatch(message -> message.contains("Unknown block")));
+    }
+
+    /**
+     * Colours come from the table of texture colours rather than from a hash
+     * of the block's name, which the platform never replaced, and the answer
+     * of a colour pattern is worked out once per colour or state rather than
+     * at every block against every full block of the game.
+     */
+    private static void colourPatterns() {
+        BlockStateRegistry registry = BlockState.registry();
+        int redWool = registry.defaultState("minecraft:red_wool");
+        int whiteWool = registry.defaultState("minecraft:white_wool");
+        checkEquals("a block of the table has its colour", 0xA12722,
+                com.maxlananas.fawebim.core.pattern.MapColors.colorOf(registry, redWool));
+        Patterns.Color red = new Patterns.Color(0xA12722);
+        check("#color gives the block of that colour, the same everywhere",
+                red.apply(new BlockVector3(0, 0, 0)) == redWool && red.apply(new BlockVector3(900, 5, -40)) == redWool);
+
+        TestWorld world = new TestWorld("colour-patterns");
+        world.setBlock(0, 64, 0, whiteWool);
+        world.setBlock(9, 64, 9, whiteWool);
+        Patterns.ColorAdjust darken = new Patterns.ColorAdjust(world,
+                Patterns.ColorAdjust.Mode.DARKEN, 0.4);
+        int darker = darken.apply(new BlockVector3(0, 64, 0));
+        java.util.function.IntToDoubleFunction brightness = state -> {
+            int color = com.maxlananas.fawebim.core.pattern.MapColors.colorOf(registry, state);
+            return java.awt.Color.RGBtoHSB((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, null)[2];
+        };
+        check("#darken turns white wool into a darker block",
+                darker != whiteWool && brightness.applyAsDouble(darker) < brightness.applyAsDouble(whiteWool));
+        checkEquals("and gives every block of a state the same answer", darker,
+                darken.apply(new BlockVector3(9, 64, 9)));
     }
 
     private static void testExpressions() {

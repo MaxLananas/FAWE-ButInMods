@@ -448,6 +448,17 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         return state != null && !state.getFluidState().isEmpty();
     }
 
+    /**
+     * The map colour of a state, as {@code 0xRRGGBB}: the colour the colour
+     * patterns give a block their table of texture colours does not have.
+     * Read from the state alone, which is immutable: any thread.
+     */
+    public int mapColor(int stateId) {
+        BlockState state = stateOf(stateId);
+        return state == null ? 0 : state.getMapColor(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,
+                net.minecraft.core.BlockPos.ZERO).col;
+    }
+
     @Override
     public boolean isFullCube(int stateId) {
         BlockState state = stateOf(stateId);

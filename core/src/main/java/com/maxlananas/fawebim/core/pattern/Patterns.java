@@ -593,41 +593,28 @@ public final class Patterns {
         }
     }
 
-    /** {@code #color} style patterns: pick the closest block to a map colour. */
+    /**
+     * {@code #color}: the block nearest a colour. The answer is the same for
+     * every block, and it was searched for again at every one, through every
+     * full block of the game and a boxed map lookup for each.
+     */
     public static final class Color implements Pattern {
 
-        private final int argb;
-        private final List<Integer> palette = new ArrayList<>();
+        private final int block;
 
-        public Color(int argb, List<Integer> palette) {
-            this.argb = argb;
-            this.palette.addAll(palette);
+        public Color(int rgb) {
+            BlockStateRegistry registry = BlockState.registry();
+            int closest = MapColors.palette(registry).closest(rgb & 0xFFFFFF);
+            this.block = closest < 0 ? registry.air() : closest;
         }
 
         @Override
         public int apply(int x, int y, int z) {
-            return closest();
+            return block;
         }
 
         public int closest() {
-            BlockStateRegistry registry = BlockState.registry();
-            int best = 0;
-            double bestDistance = Double.MAX_VALUE;
-            for (int state : palette) {
-                double distance = colorDistance(MapColors.colorOf(registry, state), argb);
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    best = state;
-                }
-            }
-            return best;
-        }
-
-        private static double colorDistance(int a, int b) {
-            double dr = ((a >> 16) & 0xFF) - ((b >> 16) & 0xFF);
-            double dg = ((a >> 8) & 0xFF) - ((b >> 8) & 0xFF);
-            double db = (a & 0xFF) - (b & 0xFF);
-            return dr * dr + dg * dg + db * db;
+            return block;
         }
     }
 
@@ -639,6 +626,12 @@ public final class Patterns {
         private final Extent extent;
         private final Mode mode;
         private final double amount;
+        /**
+         * The answer for every state met so far, plus one so that 0 means not
+         * yet: it depends on the state only, and working it out went through
+         * the whole palette, which was copied for every block.
+         */
+        private int[] answers = new int[0];
 
         public ColorAdjust(Extent extent, Mode mode, double amount) {
             this.extent = extent;
@@ -653,11 +646,24 @@ public final class Patterns {
                 return 0;
             }
             int current = ext.getBlock(x, y, z);
+            if (current < 0) {
+                return adjust(current);
+            }
+            int[] known = answers;
+            if (current >= known.length) {
+                known = java.util.Arrays.copyOf(known, Math.max(current + 1, BlockState.registry().stateCount()));
+                answers = known;
+            }
+            if (known[current] == 0) {
+                known[current] = adjust(current) + 1;
+            }
+            return known[current] - 1;
+        }
+
+        private int adjust(int state) {
             BlockStateRegistry registry = BlockState.registry();
-            float[] hsb = java.awt.Color.RGBtoHSB(
-                    (MapColors.colorOf(registry, current) >> 16) & 0xFF,
-                    (MapColors.colorOf(registry, current) >> 8) & 0xFF,
-                    MapColors.colorOf(registry, current) & 0xFF, null);
+            int color = MapColors.colorOf(registry, state);
+            float[] hsb = java.awt.Color.RGBtoHSB((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, null);
             switch (mode) {
                 case LIGHTEN -> hsb[2] = (float) Math.min(1, hsb[2] + amount);
                 case DARKEN -> hsb[2] = (float) Math.max(0, hsb[2] - amount);
@@ -667,7 +673,8 @@ public final class Patterns {
                 }
             }
             int rgb = java.awt.Color.HSBtoRGB(hsb[0], hsb[1], hsb[2]) & 0xFFFFFF;
-            return new Color(rgb, MapColors.palette(registry)).closest();
+            int closest = MapColors.palette(registry).closest(rgb);
+            return closest < 0 ? state : closest;
         }
     }
 
