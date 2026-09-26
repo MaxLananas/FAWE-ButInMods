@@ -258,7 +258,11 @@ public final class History {
     public record BlockEntityChange(int x, int y, int z, NbtCompound before, NbtCompound after) {
     }
 
-    /** A removed (undo) or added (redo) entity. */
+    /**
+     * An entity an edit removed or added: its data, where it was, and its
+     * identity, which an undo gives back to a removed entity and uses to find
+     * an added one.
+     */
     public static final class EntityChange {
 
         public final String type;
@@ -267,14 +271,21 @@ public final class History {
         public final double y;
         public final double z;
         public final boolean removed;
+        public final String uuid;
 
         public EntityChange(String type, NbtCompound nbt, double x, double y, double z, boolean removed) {
+            this(type, nbt, x, y, z, removed, null);
+        }
+
+        public EntityChange(String type, NbtCompound nbt, double x, double y, double z, boolean removed,
+                            String uuid) {
             this.type = type;
             this.nbt = nbt;
             this.x = x;
             this.y = y;
             this.z = z;
             this.removed = removed;
+            this.uuid = uuid;
         }
     }
 

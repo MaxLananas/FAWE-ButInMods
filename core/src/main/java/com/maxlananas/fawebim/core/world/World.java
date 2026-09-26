@@ -235,6 +235,24 @@ public interface World extends Extent {
         return null;
     }
 
+    /**
+     * Creates the entity the data describes, at its position, and returns it
+     * as a live entity (with its handle and identity), or {@code null} when the
+     * game refuses: an unknown type, or the identity already in use.
+     *
+     * @param uuid the identity to give it - an undo puts back the entity it
+     *             took away under the identity it had - or {@code null} for a
+     *             new one, as a paste needs
+     */
+    default EntityData spawnEntity(EntityData data, String uuid) {
+        return null;
+    }
+
+    /** Removes the live entity of an identity; false when there is none. Never a player. */
+    default boolean removeEntityById(String uuid) {
+        return false;
+    }
+
     /** Receives the position of a block entity. */
     @FunctionalInterface
     interface BlockEntityVisitor {

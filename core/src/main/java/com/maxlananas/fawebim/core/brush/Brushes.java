@@ -1422,7 +1422,8 @@ public final class Brushes {
             int removed = 0;
             for (EntityData entity : entities) {
                 if (entity.isSpawnable() && Creatures.matches(entity, categories)) {
-                    session.getWorld().removeEntity(entity);
+                    // Through the edit session, so //undo brings the entity back.
+                    session.removeEntity(entity);
                     removed++;
                 }
             }

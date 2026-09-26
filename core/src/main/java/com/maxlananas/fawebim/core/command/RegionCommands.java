@@ -409,6 +409,7 @@ final class RegionCommands {
                 throw CommandRegistry.error("Use -1 to remove all entities in loaded chunks");
             }
             World world = ctx.world();
+            EditSession session = ctx.editSession();
             List<EntityData> candidates;
             double centerX = 0;
             double centerZ = 0;
@@ -438,7 +439,8 @@ final class RegionCommands {
                         continue;
                     }
                 }
-                world.removeEntity(entity);
+                // Through the edit session, so //undo brings the entity back.
+                session.removeEntity(entity);
                 removed++;
             }
             ctx.actor().message(Msg.result("Butcher", Msg.count(removed)
@@ -483,11 +485,13 @@ final class RegionCommands {
                     : Creatures.of(ctx.hasFlag("p"), ctx.hasFlag("n"), ctx.hasFlag("g"), ctx.hasFlag("a"),
                     ctx.hasFlag("b"), ctx.hasFlag("t"), ctx.hasFlag("r"), ctx.hasFlag("w"));
             int killed = 0;
+            EditSession session = ctx.editSession();
             for (EntityData entity : world.getEntities(box)) {
                 if (!entity.isSpawnable() || !Creatures.matches(entity, categories)) {
                     continue;
                 }
-                world.removeEntity(entity);
+                // Through the edit session, so //undo brings the entity back.
+                session.removeEntity(entity);
                 killed++;
             }
             ctx.actor().message(Msg.result("Butcher", Msg.count(killed) + " entit(y/ies) removed"

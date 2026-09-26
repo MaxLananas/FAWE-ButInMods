@@ -268,21 +268,27 @@ public final class Snapshots {
      */
     public static int restoreEntities(EditSession session, NbtCompound snapshot) {
         int restored = 0;
-        for (NbtCompound entity : snapshot.getCompoundList("entities")) {
+        List<NbtCompound> entities = snapshot.getCompoundList("entities");
+        // Last change first, as for the blocks: the region ends as it was before the edit.
+        for (int i = entities.size() - 1; i >= 0; i--) {
+            NbtCompound entity = entities.get(i);
+            String uuid = entity.getString("uuid", null);
+            if (!entity.getBoolean("removed", false)) {
+                // An entity the edit added is taken away again.
+                if (uuid != null) {
+                    session.getWorld().removeEntityById(uuid);
+                }
+                continue;
+            }
+            NbtCompound nbt = entity.getCompoundOrNull("nbt");
+            if (nbt == null) {
+                continue;
+            }
             com.maxlananas.fawebim.core.math.Vector3 position = new com.maxlananas.fawebim.core.math.Vector3(
                     entity.getDouble("x", 0), entity.getDouble("y", 0), entity.getDouble("z", 0));
-            com.maxlananas.fawebim.core.world.EntityData data = new com.maxlananas.fawebim.core.world.EntityData(
-                    entity.getString("type", "minecraft:pig"), entity.getCompound("nbt"), position);
-            // A change recorded as "removed" was undone by putting the entity
-            // back; one recorded as added is taken away again.
-            session.getWorld().getEntities(com.maxlananas.fawebim.core.world.Extent.Region3i.of(
-                            position.toBlockPoint(), position.toBlockPoint().add(1, 1, 1)))
-                    .stream()
-                    .filter(existing -> existing.type().equals(data.type()))
-                    .findFirst()
-                    .ifPresent(existing -> session.getWorld().removeEntity(existing));
-            if (entity.getBoolean("removed", false)) {
-                session.addEntity(data);
+            // Under the identity it had, which the game refuses while that entity is back already.
+            if (session.getWorld().spawnEntity(new com.maxlananas.fawebim.core.world.EntityData(
+                    entity.getString("type", "minecraft:pig"), nbt.clone(), position), uuid) != null) {
                 restored++;
             }
         }
@@ -339,6 +345,11 @@ public final class Snapshots {
         for (NbtCompound change : snapshot.getCompoundList("blockEntities")) {
             record.addBlockEntity(change.getInt("x", 0), change.getInt("y", 0), change.getInt("z", 0),
                     change.getCompoundOrNull("b"), change.getCompoundOrNull("a"));
+        }
+        for (NbtCompound entity : snapshot.getCompoundList("entities")) {
+            record.addEntity(new History.EntityChange(entity.getString("type", "minecraft:pig"),
+                    entity.getCompoundOrNull("nbt"), entity.getDouble("x", 0), entity.getDouble("y", 0),
+                    entity.getDouble("z", 0), entity.getBoolean("removed", false), entity.getString("uuid", null)));
         }
         return record;
     }
@@ -432,6 +443,9 @@ public final class Snapshots {
             entity.putDouble("y", change.y);
             entity.putDouble("z", change.z);
             entity.putBoolean("removed", change.removed);
+            if (change.uuid != null) {
+                entity.putString("uuid", change.uuid);
+            }
             if (change.nbt != null) {
                 entity.putCompound("nbt", change.nbt);
             }

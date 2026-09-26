@@ -7,6 +7,7 @@ import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
+import com.maxlananas.fawebim.core.transform.EntityTransforms;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
@@ -58,11 +59,7 @@ public final class Clipboards {
                 copyBiomes(world, region, clipboard);
             }
             if (withEntities) {
-                List<EntityData> entities = world.getEntities(
-                        com.maxlananas.fawebim.core.world.Extent.Region3i.of(min, max.add(1, 1, 1)));
-                for (EntityData entity : entities) {
-                    clipboard.addEntity(entity.clone());
-                }
+                copyEntities(world, region, clipboard);
             }
             if (centre) {
                 clipboard.setOrigin(new BlockVector3((min.x() + max.x()) / 2, (min.y() + max.y()) / 2,
@@ -87,11 +84,7 @@ public final class Clipboards {
             copyBiomes(world, region, clipboard);
         }
         if (withEntities) {
-            List<EntityData> entities = world.getEntities(
-                    com.maxlananas.fawebim.core.world.Extent.Region3i.of(min, max.add(1, 1, 1)));
-            for (EntityData entity : entities) {
-                clipboard.addEntity(entity.clone());
-            }
+            copyEntities(world, region, clipboard);
         }
         if (centre) {
             BlockVector3 middle = new BlockVector3((min.x() + max.x()) / 2, (min.y() + max.y()) / 2,
@@ -131,6 +124,7 @@ public final class Clipboards {
                 ? single.stateId() : -1;
         // Read while the world still holds them: the cut is about to clear them.
         copyBlockEntities(world, region, mask, clipboard);
+        List<EntityData> entities = withEntities ? copyEntities(world, region, clipboard) : List.of();
         // A cuboid selection - what //cut is used on - is walked a section at a
         // time, so a section the world reports as all air costs one check
         // instead of 4096 reads and 4096 no-op writes. That only holds when the
@@ -138,8 +132,24 @@ public final class Clipboards {
         // something to write even where the region is empty.
         if (session != null && region instanceof com.maxlananas.fawebim.core.region.CuboidRegion
                 && constant == BlockStateHolder.air()) {
-            return cutBox(world, region, min, max, clipboard, session, mask, withBiomes);
+            cutBox(world, region, min, max, clipboard, session, mask, withBiomes);
+        } else {
+            cutShape(world, region, clipboard, session, mask, leave, constant, withBiomes);
         }
+        // What is cut with -e leaves the world, as WorldEdit's //cut -e does,
+        // through the session so an undo brings it back.
+        if (session != null) {
+            for (EntityData entity : entities) {
+                session.removeEntity(entity);
+            }
+        }
+        clipboard.setName("clipboard");
+        return clipboard;
+    }
+
+    /** The cut of a selection that is not a box, or that leaves blocks behind. */
+    private static void cutShape(World world, Region region, BlockArrayClipboard clipboard, EditSession session,
+                                 Mask mask, Pattern leave, int constant, boolean withBiomes) {
         // Every other shape walks itself: the traversal of a polyhedron is not
         // a box, and the selections it is used on are not the million-block ones.
         region.forEachPosition((x, y, z) -> {
@@ -164,15 +174,6 @@ public final class Clipboards {
         if (withBiomes) {
             copyBiomes(world, region, clipboard);
         }
-        if (withEntities) {
-            List<EntityData> entities = world.getEntities(
-                    com.maxlananas.fawebim.core.world.Extent.Region3i.of(min, max.add(1, 1, 1)));
-            for (EntityData entity : entities) {
-                clipboard.addEntity(entity.clone());
-            }
-        }
-        clipboard.setName("clipboard");
-        return clipboard;
     }
 
     /**
@@ -185,9 +186,9 @@ public final class Clipboards {
      * that one read, and a section the selection covers completely goes into the
      * clipboard as it is, in one array instead of 4096 writes.</p>
      */
-    private static BlockArrayClipboard cutBox(World world, Region region, BlockVector3 min,
-                                              BlockVector3 max, BlockArrayClipboard clipboard,
-                                              EditSession session, Mask mask, boolean withBiomes) {
+    private static void cutBox(World world, Region region, BlockVector3 min,
+                               BlockVector3 max, BlockArrayClipboard clipboard,
+                               EditSession session, Mask mask, boolean withBiomes) {
         int air = BlockStateHolder.air();
         int[] sectionBlocks = new int[4096];
         for (int chunkX = min.x() >> 4; chunkX <= max.x() >> 4; chunkX++) {
@@ -246,7 +247,6 @@ public final class Clipboards {
         if (withBiomes) {
             copyBiomes(world, region, clipboard);
         }
-        return clipboard;
     }
 
     /**
@@ -359,6 +359,26 @@ public final class Clipboards {
         if (state != air) {
             clipboard.setBlock(x, y, z, state);
         }
+    }
+
+    /**
+     * Copies the entities standing in a region, with their data. A passenger
+     * travels in its vehicle's data instead of being copied twice, as in
+     * WorldEdit.
+     */
+    private static List<EntityData> copyEntities(World world, Region region, BlockArrayClipboard clipboard) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        List<EntityData> copied = new java.util.ArrayList<>();
+        for (EntityData entity : world.getEntities(
+                com.maxlananas.fawebim.core.world.Extent.Region3i.of(min, max.add(1, 1, 1)))) {
+            BlockVector3 at = entity.position().toBlockPoint();
+            if (region.contains(at.x(), at.y(), at.z()) && !entity.isPassenger() && entity.nbt() != null) {
+                clipboard.addEntity(entity.clone());
+                copied.add(entity);
+            }
+        }
+        return copied;
     }
 
     /**
@@ -551,26 +571,30 @@ public final class Clipboards {
             }
         }
         if (removeEntities) {
-            int width = clipboard.getWidth();
-            int height = clipboard.getHeight();
-            int length = clipboard.getLength();
-            session.getWorld().getEntities(com.maxlananas.fawebim.core.world.Extent.Region3i.of(
-                            destination, destination.add(width, height, length)))
-                    .forEach(session.getWorld()::removeEntity);
-        }
-        // Entities are re-created (never duplicated).
-        if (pasteEntities) {
-            for (EntityData entity : clipboard.getEntitiesCopy()) {
-                var target = transform.apply(entity.position());
-                entity.setPosition(new com.maxlananas.fawebim.core.math.Vector3(
-                        target.x() - clipboard.getOrigin().x() + destination.x(),
-                        target.y() - clipboard.getOrigin().y() + destination.y(),
-                        target.z() - clipboard.getOrigin().z() + destination.z()));
-                entity.setSpawnable(true);
-                session.addEntity(entity);
+            // The entities of the box the paste covers, through the session so
+            // an undo brings them back.
+            BlockVector3[] bounds = pastedBounds(clipboard, destination, transform);
+            for (EntityData entity : session.getWorld().getEntities(
+                    com.maxlananas.fawebim.core.world.Extent.Region3i.of(bounds[0], bounds[1].add(1, 1, 1)))) {
+                session.removeEntity(entity);
             }
         }
         session.flushQueue();
+        // Entities come after the blocks are in the world, so a painting or an
+        // item frame finds its wall, and each is a new entity with an identity
+        // of its own: the ones copied are still where they were.
+        if (pasteEntities) {
+            for (EntityData entity : clipboard.getEntitiesCopy()) {
+                var target = transform.apply(entity.position());
+                EntityData placed = new EntityData(entity.type(),
+                        identity ? entity.nbt() : EntityTransforms.turn(entity.nbt(), transform),
+                        new com.maxlananas.fawebim.core.math.Vector3(
+                                target.x() - clipboard.getOrigin().x() + destination.x(),
+                                target.y() - clipboard.getOrigin().y() + destination.y(),
+                                target.z() - clipboard.getOrigin().z() + destination.z()));
+                session.addEntity(placed);
+            }
+        }
         return changed;
     }
 

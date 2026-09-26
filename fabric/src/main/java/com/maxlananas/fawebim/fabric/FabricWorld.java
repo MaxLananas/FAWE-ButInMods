@@ -708,34 +708,131 @@ public final class FabricWorld implements World {
                 new BlockPos(pos.x(), pos.y(), pos.z()));
     }
 
+    /**
+     * The entities of a box, players excepted: no edit copies, removes or
+     * restores a player. Their data is read when first asked for, the way the
+     * game saves them, so a command that only filters by type does not
+     * serialise every entity it looks at. Server thread only.
+     */
     @Override
     public List<EntityData> getEntities(com.maxlananas.fawebim.core.world.Extent.Region3i box) {
         AABB aabb = new AABB(box.minX(), box.minY(), box.minZ(),
                 box.maxX() + 1, box.maxY() + 1, box.maxZ() + 1);
         List<EntityData> entities = new ArrayList<>();
-        for (Entity entity : level.getEntities((Entity) null, aabb, candidate -> true)) {
-            EntityData data = new EntityData(
-                    BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
-                    new NbtCompound().putString("uuid", entity.getUUID().toString()),
-                    new Vector3(entity.getX(), entity.getY(), entity.getZ()));
-            data.setHandle(entity);
-            entities.add(data);
+        for (Entity entity : level.getEntities((Entity) null, aabb,
+                candidate -> !(candidate instanceof net.minecraft.world.entity.player.Player))) {
+            entities.add(describe(entity));
         }
         return entities;
     }
 
+    private EntityData describe(Entity entity) {
+        EntityData data = new EntityData(entity, BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
+                () -> saveEntity(entity), new Vector3(entity.getX(), entity.getY(), entity.getZ()));
+        data.setUuid(entity.getStringUUID());
+        data.setPassenger(entity.isPassenger());
+        return data;
+    }
+
+    /**
+     * An entity's data as the game saves it, its type under {@code id} and
+     * its passengers inside; {@code null} for one the game does not save.
+     */
+    private NbtCompound saveEntity(Entity entity) {
+        try {
+            net.minecraft.world.level.storage.TagValueOutput output =
+                    net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                            ProblemReporter.DISCARDING, level.registryAccess());
+            return entity.saveAsPassenger(output) ? fromTag(output.buildResult()) : null;
+        } catch (IOException | RuntimeException exception) {
+            FaweMod.LOGGER.warn("Could not save the data of entity {}", entity.getStringUUID(), exception);
+            return null;
+        }
+    }
+
+    /** Pastes and undo put entities through {@link #spawnEntity}. */
     @Override
     public void addEntity(EntityData data) {
-        if (data.handle() instanceof Entity entity && !entity.isAlive()) {
-            level.addFreshEntity(entity);
+        spawnEntity(data, null);
+    }
+
+    /**
+     * Creates an entity from its data, the way WorldEdit's Fabric world does:
+     * without the identity fields, at the position of the data, with its
+     * passengers. Server thread only.
+     */
+    @Override
+    public EntityData spawnEntity(EntityData data, String uuid) {
+        if (net.minecraft.world.entity.EntityType.byString(data.type()).isEmpty()) {
+            return null;
         }
+        java.util.UUID identity = null;
+        if (uuid != null) {
+            try {
+                identity = java.util.UUID.fromString(uuid);
+            } catch (IllegalArgumentException invalid) {
+                identity = null;
+            }
+            if (identity != null && level.getEntity(identity) != null) {
+                return null;
+            }
+        }
+        CompoundTag tag = data.nbt() == null ? new CompoundTag() : toTag(data.nbt());
+        withoutIdentity(tag);
+        tag.putString("id", data.type());
+        Vector3 at = data.position();
+        Entity created = net.minecraft.world.entity.EntityType.loadEntityRecursive(tag, level,
+                net.minecraft.world.entity.EntitySpawnReason.COMMAND, loaded -> {
+                    loaded.absSnapTo(at.x(), at.y(), at.z(), loaded.getYRot(), loaded.getXRot());
+                    return loaded;
+                });
+        if (created == null) {
+            return null;
+        }
+        if (identity != null) {
+            created.setUUID(identity);
+        }
+        if (!level.tryAddFreshEntityWithPassengers(created)) {
+            return null;
+        }
+        return describe(created);
+    }
+
+    /** The fields that name one entity: a copy with them would not be added, or would replace the original. */
+    private static final List<String> IDENTITY_FIELDS = List.of("UUID", "UUIDMost", "UUIDLeast",
+            "WorldUUIDMost", "WorldUUIDLeast", "PersistentIDMSB", "PersistentIDLSB");
+
+    private static void withoutIdentity(CompoundTag tag) {
+        for (String field : IDENTITY_FIELDS) {
+            tag.remove(field);
+        }
+        tag.getList("Passengers").ifPresent(passengers -> {
+            for (int i = 0; i < passengers.size(); i++) {
+                withoutIdentity(passengers.getCompoundOrEmpty(i));
+            }
+        });
     }
 
     @Override
     public void removeEntity(EntityData data) {
-        if (data.handle() instanceof Entity entity) {
+        if (data.handle() instanceof Entity entity && !(entity instanceof net.minecraft.world.entity.player.Player)) {
             entity.discard();
         }
+    }
+
+    @Override
+    public boolean removeEntityById(String uuid) {
+        Entity entity;
+        try {
+            entity = level.getEntity(java.util.UUID.fromString(uuid));
+        } catch (IllegalArgumentException invalid) {
+            return false;
+        }
+        if (entity == null || entity instanceof net.minecraft.world.entity.player.Player) {
+            return false;
+        }
+        entity.discard();
+        return true;
     }
 
     /** Precision ray trace, used by {@code //jumpto}, {@code //thru} and the tools. */

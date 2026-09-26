@@ -378,14 +378,36 @@ public final class TestWorld implements World {
         return found;
     }
 
+    /** Puts an entity into the world as it is, giving it an identity when it has none. */
     @Override
     public void addEntity(EntityData data) {
+        if (data.uuid() == null) {
+            data.setUuid(java.util.UUID.randomUUID().toString());
+        }
         entities.add(data);
     }
 
     @Override
     public void removeEntity(EntityData data) {
         entities.remove(data);
+    }
+
+    /** As the game does: a new entity from the data, refused when the identity asked for is taken. */
+    @Override
+    public EntityData spawnEntity(EntityData data, String uuid) {
+        if (uuid != null && entities.stream().anyMatch(entity -> uuid.equals(entity.uuid()))) {
+            return null;
+        }
+        EntityData created = new EntityData(data.type(), data.nbt() == null ? new NbtCompound() : data.nbt().clone(),
+                data.position());
+        created.setUuid(uuid != null ? uuid : java.util.UUID.randomUUID().toString());
+        entities.add(created);
+        return created;
+    }
+
+    @Override
+    public boolean removeEntityById(String uuid) {
+        return entities.removeIf(entity -> uuid.equals(entity.uuid()));
     }
 
     @Override

@@ -44,7 +44,16 @@ public final class EntityRemovers {
 
         public boolean matches(String entityType) {
             return switch (this) {
-                case ALL -> true;
+                // Every kind below, as WorldEdit's "all": never a mob, a
+                // villager or a pet, which /butcher is for.
+                case ALL -> {
+                    for (Type type : values()) {
+                        if (type != ALL && type.matches(entityType)) {
+                            yield true;
+                        }
+                    }
+                    yield false;
+                }
                 case PROJECTILES -> PROJECTILE_TYPES.contains(entityType);
                 case ITEMS -> entityType.equals("minecraft:item");
                 case FALLING_BLOCKS -> entityType.equals("minecraft:falling_block");

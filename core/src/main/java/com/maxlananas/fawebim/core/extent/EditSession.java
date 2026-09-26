@@ -607,33 +607,70 @@ public final class EditSession implements Extent {
         return world.getEntities(box);
     }
 
+    /**
+     * Spawns an entity with a new identity, recorded so an undo removes it.
+     * A paste of entities goes through here.
+     */
     @Override
     public void addEntity(com.maxlananas.fawebim.core.world.EntityData data) {
         checkOpen();
         if (!sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.ENTITY_EVENTS)) {
             return;
         }
-        recordEntity(data, false);
-        world.addEntity(data);
-    }
-
-    /** Remembers an entity change so undo and {@code /snapshot restore -e} can replay it. */
-    private void recordEntity(com.maxlananas.fawebim.core.world.EntityData data, boolean removed) {
-        if (record == null) {
-            return;
+        com.maxlananas.fawebim.core.world.EntityData created = world.spawnEntity(data, null);
+        if (created != null && record != null) {
+            record.addEntity(new History.EntityChange(data.type(), data.nbt(), data.position().x(),
+                    data.position().y(), data.position().z(), false, created.uuid()));
         }
-        record.addEntity(new History.EntityChange(data.type(), data.nbt(), data.position().x(),
-                data.position().y(), data.position().z(), removed));
     }
 
+    /**
+     * Removes a live entity, recording its data first so an undo puts it back,
+     * under the identity it had. {@code /butcher} and {@code /remove} go through
+     * here.
+     */
     @Override
     public void removeEntity(com.maxlananas.fawebim.core.world.EntityData data) {
         checkOpen();
         if (!sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.ENTITY_EVENTS)) {
             return;
         }
-        recordEntity(data, true);
+        if (record != null) {
+            // Each entity comes back on its own: a vehicle's passengers are
+            // recorded when they are removed themselves, and left out of its
+            // data so an undo does not put them back twice.
+            com.maxlananas.fawebim.core.util.NbtCompound nbt = data.nbt();
+            if (nbt != null && nbt.contains("Passengers")) {
+                nbt = nbt.clone();
+                nbt.remove("Passengers");
+            }
+            record.addEntity(new History.EntityChange(data.type(), nbt, data.position().x(),
+                    data.position().y(), data.position().z(), true, data.uuid()));
+        }
         world.removeEntity(data);
+    }
+
+    /**
+     * Replays the entity changes of a record: an undo puts back what the edit
+     * removed and removes what it added, a redo the other way round. A
+     * removed entity comes back under its own identity, so the redo finds it
+     * again; one the game refuses (its identity is back in use) is left alone.
+     */
+    private void applyEntityChanges(History.Record record, boolean undo) {
+        List<History.EntityChange> changes = record.entities();
+        for (int i = 0; i < changes.size(); i++) {
+            History.EntityChange change = changes.get(undo ? changes.size() - 1 - i : i);
+            boolean put = undo == change.removed;
+            if (put) {
+                if (change.nbt != null) {
+                    world.spawnEntity(new com.maxlananas.fawebim.core.world.EntityData(change.type,
+                            change.nbt.clone(), new com.maxlananas.fawebim.core.math.Vector3(change.x, change.y,
+                            change.z)), change.uuid);
+                }
+            } else if (change.uuid != null) {
+                world.removeEntityById(change.uuid);
+            }
+        }
     }
 
     /**
@@ -723,6 +760,11 @@ public final class EditSession implements Extent {
                     changed += applyBiomeChangeSet(set, false);
                 }
             }
+        }
+        if (!record.entities().isEmpty()) {
+            // A painting or an item frame needs its wall: the blocks go in first.
+            flushQueue();
+            applyEntityChanges(record, undo);
         }
         // The data goes back after the blocks, which the queue writes first: a
         // chest the undo puts back gets its items, a block the undo takes away
