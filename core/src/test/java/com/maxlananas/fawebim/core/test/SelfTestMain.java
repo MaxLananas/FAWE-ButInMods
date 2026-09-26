@@ -465,6 +465,29 @@ public final class SelfTestMain {
         checkEquals("a shell of two leaves the cube alone", 0, shelled);
         checkEquals("the cube is still there", stone, world.getBlock(2, 72, 2));
 
+        // A selection that is not a box: a cylinder is hollowed, and the cells of
+        // the box around it are left alone.
+        for (int y = 71; y <= 75; y++) {
+            for (int z = 7; z <= 15; z++) {
+                for (int x = 7; x <= 15; x++) {
+                    world.setBlock(x, y, z, stone);
+                }
+            }
+        }
+        RegionSelector cylinder = LocalSession.newSelectors(world, "cyl");
+        cylinder.selectPrimary(new BlockVector3(11, 71, 11), SelectorLimits.unlimited());
+        cylinder.selectSecondary(new BlockVector3(13, 75, 13), SelectorLimits.unlimited());
+        local.setSelector(cylinder);
+        EditSession cylinderEdit = new EditSession(world, local, "//hollow cylinder");
+        Masks.ExtentHolder.set(cylinderEdit);
+        int hollowedCylinder = Operations.hollow(cylinderEdit, local.getSelection(world), 1,
+                new Patterns.Single(air), new Masks.SolidMask(cylinderEdit));
+        cylinderEdit.flushQueue();
+        check("a cylinder selection is hollowed",
+                hollowedCylinder > 0 && world.getBlock(11, 73, 11) == air);
+        check("the box around a cylinder selection stays",
+                world.getBlock(9, 73, 9) == stone && world.getBlock(13, 73, 13) == stone);
+
         // //outline is //faces: for a cuboid that is the six faces, and for any
         // other selection it is the surface of the shape rather than the faces of
         // the box around it.

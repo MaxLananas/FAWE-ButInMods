@@ -1,5 +1,6 @@
 package com.maxlananas.fawebim.core.function;
 
+import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.mask.Mask;
@@ -307,9 +308,9 @@ public final class Operations {
 
         while (queued > 0) {
             long packed = queue[--queued];
-            int x = (int) (packed >> 40) + min.x();
-            int y = (int) (packed >> 20 & 0xFFFFF) + min.y();
-            int z = (int) (packed & 0xFFFFF) + min.z();
+            int x = BlockArrayClipboard.keyX(packed);
+            int y = BlockArrayClipboard.keyY(packed);
+            int z = BlockArrayClipboard.keyZ(packed);
             for (int side = 0; side < NEIGHBOURS.length; side += 3) {
                 if (!region.contains(x + NEIGHBOURS[side], y + NEIGHBOURS[side + 1], z + NEIGHBOURS[side + 2])) {
                     continue;
@@ -327,7 +328,7 @@ public final class Operations {
                 for (int z = 0; z < length; z++) {
                     for (int x = 0; x < width; x++) {
                         int index = padded(x, y, z, padWidth, padLength);
-                        if (open.get(index)) {
+                        if (open.get(index) || !region.contains(min.x() + x, min.y() + y, min.z() + z)) {
                             continue;
                         }
                         for (int side = 0; side < NEIGHBOURS.length; side += 3) {
@@ -361,6 +362,9 @@ public final class Operations {
                     int worldX = min.x() + x;
                     int worldY = min.y() + y;
                     int worldZ = min.z() + z;
+                    if (!region.contains(worldX, worldY, worldZ)) {
+                        continue;
+                    }
                     if (session.setBlock(worldX, worldY, worldZ, pattern.apply(worldX, worldY, worldZ))) {
                         changed++;
                     }
@@ -384,7 +388,7 @@ public final class Operations {
         if (queued == queue.length) {
             queue = java.util.Arrays.copyOf(queue, queue.length * 2);
         }
-        queue[queued++] = ((long) (x - min.x()) << 40) | ((long) (y - min.y()) << 20) | (z - min.z());
+        queue[queued++] = BlockArrayClipboard.positionKey(x, y, z);
         return queued;
     }
 
