@@ -428,6 +428,32 @@ public class Polygonal2DRegion implements Region {
         return amount.y() != 0;
     }
 
+    /**
+     * Refuses the whole set when one amount is horizontal, as WorldEdit does,
+     * instead of taking the vertical amounts before the refusal.
+     */
+    @Override
+    public boolean expand(BlockVector3... amounts) {
+        for (BlockVector3 amount : amounts) {
+            if (amount.x() != 0 || amount.z() != 0) {
+                throw new com.maxlananas.fawebim.core.util.InputException(
+                        "A polygon selection can only be expanded vertically");
+            }
+        }
+        return Region.super.expand(amounts);
+    }
+
+    @Override
+    public boolean contract(BlockVector3... amounts) {
+        for (BlockVector3 amount : amounts) {
+            if (amount.x() != 0 || amount.z() != 0) {
+                throw new com.maxlananas.fawebim.core.util.InputException(
+                        "A polygon selection can only be contracted vertically");
+            }
+        }
+        return Region.super.contract(amounts);
+    }
+
     @Override
     public boolean shift(BlockVector3 amount) {
         List<BlockVector2> moved = new ArrayList<>(points.size());

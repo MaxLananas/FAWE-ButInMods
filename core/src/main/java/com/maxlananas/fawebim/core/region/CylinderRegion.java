@@ -130,15 +130,28 @@ public class CylinderRegion implements Region {
      */
     @Override
     public boolean expand(BlockVector3 amount) {
-        center = center.add(half(amount));
-        radiusX += Math.abs(amount.x()) / 2;
-        radiusZ += Math.abs(amount.z()) / 2;
-        if (amount.y() > 0) {
-            maxY += amount.y();
-        } else {
-            minY += amount.y();
+        return expand(new BlockVector3[] {amount});
+    }
+
+    @Override
+    public boolean expand(BlockVector3... amounts) {
+        center = center.add(half(amounts));
+        long growX = 0;
+        long growZ = 0;
+        boolean changed = false;
+        for (BlockVector3 amount : amounts) {
+            growX += Math.abs((long) amount.x());
+            growZ += Math.abs((long) amount.z());
+            if (amount.y() > 0) {
+                maxY += amount.y();
+            } else {
+                minY += amount.y();
+            }
+            changed |= !amount.equals(BlockVector3.ZERO);
         }
-        return !amount.equals(BlockVector3.ZERO);
+        radiusX += growX / 2;
+        radiusZ += growZ / 2;
+        return changed;
     }
 
     /**
@@ -147,24 +160,43 @@ public class CylinderRegion implements Region {
      */
     @Override
     public boolean contract(BlockVector3 amount) {
-        center = center.subtract(half(amount));
-        radiusX = Math.max(1, radiusX - Math.abs(amount.x()) / 2);
-        radiusZ = Math.max(1, radiusZ - Math.abs(amount.z()) / 2);
-        int height = maxY - minY;
-        if (amount.y() > 0) {
-            minY += Math.min(height, amount.y());
-        } else {
-            maxY += Math.max(-height, amount.y());
-        }
-        return !amount.equals(BlockVector3.ZERO);
+        return contract(new BlockVector3[] {amount});
     }
 
-    private static Vector2 half(BlockVector3 amount) {
-        if ((amount.x() & 1) != 0 || (amount.z() & 1) != 0) {
+    @Override
+    public boolean contract(BlockVector3... amounts) {
+        center = center.subtract(half(amounts));
+        long shrinkX = 0;
+        long shrinkZ = 0;
+        boolean changed = false;
+        for (BlockVector3 amount : amounts) {
+            shrinkX += Math.abs((long) amount.x());
+            shrinkZ += Math.abs((long) amount.z());
+            int height = maxY - minY;
+            if (amount.y() > 0) {
+                minY += Math.min(height, amount.y());
+            } else {
+                maxY += Math.max(-height, amount.y());
+            }
+            changed |= !amount.equals(BlockVector3.ZERO);
+        }
+        radiusX = Math.max(1, radiusX - shrinkX / 2);
+        radiusZ = Math.max(1, radiusZ - shrinkZ / 2);
+        return changed;
+    }
+
+    private static Vector2 half(BlockVector3... amounts) {
+        long x = 0;
+        long z = 0;
+        for (BlockVector3 amount : amounts) {
+            x += amount.x();
+            z += amount.z();
+        }
+        if ((x & 1) != 0 || (z & 1) != 0) {
             throw new com.maxlananas.fawebim.core.util.InputException(
                     "A cylinder grows and shrinks by an even amount on each horizontal axis");
         }
-        return new Vector2(amount.x() / 2, amount.z() / 2);
+        return new Vector2(x / 2, z / 2);
     }
 
     @Override

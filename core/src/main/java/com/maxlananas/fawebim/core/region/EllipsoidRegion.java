@@ -130,28 +130,66 @@ public class EllipsoidRegion implements Region {
      */
     @Override
     public boolean expand(BlockVector3 amount) {
-        center = center.add(half(amount));
-        radii = radii.add(new Vector3(Math.abs(amount.x()) / 2, Math.abs(amount.y()) / 2,
-                Math.abs(amount.z()) / 2));
-        return !amount.equals(BlockVector3.ZERO);
+        return expand(new BlockVector3[] {amount});
+    }
+
+    @Override
+    public boolean expand(BlockVector3... amounts) {
+        center = center.add(half(amounts));
+        radii = radii.add(halfLengths(amounts));
+        return moves(amounts);
     }
 
     /** The reverse of {@link #expand}, with WorldEdit's floor of one block per radius. */
     @Override
     public boolean contract(BlockVector3 amount) {
-        center = center.subtract(half(amount));
-        radii = new Vector3(Math.max(1, radii.x() - Math.abs(amount.x()) / 2),
-                Math.max(1, radii.y() - Math.abs(amount.y()) / 2),
-                Math.max(1, radii.z() - Math.abs(amount.z()) / 2));
-        return !amount.equals(BlockVector3.ZERO);
+        return contract(new BlockVector3[] {amount});
     }
 
-    private static Vector3 half(BlockVector3 amount) {
-        if ((amount.x() & 1) != 0 || (amount.y() & 1) != 0 || (amount.z() & 1) != 0) {
+    @Override
+    public boolean contract(BlockVector3... amounts) {
+        center = center.subtract(half(amounts));
+        Vector3 shrink = halfLengths(amounts);
+        radii = new Vector3(Math.max(1, radii.x() - shrink.x()), Math.max(1, radii.y() - shrink.y()),
+                Math.max(1, radii.z() - shrink.z()));
+        return moves(amounts);
+    }
+
+    private static Vector3 half(BlockVector3... amounts) {
+        long x = 0;
+        long y = 0;
+        long z = 0;
+        for (BlockVector3 amount : amounts) {
+            x += amount.x();
+            y += amount.y();
+            z += amount.z();
+        }
+        if ((x & 1) != 0 || (y & 1) != 0 || (z & 1) != 0) {
             throw new com.maxlananas.fawebim.core.util.InputException(
                     "A round selection grows and shrinks by an even amount on each axis");
         }
-        return new Vector3(amount.x() / 2, amount.y() / 2, amount.z() / 2);
+        return new Vector3(x / 2, y / 2, z / 2);
+    }
+
+    private static Vector3 halfLengths(BlockVector3... amounts) {
+        long x = 0;
+        long y = 0;
+        long z = 0;
+        for (BlockVector3 amount : amounts) {
+            x += Math.abs((long) amount.x());
+            y += Math.abs((long) amount.y());
+            z += Math.abs((long) amount.z());
+        }
+        return new Vector3(x / 2, y / 2, z / 2);
+    }
+
+    private static boolean moves(BlockVector3... amounts) {
+        for (BlockVector3 amount : amounts) {
+            if (!amount.equals(BlockVector3.ZERO)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

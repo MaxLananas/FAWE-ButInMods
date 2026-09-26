@@ -398,13 +398,19 @@ public final class Commands {
                     int amount = ctx.intArg(0);
                     int reverse = reverseAmount(ctx);
                     List<BlockVector3> directions = expandDirections(ctx, directionArgument(ctx));
+                    // Both amounts of a direction go to the region together, as
+                    // WorldEdit hands them: a sphere takes 3 and a reverse 3 as
+                    // three more on each side, which neither half is on its own.
                     for (BlockVector3 direction : directions) {
-                        region.expand(direction.multiply(capped(region, amount,
-                                roomToGrow(region, direction.multiply(Integer.signum(amount)), ctx.world()))));
-                        if (reverse != 0) {
-                            BlockVector3 opposite = direction.multiply(-1);
-                            region.expand(opposite.multiply(capped(region, reverse,
-                                    roomToGrow(region, opposite.multiply(Integer.signum(reverse)), ctx.world()))));
+                        BlockVector3 opposite = direction.multiply(-1);
+                        int forward = capped(region, amount,
+                                roomToGrow(region, direction.multiply(Integer.signum(amount)), ctx.world()));
+                        int back = capped(region, reverse,
+                                roomToGrow(region, opposite.multiply(Integer.signum(reverse)), ctx.world()));
+                        if (back == 0) {
+                            region.expand(direction.multiply(forward));
+                        } else {
+                            region.expand(direction.multiply(forward), opposite.multiply(back));
                         }
                     }
                     ctx.actor().message(Msg.result("Region expanded", Msg.value(region.describe()).raw()));
@@ -424,11 +430,15 @@ public final class Commands {
                     int reverse = reverseAmount(ctx);
                     List<BlockVector3> directions = expandDirections(ctx, directionArgument(ctx));
                     for (BlockVector3 direction : directions) {
-                        region.contract(direction.multiply(capped(region, amount,
-                                roomToShrink(region, direction))));
-                        if (reverse != 0) {
-                            region.contract(direction.multiply(-1).multiply(capped(region, reverse,
-                                    roomToShrink(region, direction))));
+                        // The reverse amount shrinks the same axis from the other
+                        // side, so it gets what the first one leaves.
+                        int room = roomToShrink(region, direction);
+                        int forward = capped(region, amount, room);
+                        int back = capped(region, reverse, room - Math.abs(forward));
+                        if (back == 0) {
+                            region.contract(direction.multiply(forward));
+                        } else {
+                            region.contract(direction.multiply(forward), direction.multiply(-back));
                         }
                     }
                     ctx.actor().message(Msg.result("Region contracted", Msg.value(region.describe()).raw()));
@@ -470,14 +480,12 @@ public final class Commands {
                     if (horizontal && vertical) {
                         throw CommandRegistry.error("Specify either -h or -v, not both");
                     }
-                    amount = capped(region, amount, outsetRoom(region, amount, horizontal, vertical, ctx.world()));
-                    if (horizontal) {
-                        region.expand(new BlockVector3(amount, 0, amount));
-                    } else if (vertical) {
-                        region.expand(new BlockVector3(0, amount, 0));
-                    } else {
-                        region.expand(new BlockVector3(amount, amount, amount));
+                    List<BlockVector3> sides = sides(horizontal, vertical);
+                    int room = Integer.MAX_VALUE;
+                    for (BlockVector3 side : sides) {
+                        room = Math.min(room, roomToGrow(region, side, ctx.world()));
                     }
+                    region.expand(each(sides, capped(region, amount, room)));
                     ctx.actor().message(Msg.success("Region outset: " + region.describe()));
                 };
 
@@ -497,14 +505,14 @@ public final class Commands {
                     if (horizontal && vertical) {
                         throw CommandRegistry.error("Specify either -h or -v, not both");
                     }
-                    amount = capped(region, amount, insetRoom(region, horizontal, vertical));
-                    if (horizontal) {
-                        region.contract(new BlockVector3(amount, 0, amount));
-                    } else if (vertical) {
-                        region.contract(new BlockVector3(0, amount, 0));
-                    } else {
-                        region.contract(new BlockVector3(amount, amount, amount));
+                    // Both sides of an axis move in, so it keeps at least one
+                    // block when each takes half of what is there.
+                    List<BlockVector3> sides = sides(horizontal, vertical);
+                    int room = Integer.MAX_VALUE;
+                    for (BlockVector3 side : sides) {
+                        room = Math.min(room, roomToShrink(region, side) / 2);
                     }
+                    region.contract(each(sides, capped(region, amount, room)));
                     ctx.actor().message(Msg.success("Region inset: " + region.describe()));
                 };
 
@@ -559,28 +567,33 @@ public final class Commands {
         return Math.max(0, room);
     }
 
-    private static int outsetRoom(Region region, int amount, boolean horizontal, boolean vertical,
-                                  World world) {
-        int sign = Integer.signum(amount);
-        int room = Integer.MAX_VALUE;
-        if (!vertical) {
-            room = Math.min(room, roomToGrow(region, new BlockVector3(sign, 0, sign), world));
-        }
+    /**
+     * The sides {@code //outset} and {@code //inset} move, in WorldEdit's
+     * order: both of every axis the switches leave, so the selection grows or
+     * shrinks around where it is. Moving only the positive side of each axis
+     * shifted the selection by the amount as it grew.
+     */
+    private static List<BlockVector3> sides(boolean horizontal, boolean vertical) {
+        List<BlockVector3> sides = new java.util.ArrayList<>(6);
         if (!horizontal) {
-            room = Math.min(room, roomToGrow(region, new BlockVector3(0, sign, 0), world));
+            sides.add(new BlockVector3(0, 1, 0));
+            sides.add(new BlockVector3(0, -1, 0));
         }
-        return room == Integer.MAX_VALUE ? 0 : room;
+        if (!vertical) {
+            sides.add(new BlockVector3(1, 0, 0));
+            sides.add(new BlockVector3(-1, 0, 0));
+            sides.add(new BlockVector3(0, 0, 1));
+            sides.add(new BlockVector3(0, 0, -1));
+        }
+        return sides;
     }
 
-    private static int insetRoom(Region region, boolean horizontal, boolean vertical) {
-        int room = Integer.MAX_VALUE;
-        if (!vertical) {
-            room = Math.min(room, roomToShrink(region, new BlockVector3(1, 0, 1)));
+    private static BlockVector3[] each(List<BlockVector3> sides, int amount) {
+        BlockVector3[] amounts = new BlockVector3[sides.size()];
+        for (int i = 0; i < amounts.length; i++) {
+            amounts[i] = sides.get(i).multiply(amount);
         }
-        if (!horizontal) {
-            room = Math.min(room, roomToShrink(region, new BlockVector3(0, 1, 0)));
-        }
-        return room == Integer.MAX_VALUE ? 0 : room;
+        return amounts;
     }
 
     /** An amount in the direction it will actually be applied in, capped by its room. */

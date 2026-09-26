@@ -167,6 +167,31 @@ public interface Region extends Iterable<BlockVector3> {
     boolean contract(BlockVector3 amount);
 
     /**
+     * Expands the region by several amounts taken as one, as WorldEdit's
+     * {@code expand(BlockVector3...)} does. A box takes them one after the
+     * other; a round shape moves its centre by half their sum and grows by half
+     * the sum of their lengths, so the +3 and -3 of {@code //outset 3} grow a
+     * sphere by three on each side and leave its centre where it is, where
+     * either amount on its own would move the centre by half a block.
+     */
+    default boolean expand(BlockVector3... amounts) {
+        boolean changed = false;
+        for (BlockVector3 amount : amounts) {
+            changed |= expand(amount);
+        }
+        return changed;
+    }
+
+    /** The reverse of {@link #expand(BlockVector3...)}. */
+    default boolean contract(BlockVector3... amounts) {
+        boolean changed = false;
+        for (BlockVector3 amount : amounts) {
+            changed |= contract(amount);
+        }
+        return changed;
+    }
+
+    /**
      * Moves the region by an amount, keeping its shape.
      *
      * <p>Every shape moves its own defining points. Moving by an expansion and

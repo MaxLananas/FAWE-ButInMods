@@ -170,10 +170,12 @@ CHECKS = [
     # roof and the dark under a removed one. The game propagates light on a
     # thread of its own, a column of 140 blocks of air under each of the 4,096
     # roof blocks here, so the reading is asked again for up to ten seconds
-    # (the third element of the row). The vanilla commands in here are left out
-    # by the smoke lint.
+    # (the third element of the row). No player keeps these chunks loaded, and
+    # since 1.21.9 no spawn area does either: they are forced for the reading.
+    # The vanilla commands in here are left out by the smoke lint.
     ("weather clear", "weather"),
     ("time set noon", "time"),
+    ("forceload add -32 -32 31 31", "force loaded"),
     ("//pos1 -32,80,-32", "position 1: set"),
     ("//pos2 31,82,31", "position 2: set"),
     ("//set minecraft:stone", "12,288 block(s) affected"),
@@ -182,7 +184,20 @@ CHECKS = [
     ("//set minecraft:air", "12,288 block(s) affected"),
     ('execute positioned 0 79 0 if predicate '
      '{condition:"minecraft:location_check",predicate:{light:{light:{min:13}}}}', "passed", 10),
-    ("//fixlighting", "Lighting propagated"),
+    ("//fixlighting", "Lighting propagated: 16 chunk(s)"),
+    ("forceload remove all", "force loaded"),
+    # The same roof where nothing keeps the chunks loaded: the edit loads them,
+    # the game unloads and saves them a tick or two later, while its light
+    # thread may still be darkening the air under the roof. Loaded again from
+    # the disk, the chunks must come back dark under it.
+    ("//pos1 1000,80,1000", "position 1: set"),
+    ("//pos2 1063,82,1063", "position 2: set"),
+    ("//set minecraft:stone", "12,288 block(s) affected"),
+    ("execute unless loaded 1032 80 1032", "passed", 20),
+    ("forceload add 1000 1000 1063 1063", "force loaded"),
+    ('execute positioned 1032 79 1032 if predicate '
+     '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed", 10),
+    ("forceload remove all", "force loaded"),
     # FAWE's //confirm: an edit over more than 524,288 columns stops and asks
     # before it reads a chunk, and so does a count of undos past fifty. Neither
     # is confirmed here, which would load two thousand chunks or take back the

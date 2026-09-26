@@ -49,6 +49,7 @@ final class RegionGeometryTests {
         shifts();
         cuboidContractPastTheOtherSide();
         selectionCommands();
+        outsetAndInset();
     }
 
     /**
@@ -273,5 +274,69 @@ final class RegionGeometryTests {
         checkEquals("//stack up copies above the selection", stone, world.getBlock(20, 83, 20));
         checkEquals("//stack -s moves the selection onto the copy", 83,
                 stacker.session().getSelection(world).getMinimumPoint().y());
+    }
+    /**
+     * WorldEdit's //outset and //inset move both sides of every axis they
+     * touch, and a round shape takes the amounts of one command together: the
+     * +3 and -3 of //outset 3 grow a sphere by three, where either on its own
+     * is an odd amount the shape refuses.
+     */
+    private static void outsetAndInset() {
+        TestWorld world = new TestWorld("outset");
+        TestActor player = new TestActor("Outset", world, new BlockVector3(0, 80, 0));
+        CommandManager.get().dispatch(player, "//pos1 0,64,0");
+        CommandManager.get().dispatch(player, "//pos2 10,70,10");
+        CommandManager.get().dispatch(player, "//outset 2");
+        Region box = player.session().getSelection(world);
+        checkEquals("//outset grows the low sides", new BlockVector3(-2, 62, -2), box.getMinimumPoint());
+        checkEquals("//outset grows the high sides", new BlockVector3(12, 72, 12), box.getMaximumPoint());
+        CommandManager.get().dispatch(player, "//inset 3");
+        box = player.session().getSelection(world);
+        checkEquals("//inset moves the low sides in", new BlockVector3(1, 65, 1), box.getMinimumPoint());
+        checkEquals("//inset moves the high sides in", new BlockVector3(9, 69, 9), box.getMaximumPoint());
+        CommandManager.get().dispatch(player, "//outset -h 2");
+        box = player.session().getSelection(world);
+        checkEquals("//outset -h leaves the height", new BlockVector3(-1, 65, -1), box.getMinimumPoint());
+        checkEquals("//outset -h grows both horizontal axes", new BlockVector3(11, 69, 11), box.getMaximumPoint());
+        CommandManager.get().dispatch(player, "//inset -v 1");
+        box = player.session().getSelection(world);
+        checkEquals("//inset -v takes the bottom", 66, box.getMinimumPoint().y());
+        checkEquals("//inset -v takes the top", 68, box.getMaximumPoint().y());
+        CommandManager.get().dispatch(player, "//inset 100");
+        box = player.session().getSelection(world);
+        checkEquals("//inset stops at one block", box.getMinimumPoint().y(), box.getMaximumPoint().y());
+        check("//inset never crosses the sides", box.getMinimumPoint().x() <= box.getMaximumPoint().x());
+
+        CommandManager.get().dispatch(player, "//sel sphere");
+        CommandManager.get().dispatch(player, "//pos1 0,64,0");
+        CommandManager.get().dispatch(player, "//pos2 3,64,0");
+        CommandManager.get().dispatch(player, "//outset 3");
+        EllipsoidRegion sphere = (EllipsoidRegion) player.session().getSelection(world);
+        checkEquals("//outset 3 grows a sphere by three", new Vector3(6, 6, 6), sphere.getRadii());
+        Vector3 centre = sphere.getCenter();
+        CommandManager.get().dispatch(player, "//expand 3 3 up");
+        sphere = (EllipsoidRegion) player.session().getSelection(world);
+        checkEquals("//expand with a reverse amount grows a sphere on both sides", 9.0, sphere.getRadiusY());
+        checkEquals("and leaves its centre", centre, sphere.getCenter());
+        CommandManager.get().dispatch(player, "//contract 3 3 up");
+        checkEquals("//contract with a reverse amount takes it back", 6.0,
+                ((EllipsoidRegion) player.session().getSelection(world)).getRadiusY());
+
+        CommandManager.get().dispatch(player, "//sel poly");
+        CommandManager.get().dispatch(player, "//pos1 0,64,0");
+        CommandManager.get().dispatch(player, "//pos2 5,64,0");
+        CommandManager.get().dispatch(player, "//pos2 5,64,5");
+        player.clearMessages();
+        CommandManager.get().dispatch(player, "//outset 2");
+        check("a polygon refuses a horizontal //outset",
+                SelfTestMain.plain(player.lastMessage()).contains("only be expanded vertically"));
+        Region polygon = player.session().getSelection(world);
+        checkEquals("and keeps its height, which WorldEdit refuses along with it", 64,
+                polygon.getMaximumPoint().y());
+
+        CuboidRegion both = new CuboidRegion(new BlockVector3(0, 0, 0), new BlockVector3(4, 4, 4));
+        both.expand(new BlockVector3(3, 0, 0), new BlockVector3(-3, 0, 0));
+        checkEquals("expand takes each amount of a set", -3, both.getMinimumPoint().x());
+        checkEquals("expand takes every amount of a set", 7, both.getMaximumPoint().x());
     }
 }
