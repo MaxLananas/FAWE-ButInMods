@@ -147,6 +147,21 @@ CHECKS = [
     ("//gsmask minecraft:stone", "Source mask set to"),
     ("//gsmask", "Source mask cleared"),
     ("//up 5", "must be run by a player"),
+    # //regen writes the selection from terrain generated in a level of its own,
+    # nothing past the selection, and //undo takes it back: of four gold blocks
+    # in one chunk, regenerating one leaves three.
+    ("//pos1 40,60,40", "position 1: set"),
+    ("//pos2 41,60,41", "position 2: set"),
+    ("//set minecraft:gold_block", "4 block(s) affected"),
+    ("//pos2 40,60,40", "position 2: set"),
+    ("//regen", "Regenerated: 1 block(s)"),
+    ("//pos2 41,60,41", "position 2: set"),
+    ("//count minecraft:gold_block", "count: 3"),
+    ("//pos2 40,60,40", "position 2: set"),
+    ("//undo", "Undid: "),
+    ("//pos2 41,60,41", "position 2: set"),
+    ("//count minecraft:gold_block", "count: 4"),
+    ("//set minecraft:air", "4 block(s) affected"),
 ]
 
 

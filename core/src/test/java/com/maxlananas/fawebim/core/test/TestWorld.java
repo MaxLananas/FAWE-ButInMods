@@ -305,31 +305,53 @@ public final class TestWorld implements World {
         relit.addAll(chunks);
     }
 
+    /**
+     * The test world's generator: columns of stone, three of dirt and one of
+     * grass, 64 to 71 high, the same for a chunk every time.
+     */
     @Override
-    public boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options) {
-        Random random = new Random(seed + chunkX * 3121L + chunkZ * 4021L);
-        for (int x = 0; x < 16; x++) {
-            for (int z = 0; z < 16; z++) {
-                int height = 64 + random.nextInt(8);
-                int worldX = (chunkX << 4) + x;
-                int worldZ = (chunkZ << 4) + z;
-                for (int y = minY(); y <= height; y++) {
-                    int state = y == height
-                            ? BlockState.registry().defaultState("minecraft:grass_block")
-                            : y > height - 4
-                            ? BlockState.registry().defaultState("minecraft:dirt")
-                            : BlockState.registry().defaultState("minecraft:stone");
-                    setBlock(worldX, y, worldZ, state);
-                }
-                for (int y = height + 1; y <= height + 6; y++) {
-                    setBlock(worldX, y, worldZ, BlockState.registry().air());
-                }
+    public GeneratedTerrain generate(Collection<BlockVector2> chunks, RegenOptions options) {
+        Map<Long, int[]> heights = new HashMap<>();
+        for (BlockVector2 chunk : chunks) {
+            Random random = new Random(seed + chunk.x() * 3121L + chunk.z() * 4021L);
+            int[] columns = new int[256];
+            for (int i = 0; i < 256; i++) {
+                columns[i] = 64 + random.nextInt(8);
             }
+            heights.put(((long) chunk.x() << 32) | (chunk.z() & 0xFFFFFFFFL), columns);
         }
-        if (options != null && options.shouldRegenBiomes()) {
-            setBiome(chunkX << 4, 0, chunkZ << 4, 1);
-        }
-        return true;
+        return new GeneratedTerrain() {
+            @Override
+            public int getBlock(int x, int y, int z) {
+                int[] columns = heights.get(((long) (x >> 4) << 32) | ((z >> 4) & 0xFFFFFFFFL));
+                if (columns == null) {
+                    return BlockState.registry().air();
+                }
+                int height = columns[((z & 15) << 4) | (x & 15)];
+                String name = y > height ? "minecraft:air" : y == height ? "minecraft:grass_block"
+                        : y > height - 4 ? "minecraft:dirt" : "minecraft:stone";
+                return BlockState.registry().defaultState(name);
+            }
+
+            @Override
+            public int getBiome(int x, int y, int z) {
+                return 1;
+            }
+
+            @Override
+            public NbtCompound getBlockEntity(int x, int y, int z) {
+                return null;
+            }
+
+            @Override
+            public void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                           BlockEntityVisitor visitor) {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
     }
 
     @Override

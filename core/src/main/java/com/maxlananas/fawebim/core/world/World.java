@@ -146,14 +146,44 @@ public interface World extends Extent {
     default void queueBlockUpdate(int x, int y, int z) {
     }
 
-    /** Regenerates a chunk from the world seed, keeping nothing. */
-    boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options);
+    /**
+     * Terrain generated afresh, to copy from: what the world's generator makes
+     * of some chunks, in a world of its own. Closing it frees that world.
+     */
+    interface GeneratedTerrain extends AutoCloseable {
+
+        int getBlock(int x, int y, int z);
+
+        int getBiome(int x, int y, int z);
+
+        /** The data of a generated block entity (a chest of a structure), or {@code null}. */
+        com.maxlananas.fawebim.core.util.NbtCompound getBlockEntity(int x, int y, int z);
+
+        void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                BlockEntityVisitor visitor);
+
+        @Override
+        void close();
+    }
 
     /**
-     * Whether {@code //regen <seed>} can use the seed it was given. Minecraft's
-     * chunk source is built from the level seed, so a platform that cannot build
-     * a second one says so and the command tells the player instead of silently
-     * regenerating with the world seed.
+     * Generates chunks afresh, as the world's generator makes them - with the
+     * seed of the options when there is one - without touching the live world:
+     * {@code //regen} copies the blocks of its selection out of the result
+     * through its edit session, so nothing outside the selection changes and
+     * the regeneration can be undone. Server thread only.
+     *
+     * @return the terrain, which the caller closes, or {@code null} when the
+     *         platform cannot generate any
+     */
+    default GeneratedTerrain generate(Collection<BlockVector2> chunks, RegenOptions options) {
+        return null;
+    }
+
+    /**
+     * Whether {@code //regen <seed>} can use the seed it was given. A platform
+     * that can only generate with the world's seed says so, and the command
+     * tells the player instead of silently regenerating with the world seed.
      */
     default boolean supportsCustomRegenSeed() {
         return false;

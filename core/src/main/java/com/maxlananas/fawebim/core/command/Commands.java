@@ -1113,29 +1113,28 @@ public final class Commands {
                     if (seed != null) {
                         options.setSeed(seed);
                     }
-                    int regenerated = 0;
+                    long regenerated;
                     com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
-                    try {
-                        for (BlockVector2 chunk : region.getChunks()) {
-                            ctx.world().loadChunk(chunk.x(), chunk.z());
-                            if (ctx.world().regenerateChunk(chunk.x(), chunk.z(), options)) {
-                                regenerated++;
-                            }
+                    try (com.maxlananas.fawebim.core.world.World.GeneratedTerrain terrain =
+                                 ctx.world().generate(region.getChunks(), options)) {
+                        if (terrain == null) {
+                            throw CommandRegistry.error("This platform cannot generate terrain");
                         }
+                        // The edit session is opened without the mask, which
+                        // was cleared above.
+                        EditSession editSession = ctx.editSession();
+                        regenerated = com.maxlananas.fawebim.core.function.Regeneration.copy(terrain, region,
+                                editSession, options.shouldRegenBiomes());
+                        if (biomeId >= 0) {
+                            int targetBiome = biomeId;
+                            region.forEachPosition((x, y, z) -> editSession.setBiome(x, y, z, targetBiome));
+                        }
+                        editSession.flushQueue();
                     } finally {
                         ctx.session().setMask(previousMask);
                     }
-                    if (biomeId >= 0) {
-                        EditSession editSession = ctx.editSession();
-                        int targetBiome = biomeId;
-                        region.forEachPosition((x, y, z) -> {
-                            editSession.setBiome(x, y, z, targetBiome);
-                            return true;
-                        });
-                        editSession.flushQueue();
-                    }
                     ctx.actor().message(Msg.result("Regenerated", Msg.count(regenerated)
-                            + " of " + Msg.count(region.getChunkCount()) + " chunk(s) in " + timer.phrase()));
+                            + " block(s) in " + timer.phrase()));
                 };
 
 
@@ -2559,19 +2558,37 @@ public final class Commands {
         e74.handler = ctx -> {
                     long before = ctx.hasFlag("o") ? parseDuration(ctx.flagValue("o", "")) : 0;
                     long threshold = before == 0 ? 0 : System.currentTimeMillis() - before;
-                    int count = 0;
+                    java.util.List<BlockVector2> chunks = new java.util.ArrayList<>();
                     int skipped = 0;
                     for (BlockVector2 chunk : ctx.selection().getChunks()) {
                         if (threshold > 0 && ctx.world().chunkLastModified(chunk.x(), chunk.z()) > threshold) {
                             skipped++;
                             continue;
                         }
-                        if (ctx.world().regenerateChunk(chunk.x(), chunk.z(),
-                                new com.maxlananas.fawebim.core.world.RegenOptions())) {
-                            count++;
+                        chunks.add(chunk);
+                    }
+                    // A deleted chunk is one the generator makes again: its whole
+                    // columns are written as freshly generated, through the edit
+                    // session, so //undo brings them back.
+                    if (!chunks.isEmpty()) {
+                        try (com.maxlananas.fawebim.core.world.World.GeneratedTerrain terrain = ctx.world().generate(
+                                chunks, new com.maxlananas.fawebim.core.world.RegenOptions().setRegenBiomes(true))) {
+                            if (terrain == null) {
+                                throw CommandRegistry.error("This platform cannot generate terrain");
+                            }
+                            EditSession editSession = ctx.editSession();
+                            for (BlockVector2 chunk : chunks) {
+                                com.maxlananas.fawebim.core.function.Regeneration.copy(terrain,
+                                        new com.maxlananas.fawebim.core.region.CuboidRegion(
+                                                new BlockVector3(chunk.x() << 4, ctx.world().minY(), chunk.z() << 4),
+                                                new BlockVector3((chunk.x() << 4) + 15, ctx.world().maxY(),
+                                                        (chunk.z() << 4) + 15)),
+                                        editSession, true);
+                            }
+                            editSession.flushQueue();
                         }
                     }
-                    ctx.actor().message(Msg.result("Deleted", Msg.count(count) + " chunk(s)"
+                    ctx.actor().message(Msg.result("Deleted", Msg.count(chunks.size()) + " chunk(s)"
                             + (skipped > 0 ? ", kept " + Msg.count(skipped) + " recently changed"
                                     : "")));
                 };

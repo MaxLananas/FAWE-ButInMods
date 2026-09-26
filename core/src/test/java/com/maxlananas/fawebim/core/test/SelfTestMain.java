@@ -2930,6 +2930,22 @@ public final class SelfTestMain {
                 .anyMatch(message -> plain(message).contains("\u00bb Regenerated: ")));
         check("//regen without a seed says nothing failed", simple.messages().stream()
                 .noneMatch(message -> message.contains("Command failed")));
+
+        // //regen rewrote the whole chunks under the selection, past it, and
+        // could not be undone: it copies the selection out of generated terrain.
+        TestWorld kept = new TestWorld("regen-selection");
+        kept.fillFlat(70);
+        TestActor keeper = new TestActor("Keeper", kept, new BlockVector3(0, 71, 0));
+        int gold = BlockState.registry().defaultState("minecraft:gold_block");
+        kept.setBlock(2, 90, 2, gold);
+        kept.setBlock(9, 90, 9, gold);
+        CommandManager.get().dispatch(keeper, "//pos1 0,60,0");
+        CommandManager.get().dispatch(keeper, "//pos2 4,95,4");
+        CommandManager.get().dispatch(keeper, "//regen");
+        check("//regen replaces what is inside the selection", kept.getBlock(2, 90, 2) != gold);
+        check("and leaves the rest of the chunk alone", kept.getBlock(9, 90, 9) == gold);
+        CommandManager.get().dispatch(keeper, "//undo");
+        check("//undo puts back what //regen replaced", kept.getBlock(2, 90, 2) == gold);
     }
 
 

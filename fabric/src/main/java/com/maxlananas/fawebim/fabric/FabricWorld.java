@@ -667,9 +667,16 @@ public final class FabricWorld implements World {
         }
     }
 
+    /** Chunks generated in a level of their own, see {@link FabricWorldRegen}. Server thread only. */
     @Override
-    public boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options) {
-        return FabricWorldRegen.regenerate(level, chunkX, chunkZ, options);
+    public GeneratedTerrain generate(Collection<BlockVector2> chunks, RegenOptions options) {
+        return FabricWorldRegen.generate(level, chunks, options);
+    }
+
+    /** The temporary level of a regeneration takes the seed it is given. */
+    @Override
+    public boolean supportsCustomRegenSeed() {
+        return true;
     }
 
     @Override
@@ -946,7 +953,7 @@ public final class FabricWorld implements World {
     }
 
     /** The game's tag as the engine's compound, through the binary form both of them read and write. */
-    private static NbtCompound fromTag(CompoundTag tag) throws IOException {
+    static NbtCompound fromTag(CompoundTag tag) throws IOException {
         java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
         net.minecraft.nbt.NbtIo.write(tag, new java.io.DataOutputStream(bytes));
         return com.maxlananas.fawebim.core.util.NbtIo.read(bytes.toByteArray());

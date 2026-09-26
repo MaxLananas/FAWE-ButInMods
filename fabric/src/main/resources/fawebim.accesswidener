@@ -19,3 +19,12 @@ accessible field net/minecraft/server/level/ServerChunkCache mainThreadProcessor
 # only changed state. The bulk write keeps the block entities itself, so it
 # needs the same method.
 accessible method net/minecraft/world/level/chunk/LevelChunk updateBlockEntityTicker (Lnet/minecraft/world/level/block/entity/BlockEntity;)V
+
+# //regen generates its chunks in a temporary level with the live level's
+# generator, as WorldEdit's Fabric world does: a seed given to the command
+# goes into the primary level data for the time of the generation, reached
+# through the derived data of the other dimensions. WorldEdit widens the same
+# two fields.
+accessible field net/minecraft/world/level/storage/PrimaryLevelData worldOptions Lnet/minecraft/world/level/levelgen/WorldOptions;
+mutable field net/minecraft/world/level/storage/PrimaryLevelData worldOptions Lnet/minecraft/world/level/levelgen/WorldOptions;
+accessible field net/minecraft/world/level/storage/DerivedLevelData wrapped Lnet/minecraft/world/level/storage/ServerLevelData;

@@ -10,7 +10,6 @@ import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.ChunkSet;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.PackedBlockArray;
-import com.maxlananas.fawebim.core.world.RegenOptions;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.util.Collection;
@@ -109,11 +108,6 @@ public final class BenchMain {
 
         @Override
         public void relight(Collection<BlockVector2> chunks) {
-        }
-
-        @Override
-        public boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options) {
-            return true;
         }
 
         @Override
