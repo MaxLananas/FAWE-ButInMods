@@ -287,10 +287,10 @@ public final class Config {
             put(root, setting.path(), setting.value());
         }
         try {
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, MiniYaml.write(root));
+            com.maxlananas.fawebim.core.util.AtomicFiles.writeString(file, MiniYaml.write(root));
         } catch (IOException e) {
-            // Ignore: the values stay in memory.
+            // The values stay in memory; the file keeps its previous content.
+            Log.warn("Could not write the configuration to " + file, e);
         }
     }
 

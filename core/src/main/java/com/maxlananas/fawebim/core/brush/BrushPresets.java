@@ -32,11 +32,8 @@ public final class BrushPresets {
         if (line == null) {
             return null;
         }
-        Path folder = directory();
-        Files.createDirectories(folder);
-        Path file = folder.resolve(safe(name) + ".txt");
-        Files.writeString(file, line + System.lineSeparator());
-        return file;
+        Path file = directory().resolve(safe(name) + ".txt");
+        return com.maxlananas.fawebim.core.util.AtomicFiles.writeString(file, line + System.lineSeparator());
     }
 
     /** The command line of a saved preset, or null when it does not exist. */
@@ -68,7 +65,7 @@ public final class BrushPresets {
     private static String safe(String name) {
         String cleaned = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "_");
         if (cleaned.isEmpty()) {
-            throw new IllegalArgumentException("Invalid preset name");
+            throw new com.maxlananas.fawebim.core.util.InputException("Invalid preset name '" + name + "'");
         }
         return cleaned;
     }

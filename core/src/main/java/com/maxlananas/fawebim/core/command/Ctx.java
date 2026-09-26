@@ -157,21 +157,19 @@ public final class Ctx {
     }
 
     public int intArg(int index) {
-        return (int) Math.round(doubleArg(index));
+        return Parsers.intArg(arg(index), "argument " + (index + 1));
     }
 
     public int intArg(int index, int fallback) {
-        return index < positional.size() ? (int) Math.round(doubleArg(index)) : fallback;
+        return index < positional.size() ? intArg(index) : fallback;
     }
 
+    /**
+     * A number argument; {@code NaN} and the infinities are refused. Coordinate
+     * style arguments ({@code ~5}, {@code ^3}) are read by {@link #blockVector}.
+     */
     public double doubleArg(int index) {
-        String value = arg(index);
-        try {
-            return Double.parseDouble(value);
-        } catch (NumberFormatException e) {
-            // Coordinate style arguments ("~5", "^3") are handled by blockVector().
-            throw CommandRegistry.error("Expected a number but got '" + value + "'");
-        }
+        return Parsers.finiteArg(arg(index), "argument " + (index + 1));
     }
 
     public double doubleArg(int index, double fallback) {
@@ -213,12 +211,12 @@ public final class Ctx {
 
     public int flagInt(String flag, int fallback) {
         String value = flagValue(flag, null);
-        return value == null ? fallback : Integer.parseInt(value);
+        return value == null ? fallback : Parsers.intArg(value, "-" + flag);
     }
 
     public double flagDouble(String flag, double fallback) {
         String value = flagValue(flag, null);
-        return value == null ? fallback : Double.parseDouble(value);
+        return value == null ? fallback : Parsers.finiteArg(value, "-" + flag);
     }
 
     public EditSession editSession() {
@@ -246,6 +244,37 @@ public final class Ctx {
             editSession = new EditSession(world(), session(), description);
         }
         return editSession;
+    }
+
+    /**
+     * Ends the edits this command opened: what is still buffered is written and
+     * the history record is published. The dispatcher calls it once the handler
+     * returned or failed, so an edit that stopped half way leaves the world and
+     * its history agreeing on the part that was done.
+     *
+     * @return the blocks the command's edit changed
+     */
+    long close() {
+        long changed = editSession == null ? 0 : editSession.getBlocksChanged();
+        RuntimeException failure = null;
+        for (EditSession opened : new EditSession[] {editSession, readSession}) {
+            if (opened == null) {
+                continue;
+            }
+            try {
+                opened.close();
+            } catch (RuntimeException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+        return changed;
     }
 
     /**
@@ -330,56 +359,94 @@ public final class Ctx {
         String[] split = input.split(",");
         if (split.length != 3) {
             if (Str.isInteger(input)) {
-                // Single number: the y coordinate for //up style commands. The
-                // digits can still be past what an int holds, which is a position
-                // the world has no room for rather than a crash.
+                // Single number: the y coordinate for //up style commands.
                 BlockVector3 base = placement();
-                try {
-                    return new BlockVector3(base.x(), Integer.parseInt(input), base.z());
-                } catch (NumberFormatException e) {
-                    throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
-                }
+                return new BlockVector3(base.x(), Parsers.coordinate(Parsers.finiteArg(input, "y"), input),
+                        base.z());
             }
             throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
         }
-        BlockVector3 origin = actor.position();
-        Vector3 direction = actor.direction();
-        double[] values = new double[3];
+        String[] parts = new String[3];
+        int local = 0;
         for (int i = 0; i < 3; i++) {
-            try {
-                values[i] = parseCoordinate(split[i].trim(), i, origin, direction);
-            } catch (NumberFormatException e) {
-                throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+            parts[i] = split[i].trim();
+            if (parts[i].startsWith("^")) {
+                local++;
             }
         }
-        return new BlockVector3((int) Math.floor(values[0]), (int) Math.floor(values[1]), (int) Math.floor(values[2]));
+        if (local != 0 && local != 3) {
+            // Minecraft's own rule: ^ offsets are along the way the player looks,
+            // which has no meaning for one axis of a world position.
+            throw CommandRegistry.error("Cannot mix world and local (^) coordinates in '" + input + "'");
+        }
+        double[] values = local == 3 ? localCoordinates(parts, input) : new double[3];
+        if (local == 0) {
+            BlockVector3 origin = actor.position();
+            for (int i = 0; i < 3; i++) {
+                values[i] = worldCoordinate(parts[i], i, origin, input);
+            }
+        }
+        return new BlockVector3(Parsers.coordinate(values[0], input), Parsers.coordinate(values[1], input),
+                Parsers.coordinate(values[2], input));
     }
 
-    private double parseCoordinate(String token, int axis, BlockVector3 origin, Vector3 direction) {
-        double base = origin == null ? 0 : (axis == 0 ? origin.x() : axis == 1 ? origin.y() : origin.z());
+    /** One axis of a world position: a number, or {@code ~} plus an offset from the player. */
+    private static double worldCoordinate(String token, int axis, BlockVector3 origin, String input) {
         if (token.startsWith("~")) {
+            double base = origin == null ? 0 : (axis == 0 ? origin.x() : axis == 1 ? origin.y() : origin.z());
             String rest = token.substring(1);
-            return rest.isEmpty() ? base : base + Double.parseDouble(rest);
+            return rest.isEmpty() ? base : base + number(rest, input);
         }
-        if (token.startsWith("^")) {
-            String rest = token.substring(1);
-            double offset = rest.isEmpty() ? 0 : Double.parseDouble(rest);
-            Vector3 forward = new Vector3(direction.x(), 0, direction.z());
-            if (forward.length() < 1e-6) {
-                forward = new Vector3(0, 0, 1);
-            }
-            forward = forward.normalize();
-            Vector3 right = new Vector3(forward.z(), 0, -forward.x());
-            Vector3 up = new Vector3(0, 1, 0);
-            // ^left ^up ^forward
-            Vector3 local = switch (axis) {
-                case 0 -> right;
-                case 1 -> up;
-                default -> forward;
-            };
-            return base + local.length() * offset;
+        return number(token, input);
+    }
+
+    /**
+     * A {@code ^left,^up,^forward} position, computed the way Minecraft's
+     * local coordinates are: along the player's view, pitch included, from the
+     * centre of the block they stand in. Each offset moves along an axis of the
+     * view, so all three have to be read together - moving along world axes
+     * one by one put {@code ^0,^0,^5} five blocks east whichever way the player
+     * looked.
+     */
+    private double[] localCoordinates(String[] parts, String input) {
+        BlockVector3 origin = actor.position();
+        if (origin == null) {
+            throw CommandRegistry.error("Local (^) coordinates need a player to look from");
         }
-        return Double.parseDouble(token);
+        double left = parts[0].length() == 1 ? 0 : number(parts[0].substring(1), input);
+        double up = parts[1].length() == 1 ? 0 : number(parts[1].substring(1), input);
+        double forwards = parts[2].length() == 1 ? 0 : number(parts[2].substring(1), input);
+        double yaw = Math.toRadians(actor.yaw() + 90.0);
+        double pitch = Math.toRadians(-actor.pitch());
+        double pitchUp = Math.toRadians(-actor.pitch() + 90.0);
+        double forwardX = Math.cos(yaw) * Math.cos(pitch);
+        double forwardY = Math.sin(pitch);
+        double forwardZ = Math.sin(yaw) * Math.cos(pitch);
+        double upX = Math.cos(yaw) * Math.cos(pitchUp);
+        double upY = Math.sin(pitchUp);
+        double upZ = Math.sin(yaw) * Math.cos(pitchUp);
+        // left = -(forward x up)
+        double leftX = -(forwardY * upZ - forwardZ * upY);
+        double leftY = -(forwardZ * upX - forwardX * upZ);
+        double leftZ = -(forwardX * upY - forwardY * upX);
+        return new double[] {
+            origin.x() + 0.5 + forwardX * forwards + upX * up + leftX * left,
+            origin.y() + forwardY * forwards + upY * up + leftY * left,
+            origin.z() + 0.5 + forwardZ * forwards + upZ * up + leftZ * left,
+        };
+    }
+
+    private static double number(String token, String input) {
+        double value;
+        try {
+            value = Double.parseDouble(token);
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+        }
+        if (!Double.isFinite(value)) {
+            throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+        }
+        return value;
     }
 
     /** Resolves a pattern argument using the session's global pattern as fallback. */
@@ -401,8 +468,9 @@ public final class Ctx {
             throw CommandRegistry.error("Expected one value or x,y,z, got '"
                     + positional.get(index) + "'");
         }
-        return new Vector3(Double.parseDouble(parts[0].trim()), Double.parseDouble(parts[1].trim()),
-                Double.parseDouble(parts[2].trim()));
+        String what = "argument " + (index + 1);
+        return new Vector3(Parsers.finiteArg(parts[0], what), Parsers.finiteArg(parts[1], what),
+                Parsers.finiteArg(parts[2], what));
     }
 
     public Pattern pattern(int index) {
@@ -440,7 +508,7 @@ public final class Ctx {
     }
 
     public Direction directionArg(int index) {
-        return Direction.parse(arg(index));
+        return Parsers.direction(arg(index));
     }
 
     public boolean boolArg(int index, boolean fallback) {

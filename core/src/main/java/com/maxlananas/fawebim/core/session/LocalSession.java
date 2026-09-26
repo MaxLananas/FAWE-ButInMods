@@ -48,7 +48,17 @@ public final class LocalSession {
     private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
     private String toolBindingName;
     private Mask sourceMask;
-    private boolean cancelled;
+    /**
+     * Set by {@code /cancel} while a command of this session runs; read by the
+     * edit on every checkpoint. Volatile because the flag is the one piece of
+     * session state meant to be written while an edit is in progress.
+     */
+    private volatile boolean cancelled;
+    /**
+     * How many commands of this session are running, nested ones included. Only
+     * the thread running the commands writes it.
+     */
+    private volatile int runningCommands;
     private boolean tips;
     private boolean watchdog = true;
     private java.time.ZoneId timezone = java.time.ZoneId.systemDefault();
@@ -100,15 +110,24 @@ public final class LocalSession {
      * Enabled by the session manager once the owner name is known.
      */
     public void enableSnapshots() {
-        history.setRecordListener(record -> {
-            // Every finished edit goes into the shared log, which is what
-            // /history find, rollback and restore search.
-            com.maxlananas.fawebim.core.history.EditLog.add(ownerName,
-                    record.world == null ? lastWorldName : record.world, record);
-            if (com.maxlananas.fawebim.core.platform.Config.get().snapshotsEnabled) {
-                com.maxlananas.fawebim.core.history.Snapshots.saveAsync(record, ownerName);
-            }
-        });
+        history.setRecordListener(LocalSession::logFinishedEdit);
+    }
+
+    /**
+     * Every finished edit goes into the shared log, which is what {@code /history
+     * find}, {@code rollback} and {@code restore} search, and to the snapshot
+     * folder when snapshots are on.
+     *
+     * <p>The owner and the world are the record's own: a history shared by every
+     * session has one listener, installed by whichever session came last, and
+     * naming that session's player logged everyone's edits as theirs.</p>
+     */
+    private static void logFinishedEdit(History.Record record) {
+        String owner = record.owner == null ? "console" : record.owner;
+        com.maxlananas.fawebim.core.history.EditLog.add(owner, record.world, record);
+        if (com.maxlananas.fawebim.core.platform.Config.get().snapshotsEnabled) {
+            com.maxlananas.fawebim.core.history.Snapshots.saveAsync(record, owner);
+        }
     }
 
     /** Name of the world the session is editing, kept for the history log. */
@@ -147,7 +166,12 @@ public final class LocalSession {
         this.sourceMask = sourceMask;
     }
 
-    /** {@code /cancel}: abort the next edit that checks the session state. */
+    /**
+     * {@code /cancel}: stops the commands of this session that are running, at
+     * their next checkpoint. The flag lives as long as they do: the first command
+     * to start and the last one to end both clear it, so a cancel can never
+     * carry over into an edit started after it.
+     */
     public void cancel() {
         cancelled = true;
     }
@@ -158,6 +182,29 @@ public final class LocalSession {
 
     public boolean isCancelled() {
         return cancelled;
+    }
+
+    /** Called by the dispatcher when a command of this session starts. */
+    public void enterCommand() {
+        if (runningCommands == 0) {
+            cancelled = false;
+        }
+        runningCommands++;
+    }
+
+    /** Called by the dispatcher when a command of this session is over. */
+    public void exitCommand() {
+        if (runningCommands > 0) {
+            runningCommands--;
+        }
+        if (runningCommands == 0) {
+            cancelled = false;
+        }
+    }
+
+    /** How many commands of this session are running, the caller's own included. */
+    public int runningCommands() {
+        return runningCommands;
     }
 
     /** The timezone used when snapshot dates are displayed. */

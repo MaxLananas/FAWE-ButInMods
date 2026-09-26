@@ -225,23 +225,27 @@ public final class Str {
         long total = 0;
         long value = 0;
         boolean digits = false;
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (Character.isDigit(c)) {
-                value = value * 10 + (c - '0');
-                digits = true;
-                continue;
+        try {
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c >= '0' && c <= '9') {
+                    value = Math.addExact(Math.multiplyExact(value, 10), c - '0');
+                    digits = true;
+                    continue;
+                }
+                if (!digits) {
+                    throw new InputException("Expected a duration such as 8h5m12s, got '" + text + "'");
+                }
+                total = Math.addExact(total, Math.multiplyExact(value, unitMillis(c, text)));
+                value = 0;
+                digits = false;
             }
-            if (!digits) {
-                throw com.maxlananas.fawebim.core.command.CommandRegistry.error(
-                        "Expected a duration such as 8h5m12s, got '" + text + "'");
+            if (digits) {
+                total = Math.addExact(total, value);
             }
-            total += value * unitMillis(c, text);
-            value = 0;
-            digits = false;
-        }
-        if (digits) {
-            total += value;
+        } catch (ArithmeticException e) {
+            // Twenty digits wrapped round to a negative duration before.
+            throw new InputException("The duration '" + text + "' is too long");
         }
         return total;
     }
@@ -254,7 +258,7 @@ public final class Str {
             case 'd' -> 86_400_000L;
             case 'w' -> 604_800_000L;
             case 'y' -> 31_536_000_000L;
-            default -> throw new IllegalArgumentException("Unknown time unit '" + unit + "' in '" + text + "'");
+            default -> throw new InputException("Unknown time unit '" + unit + "' in '" + text + "'");
         };
     }
 }

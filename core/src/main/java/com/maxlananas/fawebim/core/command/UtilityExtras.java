@@ -110,6 +110,12 @@ final class UtilityExtras {
         entry.group = "utility";
         entry.requiresPlayer = true;
         entry.handler = ctx -> {
+            // This command is one of the running ones. Commands run one after the
+            // other, so another one is only running when this was called from it.
+            if (ctx.session().runningCommands() <= 1) {
+                ctx.actor().message(Msg.info("No edit is running"));
+                return;
+            }
             ctx.session().cancel();
             ctx.actor().message(Msg.success("The running edit will stop at the next checkpoint"));
         };
@@ -712,14 +718,18 @@ final class UtilityExtras {
         }
         EditSession session = new EditSession(ctx.world(), ctx.session(), "history", false);
         int changed = 0;
-        for (EditLog.Entry entry : matches) {
-            for (var sets : entry.record.changes().values()) {
-                for (var set : sets) {
-                    changed += session.applyChangeSet(set, undo);
-                }
+        // The log lists the newest edit first. A rollback takes the edits back
+        // newest first, so a cell several of them touched ends as the oldest one
+        // found it; a restore replays them oldest first, so it ends as the newest
+        // one left it.
+        try {
+            for (int index = 0; index < matches.size(); index++) {
+                EditLog.Entry entry = matches.get(undo ? index : matches.size() - 1 - index);
+                changed += session.applyRecord(entry.record, undo);
             }
+        } finally {
+            session.close();
         }
-        session.flushQueue();
         ctx.actor().message(Msg.result(undo ? "Rolled back" : "Restored", Msg.count(changed)
                 + "\u00a77 block change(s) from " + Msg.count(matches.size()) + "\u00a77 edit(s)"));
     }

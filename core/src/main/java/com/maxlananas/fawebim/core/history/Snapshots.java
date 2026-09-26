@@ -5,7 +5,6 @@ import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.NbtIo;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -55,25 +54,31 @@ public final class Snapshots {
         writer = executor == null ? Runnable::run : executor;
     }
 
-    /** Writes a record off the editing thread, ignoring a failed write. */
+    /**
+     * Writes a record off the editing thread; a failed write is logged. Nothing
+     * is written before the platform names the snapshot folder, which it does
+     * when the server starts.
+     */
     public static void saveAsync(History.Record record, String owner) {
+        if (directory == null) {
+            return;
+        }
         writer.execute(() -> {
             try {
                 save(record, owner);
             } catch (IOException | RuntimeException e) {
                 // A failing snapshot must never take an edit down with it.
+                com.maxlananas.fawebim.core.platform.Log.warn("Could not write the snapshot of '"
+                        + record.description + "' for " + owner, e);
             }
         });
     }
 
     public static Path save(History.Record record, String owner) throws IOException {
-        Path folder = ownerFolder(owner);
-        Files.createDirectories(folder);
-        Path file = folder.resolve(timestamp() + ".snap");
-        try (OutputStream out = Files.newOutputStream(file)) {
-            NbtIo.write(of(record, owner), out, false, true);
-        }
-        return file;
+        Path file = ownerFolder(owner).resolve(timestamp() + ".snap");
+        NbtCompound snapshot = of(record, owner);
+        return com.maxlananas.fawebim.core.util.AtomicFiles.write(file,
+                out -> NbtIo.write(snapshot, out, false, true));
     }
 
     /** Snapshots owned by a player, newest first. */
@@ -114,14 +119,16 @@ public final class Snapshots {
 
     private static Path nearest(String owner, long epochMillis, boolean before) {
         Path best = null;
+        long bestTime = 0;
         for (Path path : list(owner)) {
             long time = timestampOf(path);
             if (time < 0) {
                 continue;
             }
             if (before ? time < epochMillis : time > epochMillis) {
-                if (best == null || before ? time > timestampOf(best) : time < timestampOf(best)) {
+                if (best == null || (before ? time > bestTime : time < bestTime)) {
                     best = path;
+                    bestTime = time;
                 }
             }
         }
@@ -142,10 +149,18 @@ public final class Snapshots {
         return NbtIo.readNbtOrGzip(Files.readAllBytes(path));
     }
 
-    /** Restores a snapshot, i.e. puts the recorded "before" states back. */
+    /**
+     * Restores a snapshot, i.e. puts the recorded "before" states back.
+     *
+     * <p>The sections and their rows are walked back to front: a cell the edit
+     * wrote twice is in the snapshot twice, and only the first row holds the
+     * state it had before the edit.</p>
+     */
     public static int restore(EditSession session, NbtCompound snapshot) {
         int restored = 0;
-        for (NbtCompound section : snapshot.getCompoundList("sections")) {
+        List<NbtCompound> sections = snapshot.getCompoundList("sections");
+        for (int s = sections.size() - 1; s >= 0; s--) {
+            NbtCompound section = sections.get(s);
             int chunkX = section.getInt("x", 0);
             int chunkZ = section.getInt("z", 0);
             int sectionY = section.getInt("y", 0);
@@ -154,7 +169,7 @@ public final class Snapshots {
             if (indices == null || before == null) {
                 continue;
             }
-            for (int i = 0; i < indices.length && i < before.length; i++) {
+            for (int i = Math.min(indices.length, before.length) - 1; i >= 0; i--) {
                 int index = indices[i];
                 int x = (chunkX << 4) + (index & 15);
                 int z = (chunkZ << 4) + ((index >> 4) & 15);
@@ -175,7 +190,9 @@ public final class Snapshots {
      */
     public static int restoreBiomes(EditSession session, NbtCompound snapshot) {
         int restored = 0;
-        for (NbtCompound section : snapshot.getCompoundList("biomes")) {
+        List<NbtCompound> sections = snapshot.getCompoundList("biomes");
+        for (int s = sections.size() - 1; s >= 0; s--) {
+            NbtCompound section = sections.get(s);
             com.maxlananas.fawebim.core.history.BiomeChangeSet set =
                     new com.maxlananas.fawebim.core.history.BiomeChangeSet(
                             section.getInt("x", 0), section.getInt("z", 0), section.getInt("y", 0));
@@ -364,8 +381,17 @@ public final class Snapshots {
         return directory().resolve(safe);
     }
 
+    /** Makes two snapshots of the same millisecond land in two files. */
+    private static final java.util.concurrent.atomic.AtomicInteger SEQUENCE =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * The name of a new snapshot: its time, which the date lookups read back,
+     * then a sequence number. A random suffix could repeat within a
+     * millisecond and overwrite the snapshot written just before.
+     */
     private static String timestamp() {
-        return System.currentTimeMillis() + "-" + Integer.toHexString((int) (Math.random() * 0xFFFF));
+        return System.currentTimeMillis() + "-" + Integer.toHexString(SEQUENCE.incrementAndGet());
     }
 
     /** Convenience for callers that only want the failure to be logged. */

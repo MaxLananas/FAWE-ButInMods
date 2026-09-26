@@ -178,8 +178,11 @@ public final class Navigation {
         if (alwaysGlass || !actor.isFlying()) {
             if (!isBlocking(actor, x, y - 1, z)) {
                 EditSession session = new EditSession(actor.world(), actor.session(), "navigation");
-                session.setBlock(x, y - 1, z, BlockState.registry().defaultState("minecraft:glass"));
-                session.flushQueue();
+                try {
+                    session.setBlock(x, y - 1, z, BlockState.registry().defaultState("minecraft:glass"));
+                } finally {
+                    session.close();
+                }
             }
         } else {
             actor.setFlying(true);

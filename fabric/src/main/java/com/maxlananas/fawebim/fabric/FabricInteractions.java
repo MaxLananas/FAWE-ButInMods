@@ -3,6 +3,7 @@ package com.maxlananas.fawebim.fabric;
 import com.maxlananas.fawebim.core.brush.Brush;
 import com.maxlananas.fawebim.core.brush.BrushFactory;
 import com.maxlananas.fawebim.core.command.CommandManager;
+import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
@@ -118,7 +119,7 @@ public final class FabricInteractions {
         if (tool != null && bound(session, "tool-item", held)) {
             Tool.ToolContext context = new Tool.ToolContext(actor, FabricMessages.blockVector(pos),
                     FabricMessages.direction(face), null);
-            if (tool.onLeftClick(context)) {
+            if (CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onLeftClick(context))) {
                 return handled(player);
             }
         }
@@ -127,7 +128,9 @@ public final class FabricInteractions {
         // it only acts once it has been turned on. A left click with anything
         // else - the wand included - falls through to the selection.
         if (session.isSuperPickaxeEnabled() && isPickaxe(held)) {
-            return superPickaxe(actor, FabricMessages.blockVector(pos)) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+            BlockVector3 start = FabricMessages.blockVector(pos);
+            return CommandRegistry.interact(actor, "super pickaxe", () -> superPickaxe(actor, start))
+                    ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
         // 3. The selection wand: first corner.
@@ -162,7 +165,8 @@ public final class FabricInteractions {
         }
         Tool tool = Tools.current(session);
         if (tool != null && bound(session, "tool-item", held)) {
-            return tool.onSwing(new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null));
+            Tool.ToolContext context = new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null);
+            return CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onSwing(context));
         }
         return false;
     }
@@ -188,7 +192,7 @@ public final class FabricInteractions {
         if (tool != null && bound(session, "tool-item", held)) {
             Tool.ToolContext context = new Tool.ToolContext(actor, FabricMessages.blockVector(pos),
                     FabricMessages.direction(face), null);
-            if (tool.onRightClick(context)) {
+            if (CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onRightClick(context))) {
                 return handled(player);
             }
         }
@@ -234,7 +238,8 @@ public final class FabricInteractions {
             return InteractionResult.PASS;
         }
         Tool.ToolContext context = new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null);
-        return tool.onRightClick(context) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+        return CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onRightClick(context))
+                ? InteractionResult.SUCCESS : InteractionResult.PASS;
     }
 
     /**
@@ -282,10 +287,23 @@ public final class FabricInteractions {
         return held != null && held.equals(value);
     }
 
+    /**
+     * Runs a brush stroke with the guarantees of a command: its edit is closed
+     * whatever happens, and a failure - the block limit, a missing clipboard, a
+     * bug - is answered in chat instead of escaping into the packet handler.
+     */
     private static boolean applyBrush(FabricActor actor, Brush brush, BlockVector3 position) {
+        return CommandRegistry.interact(actor, "brush", () -> stroke(actor, brush, position));
+    }
+
+    private static boolean stroke(FabricActor actor, Brush brush, BlockVector3 position) {
         EditSession session = new EditSession(actor.world(), actor.session(), "brush");
-        int changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, position, actor);
-        session.flushQueue();
+        int changed;
+        try {
+            changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, position, actor);
+        } finally {
+            session.close();
+        }
         if (changed > 0 && actor.player() != null) {
             markHandled(actor.player());
         }
@@ -318,14 +336,17 @@ public final class FabricInteractions {
         }
         EditSession edit = new EditSession(actor.world(), session, "superpickaxe", false);
         int radius = Math.max(0, session.getSuperPickaxeRadius());
-        for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
-                for (int z = -radius; z <= radius; z++) {
-                    edit.setBlock(start.x() + x, start.y() + y, start.z() + z, BlockState.registry().air());
+        try {
+            for (int x = -radius; x <= radius; x++) {
+                for (int y = -radius; y <= radius; y++) {
+                    for (int z = -radius; z <= radius; z++) {
+                        edit.setBlock(start.x() + x, start.y() + y, start.z() + z, BlockState.registry().air());
+                    }
                 }
             }
+        } finally {
+            edit.close();
         }
-        edit.flushQueue();
         ServerPlayer player = actor.player();
         // A single break drops what it broke; an area break only drops everything
         // when many-drop-items is on, which is how WorldEdit reads the pair.

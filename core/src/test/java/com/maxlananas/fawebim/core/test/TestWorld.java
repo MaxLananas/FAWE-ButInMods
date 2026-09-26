@@ -37,6 +37,8 @@ public final class TestWorld implements World {
     private final String name;
     private long seed = 1234L;
     private int setCount;
+    /** How many times each chunk was handed to {@link #applyChunk}, by chunk key. */
+    private final Map<Long, Integer> applyCounts = new HashMap<>();
 
     public TestWorld(String name) {
         this.name = name;
@@ -208,6 +210,7 @@ public final class TestWorld implements World {
 
     @Override
     public int applyChunk(ChunkSet set) {
+        applyCounts.merge(((long) set.chunkX() << 32) | (set.chunkZ() & 0xFFFFFFFFL), 1, Integer::sum);
         int applied = 0;
         int minY = set.minSection() << 4;
         for (int section = 0; section < set.sectionCount(); section++) {
@@ -387,6 +390,11 @@ public final class TestWorld implements World {
 
     public int setCount() {
         return setCount;
+    }
+
+    /** How many flushes wrote into a chunk. */
+    public int applyCount(int chunkX, int chunkZ) {
+        return applyCounts.getOrDefault(((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL), 0);
     }
 
     public List<EntityData> entityList() {

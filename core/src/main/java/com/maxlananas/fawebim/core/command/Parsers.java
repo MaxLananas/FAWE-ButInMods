@@ -29,6 +29,83 @@ public final class Parsers {
     private Parsers() {
     }
 
+    /**
+     * The largest coordinate a command accepts on any axis. Minecraft's world
+     * border stops at 30 million blocks, and staying inside it keeps every sum
+     * and difference of two coordinates inside an {@code int}: a position of
+     * two billion made the next {@code max + 1} of a region wrap round.
+     */
+    public static final int MAX_COORDINATE = 30_000_000;
+
+    /**
+     * A number argument, refused unless it is a finite number: Java reads
+     * {@code NaN} and {@code Infinity} as numbers too, and a {@code NaN} radius
+     * or a count of infinity walked as zero or as the largest integer.
+     */
+    public static double finiteArg(String input, String what) {
+        double value;
+        try {
+            value = Double.parseDouble(input.trim());
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a number for " + what + " but got '" + input + "'");
+        }
+        if (!Double.isFinite(value)) {
+            throw CommandRegistry.error("Expected a finite number for " + what + " but got '" + input + "'");
+        }
+        return value;
+    }
+
+    /**
+     * An integer argument. A decimal is rounded, as the commands always did; a
+     * value past what an {@code int} holds is refused instead of wrapping round
+     * to a negative one.
+     */
+    public static int intArg(String input, String what) {
+        long rounded = Math.round(finiteArg(input, what));
+        if (rounded < Integer.MIN_VALUE || rounded > Integer.MAX_VALUE) {
+            throw CommandRegistry.error("The " + what + " '" + input + "' is out of range");
+        }
+        return (int) rounded;
+    }
+
+    /** A whole number that has to fit a {@code long}, such as a seed. */
+    public static long longArg(String input, String what) {
+        try {
+            return Long.parseLong(input.trim());
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a whole number for " + what + " but got '" + input + "'");
+        }
+    }
+
+    /** One of the six directions, by name or first letter. */
+    public static com.maxlananas.fawebim.core.world.Direction direction(String input) {
+        try {
+            return com.maxlananas.fawebim.core.world.Direction.parse(input.trim());
+        } catch (IllegalArgumentException e) {
+            throw CommandRegistry.error("Unknown direction '" + input
+                    + "'; use north, south, east, west, up or down");
+        }
+    }
+
+    /** An axis, by letter or by a direction along it. */
+    public static com.maxlananas.fawebim.core.transform.Axis axis(String input) {
+        try {
+            return com.maxlananas.fawebim.core.transform.Axis.parse(input.trim());
+        } catch (IllegalArgumentException e) {
+            throw CommandRegistry.error("Unknown direction '" + input
+                    + "'; use x, y, z or a direction such as north or up");
+        }
+    }
+
+    /** Refuses a coordinate outside the world border. */
+    public static int coordinate(double value, String input) {
+        if (!Double.isFinite(value) || Math.abs(value) > MAX_COORDINATE) {
+            throw CommandRegistry.error("'" + input + "' is outside the world (coordinates stop at "
+                    + com.maxlananas.fawebim.core.util.Msg.formatNumber(MAX_COORDINATE) + ")");
+        }
+        return (int) Math.floor(value);
+    }
+
     // ------------------------------------------------------------------ blocks
 
     /**

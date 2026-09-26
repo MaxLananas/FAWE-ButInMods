@@ -72,9 +72,21 @@ public final class SelfTestMain {
     private static int failed;
     private static final java.util.List<String> failures = new java.util.ArrayList<>();
 
+    /** Every line the engine logged at error level: each one is a bug a command hit. */
+    static final List<String> loggedErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public static void main(String[] args) throws Exception {
         BlockState.setRegistry(new TestBlockStateRegistry());
         EditSession.BlockStateRegistryHolder.set(BlockState.registry());
+        com.maxlananas.fawebim.core.platform.Log.install((level, message, error) -> {
+            System.out.println("LOG " + level + ": " + message + (error == null ? "" : " (" + error + ")"));
+            if (error != null && level == com.maxlananas.fawebim.core.platform.Log.Level.ERROR) {
+                error.printStackTrace(System.out);
+            }
+            if (level == com.maxlananas.fawebim.core.platform.Log.Level.ERROR) {
+                loggedErrors.add(message + (error == null ? "" : ": " + error));
+            }
+        });
 
         testMath();
         testBlockStateRegistry();
@@ -123,6 +135,12 @@ public final class SelfTestMain {
         testHostileArguments();
         testEveryAnswerIsColoured();
         testEveryCommandAnswersInColour();
+        HistoryIntegrityTests.run();
+
+        // A command that fails with anything but a refusal logs it as an error;
+        // the sweeps above run every command with hostile arguments, so an error
+        // logged anywhere in the run is a command that crashed on its input.
+        checkEquals("no command crashed during the run " + loggedErrors, 0, loggedErrors.size());
 
         System.out.println();
         System.out.println("Self-tests: " + passed + " passed, " + failed + " failed");
@@ -220,7 +238,7 @@ public final class SelfTestMain {
 
     // ------------------------------------------------------------------ helpers
 
-    private static void check(String name, boolean condition) {
+    static void check(String name, boolean condition) {
         if (condition) {
             passed++;
         } else {
@@ -230,7 +248,7 @@ public final class SelfTestMain {
         }
     }
 
-    private static void checkEquals(String name, Object expected, Object actual) {
+    static void checkEquals(String name, Object expected, Object actual) {
         if (expected == null ? actual == null : expected.equals(actual)) {
             passed++;
         } else {
@@ -266,7 +284,7 @@ public final class SelfTestMain {
         checkEquals("brushes that build without a session", BrushTable.BRUSHES.length, built + needsContext);
     }
 
-    private static void section(String name) {
+    static void section(String name) {
         System.out.println("== " + name);
     }
 
@@ -776,7 +794,7 @@ public final class SelfTestMain {
             edit.setBlock(position.x(), position.y(), position.z(), stone);
         }
         edit.flushQueue();
-        checkEquals("blocks changed", 75, edit.getBlocksChanged());
+        checkEquals("blocks changed", 75L, edit.getBlocksChanged());
         checkEquals("world updated", stone, world.getBlock(2, 71, 2));
         check("history recorded", session.getHistory().canUndo());
         check("history changes", session.getHistory().totalChanges() == 75);
@@ -796,12 +814,18 @@ public final class SelfTestMain {
 
         // The most changes one chunk section can hold, which takes a change set
         // through every step it grows by, and the undo of all of them.
+        // Section 5 (y 80 to 95) is all air, so each of its 4096 cells is one
+        // change. Writing the same cell again with the state it already holds in
+        // the buffer is not a change, which the count used to get wrong.
         EditSession wide = new EditSession(world, session, "//set wide");
         for (int i = 0; i < 4096; i++) {
-            wide.setBlock(i & 15, 71, (i >> 4) & 15, stone);
+            wide.setBlock(i & 15, 80 + (i >> 8), (i >> 4) & 15, stone);
+        }
+        for (int i = 0; i < 256; i++) {
+            wide.setBlock(i & 15, 80, (i >> 4) & 15, stone);
         }
         wide.flushQueue();
-        checkEquals("a full section of changes is recorded", 4096, wide.getBlocksChanged());
+        checkEquals("a full section of changes is recorded", 4096L, wide.getBlocksChanged());
         var wideRecord = session.getHistory().undo();
         checkEquals("the record holds every change", 4096, wideRecord.changeCount());
         EditSession wideUndo = new EditSession(world, session, "undo", false);
@@ -813,7 +837,7 @@ public final class SelfTestMain {
         wideUndo.flushQueue();
         int restored = 0;
         for (int i = 0; i < 4096; i++) {
-            if (world.getBlock(i & 15, 71, (i >> 4) & 15) == air) {
+            if (world.getBlock(i & 15, 80 + (i >> 8), (i >> 4) & 15) == air) {
                 restored++;
             }
         }
@@ -1989,7 +2013,9 @@ public final class SelfTestMain {
                 }
                 boolean refused = false;
                 for (String message : console.messages()) {
-                    if (message.startsWith("Command failed")) {
+                    // The answers are coloured, so the text is compared without
+                    // its codes: a "§cCommand failed" never started with it.
+                    if (plain(message).contains("Command failed")) {
                         failures.add(line + ": " + message);
                     }
                     refused |= message.contains("must be run by a player");

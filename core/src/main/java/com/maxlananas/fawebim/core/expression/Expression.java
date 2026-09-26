@@ -23,6 +23,21 @@ public final class Expression {
         this.root = root;
     }
 
+    /**
+     * An expression that cannot be read or cannot be evaluated: a syntax error,
+     * an unknown function, a loop that does not end. It is the player's input
+     * that is wrong, so the commands answer it as such. It stays an
+     * {@link IllegalArgumentException} for the callers that catch that.
+     */
+    public static final class ExpressionException extends IllegalArgumentException {
+
+        private static final long serialVersionUID = 1L;
+
+        public ExpressionException(String message) {
+            super(message);
+        }
+    }
+
     public static Expression compile(String input) {
         Parser parser = new Parser(input);
         Node node = parser.parseStatements();
@@ -171,7 +186,7 @@ public final class Expression {
             while (condition.eval(vars) != 0) {
                 body.eval(vars);
                 if (++guard > 100_000) {
-                    throw new IllegalStateException("Expression loop exceeded 100000 iterations");
+                    throw new ExpressionException("Expression loop exceeded 100000 iterations");
                 }
             }
             return 0;
@@ -187,7 +202,7 @@ public final class Expression {
                 body.eval(vars);
                 increment.eval(vars);
                 if (++guard > 100_000) {
-                    throw new IllegalStateException("Expression loop exceeded 100000 iterations");
+                    throw new ExpressionException("Expression loop exceeded 100000 iterations");
                 }
             }
             return 0;
@@ -295,7 +310,7 @@ public final class Expression {
             case "e" -> Math.E;
             case "true" -> 1;
             case "false" -> 0;
-            default -> throw new IllegalStateException("Unknown function '" + name + "'");
+            default -> throw new ExpressionException("Unknown function '" + name + "'");
         };
     }
 
@@ -421,7 +436,7 @@ public final class Expression {
         private void expect(char c) {
             skipWhitespace();
             if (pos >= input.length() || input.charAt(pos) != c) {
-                throw new IllegalArgumentException(
+                throw new ExpressionException(
                         "Expected '" + c + "' at position " + pos + " in expression: " + input);
             }
             pos++;
@@ -430,7 +445,7 @@ public final class Expression {
         void expectEnd() {
             skipWhitespaceAndSemicolons();
             if (pos < input.length()) {
-                throw new IllegalArgumentException("Unexpected trailing input at " + pos + ": " + input);
+                throw new ExpressionException("Unexpected trailing input at " + pos + ": " + input);
             }
         }
 
@@ -639,7 +654,7 @@ public final class Expression {
                 }
                 return new Variable(name);
             }
-            throw new IllegalArgumentException("Unexpected character '" + c + "' at " + pos + " in " + input);
+            throw new ExpressionException("Unexpected character '" + c + "' at " + pos + " in " + input);
         }
 
         private String parseIdentifier() {

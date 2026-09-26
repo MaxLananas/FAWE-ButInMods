@@ -85,8 +85,37 @@ public final class FaweMod implements ModInitializer {
         CommandManager.get().initialise();
     }
 
+    /**
+     * Waits for the history and snapshot files handed to the writer so far.
+     *
+     * <p>The writer is one daemon thread: a server that stops does not wait for
+     * it, and the last edits of the session were lost from disk. The writer is
+     * shared by every server of the JVM - a single-player client opens several -
+     * so it is drained rather than shut down, and the wait is bounded so a dead
+     * disk cannot hold the stop up forever.</p>
+     */
+    private static void drainWriter() {
+        try {
+            WRITER.submit(() -> { }).get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            LOGGER.warn("History files were still being written after 30 seconds; the rest is skipped");
+        } catch (java.util.concurrent.ExecutionException e) {
+            LOGGER.warn("Could not wait for the history files", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     @Override
     public void onInitialize() {
+        // Everything the engine logs lands in the mod's log, with its stack trace.
+        com.maxlananas.fawebim.core.platform.Log.install((level, message, error) -> {
+            switch (level) {
+                case INFO -> LOGGER.info(message, error);
+                case WARN -> LOGGER.warn(message, error);
+                case ERROR -> LOGGER.error(message, error);
+            }
+        });
         // The game builds the command dispatcher while its server object is being
         // constructed, which happens before the starting event reaches the mod.
         // Everything the commands need to exist has to be ready by then, so the
@@ -128,7 +157,10 @@ public final class FaweMod implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             Config.get().save();
+            // Clearing the sessions logs the edits that were still open, which
+            // queues their files on the writer; then the writer is waited for.
             SessionManager.get().clear();
+            drainWriter();
             FabricRegistries.clear();
         });
 

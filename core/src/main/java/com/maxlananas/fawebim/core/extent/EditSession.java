@@ -59,11 +59,17 @@ public final class EditSession implements Extent {
     private Transform transform = Transform.identity();
     private final TimeLimiter limiter;
     private int changeLimit;
-    private int blocksChanged;
+    private long blocksChanged;
+    /** Writes buffered since the last flush, which is what queue.target-size bounds. */
+    private long bufferedWrites;
     private long lastBlockCount;
     private boolean cancelled;
+    private boolean closed;
     private boolean tracing;
+    /** The first traced actions, the ones a report prints. */
     private final List<String> traceLog = new ArrayList<>();
+    /** Every traced action, kept or not. */
+    private long traceCount;
     /**
      * The side effects of this edit, resolved once when it opens: the session's
      * set, with lighting and the per-block notifications deferred when the
@@ -71,8 +77,14 @@ public final class EditSession implements Extent {
      */
     private final com.maxlananas.fawebim.core.session.SideEffectSet sideEffects;
     private boolean queueEnabled = true;
-    /** When the session was opened, which is what queue.max-wait-ms measures. */
+    /** When the session was opened, for the time a result line reports. */
     private final long openedAt = System.currentTimeMillis();
+    /**
+     * When the queue was last written out: queue.max-wait-ms is how long a
+     * buffered change may wait, not how long the edit may run before every
+     * later check writes the queue out a few thousand blocks at a time.
+     */
+    private long lastFlushAt = openedAt;
 
     public EditSession(World world, LocalSession session, String description) {
         this(world, session, description, true);
@@ -108,6 +120,9 @@ public final class EditSession implements Extent {
                 && effects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.HISTORY)
                 ? session.getHistory().newRecord(description, world.name())
                 : null;
+        if (record != null) {
+            record.owner = session.ownerName();
+        }
         this.tracing = session.isTracing();
         this.limiter = new TimeLimiter(session.getTimeout() * 1000L);
         this.changeLimit = session.hasBlockChangeLimit() ? session.getMaxBlocksChanged() : -1;
@@ -200,28 +215,32 @@ public final class EditSession implements Extent {
             actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: no block was written"));
             return;
         }
-        int shown = Math.min(traceLog.size(), TRACE_REPORT_LIMIT);
-        for (int index = 0; index < shown; index++) {
-            actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: " + traceLog.get(index)));
+        for (String line : traceLog) {
+            actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: " + line));
         }
-        if (traceLog.size() > shown) {
+        if (traceCount > traceLog.size()) {
             actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: "
-                    + (traceLog.size() - shown) + " more action(s)"));
+                    + Msg.formatNumber(traceCount - traceLog.size()) + " more action(s)"));
         }
     }
 
-    /** How many traced actions a report prints before it counts the rest. */
+    /**
+     * How many traced actions are kept for the report; the rest are counted.
+     * A traced edit of a million blocks used to keep a formatted line for each
+     * of them, of which the report printed twenty.
+     */
     private static final int TRACE_REPORT_LIMIT = 20;
 
+    /** The traced actions a report prints: the first ones, at most twenty. */
     public List<String> getTraceLog() {
         return traceLog;
     }
 
-    public int getBlocksChanged() {
+    public long getBlocksChanged() {
         return blocksChanged;
     }
 
-    public void setBlocksChanged(int value) {
+    public void setBlocksChanged(long value) {
         this.blocksChanged = value;
     }
 
@@ -275,6 +294,7 @@ public final class EditSession implements Extent {
 
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
+        checkOpen();
         if (y < world.minY() || y > world.maxY()) {
             return false;
         }
@@ -301,13 +321,25 @@ public final class EditSession implements Extent {
         return true;
     }
 
-    /** Re-applies a recorded run of biome changes, the block equivalent of {@link #applyChangeSet}. */
+    /**
+     * Re-applies a recorded run of biome changes, the block equivalent of
+     * {@link #applyChangeSet}, and walked the same way: back to front for an
+     * undo, so a cell changed twice ends on the value it had first.
+     */
     public int applyBiomeChangeSet(com.maxlananas.fawebim.core.history.BiomeChangeSet set, boolean undo) {
-        int[] values = undo ? set.before() : set.after();
-        for (int i = 0; i < set.size(); i++) {
-            setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+        int size = set.size();
+        if (undo) {
+            int[] values = set.before();
+            for (int i = size - 1; i >= 0; i--) {
+                setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+            }
+        } else {
+            int[] values = set.after();
+            for (int i = 0; i < size; i++) {
+                setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+            }
         }
-        return set.size();
+        return size;
     }
 
     @Override
@@ -331,11 +363,33 @@ public final class EditSession implements Extent {
         if (mask != null && !mask.isRegion() && !mask.test(x, y, z)) {
             return false;
         }
-        int previous = world.getBlock(x, y, z);
+        int previous = currentState(x, y, z);
         if (previous == stateId) {
             return false;
         }
         return write(x, y, z, previous, stateId, recordChange);
+    }
+
+    /**
+     * What a position holds for this edit: the write still waiting in the
+     * buffer, else the world.
+     *
+     * <p>The state a write replaces has to come from here, not from the world
+     * alone. A cell the edit already wrote and has not flushed still holds its
+     * old state in the world; comparing against that dropped a write that put
+     * the old state back as a no-op - the pending write then reached the world
+     * anyway, which is how an overlapping move left holes - and recorded a
+     * "before" in the history the cell never had at that point.</p>
+     */
+    private int currentState(int x, int y, int z) {
+        ChunkSet chunk = chunkFor(x, z, false);
+        if (chunk != null) {
+            int buffered = chunk.getBlock(x, y, z);
+            if (buffered != -1) {
+                return buffered;
+            }
+        }
+        return world.getBlock(x, y, z);
     }
 
     /**
@@ -350,10 +404,23 @@ public final class EditSession implements Extent {
      * @return whether the world changed
      */
     public boolean setBlockKnown(int x, int y, int z, int previous, int stateId, boolean recordChange) {
-        if (cancelled || previous == stateId || stateId < 0) {
+        if (cancelled || stateId < 0) {
             return false;
         }
         if (y < world.minY() || y > world.maxY()) {
+            return false;
+        }
+        // The caller read the world; a write of this edit still in the buffer
+        // is what the cell holds now. Asking the buffer costs a lookup in the
+        // chunk the edit is already writing, not a trip into the world.
+        ChunkSet chunk = chunkFor(x, z, false);
+        if (chunk != null) {
+            int buffered = chunk.getBlock(x, y, z);
+            if (buffered != -1) {
+                previous = buffered;
+            }
+        }
+        if (previous == stateId) {
             return false;
         }
         if (mask != null && !mask.isRegion() && !mask.test(x, y, z)) {
@@ -364,6 +431,7 @@ public final class EditSession implements Extent {
 
     /** The back half of the write path, shared by both entry points. */
     private boolean write(int x, int y, int z, int previous, int stateId, boolean recordChange) {
+        checkOpen();
         if (changeLimit > 0 && blocksChanged >= changeLimit) {
             throw new MaxChangedBlocksException(changeLimit);
         }
@@ -373,15 +441,27 @@ public final class EditSession implements Extent {
             record(chunk, x, y, z, previous, stateId);
         }
         blocksChanged++;
+        bufferedWrites++;
         limiter.count(1);
         if (tracing) {
-            traceLog.add("set " + x + "," + y + "," + z + " " + registry.describe(previous) + " -> "
-                    + registry.describe(stateId));
+            if (traceLog.size() < TRACE_REPORT_LIMIT) {
+                traceLog.add("set " + x + "," + y + "," + z + " " + registry.describe(previous) + " -> "
+                        + registry.describe(stateId));
+            }
+            traceCount++;
         }
         if (queueEnabled && (blocksChanged & 0xFFF) == 0) {
             flushChunksThatAreFull();
         }
         return true;
+    }
+
+    /** A write to a closed session would be applied by nobody and recorded nowhere. */
+    private void checkOpen() {
+        if (closed) {
+            throw new IllegalStateException("Edit session '"
+                    + (record == null ? "unrecorded" : record.description) + "' is closed");
+        }
     }
 
     private void record(ChunkSet chunk, int x, int y, int z, int previous, int stateId) {
@@ -426,18 +506,19 @@ public final class EditSession implements Extent {
     private void flushChunksThatAreFull() {
         long target = Math.max(4096, com.maxlananas.fawebim.core.platform.Config.get().queueTargetSize);
         long maxWait = Math.max(0, com.maxlananas.fawebim.core.platform.Config.get().queueMaxWait);
-        if (blocksChanged >= target) {
-            flushQueue();
-            return;
-        }
-        if (chunks.size() >= 64
-                || (maxWait > 0 && System.currentTimeMillis() - openedAt >= maxWait && !chunks.isEmpty())) {
+        if (bufferedWrites >= target || chunks.size() >= MAX_BUFFERED_CHUNKS
+                || (maxWait > 0 && !chunks.isEmpty() && System.currentTimeMillis() - lastFlushAt >= maxWait)) {
             flushQueue();
         }
     }
 
+    /** Chunks the queue holds before it is written out, whatever their size. */
+    private static final int MAX_BUFFERED_CHUNKS = 64;
+
     /** Applies every buffered chunk to the world and relights what changed. */
     public void flushQueue() {
+        bufferedWrites = 0;
+        lastFlushAt = System.currentTimeMillis();
         if (chunks.isEmpty()) {
             return;
         }
@@ -466,6 +547,7 @@ public final class EditSession implements Extent {
 
     @Override
     public void addEntity(com.maxlananas.fawebim.core.world.EntityData data) {
+        checkOpen();
         if (!sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.ENTITY_EVENTS)) {
             return;
         }
@@ -484,6 +566,7 @@ public final class EditSession implements Extent {
 
     @Override
     public void removeEntity(com.maxlananas.fawebim.core.world.EntityData data) {
+        checkOpen();
         if (!sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.ENTITY_EVENTS)) {
             return;
         }
@@ -496,6 +579,7 @@ public final class EditSession implements Extent {
      * chunk are: the platform applies both together, in that order.
      */
     public void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
+        checkOpen();
         if (nbt == null) {
             return;
         }
@@ -506,21 +590,104 @@ public final class EditSession implements Extent {
         chunk.setBlockEntity(x, y, z, nbt);
     }
 
-    /** Applies a change set back to the world (undo/redo). */
+    /**
+     * Applies a change set back to the world (undo/redo).
+     *
+     * <p>A cell can be recorded more than once in a set - written twice by the
+     * same edit - so the rows are replayed in the order that ends on the right
+     * state: back to front for an undo, which ends on the state the cell held
+     * before the edit, front to back for a redo, which ends on the last write.</p>
+     */
     public int applyChangeSet(ChangeSet set, boolean undo) {
+        checkOpen();
         int baseX = set.chunkX() << 4;
         int baseY = set.sectionY() << 4;
         int baseZ = set.chunkZ() << 4;
         ChunkSet chunk = chunkFor(baseX, baseZ, true);
         int size = set.size();
-        for (int row = 0; row < size; row++) {
-            int cell = set.cellAt(row);
-            int x = baseX + (cell & 15);
-            int y = baseY + ((cell >> 8) & 15);
-            int z = baseZ + ((cell >> 4) & 15);
-            chunk.set(x, y, z, undo ? set.beforeAt(row) : set.afterAt(row));
+        if (undo) {
+            for (int row = size - 1; row >= 0; row--) {
+                int cell = set.cellAt(row);
+                chunk.set(baseX + (cell & 15), baseY + ((cell >> 8) & 15), baseZ + ((cell >> 4) & 15),
+                        set.beforeAt(row));
+            }
+        } else {
+            for (int row = 0; row < size; row++) {
+                int cell = set.cellAt(row);
+                chunk.set(baseX + (cell & 15), baseY + ((cell >> 8) & 15), baseZ + ((cell >> 4) & 15),
+                        set.afterAt(row));
+            }
         }
         return size;
+    }
+
+    /**
+     * Replays a whole history record: the undo puts back what the edit found,
+     * the redo writes what it wrote.
+     *
+     * <p>The sets of one chunk are replayed in the same order as their rows,
+     * and a chunk is complete once its sets are, so the queue is written out
+     * every {@value #MAX_BUFFERED_CHUNKS} chunks: the undo of a huge edit holds
+     * a bounded part of it in memory instead of all of it.</p>
+     *
+     * @return the number of recorded block and biome changes replayed
+     */
+    public int applyRecord(History.Record record, boolean undo) {
+        int changed = 0;
+        for (List<ChangeSet> sets : record.changes().values()) {
+            if (undo) {
+                for (int index = sets.size() - 1; index >= 0; index--) {
+                    changed += applyChangeSet(sets.get(index), true);
+                }
+            } else {
+                for (ChangeSet set : sets) {
+                    changed += applyChangeSet(set, false);
+                }
+            }
+            if (queueEnabled && chunks.size() >= MAX_BUFFERED_CHUNKS) {
+                flushQueue();
+            }
+        }
+        for (List<com.maxlananas.fawebim.core.history.BiomeChangeSet> sets : record.biomeChanges().values()) {
+            if (undo) {
+                for (int index = sets.size() - 1; index >= 0; index--) {
+                    changed += applyBiomeChangeSet(sets.get(index), true);
+                }
+            } else {
+                for (com.maxlananas.fawebim.core.history.BiomeChangeSet set : sets) {
+                    changed += applyBiomeChangeSet(set, false);
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Ends the edit: writes out what is still buffered and publishes the
+     * history record, which seals it.
+     *
+     * <p>Every edit is closed by whoever opened it - the command dispatcher
+     * closes the sessions of a command, a tool closes its own - including when
+     * the edit failed half way: the part that was written stays written, and
+     * the history holds exactly that part, so an undo takes it back. Writing to
+     * a closed session throws. Closing twice does nothing.</p>
+     */
+    public void close() {
+        if (closed) {
+            return;
+        }
+        try {
+            flushQueue();
+        } finally {
+            closed = true;
+            if (record != null) {
+                session.getHistory().publish(record);
+            }
+        }
+    }
+
+    public boolean isClosed() {
+        return closed;
     }
 
     @Override
@@ -530,22 +697,30 @@ public final class EditSession implements Extent {
 
     /** Statistics string used by command feedback. */
     public String statistics() {
-        return blocksChanged + " block(s) changed";
+        return Msg.formatNumber(blocksChanged) + " block(s) changed";
     }
 
     public TimeLimiter limiter() {
         return limiter;
     }
 
+    /**
+     * The checkpoint a long loop calls: stops the edit when {@code /cancel} was
+     * used or the timeout passed. The cancel flag is left set, so every loop of
+     * the command stops, not only the first one to see it; the dispatcher
+     * clears it when the command is over. The clock is read every 64 calls,
+     * since this runs per block in some loops and per column in others.
+     */
     public void checkTimeout() {
         if (session.isCancelled()) {
-            session.clearCancel();
             throw new CancelledException();
         }
-        if (session.isWatchdogEnabled() && limiter.isExpired()) {
+        if ((++timeoutChecks & 0x3F) == 0 && session.isWatchdogEnabled() && limiter.isExpired()) {
             throw new TimeLimiter.OperationTimeoutException(limiter.elapsedMillis(), limiter.processed());
         }
     }
+
+    private int timeoutChecks;
 
     /**
      * The session's source mask, applied to reads: an operation only sees the

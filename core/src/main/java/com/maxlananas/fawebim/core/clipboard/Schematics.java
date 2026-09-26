@@ -192,7 +192,7 @@ public final class Schematics {
         try {
             Files.deleteIfExists(resolveExisting(name));
         } catch (IOException e) {
-            throw new IllegalStateException("Could not delete schematic '" + name + "'");
+            throw new java.io.UncheckedIOException("Could not delete schematic '" + name + "'", e);
         }
     }
 
@@ -226,10 +226,10 @@ public final class Schematics {
     private static Path resolve(String name) {
         Path path = directory().resolve(name);
         if (!path.getFileName().toString().equals(name)) {
-            throw new IllegalArgumentException("Invalid schematic name");
+            throw new com.maxlananas.fawebim.core.util.InputException("Invalid schematic name '" + name + "'");
         }
         if (!com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks && Files.isSymbolicLink(path)) {
-            throw new IllegalArgumentException("Symbolic links are disabled"
+            throw new com.maxlananas.fawebim.core.util.InputException("Symbolic links are disabled"
                     + " (files.allow-symbolic-links in config/fawebim.yml)");
         }
         return path;
@@ -299,16 +299,19 @@ public final class Schematics {
             }
             return new Serialized(fileName, buffer.toByteArray());
         } catch (IOException e) {
-            throw new IllegalStateException("Could not save schematic: " + e.getMessage());
+            throw new java.io.UncheckedIOException("Could not save schematic '" + name + "'", e);
         }
     }
 
+    /**
+     * Writes a serialised schematic in one step: overwriting a schematic with a
+     * write that fails half way used to leave neither the old one nor the new.
+     */
     private static Path write(Serialized data) {
         try {
-            Files.createDirectories(directory());
-            return Files.write(resolve(data.fileName()), data.data());
+            return com.maxlananas.fawebim.core.util.AtomicFiles.write(resolve(data.fileName()), data.data());
         } catch (IOException e) {
-            throw new IllegalStateException("Could not save schematic: " + e.getMessage());
+            throw new java.io.UncheckedIOException("Could not save schematic '" + data.fileName() + "'", e);
         }
     }
 
@@ -317,8 +320,13 @@ public final class Schematics {
             BlockArrayClipboard clipboard = readAll(resolveExisting(name), name);
             checkSize(clipboard, name);
             return clipboard;
+        } catch (java.nio.file.NoSuchFileException e) {
+            throw new com.maxlananas.fawebim.core.util.InputException("No schematic named '" + name + "'");
+        } catch (java.util.zip.ZipException | java.io.EOFException | java.io.UTFDataFormatException e) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + name
+                    + "' is not a readable schematic file");
         } catch (IOException e) {
-            throw new IllegalStateException("Could not load schematic '" + name + "': " + e.getMessage());
+            throw new java.io.UncheckedIOException("Could not load schematic '" + name + "'", e);
         }
     }
 
@@ -327,7 +335,7 @@ public final class Schematics {
         byte[] data = Files.readAllBytes(path);
         NbtCompound root = readAny(data);
         if (root == null) {
-            throw new IllegalStateException("Corrupted schematic file");
+            throw new com.maxlananas.fawebim.core.util.InputException("Corrupted schematic file");
         }
         return readDetected(root, name);
     }
@@ -340,7 +348,7 @@ public final class Schematics {
         }
         long volume = (long) clipboard.getWidth() * clipboard.getHeight() * clipboard.getLength();
         if (volume > maximum) {
-            throw new IllegalStateException("Schematic '" + name + "' holds " + volume
+            throw new com.maxlananas.fawebim.core.util.InputException("Schematic '" + name + "' holds " + volume
                     + " blocks, more than limits.max-schematic-size (" + maximum + ")");
         }
     }
@@ -348,7 +356,7 @@ public final class Schematics {
     public static BlockArrayClipboard fromBytes(byte[] data, String name) {
         NbtCompound root = readAny(data);
         if (root == null) {
-            throw new IllegalStateException("Corrupted schematic data");
+            throw new com.maxlananas.fawebim.core.util.InputException("Corrupted schematic data");
         }
         if (root.contains("Palette") || root.contains("BlockData") || root.contains("Blocks") && root.contains("Palette")) {
             return readSponge(root, name == null ? "schematic" : name);
@@ -478,7 +486,7 @@ public final class Schematics {
         int height = schem.contains("Height") ? schem.getInt("Height", 0) : root.getInt("Height", 0);
         int length = schem.contains("Length") ? schem.getInt("Length", 0) : root.getInt("Length", 0);
         if (width <= 0 || height <= 0 || length <= 0) {
-            throw new IllegalStateException("Schematic has no size information");
+            throw new com.maxlananas.fawebim.core.util.InputException("Schematic has no size information");
         }
         NbtCompound palette = schem.contains("Palette") ? schem.getCompound("Palette")
                 : root.getCompound("Palette");
@@ -816,7 +824,7 @@ public final class Schematics {
                 }
             }
         }
-        throw new IllegalStateException("Corrupted schematic data");
+        throw new com.maxlananas.fawebim.core.util.InputException("Corrupted schematic data");
     }
 
     /** True when a parsed root carries one of the containers a schematic uses. */

@@ -310,6 +310,10 @@ public final class CommandRegistry {
         // Without this the binding of one command is still in place for the next
         // one, and a mask parsed there reads through a dead session.
         Extent previous = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
+        com.maxlananas.fawebim.core.session.LocalSession session = actor.session();
+        session.enterCommand();
+        Msg failure = null;
+        long written = 0;
         try {
             // WorldEdit binds these commands to a Player parameter, so a source
             // without one - the server console, a command block, a function -
@@ -325,21 +329,97 @@ public final class CommandRegistry {
             }
             entry.handler.run(context);
             context.reportTrace();
-            return true;
-        } catch (CommandException e) {
-            actor.message(Msg.error(e.getMessage()));
-            return true;
-        } catch (com.maxlananas.fawebim.core.extent.EditSession.MaxChangedBlocksException e) {
-            actor.message(Msg.error("Max blocks changed in an operation: " + e.getLimit()));
-            return true;
-        } catch (com.maxlananas.fawebim.core.util.TimeLimiter.OperationTimeoutException e) {
-            actor.message(Msg.error("Operation timed out after " + e.elapsedMillis()
-                    + "ms; raise 'timeout' in /fawebim, 0 for no limit"));
-            return true;
         } catch (Exception e) {
-            actor.message(Msg.error("Command failed: " + e.getMessage()));
-            return true;
+            failure = failureMessage(e, actor, "Command '" + line.trim() + "'");
         } finally {
+            try {
+                written = context.close();
+            } catch (RuntimeException e) {
+                com.maxlananas.fawebim.core.platform.Log.error("Command '" + line.trim() + "' run by "
+                        + actor.name() + " could not write its changes", e);
+                failure = Msg.error("Command failed: its changes could not all be written, "
+                        + e.getClass().getSimpleName() + ", see the server log");
+            } finally {
+                session.exitCommand();
+                if (previous == null) {
+                    com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.clear();
+                } else {
+                    com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.set(previous);
+                }
+            }
+        }
+        if (failure != null) {
+            actor.message(failure);
+            // What an edit wrote before it stopped stays written and is one
+            // history entry, so the player knows the world changed and how to
+            // take it back.
+            if (written > 0) {
+                actor.message(Msg.info(Msg.formatNumber(written)
+                        + " block(s) were changed before it stopped; //undo takes them back"));
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The answer to an edit that stopped with an exception.
+     *
+     * <p>The expected ways for an edit to stop - a refused argument, the block
+     * limit, the timeout, a {@code /cancel} - each have their line. Anything
+     * else means the code reached a state it does not handle: that is a bug,
+     * the stack trace is what a maintainer needs to fix it, and the player is
+     * told it failed rather than shown the internals.</p>
+     */
+    static Msg failureMessage(Exception e, Actor actor, String what) {
+        if (e instanceof com.maxlananas.fawebim.core.util.InputException) {
+            return Msg.error(e.getMessage());
+        }
+        if (e instanceof java.io.IOException || e instanceof java.io.UncheckedIOException) {
+            // A disk that refuses a read or a write is not a bug of the command,
+            // but whoever runs the server needs to know which file and why.
+            com.maxlananas.fawebim.core.platform.Log.warn(what + " run by " + actor.name()
+                    + " could not use a file", e);
+            return Msg.error("A file could not be read or written: " + e.getMessage());
+        }
+        if (e instanceof com.maxlananas.fawebim.core.extent.EditSession.MaxChangedBlocksException limit) {
+            return Msg.error("Max blocks changed in an operation: " + Msg.formatNumber(limit.getLimit()));
+        }
+        if (e instanceof com.maxlananas.fawebim.core.util.TimeLimiter.OperationTimeoutException timeout) {
+            return Msg.error("Operation timed out after " + Msg.formatNumber(timeout.elapsedMillis())
+                    + "ms; raise 'timeout' in /fawebim, 0 for no limit");
+        }
+        if (e instanceof com.maxlananas.fawebim.core.extent.EditSession.CancelledException) {
+            return Msg.warn("Operation cancelled");
+        }
+        if (e instanceof com.maxlananas.fawebim.core.expression.Expression.ExpressionException) {
+            return Msg.error("Invalid expression: " + e.getMessage());
+        }
+        com.maxlananas.fawebim.core.platform.Log.error(what + " run by " + actor.name() + " failed", e);
+        return Msg.error("Command failed: an internal " + e.getClass().getSimpleName()
+                + ", see the server log");
+    }
+
+    /**
+     * Runs something a player did outside a command line - a brush stroke, a
+     * tool click - with the guarantees a command gets: a failure is answered in
+     * chat, and logged when it is a bug, instead of escaping into the game's
+     * packet handler; {@code /cancel} reaches it; and the extent its masks were
+     * bound to does not outlive it. The edit sessions it opens close themselves.
+     *
+     * @param what names the action in the log, e.g. {@code "brush"}
+     * @return what the action returned, or false when it failed
+     */
+    public static boolean interact(Actor actor, String what, java.util.function.BooleanSupplier action) {
+        Extent previous = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
+        com.maxlananas.fawebim.core.session.LocalSession session = actor.session();
+        session.enterCommand();
+        try {
+            return action.getAsBoolean();
+        } catch (RuntimeException e) {
+            actor.message(failureMessage(e, actor, what));
+            return false;
+        } finally {
+            session.exitCommand();
             if (previous == null) {
                 com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.clear();
             } else {
@@ -386,7 +466,7 @@ public final class CommandRegistry {
     }
 
     /** Thrown by command implementations for user-facing failures. */
-    public static final class CommandException extends RuntimeException {
+    public static final class CommandException extends com.maxlananas.fawebim.core.util.InputException {
 
         private static final long serialVersionUID = 1L;
 

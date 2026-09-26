@@ -118,6 +118,24 @@ public final class Tools {
         }
     }
 
+    /**
+     * The session a tool edits through: the one the caller handed over, which the
+     * caller closes, or a session of the tool's own.
+     */
+    private static EditSession open(Tool.ToolContext context, String description) {
+        return context.hasSession() ? context.session
+                : new EditSession(context.actor.world(), context.actor.session(), description);
+    }
+
+    /** Writes the tool's edit out, and ends it when the session is the tool's own. */
+    private static void finish(Tool.ToolContext context, EditSession session) {
+        if (session == context.session) {
+            session.flushQueue();
+        } else {
+            session.close();
+        }
+    }
+
     /** {@code /tool repl [pattern]} — replaces the block you click. */
     public static final class ReplaceTool implements Tool {
 
@@ -135,11 +153,13 @@ public final class Tools {
         @Override
         public boolean onRightClick(ToolContext context) {
             Pattern fill = pattern != null ? pattern : pattern(context.actor, stonePattern());
-            EditSession session = context.hasSession() ? context.session
-                    : new EditSession(context.actor.world(), context.actor.session(), "tool repl");
-            session.setBlock(context.position.x(), context.position.y(), context.position.z(),
-                    fill.apply(context.position.x(), context.position.y(), context.position.z()));
-            session.flushQueue();
+            EditSession session = open(context, "tool repl");
+            try {
+                session.setBlock(context.position.x(), context.position.y(), context.position.z(),
+                        fill.apply(context.position.x(), context.position.y(), context.position.z()));
+            } finally {
+                finish(context, session);
+            }
             return true;
         }
 
@@ -176,10 +196,12 @@ public final class Tools {
             if (next < 0) {
                 return false;
             }
-            EditSession session = context.hasSession() ? context.session
-                    : new EditSession(context.actor.world(), context.actor.session(), "tool cycler");
-            session.setBlock(context.position.x(), context.position.y(), context.position.z(), next);
-            session.flushQueue();
+            EditSession session = open(context, "tool cycler");
+            try {
+                session.setBlock(context.position.x(), context.position.y(), context.position.z(), next);
+            } finally {
+                finish(context, session);
+            }
             context.message(Msg.info(key + " = " + values.get(index)));
             return true;
         }
@@ -207,11 +229,15 @@ public final class Tools {
         @Override
         public boolean onRightClick(ToolContext context) {
             Pattern fill = pattern != null ? pattern : pattern(context.actor, stonePattern());
-            EditSession session = context.hasSession() ? context.session
-                    : new EditSession(context.actor.world(), context.actor.session(), "tool floodfill");
-            int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(
-                    context.actor.world(), session, context.position.add(context.face.toVector()), fill, 256, false);
-            session.flushQueue();
+            EditSession session = open(context, "tool floodfill");
+            int changed;
+            try {
+                changed = com.maxlananas.fawebim.core.function.Operations.floodFill(
+                        context.actor.world(), session, context.position.add(context.face.toVector()), fill, 256,
+                        false);
+            } finally {
+                finish(context, session);
+            }
             context.message(Msg.success("Filled " + Msg.formatNumber(changed) + " block(s)"));
             return true;
         }
@@ -319,25 +345,31 @@ public final class Tools {
             context.message(Msg.info("Left click stored: " + context.position));
             if (leftClicks.size() == 2) {
                 EditSession session = new EditSession(context.actor.world(), context.actor.session(), "tool lrbuild");
-                for (BlockVector3 position : com.maxlananas.fawebim.core.function.Operations.spherePositions(
-                        context.position, 3, false)) {
-                    session.setBlock(position.x(), position.y(), position.z(), BlockState.registry().air());
+                try {
+                    for (BlockVector3 position : com.maxlananas.fawebim.core.function.Operations.spherePositions(
+                            context.position, 3, false)) {
+                        session.setBlock(position.x(), position.y(), position.z(), BlockState.registry().air());
+                    }
+                } finally {
+                    session.close();
                 }
-                session.flushQueue();
             }
             return true;
         }
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            EditSession session = new EditSession(context.actor.world(), context.actor.session(), "tool lrbuild");
             Pattern fill = pattern(context.actor, stonePattern());
-            for (BlockVector3 position : com.maxlananas.fawebim.core.function.Operations.spherePositions(
-                    context.position, 3, false)) {
-                session.setBlock(position.x(), position.y(), position.z(),
-                        fill.apply(position.x(), position.y(), position.z()));
+            EditSession session = new EditSession(context.actor.world(), context.actor.session(), "tool lrbuild");
+            try {
+                for (BlockVector3 position : com.maxlananas.fawebim.core.function.Operations.spherePositions(
+                        context.position, 3, false)) {
+                    session.setBlock(position.x(), position.y(), position.z(),
+                            fill.apply(position.x(), position.y(), position.z()));
+                }
+            } finally {
+                session.close();
             }
-            session.flushQueue();
             return true;
         }
 
@@ -364,9 +396,14 @@ public final class Tools {
             }
             var clipboard = session.getClipboard().getClipboard();
             EditSession edit = new EditSession(context.actor.world(), session, "tool stacker");
-            int changed = com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard,
-                    context.position.add(context.face.toVector()), edit,
-                    com.maxlananas.fawebim.core.transform.Transform.identity(), true, false, false);
+            int changed;
+            try {
+                changed = com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard,
+                        context.position.add(context.face.toVector()), edit,
+                        com.maxlananas.fawebim.core.transform.Transform.identity(), true, false, false);
+            } finally {
+                edit.close();
+            }
             context.message(Msg.success("Pasted " + Msg.formatNumber(changed) + " block(s)"));
             return true;
         }
@@ -388,10 +425,14 @@ public final class Tools {
         @Override
         public boolean onRightClick(ToolContext context) {
             EditSession session = new EditSession(context.actor.world(), context.actor.session(), "tool deltree");
-            int changed = com.maxlananas.fawebim.core.function.Operations.removeTree(
-                    context.actor.world(), session, context.position);
-            session.flushQueue();
-            context.message(Msg.success("Removed " + changed + " block(s)"));
+            int changed;
+            try {
+                changed = com.maxlananas.fawebim.core.function.Operations.removeTree(
+                        context.actor.world(), session, context.position);
+            } finally {
+                session.close();
+            }
+            context.message(Msg.success("Removed " + Msg.formatNumber(changed) + " block(s)"));
             return true;
         }
 
@@ -417,9 +458,13 @@ public final class Tools {
                 return false;
             }
             EditSession session = new EditSession(context.actor.world(), context.actor.session(), "brush");
-            int changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, context.position,
-                    context.actor);
-            session.flushQueue();
+            int changed;
+            try {
+                changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, context.position,
+                        context.actor);
+            } finally {
+                session.close();
+            }
             context.message(Msg.success("Brush changed " + Msg.formatNumber(changed) + " block(s)"));
             return true;
         }

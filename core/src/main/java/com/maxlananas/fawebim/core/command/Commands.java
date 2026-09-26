@@ -520,9 +520,8 @@ public final class Commands {
 
     /**
      * Parses FAWE's duration syntax: {@code 30s}, {@code 5m}, {@code 2h},
-     * {@code 1d} or a bare number of minutes. Returns milliseconds.
+     * {@code 1d}, {@code 1w} or a bare number of minutes. Returns milliseconds.
      */
-    /** Reads a duration such as {@code 30m}; bare numbers count in minutes. */
     static long parseDuration(String input) {
         String value = input.trim().toLowerCase(Locale.ROOT);
         if (value.isEmpty()) {
@@ -541,11 +540,19 @@ public final class Commands {
             };
             value = value.substring(0, value.length() - 1);
         }
+        double amount;
         try {
-            return Math.round(Double.parseDouble(value) * multiplier);
+            amount = Double.parseDouble(value);
         } catch (NumberFormatException e) {
             throw CommandRegistry.error("'" + input + "' is not a valid duration");
         }
+        double millis = amount * multiplier;
+        // NaN read as no time at all and a negative duration as one in the
+        // future; a duration past what a long holds is a typo, not a date.
+        if (!Double.isFinite(millis) || millis < 0 || millis > Long.MAX_VALUE / 2.0) {
+            throw CommandRegistry.error("'" + input + "' is not a valid duration");
+        }
+        return Math.round(millis);
     }
 
     /**
@@ -678,7 +685,7 @@ public final class Commands {
         }
         if (dir.equals("north") || dir.equals("south") || dir.equals("east") || dir.equals("west")
                 || dir.equals("up") || dir.equals("down")) {
-            return Direction.parse(dir).toVector().multiply(amount);
+            return Parsers.direction(dir).toVector().multiply(amount);
         }
         if (dir.contains(",")) {
             String[] parts = dir.split(",");
@@ -1069,7 +1076,7 @@ public final class Commands {
                     if (ctx.hasFlag("r")) {
                         seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
                     } else if (!ctx.args().isEmpty()) {
-                        seed = Long.parseLong(ctx.arg(0));
+                        seed = Parsers.longArg(ctx.arg(0), "seed");
                     }
                     if (seed != null && !ctx.world().supportsCustomRegenSeed()) {
                         ctx.actor().message(Msg.warn("This platform regenerates with the world seed;"
@@ -1396,7 +1403,7 @@ public final class Commands {
                     Region region = ctx.selection();
                     int count = ctx.intArg(0, 1);
                     String dir = ctx.arg(1, "me");
-                    Direction direction = dir.equalsIgnoreCase("me") ? ctx.actor().facing() : Direction.parse(dir);
+                    Direction direction = dir.equalsIgnoreCase("me") ? ctx.actor().facing() : Parsers.direction(dir);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
@@ -2055,7 +2062,7 @@ public final class Commands {
                         case NORTH, SOUTH -> com.maxlananas.fawebim.core.transform.Axis.Z;
                         case EAST, WEST -> com.maxlananas.fawebim.core.transform.Axis.X;
                         default -> com.maxlananas.fawebim.core.transform.Axis.Y;
-                    } : com.maxlananas.fawebim.core.transform.Axis.parse(direction);
+                    } : Parsers.axis(direction);
                     var holder = ctx.session().getClipboard();
                     holder.setTransform(holder.getTransform().combine(
                             com.maxlananas.fawebim.core.transform.Transforms.flip(holder.getClipboard().getOrigin(), axis)));
@@ -2352,18 +2359,12 @@ public final class Commands {
                 break;
             }
             EditSession edit = new EditSession(ctx.world(), session, undo ? "undo" : "redo", false);
-            for (var sets : record.changes().values()) {
-                for (var set : sets) {
-                    edit.applyChangeSet(set, undo);
-                }
-            }
-            for (var sets : record.biomeChanges().values()) {
-                for (var set : sets) {
-                    edit.applyBiomeChangeSet(set, undo);
-                }
+            try {
+                edit.applyRecord(record, undo);
+            } finally {
+                edit.close();
             }
             changed += record.changeCount() + record.biomeChangeCount();
-            edit.flushQueue();
         }
         return changed;
     }

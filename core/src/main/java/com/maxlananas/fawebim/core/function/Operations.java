@@ -276,7 +276,7 @@ public final class Operations {
         int length = max.z() - min.z() + 1;
         long volume = (long) width * height * length;
         if (volume <= 0 || volume > MAX_HOLLOW_CELLS) {
-            throw new IllegalArgumentException("A selection of " + volume + " blocks is too large to hollow");
+            throw new com.maxlananas.fawebim.core.util.InputException("A selection of " + volume + " blocks is too large to hollow");
         }
         // A shell thicker than the selection is the selection: every layer of the
         // growth is a layer further in, so once the growth has crossed the region
