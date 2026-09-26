@@ -32,6 +32,9 @@ public final class BlockArrayClipboard implements Extent {
      *  thousands of positions, and looking it up again costs a hash each time. */
     private long lastSectionKey = Long.MIN_VALUE;
     private int[] lastSection;
+    /** The runs a partly read section holds, kept beside the full ones. */
+    private final java.util.Map<Long, Partial> partial = new java.util.HashMap<>();
+    private Partial lastPartial;
     private int maxY = Integer.MIN_VALUE;
     private World lazyWorld;
 
@@ -168,10 +171,22 @@ public final class BlockArrayClipboard implements Extent {
             return lazyWorld.getBlock(x, y, z);
         }
         int[] section = sectionFor(sectionKey(x, y, z));
-        if (section == null) {
+        if (section != null) {
+            return section[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)];
+        }
+        Partial part = lastPartial;
+        if (part == null) {
             return 0;
         }
-        return section[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)];
+        int localX = (x & 15) - part.startX();
+        int localZ = (z & 15) - part.startZ();
+        int localY = (y & 15) - part.startY();
+        if (localX < 0 || localZ < 0 || localY < 0 || localX >= part.stride()
+                || localZ >= part.stride() || localY > part.endY() - part.startY()) {
+            return 0;
+        }
+        int[] row = part.rows()[localY * part.stride() + localZ];
+        return row == null ? 0 : row[localX];
     }
 
     public int getBlock(BlockVector3 position) {
@@ -185,6 +200,7 @@ public final class BlockArrayClipboard implements Extent {
         int[] section = sections.get(key);
         lastSectionKey = key;
         lastSection = section;
+        lastPartial = partial.get(key);
         return section;
     }
 
@@ -193,7 +209,24 @@ public final class BlockArrayClipboard implements Extent {
         long key = sectionKey(x, y, z);
         int[] section = sectionFor(key);
         if (section == null) {
+            Partial part = lastPartial;
+            lastPartial = null;
+            partial.remove(key);
             section = new int[4096];
+            // The runs the section was read as are laid back into the array, so
+            // a cell written on top of them sees the blocks around it.
+            if (part != null) {
+                for (int row = 0; row < part.rows().length; row++) {
+                    int[] run = part.rows()[row];
+                    if (run == null) {
+                        continue;
+                    }
+                    int localY = part.startY() + row / part.stride();
+                    int localZ = part.startZ() + row % part.stride();
+                    System.arraycopy(run, 0, section,
+                            (localY << 8) | (localZ << 4) | part.startX(), run.length);
+                }
+            }
             sections.put(key, section);
             lastSectionKey = key;
             lastSection = section;
@@ -232,6 +265,69 @@ public final class BlockArrayClipboard implements Extent {
                 Math.max(box.maxZ(), baseZ + 15));
         minY = Math.min(minY, baseY);
         maxY = Math.max(maxY, baseY + 15);
+    }
+
+    /**
+     * Takes the part of a section a caller has already read, the way {@link
+     * #adoptSection} takes the whole of it.
+     *
+     * <p>{@code data} holds the box at the section's own indices - the layout
+     * {@link com.maxlananas.fawebim.core.world.World#readSection} fills - so the
+     * rows of the box are recorded as the runs they are, and the cells outside
+     * the box are left as air. A section the selection covers only partly is
+     * then one small object per row instead of one per block.</p>
+     */
+    public void adoptBox(int chunkX, int sectionY, int chunkZ, int[] data,
+                         int fromX, int fromY, int fromZ, int toX, int toY, int toZ) {
+        int baseY = sectionY << 4;
+        int startX = fromX & 15;
+        int endX = toX & 15;
+        int startZ = fromZ & 15;
+        int endZ = toZ & 15;
+        int startY = fromY - baseY;
+        int endY = toY - baseY;
+        int stride = endX - startX + 1;
+        int rows = stride * (endY - startY + 1);
+        int[][] recorded = new int[rows][];
+        int row = 0;
+        for (int y = startY; y <= endY; y++) {
+            int rowBase = y << 8;
+            for (int z = startZ; z <= endZ; z++) {
+                int at = rowBase | (z << 4) | startX;
+                int run = 0;
+                while (run < stride && data[at + run] == 0) {
+                    run++;
+                }
+                if (run == stride) {
+                    recorded[row++] = null;
+                    continue;
+                }
+                int first = run;
+                run = stride;
+                while (run > first && data[at + run - 1] == 0) {
+                    run--;
+                }
+                recorded[row++] = java.util.Arrays.copyOfRange(data, at + first, at + run);
+            }
+        }
+        long key = sectionKey(chunkX << 4, baseY, chunkZ << 4);
+        partial.put(key, new Partial(recorded, startX, startZ, startY, endY, stride));
+        sections.remove(key);
+        lastSectionKey = key;
+        lastSection = null;
+        lastPartial = partial.get(key);
+        box.set(Math.min(box.minX(), (chunkX << 4) + startX),
+                Math.min(box.minY(), baseY + startY),
+                Math.min(box.minZ(), (chunkZ << 4) + startZ),
+                Math.max(box.maxX(), (chunkX << 4) + endX),
+                Math.max(box.maxY(), baseY + endY),
+                Math.max(box.maxZ(), (chunkZ << 4) + endZ));
+        minY = Math.min(minY, baseY + startY);
+        maxY = Math.max(maxY, baseY + endY);
+    }
+
+    /** The runs a partly read section holds, and where they start. */
+    private record Partial(int[][] rows, int startX, int startZ, int startY, int endY, int stride) {
     }
 
     @Override

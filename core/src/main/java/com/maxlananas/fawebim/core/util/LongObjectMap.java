@@ -105,6 +105,29 @@ public final class LongObjectMap<V> {
         return out;
     }
 
+    /**
+     * Drops a key, so a caller can hold one representation of a section at a
+     * time: a section kept as a whole array is not the same entry as the runs a
+     * partial read of it makes.
+     */
+    @SuppressWarnings("unchecked")
+    public V remove(long key) {
+        int mask = keys.length - 1;
+        int slot = spread(key) & mask;
+        while (true) {
+            Object value = values[slot];
+            if (value == null) {
+                return null;
+            }
+            if (keys[slot] == key) {
+                values[slot] = null;
+                size--;
+                return (V) value;
+            }
+            slot = (slot + 1) & mask;
+        }
+    }
+
     public void clear() {
         java.util.Arrays.fill(values, null);
         size = 0;

@@ -64,10 +64,16 @@ public interface World extends Extent {
      * of a large selection are the callers, and a section of solid ground is
      * what makes it worth having.</p>
      *
+     * <p>The box is the part of the section the caller needs, in world
+     * coordinates and inside the section: a box that reaches a corner of a
+     * section reads that corner rather than the whole of it. Everything outside
+     * the box is left as the array was.</p>
+     *
      * @return false when the platform cannot answer, in which case the caller
      *         walks the section position by position as before
      */
-    default boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out) {
+    default boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out,
+                                int fromX, int fromY, int fromZ, int toX, int toY, int toZ) {
         return false;
     }
 

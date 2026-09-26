@@ -3241,6 +3241,62 @@ public final class SelfTestMain {
                         && aligned.getBlock(32, 71, 32) == dirt
                         && aligned.getBlock(47, 79, 47) == dirt);
 
+        // A masked cut copies and clears the blocks the mask matches and leaves
+        // the rest of the selection where it is: upstream hands the mask to the
+        // source of the copy, so the leave pattern only reaches what the mask
+        // lets through.
+        TestWorld masked = new TestWorld("cut-mask");
+        masked.fillFlat(70);
+        TestActor picky = new TestActor("Picky", masked, new BlockVector3(0, 71, 0));
+        picky.session().setMaxBlocksChanged(1_000_000);
+        CommandManager.get().dispatch(picky, "//pos1 0,64,0");
+        CommandManager.get().dispatch(picky, "//pos2 15,79,15");
+        CommandManager.get().dispatch(picky, "//set stone");
+        CommandManager.get().dispatch(picky, "//pos1 0,70,0");
+        CommandManager.get().dispatch(picky, "//pos2 15,70,15");
+        CommandManager.get().dispatch(picky, "//set dirt");
+        picky.clearMessages();
+        CommandManager.get().dispatch(picky, "//pos1 0,64,0");
+        CommandManager.get().dispatch(picky, "//pos2 15,79,15");
+        CommandManager.get().dispatch(picky, "//cut -m dirt");
+        check("a masked cut clears the blocks it matched",
+                masked.getBlock(4, 70, 4) == air);
+        check("a masked cut leaves the blocks it did not match",
+                masked.getBlock(4, 71, 4) == stone && masked.getBlock(4, 64, 4) == stone);
+        check("a masked cut copies the blocks it matched",
+                picky.session().getClipboard().getClipboard().getBlock(4, 70, 4) == dirt);
+        check("a masked cut copies nothing else",
+                picky.session().getClipboard().getClipboard().getBlock(4, 71, 4) == air);
+
+        // A selection that runs over chunk borders at negative coordinates,
+        // which is where the section keys of the fast path go negative: the cut
+        // and the paste have to move every block and touch nothing else.
+        TestWorld crossing = new TestWorld("cut-cross");
+        crossing.fillFlat(70);
+        TestActor wanderer = new TestActor("Cross", crossing, new BlockVector3(0, 71, 0));
+        wanderer.session().setMaxBlocksChanged(1_000_000);
+        CommandManager.get().dispatch(wanderer, "//pos1 -16,71,-16");
+        CommandManager.get().dispatch(wanderer, "//pos2 15,73,15");
+        CommandManager.get().dispatch(wanderer, "//set stone");
+        wanderer.clearMessages();
+        CommandManager.get().dispatch(wanderer, "//cut");
+        check("a cut over four chunks moves every block of the selection",
+                wanderer.session().getClipboard().getClipboard().volume() == 32 * 3 * 32);
+        CommandManager.get().dispatch(wanderer, "//paste 40,71,40");
+        int missing = 0;
+        for (int x = 40; x < 72; x++) {
+            for (int y = 71; y <= 73; y++) {
+                for (int z = 40; z < 72; z++) {
+                    if (crossing.getBlock(x, y, z) != stone) {
+                        missing++;
+                    }
+                }
+            }
+        }
+        check("the paste over four chunks writes every block", missing == 0);
+        check("the cut over four chunks left the selection empty",
+                crossing.getBlock(-16, 71, -16) == air && crossing.getBlock(15, 73, 15) == air);
+
         // //copy of the same box, and of a box that only reaches part way into a
         // section: both have to hold every block of the selection and nothing of
         // what is around it.
@@ -3262,6 +3318,42 @@ public final class SelfTestMain {
                 copier.session().getClipboard().getClipboard().volume() == 10 * 4 * 10);
         check("the copied blocks are the ones that were there",
                 copier.session().getClipboard().getClipboard().getBlock(5, 75, 7) == stone);
+        // Everything outside the selection is air in the clipboard, and the
+        // paste of that partial copy writes the box and nothing else.
+        check("a partial copy holds nothing outside the selection",
+                copier.session().getClipboard().getClipboard().getBlock(0, 64, 0) == air
+                        && copier.session().getClipboard().getClipboard().getBlock(15, 79, 15) == air);
+        // The paste lands where the clipboard is asked to: its own minimum
+        // corner goes to the destination, so the box it writes is
+        // (40..49, 74..77, 40..49).
+        CommandManager.get().dispatch(copier, "//paste 40,74,40");
+        check("a partial copy pastes its blocks back",
+                boxed.getBlock(40, 74, 40) == stone && boxed.getBlock(49, 77, 49) == stone);
+        check("a partial copy pastes nothing outside its box",
+                boxed.getBlock(39, 74, 39) == air && boxed.getBlock(50, 77, 50) == air);
+
+        // A box that reaches only part of a section in x and z, on the far side
+        // of a chunk border, so the runs of the partial read start where the
+        // selection does rather than at the corner of the section.
+        TestWorld edge = new TestWorld("copy-edge");
+        edge.fillFlat(70);
+        TestActor cutter = new TestActor("Edge", edge, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(cutter, "//pos1 -3,71,-3");
+        CommandManager.get().dispatch(cutter, "//pos2 12,75,12");
+        CommandManager.get().dispatch(cutter, "//set stone");
+        cutter.clearMessages();
+        CommandManager.get().dispatch(cutter, "//pos1 -3,71,-3");
+        CommandManager.get().dispatch(cutter, "//pos2 12,75,12");
+        CommandManager.get().dispatch(cutter, "//cut");
+        check("a corner cut copies its box", cutter.session().getClipboard()
+                .getClipboard().volume() == 16 * 5 * 16);
+        check("a corner cut clears its box", edge.getBlock(-3, 71, -3) == air
+                && edge.getBlock(12, 75, 12) == air);
+        CommandManager.get().dispatch(cutter, "//paste 30,71,30");
+        check("a corner cut pastes its box", edge.getBlock(30, 71, 30) == stone
+                && edge.getBlock(45, 75, 45) == stone);
+        check("a corner cut pastes nothing outside it", edge.getBlock(29, 71, 29) == air
+                && edge.getBlock(46, 75, 46) == air);
     }
 
 

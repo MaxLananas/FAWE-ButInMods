@@ -17,12 +17,6 @@ import java.util.List;
 /** Copy/paste helpers shared by the commands, brushes and tools. */
 public final class Clipboards {
 
-    /**
-     * How much of a 16x16x16 section a box must cover before the section is
-     * worth reading whole. Under a quarter the walk reads fewer cells from the
-     * world one at a time than the section-wide read would touch.
-     */
-    private static final int SECTION_READ_MINIMUM = 1024;
 
     private Clipboards() {
     }
@@ -224,12 +218,11 @@ public final class Clipboards {
                     boolean whole = fromX == (chunkX << 4) && toX == (chunkX << 4) + 15
                             && fromY == (sectionY << 4) && toY == (sectionY << 4) + 15
                             && fromZ == (chunkZ << 4) && toZ == (chunkZ << 4) + 15;
-                    // A section the selection barely reaches is read cell by
-                    // cell: reading it whole would touch 4096 cells of the
-                    // palette to pick out a handful of them.
-                    long covered = (long) (toX - fromX + 1) * (toY - fromY + 1) * (toZ - fromZ + 1);
-                    boolean read = covered >= SECTION_READ_MINIMUM
-                            && world.readSection(chunkX, sectionY, chunkZ, sectionBlocks);
+                    // The world is asked for the part of the section the
+                    // selection covers, so a section it barely reaches costs a
+                    // handful of cells rather than all 4096 of them.
+                    boolean read = world.readSection(chunkX, sectionY, chunkZ, sectionBlocks,
+                            fromX, fromY, fromZ, toX, toY, toZ);
                     if (read && whole && mask == null && !withEntities) {
                         clearSection(session, sectionBlocks, chunkX << 4, sectionY << 4, chunkZ << 4);
                         clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
@@ -300,9 +293,21 @@ public final class Clipboards {
                     boolean whole = fromX == (chunkX << 4) && toX == (chunkX << 4) + 15
                             && fromY == (sectionY << 4) && toY == (sectionY << 4) + 15
                             && fromZ == (chunkZ << 4) && toZ == (chunkZ << 4) + 15;
+                    if (whole && !withEntities && world.readSection(chunkX, sectionY, chunkZ,
+                            sectionBlocks, fromX, fromY, fromZ, toX, toY, toZ)) {
+                        clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
+                        sectionBlocks = new int[4096];
+                        continue;
+                    }
+                    // A section the box only reaches part way is read whole only
+                    // when it is worth it: under a quarter the cells outside the
+                    // box would outnumber the ones inside it, so those are read
+                    // from the world one at a time instead.
                     long covered = (long) (toX - fromX + 1) * (toY - fromY + 1) * (toZ - fromZ + 1);
-                    if (covered < SECTION_READ_MINIMUM
-                            || !world.readSection(chunkX, sectionY, chunkZ, sectionBlocks)) {
+                    boolean read = covered >= SECTION_READ_MINIMUM
+                            && world.readSection(chunkX, sectionY, chunkZ, sectionBlocks,
+                            fromX, fromY, fromZ, toX, toY, toZ);
+                    if (!read) {
                         for (int y = fromY; y <= toY; y++) {
                             for (int z = fromZ; z <= toZ; z++) {
                                 for (int x = fromX; x <= toX; x++) {
@@ -317,6 +322,15 @@ public final class Clipboards {
                         sectionBlocks = new int[4096];
                         continue;
                     }
+                    if (!withEntities) {
+                        // The array holds the box at the section's own indices,
+                        // so the stride of a row is the width of the box and
+                        // each row starts where the read put it.
+                        clipboard.adoptBox(chunkX, sectionY, chunkZ, sectionBlocks,
+                                fromX, fromY, fromZ, toX, toY, toZ);
+                        sectionBlocks = new int[4096];
+                        continue;
+                    }
                     for (int y = fromY; y <= toY; y++) {
                         for (int z = fromZ; z <= toZ; z++) {
                             for (int x = fromX; x <= toX; x++) {
@@ -325,11 +339,9 @@ public final class Clipboards {
                                     continue;
                                 }
                                 clipboard.setBlock(x, y, z, state);
-                                if (withEntities) {
-                                    NbtCompound nbt = world.getBlockEntity(x, y, z);
-                                    if (nbt != null) {
-                                        clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
-                                    }
+                                NbtCompound nbt = world.getBlockEntity(x, y, z);
+                                if (nbt != null) {
+                                    clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
                                 }
                             }
                         }
@@ -338,6 +350,13 @@ public final class Clipboards {
             }
         }
     }
+
+    /**
+     * How much of a 16x16x16 section a box must cover before reading the whole
+     * section beats reading the cells the box reaches one at a time. A quarter
+     * is where the two meet: about as many cells are looked at either way.
+     */
+    private static final int SECTION_READ_MINIMUM = 1024;
 
     /** Copies one position, the way a shape that is not a box is copied. */
     private static void copyCell(World world, BlockArrayClipboard clipboard, int x, int y, int z,

@@ -164,11 +164,15 @@ public final class FabricWorld implements World {
     }
 
     @Override
-    public boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out) {
+    public boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out,
+                               int fromX, int fromY, int fromZ, int toX, int toY, int toZ) {
         int air = com.maxlananas.fawebim.core.world.BlockState.registry().air();
         int index = ((sectionY << 4) - minY()) >> 4;
+        int baseX = chunkX << 4;
+        int baseY = sectionY << 4;
+        int baseZ = chunkZ << 4;
         if (index < 0 || index >= level.getSectionsCount()) {
-            java.util.Arrays.fill(out, air);
+            fill(out, air, fromX, fromY, fromZ, toX, toY, toZ, baseX, baseY, baseZ);
             return true;
         }
         // A chunk that is not loaded is not read here: the caller walks the
@@ -180,7 +184,7 @@ public final class FabricWorld implements World {
         }
         LevelChunkSection section = chunk.getSection(index);
         if (section.hasOnlyAir()) {
-            java.util.Arrays.fill(out, air);
+            fill(out, air, fromX, fromY, fromZ, toX, toY, toZ, baseX, baseY, baseZ);
             return true;
         }
         PalettedContainer<BlockState> states = section.getStates();
@@ -188,23 +192,36 @@ public final class FabricWorld implements World {
         // one - a section of solid stone or of water. The read is a fill, and
         // the id is looked up once.
         if (states.bitsPerEntry() == 0) {
-            java.util.Arrays.fill(out, Block.getId(states.get(0, 0, 0)));
+            fill(out, Block.getId(states.get(0, 0, 0)), fromX, fromY, fromZ, toX, toY, toZ,
+                    baseX, baseY, baseZ);
             return true;
         }
         // The rest is read straight out of the section: no chunk lookup, no
         // bounds check and no position object per block, and the walk goes in
         // the same order the section stores its cells, so both the palette and
         // the bit storage are read front to back.
-        for (int y = 0; y < 16; y++) {
+        for (int y = fromY & 15; y <= (toY & 15); y++) {
             int row = y << 8;
-            for (int z = 0; z < 16; z++) {
+            for (int z = fromZ & 15; z <= (toZ & 15); z++) {
                 int at = row | (z << 4);
-                for (int x = 0; x < 16; x++) {
+                for (int x = fromX & 15; x <= (toX & 15); x++) {
                     out[at | x] = Block.getId(states.get(x, y, z));
                 }
             }
         }
         return true;
+    }
+
+    /** Writes one state into the cells of a box, in the section's own layout. */
+    private static void fill(int[] out, int state, int fromX, int fromY, int fromZ,
+                             int toX, int toY, int toZ, int baseX, int baseY, int baseZ) {
+        for (int y = fromY - baseY; y <= toY - baseY; y++) {
+            int row = y << 8;
+            for (int z = fromZ - baseZ; z <= toZ - baseZ; z++) {
+                int at = row | (z << 4);
+                java.util.Arrays.fill(out, at + (fromX - baseX), at + (toX - baseX) + 1, state);
+            }
+        }
     }
 
     /**

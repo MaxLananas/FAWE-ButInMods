@@ -93,7 +93,8 @@ public final class TestWorld implements World {
     }
 
     @Override
-    public boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out) {
+    public boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out,
+                               int fromX, int fromY, int fromZ, int toX, int toY, int toZ) {
         int air = BlockState.registry().air();
         int baseX = chunkX << 4;
         int baseY = sectionY << 4;
@@ -102,22 +103,34 @@ public final class TestWorld implements World {
         // filled from one lookup, the way the real world answers it.
         Integer count = sectionBlocks.get(sectionKey(baseX, baseY, baseZ));
         if (count == null || count == 0) {
-            java.util.Arrays.fill(out, air);
+            fill(out, air, fromX, fromY, fromZ, toX, toY, toZ, baseX, baseY, baseZ);
             return true;
         }
         Integer uniform = sectionUniform.get(sectionKey(baseX, baseY, baseZ));
         if (uniform != null && uniform >= 0) {
-            java.util.Arrays.fill(out, uniform);
+            fill(out, uniform, fromX, fromY, fromZ, toX, toY, toZ, baseX, baseY, baseZ);
             return true;
         }
-        for (int y = 0; y < 16; y++) {
-            for (int z = 0; z < 16; z++) {
-                for (int x = 0; x < 16; x++) {
+        for (int y = fromY - baseY; y <= toY - baseY; y++) {
+            for (int z = fromZ - baseZ; z <= toZ - baseZ; z++) {
+                for (int x = fromX - baseX; x <= toX - baseX; x++) {
                     out[(y << 8) | (z << 4) | x] = getBlock(baseX + x, baseY + y, baseZ + z);
                 }
             }
         }
         return true;
+    }
+
+    /** Writes one state into the cells of a box, in the section's own layout. */
+    private static void fill(int[] out, int state, int fromX, int fromY, int fromZ,
+                             int toX, int toY, int toZ, int baseX, int baseY, int baseZ) {
+        for (int y = fromY - baseY; y <= toY - baseY; y++) {
+            int row = y << 8;
+            for (int z = fromZ - baseZ; z <= toZ - baseZ; z++) {
+                int at = row | (z << 4);
+                java.util.Arrays.fill(out, at + (fromX - baseX), at + (toX - baseX) + 1, state);
+            }
+        }
     }
 
     private final java.util.concurrent.ExecutorService executor =
