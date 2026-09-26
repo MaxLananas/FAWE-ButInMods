@@ -473,6 +473,10 @@ public final class Clipboards {
         // position object, and the transform is only asked when there is one:
         // without /transform the destination is an integer offset.
         boolean identity = transform.isIdentity();
+        // A rotated or mirrored paste turns the states with the positions:
+        // stairs, logs, doors and rails face the way the build now does.
+        com.maxlananas.fawebim.core.transform.BlockStateTransform states =
+                identity ? null : com.maxlananas.fawebim.core.transform.BlockStateTransform.of(transform);
         java.util.Map<BlockVector3, NbtCompound> stored = clipboard.readBlockEntities();
         boolean hasBlockEntities = !stored.isEmpty();
         // A paste that skips air - {@code //paste -a}, and the tool that stacks a
@@ -518,7 +522,7 @@ public final class Clipboards {
             if (mask != null && !mask.test(targetX, targetY, targetZ)) {
                 return false;
             }
-            boolean applied = session.setBlock(targetX, targetY, targetZ, state);
+            boolean applied = session.setBlock(targetX, targetY, targetZ, states == null ? state : states.apply(state));
             if (hasBlockEntities) {
                 // Even onto the same block: a chest pasted over a chest brings its items.
                 NbtCompound nbt = blockEntities.get(cellOf(box, x, y, z));
@@ -531,10 +535,19 @@ public final class Clipboards {
         if (pasteBiomes && clipboard.hasBiomes()) {
             for (java.util.Map.Entry<Long, Integer> biome : clipboard.biomeEntries()) {
                 long key = biome.getKey();
-                int x = (int) Math.floor(BlockArrayClipboard.keyX(key) - originX + destination.x());
-                int y = BlockArrayClipboard.keyY(key) - originY + destination.y();
-                int z = (int) Math.floor(BlockArrayClipboard.keyZ(key) - originZ + destination.z());
-                session.setBiome(x, y, z, biome.getValue());
+                double x = BlockArrayClipboard.keyX(key);
+                double y = BlockArrayClipboard.keyY(key);
+                double z = BlockArrayClipboard.keyZ(key);
+                if (!identity) {
+                    // The biomes turn with the blocks they are under.
+                    var target = transform.apply(new com.maxlananas.fawebim.core.math.Vector3(x, y, z));
+                    x = target.x();
+                    y = target.y();
+                    z = target.z();
+                }
+                session.setBiome((int) Math.floor(x - originX + destination.x()),
+                        (int) Math.floor(y - originY + destination.y()),
+                        (int) Math.floor(z - originZ + destination.z()), biome.getValue());
             }
         }
         if (removeEntities) {
@@ -559,6 +572,40 @@ public final class Clipboards {
         }
         session.flushQueue();
         return changed;
+    }
+
+    /**
+     * The box a paste covers, as {@code {min, max}}: the clipboard's box put
+     * where the paste puts its origin, turned by the transform. What
+     * {@code //paste -s} selects.
+     */
+    public static BlockVector3[] pastedBounds(BlockArrayClipboard clipboard, BlockVector3 destination,
+                                              Transform transform) {
+        BlockBox box = clipboard.getBox();
+        BlockVector3 origin = clipboard.getOrigin();
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for (int corner = 0; corner < 8; corner++) {
+            com.maxlananas.fawebim.core.math.Vector3 point = new com.maxlananas.fawebim.core.math.Vector3(
+                    (corner & 1) == 0 ? box.minX() : box.maxX(),
+                    (corner & 2) == 0 ? box.minY() : box.maxY(),
+                    (corner & 4) == 0 ? box.minZ() : box.maxZ());
+            com.maxlananas.fawebim.core.math.Vector3 target = transform.apply(point);
+            int x = (int) Math.floor(target.x() - origin.x() + destination.x());
+            int y = (int) Math.floor(target.y() - origin.y() + destination.y());
+            int z = (int) Math.floor(target.z() - origin.z() + destination.z());
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            minZ = Math.min(minZ, z);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+            maxZ = Math.max(maxZ, z);
+        }
+        return new BlockVector3[]{new BlockVector3(minX, minY, minZ), new BlockVector3(maxX, maxY, maxZ)};
     }
 
     /** The index of a position of a box, counted x first, then z, then y. */

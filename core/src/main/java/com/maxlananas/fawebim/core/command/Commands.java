@@ -2062,10 +2062,13 @@ public final class Commands {
                                 ctx.hasFlag("b"), ctx.hasFlag("x"), ctx.hasFlag("v"));
                     }
                     if (ctx.hasFlag("s") || onlySelect) {
-                        ctx.session().getSelector(ctx.world()).selectPrimary(destination,
+                        // The blocks the paste covers: the clipboard's box around
+                        // the destination as its origin, turned with the paste.
+                        BlockVector3[] bounds = com.maxlananas.fawebim.core.clipboard.Clipboards.pastedBounds(
+                                clipboard, destination, holder.getTransform());
+                        ctx.session().getSelector(ctx.world()).selectPrimary(bounds[0],
                                 com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                        ctx.session().getSelector(ctx.world()).selectSecondary(
-                                destination.add(clipboard.getWidth(), clipboard.getHeight(), clipboard.getLength()),
+                        ctx.session().getSelector(ctx.world()).selectSecondary(bounds[1],
                                 com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     }
                     flush(ctx, session, "Pasted", changed, "block(s)");

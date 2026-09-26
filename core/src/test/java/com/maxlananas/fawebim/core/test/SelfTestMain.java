@@ -142,6 +142,7 @@ public final class SelfTestMain {
         SecurityTests.run();
         SchematicFormatTests.run();
         BlockEntityTests.run();
+        TransformTests.run();
         MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;

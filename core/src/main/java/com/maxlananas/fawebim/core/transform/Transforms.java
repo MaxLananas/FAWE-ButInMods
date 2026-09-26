@@ -13,11 +13,17 @@ public final class Transforms {
     private Transforms() {
     }
 
-    /** Rotation around an axis by an angle in degrees. */
+    /**
+     * Rotation around an axis by an angle in degrees.
+     *
+     * <p>A quarter turn is exact. {@code Math.cos} of 90 degrees is 6e-17, not
+     * 0, so a block at a negative offset landed at -1e-16 and was floored one
+     * block over: a rotated paste put two blocks in one place and left a hole
+     * next to it.</p>
+     */
     public static Transform rotate(BlockVector3 origin, Axis axis, double degrees) {
-        double radians = Math.toRadians(degrees);
-        double cos = Math.cos(radians);
-        double sin = Math.sin(radians);
+        double cos = cos(degrees);
+        double sin = sin(degrees);
         return point -> {
             double x = point.x() - origin.x();
             double y = point.y() - origin.y();
@@ -50,6 +56,26 @@ public final class Transforms {
         return rotate(origin, Axis.Y, degrees);
     }
 
+    /** The cosine of an angle in degrees, exact at every multiple of 90. */
+    static double cos(double degrees) {
+        double turn = degrees % 360;
+        if (turn % 90 == 0) {
+            int quarter = (int) Math.floorMod((long) (turn / 90), 4L);
+            return quarter == 0 ? 1 : quarter == 2 ? -1 : 0;
+        }
+        return Math.cos(Math.toRadians(degrees));
+    }
+
+    /** The sine of an angle in degrees, exact at every multiple of 90. */
+    static double sin(double degrees) {
+        double turn = degrees % 360;
+        if (turn % 90 == 0) {
+            int quarter = (int) Math.floorMod((long) (turn / 90), 4L);
+            return quarter == 1 ? 1 : quarter == 3 ? -1 : 0;
+        }
+        return Math.sin(Math.toRadians(degrees));
+    }
+
     /** Mirroring across an axis. */
     public static Transform flip(BlockVector3 origin, Axis axis) {
         return point -> {
@@ -75,13 +101,23 @@ public final class Transforms {
         return point -> point.add(dx, dy, dz);
     }
 
-    /** A transform with a random per-block offset. */
+    /** A transform with a random per-block offset; it moves blocks and turns none. */
     public static Transform randomOffset(int dx, int dy, int dz) {
         Random random = new Random();
-        return point -> new Vector3(
-                point.x() + (dx == 0 ? 0 : random.nextInt(dx * 2 + 1) - dx),
-                point.y() + (dy == 0 ? 0 : random.nextInt(dy * 2 + 1) - dy),
-                point.z() + (dz == 0 ? 0 : random.nextInt(dz * 2 + 1) - dz));
+        return new Transform() {
+            @Override
+            public Vector3 apply(Vector3 point) {
+                return new Vector3(
+                        point.x() + (dx == 0 ? 0 : random.nextInt(dx * 2 + 1) - dx),
+                        point.y() + (dy == 0 ? 0 : random.nextInt(dy * 2 + 1) - dy),
+                        point.z() + (dz == 0 ? 0 : random.nextInt(dz * 2 + 1) - dz));
+            }
+
+            @Override
+            public Vector3 applyDirection(Vector3 direction) {
+                return direction;
+            }
+        };
     }
 
     /** A chain of transforms, applied in order. */
@@ -107,6 +143,15 @@ public final class Transforms {
             Vector3 result = point;
             for (Transform transform : transforms) {
                 result = transform.apply(result);
+            }
+            return result;
+        }
+
+        @Override
+        public Vector3 applyDirection(Vector3 direction) {
+            Vector3 result = direction;
+            for (Transform transform : transforms) {
+                result = transform.applyDirection(result);
             }
             return result;
         }

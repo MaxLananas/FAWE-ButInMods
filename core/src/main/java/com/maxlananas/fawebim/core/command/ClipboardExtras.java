@@ -161,10 +161,10 @@ final class ClipboardExtras {
             if (ctx.hasFlag("s") || onlySelect) {
                 var selector = ctx.session().getSelector(ctx.world());
                 var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
-                BlockVector3 max = destination.add(clipboard.getWidth(), clipboard.getHeight(),
-                        clipboard.getLength());
-                selector.selectPrimary(destination, limits);
-                selector.selectSecondary(max, limits);
+                BlockVector3[] bounds = Clipboards.pastedBounds(clipboard, destination,
+                        com.maxlananas.fawebim.core.transform.Transform.identity());
+                selector.selectPrimary(bounds[0], limits);
+                selector.selectSecondary(bounds[1], limits);
             }
             session.flushQueue();
             if (onlySelect) {
