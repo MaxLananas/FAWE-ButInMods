@@ -107,7 +107,7 @@ final class ScriptCommands {
             throw CommandRegistry.error("Could not read CraftScript '" + name + "'");
         }
         ctx.session().setLastScript(file.getFileName().toString());
-        ctx.actor().message(Msg.success("Ran CraftScript " + file.getFileName()));
+        ctx.actor().message(Msg.result("Ran CraftScript", Msg.value(file.getFileName()).raw()));
     }
 
     /** {@code commandRunner.run("//set stone")} — how scripts issue commands. */

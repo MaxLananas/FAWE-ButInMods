@@ -8,6 +8,8 @@ import com.maxlananas.fawebim.core.session.SessionManager;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.Direction;
 import com.maxlananas.fawebim.core.world.World;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -139,6 +141,32 @@ public final class FabricActor implements Actor {
     @Override
     public void message(Msg message) {
         source.sendSuccess(() -> FabricMessages.component(message), false);
+    }
+
+    @Override
+    public void link(String text, String url) {
+        java.net.URI uri;
+        try {
+            uri = java.net.URI.create(url);
+        } catch (IllegalArgumentException invalid) {
+            // A malformed invite still has to name itself rather than vanish.
+            message(Msg.of(text));
+            return;
+        }
+        Style line = Style.EMPTY
+                .withClickEvent(new net.minecraft.network.chat.ClickEvent.OpenUrl(uri))
+                .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
+                        Component.literal("Open " + url)));
+        source.sendSuccess(() -> FabricMessages.component(Msg.of(text), line), false);
+    }
+
+    @Override
+    public void commandLink(String text, String commandRun, String hover) {
+        Style line = Style.EMPTY
+                .withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand(commandRun))
+                .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
+                        Component.literal(hover)));
+        source.sendSuccess(() -> FabricMessages.component(Msg.of(text), line), false);
     }
 
     @Override

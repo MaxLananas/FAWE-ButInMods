@@ -28,6 +28,8 @@ public final class TestWorld implements World {
      */
     private final Map<Long, Integer> sectionBlocks = new HashMap<>();
     private final Map<Long, Integer> biomes = new HashMap<>();
+    /** The state a section holds, or -1 once it holds more than one. */
+    private final Map<Long, Integer> sectionUniform = new HashMap<>();
     private final Map<Long, NbtCompound> blockEntities = new LinkedHashMap<>();
     private final List<EntityData> entities = new ArrayList<>();
     private final java.util.Set<Long> loadedChunks = new java.util.HashSet<>();
@@ -59,6 +61,27 @@ public final class TestWorld implements World {
         sectionBlocks.merge(key, isAir ? -1 : 1, Integer::sum);
     }
 
+    /**
+     * Tracks the one state a section holds, the way a real chunk keeps a palette
+     * of one entry for a section of solid ground: {@link #readSection} answers
+     * such a section with a fill, and it may only do that when the section really
+     * holds one state.
+     */
+    private void trackUniform(int x, int y, int z, int stateId) {
+        long key = sectionKey(x, y, z);
+        Integer uniform = sectionUniform.get(key);
+        if (uniform == null) {
+            // Nothing tracked for this section yet: the state it holds is this
+            // cell's only when the section was empty before it was written.
+            Integer count = sectionBlocks.get(key);
+            sectionUniform.put(key, count == null || count == 0 ? stateId : -1);
+            return;
+        }
+        if (uniform != stateId) {
+            sectionUniform.put(key, -1);
+        }
+    }
+
     private boolean air(int stateId) {
         return stateId < 0 || BlockState.registry().isAirLike(stateId);
     }
@@ -67,6 +90,34 @@ public final class TestWorld implements World {
     public boolean isSectionEmpty(int chunkX, int sectionY, int chunkZ) {
         Integer count = sectionBlocks.get(sectionKey(chunkX << 4, sectionY << 4, chunkZ << 4));
         return count == null || count == 0;
+    }
+
+    @Override
+    public boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out) {
+        int air = BlockState.registry().air();
+        int baseX = chunkX << 4;
+        int baseY = sectionY << 4;
+        int baseZ = chunkZ << 4;
+        // The double keeps one value per cell, so a section of solid ground is
+        // filled from one lookup, the way the real world answers it.
+        Integer count = sectionBlocks.get(sectionKey(baseX, baseY, baseZ));
+        if (count == null || count == 0) {
+            java.util.Arrays.fill(out, air);
+            return true;
+        }
+        Integer uniform = sectionUniform.get(sectionKey(baseX, baseY, baseZ));
+        if (uniform != null && uniform >= 0) {
+            java.util.Arrays.fill(out, uniform);
+            return true;
+        }
+        for (int y = 0; y < 16; y++) {
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
+                    out[(y << 8) | (z << 4) | x] = getBlock(baseX + x, baseY + y, baseZ + z);
+                }
+            }
+        }
+        return true;
     }
 
     private final java.util.concurrent.ExecutorService executor =
@@ -106,6 +157,7 @@ public final class TestWorld implements World {
         }
         Integer previous = blocks.put(key(x, y, z), stateId);
         countSection(x, y, z, air(previous == null ? -1 : previous), air(stateId));
+        trackUniform(x, y, z, stateId);
         setCount++;
         return true;
     }
@@ -159,6 +211,7 @@ public final class TestWorld implements World {
                         Integer previous = blocks.put(key(worldX, worldY, worldZ), state);
                         countSection(worldX, worldY, worldZ, air(previous == null ? -1 : previous),
                                 air(state));
+                        trackUniform(worldX, worldY, worldZ, state);
                         applied++;
                     }
                 }

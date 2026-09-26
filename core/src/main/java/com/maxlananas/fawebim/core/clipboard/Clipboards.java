@@ -46,10 +46,32 @@ public final class Clipboards {
         Mask mask = sessionMask == null || sessionMask == include ? include
                 : include == null ? sessionMask
                 : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(sessionMask, include));
-        // The region walks itself in section order, which keeps both the world's
-        // chunk cache and the clipboard's sections warm for a whole section at a
-        // time; asking it about every coordinate of the bounding box was the slow
-        // way round for a shape that is not a cuboid.
+        // A box with no mask to test is copied a section at a time: the world
+        // hands a whole section over in one call, which is how a large //copy
+        // stays off the per-block path.
+        if (mask == null && region instanceof com.maxlananas.fawebim.core.region.CuboidRegion) {
+            copyBox(world, min, max, clipboard, withEntities);
+            if (withBiomes) {
+                copyBiomes(world, region, clipboard);
+            }
+            if (withEntities) {
+                List<EntityData> entities = world.getEntities(
+                        com.maxlananas.fawebim.core.world.Extent.Region3i.of(min, max.add(1, 1, 1)));
+                for (EntityData entity : entities) {
+                    clipboard.addEntity(entity.clone());
+                }
+            }
+            if (centre) {
+                clipboard.setOrigin(new BlockVector3((min.x() + max.x()) / 2, (min.y() + max.y()) / 2,
+                        (min.z() + max.z()) / 2));
+            }
+            clipboard.setName("clipboard");
+            return clipboard;
+        }
+        // Every other shape walks itself in section order, which keeps both the
+        // world's chunk cache and the clipboard's sections warm for a whole
+        // section at a time; asking it about every coordinate of the bounding box
+        // was the slow way round for a shape that is not a cuboid.
         region.forEachPosition((x, y, z) -> {
             int state = world.getBlock(x, y, z);
             if (state == BlockStateHolder.air() || (mask != null && !mask.test(x, y, z))) {
@@ -164,17 +186,19 @@ public final class Clipboards {
     /**
      * The cut of a box selection, section by section.
      *
-     * <p>Each 16x16x16 section of the box is skipped whole when the world says
-     * it holds nothing but air, which is the answer for most sections of a
-     * selection drawn around a build. The rest is the same fused pass as the
-     * generic walk: read once, copy what is not air, clear what is left.</p>
+     * <p>Each 16x16x16 section of the box is read once, whole, out of the world:
+     * the platform hands a section over in one call - a section of solid ground
+     * is answered from the chunk's own palette - and a section the world reports
+     * as all air costs nothing at all. The copy and the clear then work from
+     * that one read, and a section the selection covers completely goes into the
+     * clipboard as it is, in one array instead of 4096 writes.</p>
      */
     private static BlockArrayClipboard cutBox(World world, Region region, BlockVector3 min,
                                               BlockVector3 max, BlockArrayClipboard clipboard,
                                               EditSession session, Mask mask, boolean withEntities,
                                               boolean withBiomes) {
         int air = BlockStateHolder.air();
-        int changed = 0;
+        int[] sectionBlocks = new int[4096];
         for (int chunkX = min.x() >> 4; chunkX <= max.x() >> 4; chunkX++) {
             int fromX = Math.max(min.x(), chunkX << 4);
             int toX = Math.min(max.x(), (chunkX << 4) + 15);
@@ -189,10 +213,23 @@ public final class Clipboards {
                     if (world.isSectionEmpty(chunkX, sectionY, chunkZ)) {
                         continue;
                     }
+                    boolean whole = fromX == (chunkX << 4) && toX == (chunkX << 4) + 15
+                            && fromY == (sectionY << 4) && toY == (sectionY << 4) + 15
+                            && fromZ == (chunkZ << 4) && toZ == (chunkZ << 4) + 15;
+                    boolean read = world.readSection(chunkX, sectionY, chunkZ, sectionBlocks);
+                    if (read && whole && mask == null && !withEntities) {
+                        clearSection(session, sectionBlocks, chunkX << 4, sectionY << 4, chunkZ << 4);
+                        clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
+                        sectionBlocks = new int[4096];
+                        continue;
+                    }
+                    int visited = 0;
                     for (int y = fromY; y <= toY; y++) {
                         for (int z = fromZ; z <= toZ; z++) {
                             for (int x = fromX; x <= toX; x++) {
-                                int state = world.getBlock(x, y, z);
+                                int state = read
+                                        ? sectionBlocks[(y & 15) << 8 | (z & 15) << 4 | (x & 15)]
+                                        : world.getBlock(x, y, z);
                                 if (state != air && (mask == null || mask.test(x, y, z))) {
                                     clipboard.setBlock(x, y, z, state);
                                     if (withEntities) {
@@ -207,7 +244,7 @@ public final class Clipboards {
                                 }
                                 // The session counts its own writes; this is the
                                 // clock a configured timeout watches.
-                                if ((++changed & 0x3FF) == 0) {
+                                if ((++visited & 0x3FF) == 0) {
                                     session.limiter().check(0);
                                 }
                             }
@@ -220,6 +257,103 @@ public final class Clipboards {
             copyBiomes(world, region, clipboard);
         }
         return clipboard;
+    }
+
+    /**
+     * Copies a box, a section at a time.
+     *
+     * <p>A section the box covers completely goes into the clipboard as the
+     * world hands it over - one array instead of 4096 writes - and one the box
+     * only reaches part way is read whole and picked out cell by cell, so the
+     * chunk behind it is looked up once rather than once per block.</p>
+     */
+    private static void copyBox(World world, BlockVector3 min, BlockVector3 max,
+                                BlockArrayClipboard clipboard, boolean withEntities) {
+        int air = BlockStateHolder.air();
+        int[] sectionBlocks = new int[4096];
+        for (int chunkX = min.x() >> 4; chunkX <= max.x() >> 4; chunkX++) {
+            int fromX = Math.max(min.x(), chunkX << 4);
+            int toX = Math.min(max.x(), (chunkX << 4) + 15);
+            for (int chunkZ = min.z() >> 4; chunkZ <= max.z() >> 4; chunkZ++) {
+                int fromZ = Math.max(min.z(), chunkZ << 4);
+                int toZ = Math.min(max.z(), (chunkZ << 4) + 15);
+                for (int sectionY = min.y() >> 4; sectionY <= max.y() >> 4; sectionY++) {
+                    int fromY = Math.max(min.y(), sectionY << 4);
+                    int toY = Math.min(max.y(), (sectionY << 4) + 15);
+                    if (world.isSectionEmpty(chunkX, sectionY, chunkZ)) {
+                        continue;
+                    }
+                    boolean whole = fromX == (chunkX << 4) && toX == (chunkX << 4) + 15
+                            && fromY == (sectionY << 4) && toY == (sectionY << 4) + 15
+                            && fromZ == (chunkZ << 4) && toZ == (chunkZ << 4) + 15;
+                    if (!world.readSection(chunkX, sectionY, chunkZ, sectionBlocks)) {
+                        for (int y = fromY; y <= toY; y++) {
+                            for (int z = fromZ; z <= toZ; z++) {
+                                for (int x = fromX; x <= toX; x++) {
+                                    copyCell(world, clipboard, x, y, z, withEntities, air);
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    if (whole && !withEntities) {
+                        clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
+                        sectionBlocks = new int[4096];
+                        continue;
+                    }
+                    for (int y = fromY; y <= toY; y++) {
+                        for (int z = fromZ; z <= toZ; z++) {
+                            for (int x = fromX; x <= toX; x++) {
+                                int state = sectionBlocks[(y & 15) << 8 | (z & 15) << 4 | (x & 15)];
+                                if (state == air) {
+                                    continue;
+                                }
+                                clipboard.setBlock(x, y, z, state);
+                                if (withEntities) {
+                                    NbtCompound nbt = world.getBlockEntity(x, y, z);
+                                    if (nbt != null) {
+                                        clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Copies one position, the way a shape that is not a box is copied. */
+    private static void copyCell(World world, BlockArrayClipboard clipboard, int x, int y, int z,
+                                 boolean withEntities, int air) {
+        int state = world.getBlock(x, y, z);
+        if (state == air) {
+            return;
+        }
+        clipboard.setBlock(x, y, z, state);
+        if (withEntities) {
+            NbtCompound nbt = world.getBlockEntity(x, y, z);
+            if (nbt != null) {
+                clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
+            }
+        }
+    }
+
+    /** Empties a whole section the caller has already read out of the world. */
+    private static void clearSection(EditSession session, int[] sectionBlocks,
+                                     int baseX, int baseY, int baseZ) {
+        int air = BlockStateHolder.air();
+        for (int cell = 0; cell < 4096; cell++) {
+            int state = sectionBlocks[cell];
+            if (state == air) {
+                continue;
+            }
+            session.setBlockKnown(baseX + (cell & 15), baseY + (cell >> 8),
+                    baseZ + (cell >> 4 & 15), state, air, true);
+            if ((cell & 0x3FF) == 0) {
+                session.limiter().check(0);
+            }
+        }
     }
 
     /**

@@ -117,7 +117,8 @@ final class AnvilCommands {
             EditSession session = ctx.editSession("anvil clear");
             List<int[]> chunks = selectionChunks(ctx);
             int cleared = clearChunks(session, ctx.world(), chunks);
-            flush(ctx, session, "Cleared " + cleared + " of " + chunks.size() + " chunk(s)");
+            flush(ctx, session, "Cleared", Msg.count(cleared) + "\u00a77 of "
+                    + Msg.count(chunks.size()) + "\u00a77 chunk(s)");
         };
     }
 
@@ -170,7 +171,8 @@ final class AnvilCommands {
             EditSession session = ctx.editSession("anvil paste");
             int changed = Clipboards.paste(clipboard, destination, session,
                     com.maxlananas.fawebim.core.transform.Transform.identity(), false, false, false);
-            flush(ctx, session, "Pasted " + Msg.formatNumber(changed) + " block(s) at " + destination);
+            flush(ctx, session, "Pasted", Msg.count(changed) + "\u00a77 block(s) at "
+                    + Msg.value(destination).raw());
         };
     }
 
@@ -198,7 +200,7 @@ final class AnvilCommands {
                 distribution(ctx, counts);
                 return;
             }
-            ctx.actor().message(Msg.success(Msg.formatNumber(total) + " block(s) matched"));
+            ctx.actor().message(Msg.result("Matched", Msg.count(total) + "\u00a77 block(s)"));
         };
     }
 
@@ -227,8 +229,8 @@ final class AnvilCommands {
                 return;
             }
             long total = counts.values().stream().mapToLong(Long::longValue).sum();
-            ctx.actor().message(Msg.success(Msg.formatNumber(chunks) + " chunk(s), "
-                    + Msg.formatNumber(total) + " block(s)"));
+            ctx.actor().message(Msg.result("Counted", Msg.count(chunks) + "\u00a77 chunk(s), "
+                    + Msg.count(total) + "\u00a77 block(s)"));
         };
     }
 
@@ -319,7 +321,7 @@ final class AnvilCommands {
                 changed += session.setBlock(position.x(), position.y(), position.z(),
                         pattern.apply(position)) ? 1 : 0;
             }
-            flush(ctx, session, "Changed " + Msg.formatNumber(changed) + " block(s)");
+            flush(ctx, session, "Changed", Msg.count(changed) + "\u00a77 block(s)");
         };
     }
 
@@ -357,7 +359,7 @@ final class AnvilCommands {
                     }
                 }
             }
-            flush(ctx, session, "Removed " + Msg.formatNumber(changed) + " block(s)");
+            flush(ctx, session, "Removed", Msg.count(changed) + "\u00a77 block(s)");
         };
     }
 
@@ -379,7 +381,7 @@ final class AnvilCommands {
             }
             EditSession session = ctx.editSession("anvil trimallair");
             int cleared = clearChunks(session, ctx.world(), chunks);
-            flush(ctx, session, "Trimmed " + cleared + " empty chunk(s)");
+            flush(ctx, session, "Trimmed", Msg.count(cleared) + "\u00a77 empty chunk(s)");
         };
     }
 
@@ -569,7 +571,7 @@ final class AnvilCommands {
             changed += session.setBlock(position.x(), position.y(), position.z(),
                     target.apply(position)) ? 1 : 0;
         }
-        flush(ctx, session, "Replaced " + Msg.formatNumber(changed) + " block(s)");
+        flush(ctx, session, "Replaced", Msg.count(changed) + "\u00a77 block(s)");
     }
 
     /**
@@ -658,7 +660,7 @@ final class AnvilCommands {
         }
         EditSession session = ctx.editSession("anvil delete");
         int cleared = clearChunks(session, ctx.world(), chunks);
-        flush(ctx, session, "Deleted " + cleared + " chunk(s) (" + reason + ")");
+        flush(ctx, session, "Deleted", Msg.count(cleared) + "\u00a77 chunk(s) \u00a78(" + reason + "\u00a78)");
     }
 
     /**
@@ -766,8 +768,9 @@ final class AnvilCommands {
         return files;
     }
 
-    private void flush(Ctx ctx, EditSession session, String message) {
+    /** Flushes the queue and answers with the one result line the mod uses. */
+    private void flush(Ctx ctx, EditSession session, String label, String detail) {
         session.flushQueue();
-        ctx.actor().message(Msg.success(message));
+        ctx.actor().message(Msg.result(label, detail));
     }
 }

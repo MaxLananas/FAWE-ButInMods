@@ -218,8 +218,7 @@ final class UtilityExtras {
             }
             active = mode != null ? mode : !active;
             session.setWatchdogEnabled(active);
-            ctx.actor().message(Msg.success(active
-                    ? "Watchdog hook now active." : "Watchdog hook now inactive."));
+            ctx.actor().message(Msg.result("Watchdog hook", active ? "active" : "inactive"));
         };
     }
 
@@ -262,7 +261,7 @@ final class UtilityExtras {
                 throw CommandRegistry.error("Cannot toggle placing in this context.");
             }
             ctx.session().setPlacement(placement);
-            ctx.actor().message(Msg.success(placement.message()));
+            ctx.actor().message(Msg.result("Placement", placement.message()));
         };
     }
 
@@ -285,7 +284,7 @@ final class UtilityExtras {
                 throw CommandRegistry.error("Cannot toggle placing in this context.");
             }
             ctx.session().setPlacement(placement);
-            ctx.actor().message(Msg.success(placement.message()));
+            ctx.actor().message(Msg.result("Placement", placement.message()));
         };
     }
 
@@ -716,8 +715,8 @@ final class UtilityExtras {
             }
         }
         session.flushQueue();
-        ctx.actor().message(Msg.success((undo ? "Rolled back " : "Restored ") + Msg.formatNumber(changed)
-                + " block change(s) from " + matches.size() + " edit(s)"));
+        ctx.actor().message(Msg.result(undo ? "Rolled back" : "Restored", Msg.count(changed)
+                + "\u00a77 block change(s) from " + Msg.count(matches.size()) + "\u00a77 edit(s)"));
     }
 
     /** Applies the {@code -u}, {@code -t} and {@code -r} filters of the command line. */

@@ -664,6 +664,35 @@ public final class SelfTestMain {
         check("expression pattern", new Patterns.ExpressionPattern("y + 1").apply(new BlockVector3(0, 5, 0)) == 6);
         check("random state pattern", new Patterns.RandomState(new int[]{stone, dirt}) != null);
         check("type apply pattern", new Patterns.TypeOrStateApplying(new Patterns.Single(stone)) != null);
+
+        // A dye colour on its own is the wool of that colour: the shorthand FAWE
+        // accepts, read through the block registry like every other name.
+        for (String colour : new String[]{"white", "orange", "magenta", "light_blue", "yellow", "lime",
+                "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red",
+                "black"}) {
+            int wool = BlockState.registry().defaultState(colour + "_wool");
+            check("the test registry knows " + colour + "_wool", wool >= 0);
+            checkEquals("the " + colour + " shorthand is its wool", wool,
+                    BlockState.registry().parse(colour));
+        }
+        TestWorld wool = new TestWorld("wool");
+        wool.fillFlat(70);
+        TestActor painter = new TestActor("Paint", wool, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(painter, "//pos1 0,71,0");
+        CommandManager.get().dispatch(painter, "//pos2 3,71,3");
+        CommandManager.get().dispatch(painter, "//set orange");
+        checkEquals("//set orange places orange wool",
+                BlockState.registry().defaultState("orange_wool"), wool.getBlock(1, 71, 1));
+        CommandManager.get().dispatch(painter, "//replace orange magenta");
+        checkEquals("//replace orange magenta swaps the wool",
+                BlockState.registry().defaultState("magenta_wool"), wool.getBlock(2, 71, 2));
+        checkEquals("a namespaced name is left alone", -1, BlockState.registry().parse("fawebim:red"));
+        checkEquals("a real block name is unaffected",
+                BlockState.registry().defaultState("red_wool"), BlockState.registry().parse("red_wool"));
+        painter.clearMessages();
+        CommandManager.get().dispatch(painter, "//set redstone");
+        check("a word that is not a colour is refused", painter.messages().stream()
+                .anyMatch(message -> message.contains("Unknown block")));
     }
 
     private static void testExpressions() {
@@ -1827,7 +1856,7 @@ public final class SelfTestMain {
         check("tool bound", com.maxlananas.fawebim.core.tool.Tools.current(actor.session()) != null);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fast");
-        check("/fast responded", actor.lastMessage().contains("Fast mode"));
+        check("/fast responded", plain(actor.lastMessage()).contains("Fast mode"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//definitelynotacommand");
         check("unknown command handled", actor.lastMessage().contains("Unknown command"));
@@ -2038,14 +2067,14 @@ public final class SelfTestMain {
         // /fast takes the state it is asked for, and says when it is already there.
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fast");
-        check("/fast turns the mode on", actor.lastMessage().contains("Fast mode enabled"));
+        check("/fast turns the mode on", plain(actor.lastMessage()).contains("Fast mode: on"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fast true");
         check("/fast names the state it is already in",
                 actor.lastMessage().contains("Fast mode already enabled"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fast false");
-        check("/fast turns the mode off again", actor.lastMessage().contains("Fast mode disabled"));
+        check("/fast turns the mode off again", plain(actor.lastMessage()).contains("Fast mode: off"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fast maybe");
         check("a state that is neither true nor false is refused",
@@ -2137,12 +2166,13 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//cui");
         check("//cui toggles the preview off", actor.session() != null
                 && !actor.session().isDrawSelection()
-                && actor.lastMessage().contains("Selection preview disabled"));
+                && plain(actor.lastMessage()).contains("Selection preview: off"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui");
         check("//cui toggles the preview back on",
                 actor.session().isDrawSelection()
-                        && actor.lastMessage().contains("Selection preview enabled"));
+                        && actor.messages().stream().anyMatch(message ->
+                                plain(message).contains("Selection preview: on")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui false");
         check("//cui takes a state", !actor.session().isDrawSelection());
@@ -2150,7 +2180,8 @@ public final class SelfTestMain {
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//watchdog inactive");
-        check("//watchdog takes a hook mode", actor.lastMessage().contains("Watchdog hook now inactive."));
+        check("//watchdog takes a hook mode",
+                plain(actor.lastMessage()).contains("Watchdog hook: inactive"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//watchdog inactive");
         check("//watchdog says when the hook is already there",
@@ -2163,7 +2194,8 @@ public final class SelfTestMain {
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/we trace active");
-        check("/we trace takes a hook mode", actor.lastMessage().contains("Trace mode now active."));
+        check("/we trace takes a hook mode",
+                plain(actor.lastMessage()).contains("Trace mode: active"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//pos1 0,30,0");
         CommandManager.get().dispatch(actor, "//pos2 2,30,2");
@@ -2172,7 +2204,8 @@ public final class SelfTestMain {
                 actor.messages().stream().anyMatch(m -> plain(m).contains("Trace: set 0,30,0")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/we trace inactive");
-        check("/we trace turns the hook off", actor.lastMessage().contains("Trace mode now inactive."));
+        check("/we trace turns the hook off",
+                plain(actor.lastMessage()).contains("Trace mode: inactive"));
         check("the session stops tracing with it", !actor.session().isTracing());
     }
 
@@ -2306,7 +2339,8 @@ public final class SelfTestMain {
         check("//tree plants for a player", player.lastMessage().contains("Tree planted at"));
         player.clearMessages();
         CommandManager.get().dispatch(player, "//wand");
-        check("//wand hands the wand to a player", player.lastMessage().contains("Wand given"));
+        check("//wand hands the wand to a player",
+                plain(player.lastMessage()).contains("Wand: minecraft:wooden_axe given"));
         player.clearMessages();
         CommandManager.get().dispatch(player, "/smask minecraft:stone");
         check("/smask sets a player's brush mask", player.lastMessage().contains("source mask"));
@@ -2548,7 +2582,8 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(sweeper, "//pos2 3,70,3");
         CommandManager.get().dispatch(sweeper, "//set stone");
         CommandManager.get().dispatch(sweeper, "//air");
-        check("//air clears the selection", plain(sweeper.lastMessage()).contains("16 block(s) set to air"));
+        check("//air clears the selection",
+                plain(sweeper.lastMessage()).contains("Set to air: 16 block(s)"));
         check("//air left the selection empty", count(sweeper).equals("Count: 0"));
 
         // //ores plants vanilla's ore distribution where the mask allows it,
@@ -2736,6 +2771,20 @@ public final class SelfTestMain {
         check("regen restored the mask", actor.session().getMask() != null);
         int chunkChanges = world.setCount();
         check("regen touched the world", chunkChanges > 0);
+
+        // //regen with no seed at all: the options take a primitive, so a
+        // missing seed must not reach them as a null.
+        TestWorld bare = new TestWorld("regen-plain");
+        bare.fillFlat(70);
+        TestActor simple = new TestActor("Plain", bare, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(simple, "//pos1 0,70,0");
+        CommandManager.get().dispatch(simple, "//pos2 15,80,15");
+        simple.clearMessages();
+        CommandManager.get().dispatch(simple, "//regen");
+        check("//regen without a seed regenerates", simple.messages().stream()
+                .anyMatch(message -> plain(message).startsWith("\u00bb Regenerated: ")));
+        check("//regen without a seed says nothing failed", simple.messages().stream()
+                .noneMatch(message -> message.contains("Command failed")));
     }
 
 
@@ -2910,7 +2959,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//undo");
         check("//undo puts the cut blocks back", world.getBlock(4, 66, 4) == stone);
         check("the undo was reported", actor.messages().stream()
-                .anyMatch(message -> message.contains("Undid")));
+                .anyMatch(message -> plain(message).contains("Undid")));
 
         // What the cut put in the clipboard pastes back where it is asked to.
         actor.clearMessages();
@@ -2976,6 +3025,54 @@ public final class SelfTestMain {
             }
         }
         check("a cut with a leave pattern fills the whole selection", glass == 64 * 26 * 16 && missed == 0);
+
+        // A section the selection covers completely is taken whole: the world
+        // hands it over in one array, which is also how the clipboard keeps it,
+        // so the copy and the paste have to line up cell for cell.
+        TestWorld aligned = new TestWorld("cut-section");
+        aligned.fillFlat(70);
+        TestActor section = new TestActor("Section", aligned, new BlockVector3(0, 71, 0));
+        section.session().setMaxBlocksChanged(1_000_000);
+        CommandManager.get().dispatch(section, "//pos1 0,64,0");
+        CommandManager.get().dispatch(section, "//pos2 15,79,15");
+        CommandManager.get().dispatch(section, "//set stone");
+        CommandManager.get().dispatch(section, "//pos1 0,71,0");
+        CommandManager.get().dispatch(section, "//pos2 15,79,15");
+        CommandManager.get().dispatch(section, "//replace stone dirt");
+        section.clearMessages();
+        CommandManager.get().dispatch(section, "//pos1 0,64,0");
+        CommandManager.get().dispatch(section, "//pos2 15,79,15");
+        CommandManager.get().dispatch(section, "//cut");
+        check("a whole-section cut copies the section",
+                section.session().getClipboard().getClipboard().volume() == 4096);
+        CommandManager.get().dispatch(section, "//paste 32,64,32");
+        int dirt = BlockState.registry().defaultState("minecraft:dirt");
+        check("the section pastes back with the same blocks",
+                aligned.getBlock(32, 64, 32) == stone && aligned.getBlock(47, 70, 47) == stone
+                        && aligned.getBlock(32, 71, 32) == dirt
+                        && aligned.getBlock(47, 79, 47) == dirt);
+
+        // //copy of the same box, and of a box that only reaches part way into a
+        // section: both have to hold every block of the selection and nothing of
+        // what is around it.
+        TestWorld boxed = new TestWorld("copy-section");
+        boxed.fillFlat(70);
+        TestActor copier = new TestActor("Copy", boxed, new BlockVector3(0, 71, 0));
+        CommandManager.get().dispatch(copier, "//pos1 0,64,0");
+        CommandManager.get().dispatch(copier, "//pos2 15,79,15");
+        CommandManager.get().dispatch(copier, "//set stone");
+        copier.clearMessages();
+        CommandManager.get().dispatch(copier, "//copy");
+        check("a whole-section copy holds the section",
+                copier.session().getClipboard().getClipboard().volume() == 4096);
+        CommandManager.get().dispatch(copier, "//pos1 3,74,3");
+        CommandManager.get().dispatch(copier, "//pos2 12,77,12");
+        copier.clearMessages();
+        CommandManager.get().dispatch(copier, "//copy");
+        check("a copy that only reaches into a section holds the selection",
+                copier.session().getClipboard().getClipboard().volume() == 10 * 4 * 10);
+        check("the copied blocks are the ones that were there",
+                copier.session().getClipboard().getClipboard().getBlock(5, 75, 7) == stone);
     }
 
 
@@ -3104,13 +3201,14 @@ public final class SelfTestMain {
         List<String> uncoloured = new ArrayList<>();
         List<String> broken = new ArrayList<>();
         int answers = 0;
+        // One world for the whole walk, and one actor: what is measured is the
+        // colour of every answer, and a command that edits the world is answering
+        // the same way either way. Building a world per command put four minutes
+        // on the suite for a check that has nothing to do with world state.
+        TestWorld world = new TestWorld("colour");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("Colour", world, new BlockVector3(0, 71, 0));
         for (CommandRegistry.Entry entry : CommandManager.get().registry().all()) {
-            // One world per command: a shape is free to edit it, the next command
-            // still starts from a flat one, and the whole surface is walked in a
-            // minute rather than building a world per line.
-            TestWorld world = new TestWorld("colour");
-            world.fillFlat(70);
-            TestActor actor = new TestActor("Colour", world, new BlockVector3(0, 71, 0));
             for (String[] shape : shapes) {
                 StringBuilder line = new StringBuilder(entry.name);
                 for (String argument : shape) {

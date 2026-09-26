@@ -26,10 +26,21 @@ public final class FabricMessages {
     }
 
     public static Component component(Msg message) {
+        return component(message, Style.EMPTY);
+    }
+
+    /**
+     * The same components, with a style the whole line carries.
+     *
+     * <p>A click and a hover event are carried by the style of every segment of
+     * the line, not by its root: the segments below all set a colour of their
+     * own, and a style of its own hides what the root had.</p>
+     */
+    public static Component component(Msg message, Style line) {
         String raw = message.raw();
         Component result = Component.empty();
         StringBuilder segment = new StringBuilder();
-        Style style = Style.EMPTY;
+        Style style = line;
         TextColor colour = null;
         boolean bold = false;
         boolean italic = false;

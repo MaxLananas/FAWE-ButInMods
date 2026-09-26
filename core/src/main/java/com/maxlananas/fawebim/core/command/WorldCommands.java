@@ -117,8 +117,7 @@ final class WorldCommands {
             }
             tracing = mode != null ? mode : !tracing;
             session.setTracing(tracing);
-            ctx.actor().message(Msg.success(tracing
-                    ? "Trace mode now active." : "Trace mode now inactive."));
+            ctx.actor().message(Msg.result("Trace mode", tracing ? "active" : "inactive"));
         };
     }
 
@@ -236,34 +235,46 @@ final class WorldCommands {
     }
 
     /**
-     * {@code //cui} — the CUI handshake. A vanilla client cannot answer it, so the
-     * handshake is completed locally and the selection preview is drawn by this
-     * mod; the command shows or hides that preview, and toggles it when the line
-     * gives no argument.
+     * {@code //cui} - the CUI handshake.
+     *
+     * <p>WorldEdit asks the client to draw the selection and a client mod
+     * answers; a vanilla client cannot, so the handshake is completed locally and
+     * this mod draws the outline in the world itself. The command shows, hides
+     * and toggles that outline, and says which colours mark the two corners.</p>
      */
     private void cui() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//cui", "/we cui", "/cui");
         if (entry == null) {
             return;
         }
-        entry.description = "Complete the CUI handshake and toggle the selection preview";
+        entry.description = "Complete the CUI handshake, which draws the selection outline";
         entry.group = "worldedit";
         entry.requiresPlayer = true;
         entry.arguments.add("[true|false]");
         entry.handler = ctx -> {
             LocalSession session = ctx.session();
-            boolean enabled = ctx.args().isEmpty() ? !session.isDrawSelection()
-                    : Parsers.booleanArg(ctx, 0, false);
-            session.setCuiEnabled(enabled);
+            boolean enabled = ctx.args().isEmpty()
+                    ? !session.isDrawSelection() : Parsers.booleanArg(ctx, 0, false);
             if (enabled == session.isDrawSelection()) {
-                ctx.actor().message(Msg.info("Selection preview already "
-                        + (enabled ? "enabled" : "disabled")));
+                ctx.actor().message(Msg.result("Selection preview",
+                        (enabled ? "already on" : "already off") + "\u00a77 - use "
+                                + Msg.value("//cui " + !enabled).raw() + "\u00a77 to change it"));
                 return;
             }
             session.setDrawSelection(enabled);
             ctx.actor().updateSelectionOutline();
-            ctx.actor().message(Msg.success("Selection preview "
-                    + (enabled ? "enabled" : "disabled")));
+            if (!enabled) {
+                ctx.actor().message(Msg.result("Selection preview", "off"));
+                return;
+            }
+            ctx.actor().message(Msg.result("Selection preview", "on"));
+            ctx.actor().message(Msg.of("\u00a78\u00bb \u00a77Every edge in \u00a7b\u00a7lblue\u00a77, position 1 in "
+                    + "\u00a7c\u00a7lred\u00a77 and position 2 in \u00a79\u00a7lblue\u00a77."));
+            if (!session.isSelectionDefined(ctx.world())) {
+                ctx.actor().message(Msg.of("\u00a78\u00bb \u00a77Pick two corners with "
+                        + Msg.value("//pos1").raw() + "\u00a77 and " + Msg.value("//pos2").raw()
+                        + "\u00a77 to see the outline."));
+            }
         };
     }
 }

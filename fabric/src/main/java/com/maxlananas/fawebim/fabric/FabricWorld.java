@@ -30,6 +30,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.lighting.LightEngine;
 import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 
@@ -57,10 +58,27 @@ public final class FabricWorld implements World {
 
     private static final int UPDATE_NEIGHBORS = 1;
     private static final int UPDATE_CLIENTS = 2;
+    /**
+     * Changed blocks in one chunk above which the chunk is re-lit as a whole
+     * instead of queueing every position: the light engine keeps the positions it
+     * is handed in a set, and a set with a million entries in it costs more time
+     * and more memory than recomputing the chunk's light in one pass.
+     */
+    private static final int LIGHT_CHUNK_THRESHOLD = 512;
 
     private final ServerLevel level;
     /** The chunk of the previous read or write, and its position. */
     private LevelChunk cachedChunk;
+    /**
+     * The positions a flush changed, kept between flushes and grown on demand:
+     * a large edit flushes one chunk after another and this is the only array a
+     * flush needs, so handing it to the collector every time is pure garbage.
+     */
+    private int[] changedX = new int[0];
+    private int[] changedY = new int[0];
+    private int[] changedZ = new int[0];
+    /** One position object for a whole flush: nothing keeps what it is handed. */
+    private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
     private int cachedChunkX = Integer.MIN_VALUE;
     private int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -143,6 +161,50 @@ public final class FabricWorld implements World {
         net.minecraft.world.level.chunk.LevelChunk chunk =
                 level.getChunkSource().getChunkNow(chunkX, chunkZ);
         return chunk != null && chunk.getSection(index).hasOnlyAir();
+    }
+
+    @Override
+    public boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out) {
+        int air = com.maxlananas.fawebim.core.world.BlockState.registry().air();
+        int index = ((sectionY << 4) - minY()) >> 4;
+        if (index < 0 || index >= level.getSectionsCount()) {
+            java.util.Arrays.fill(out, air);
+            return true;
+        }
+        // A chunk that is not loaded is not read here: the caller walks the
+        // section then, and that walk loads it. Answering with air instead would
+        // copy nothing and clear nothing, quietly.
+        LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
+        if (chunk == null) {
+            return false;
+        }
+        LevelChunkSection section = chunk.getSection(index);
+        if (section.hasOnlyAir()) {
+            java.util.Arrays.fill(out, air);
+            return true;
+        }
+        PalettedContainer<BlockState> states = section.getStates();
+        // One state in the whole section, which the chunk keeps as a palette of
+        // one - a section of solid stone or of water. The read is a fill, and
+        // the id is looked up once.
+        if (states.bitsPerEntry() == 0) {
+            java.util.Arrays.fill(out, Block.getId(states.get(0, 0, 0)));
+            return true;
+        }
+        // The rest is read straight out of the section: no chunk lookup, no
+        // bounds check and no position object per block, and the walk goes in
+        // the same order the section stores its cells, so both the palette and
+        // the bit storage are read front to back.
+        for (int y = 0; y < 16; y++) {
+            int row = y << 8;
+            for (int z = 0; z < 16; z++) {
+                int at = row | (z << 4);
+                for (int x = 0; x < 16; x++) {
+                    out[at | x] = Block.getId(states.get(x, y, z));
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -308,25 +370,45 @@ public final class FabricWorld implements World {
         // 1. Remember the positions that changed, so they can be re-lit once the
         //    write is done. They stay in parallel int arrays rather than in a map
         //    keyed by a block vector: a large edit changes millions of them and
-        //    this runs on every flush. A flush that will re-send the chunk needs
-        //    the positions and nothing else - the clients get the chunk, not a
-        //    packet per block - so the states are only collected below that.
+        //    this runs on every flush. The arrays are kept between flushes - a
+        //    large edit flushes a chunk after another - and only grow. A flush
+        //    that will re-send the chunk needs the positions and nothing else -
+        //    the clients get the chunk, not a packet per block - so the states are
+        //    only collected below that.
         int count = set.size();
         boolean resend = network && count >= Math.max(1, Config.get().chunkResendThreshold);
-        int[] changedXs = new int[count];
-        int[] changedYs = new int[count];
-        int[] changedZs = new int[count];
+        if (changedX.length < count) {
+            int size = Math.max(1024, count);
+            changedX = new int[size];
+            changedY = new int[size];
+            changedZ = new int[size];
+        }
+        int[] changedXs = changedX;
+        int[] changedYs = changedY;
+        int[] changedZs = changedZ;
+        int[] slot = {0};
         boolean perBlockNotify = !resend && (notify || neighbors);
         BlockState[] before = perBlockNotify ? new BlockState[count] : null;
         BlockState[] after = perBlockNotify ? new BlockState[count] : null;
-        int[] slot = {0};
+        boolean perBlockLight = lighting && count < LIGHT_CHUNK_THRESHOLD;
         var chunkSource = level.getChunkSource();
-        boolean ticking = chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
+        var lightEngine = chunkSource.getLightEngine();
+        boolean ticking = chunk.getFullStatus().isOrAfter(
+                net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
+        // The four heightmaps vanilla updates for every block it writes. Looking
+        // them up once per chunk keeps the map out of the per-block path.
+        Heightmap motionBlocking = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.MOTION_BLOCKING);
+        Heightmap motionBlockingNoLeaves =
+                chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES);
+        Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR);
+        Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE);
 
         // 2. Bulk section write: one palette update per section instead of one
-        //    world.setBlock call (with its 6 neighbour updates) per block. A cell
-        //    that is about to be written has its old state read out of the section
-        //    in the same walk, which is what the client sync below hands back.
+        //    world.setBlock call (with its 6 neighbour updates) per block, plus
+        //    the bookkeeping vanilla does for a written cell - the heightmaps of
+        //    its column, the sky light source of its column, the light queue and,
+        //    when the section stops being empty, the light engine's own view of
+        //    it.
         for (int index = 0; index < sections.length; index++) {
             PackedBlockArray buffered = sections[index];
             if (buffered == null) {
@@ -338,26 +420,43 @@ public final class FabricWorld implements World {
                 continue;
             }
             LevelChunkSection section = chunk.getSection(sectionIndex);
-            // Only the cells this buffer holds are written, in one palette update
-            // per section instead of one world.setBlock call per block.
+            boolean wasEmpty = section.hasOnlyAir();
             int written = buffered.forEachWritten(local -> {
                 int localX = local & 15;
                 int localY = (local >> 8) & 15;
                 int localZ = (local >> 4) & 15;
+                int y = sectionY + localY;
                 int at = slot[0]++;
                 changedXs[at] = baseX + localX;
-                changedYs[at] = sectionY + localY;
+                changedYs[at] = y;
                 changedZs[at] = baseZ + localZ;
                 BlockState now = Block.stateById(buffered.get(local));
+                BlockState was = section.getBlockState(localX, localY, localZ);
                 if (before != null) {
-                    before[at] = section.getBlockState(localX, localY, localZ);
+                    before[at] = was;
                     after[at] = now;
                 }
                 section.setBlockState(localX, localY, localZ, now, false);
+                motionBlocking.update(localX, y, localZ, now);
+                motionBlockingNoLeaves.update(localX, y, localZ, now);
+                oceanFloor.update(localX, y, localZ, now);
+                worldSurface.update(localX, y, localZ, now);
+                if (perBlockLight && LightEngine.hasDifferentLightProperties(was, now)) {
+                    chunk.getSkyLightSources().update(chunk, localX, y, localZ);
+                    lightEngine.checkBlock(cursor.set(baseX + localX, y, baseZ + localZ));
+                }
             });
             applied += written;
             if (written > 0) {
                 chunk.markUnsaved();
+                boolean isEmpty = section.hasOnlyAir();
+                if (wasEmpty != isEmpty) {
+                    net.minecraft.core.SectionPos sectionPos =
+                            net.minecraft.core.SectionPos.of(set.chunkX(), sectionY >> 4, set.chunkZ());
+                    lightEngine.updateSectionStatus(sectionPos, isEmpty);
+                    chunkSource.onSectionEmptinessChanged(
+                            set.chunkX(), sectionY >> 4, set.chunkZ(), isEmpty);
+                }
             }
         }
 
@@ -375,49 +474,35 @@ public final class FabricWorld implements World {
         // 4. Lighting, and the client sync for the changed blocks only. Vanilla
         //    would have queued 6 neighbour updates per block; the bulk write skips
         //    that and relies on the light engine plus the game's own block-change
-        //    bookkeeping, the way WorldEdit's native access does it.
+        //    bookkeeping, the way WorldEdit's native access does it. A flush that
+        //    changed a large part of a chunk is re-lit whole instead of position
+        //    by position: the light engine keeps the positions it is handed in a
+        //    set, and a set of a million entries costs more than recomputing the
+        //    chunk's light.
         int changedCount = slot[0];
-        // One position object for the whole walk: the light engine takes the
-        // long of the position and the chunk holder takes its section-relative
-        // index, so neither keeps what it is handed. A packet does, so the one
-        // path that sends per block builds a position of its own.
-        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        for (int index = 0; index < changedCount; index++) {
-            pos.set(changedXs[index], changedYs[index], changedZs[index]);
-            if (lighting) {
-                chunkSource.getLightEngine().checkBlock(pos);
+        for (int index = 0; perBlockNotify && index < changedCount; index++) {
+            BlockState was = before[index];
+            BlockState now = after[index];
+            if (now == was) {
+                continue;
             }
-            if (resend) {
-                // The whole chunk is about to be sent, so the section the cell
-                // belongs to does not also have to be marked for a broadcast.
-                if (network && ticking
-                        && chunkSource instanceof net.minecraft.server.level.ServerChunkCache cache) {
-                    cache.blockChanged(pos);
-                }
-            } else if (perBlockNotify) {
-                BlockState was = before[index];
-                BlockState now = after[index];
-                if (now != was) {
-                    // Vanilla's own notification: it hands the section to the
-                    // game's next broadcast and tells the mobs the ground moved.
-                    if (notify) {
-                        level.sendBlockUpdated(
-                                new BlockPos(changedXs[index], changedYs[index], changedZs[index]),
-                                was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
-                    }
-                    if (neighbors) {
-                        // A neighbour update can schedule a block tick, which
-                        // keeps the position it was given, so this path hands it
-                        // one of its own rather than the reused cursor.
-                        level.updateNeighborsAt(
-                                new BlockPos(changedXs[index], changedYs[index], changedZs[index]),
-                                now.getBlock());
-                    }
-                }
+            // Vanilla's own notification: it hands the section to the game's
+            // next broadcast and tells the mobs the ground moved. A neighbour
+            // update can schedule a block tick, which keeps the position it was
+            // given, so this path hands it one of its own.
+            BlockPos at = new BlockPos(changedXs[index], changedYs[index], changedZs[index]);
+            if (notify) {
+                level.sendBlockUpdated(at, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
+            }
+            if (neighbors) {
+                level.updateNeighborsAt(at, now.getBlock());
             }
         }
+        if (lighting && !perBlockLight) {
+            lightEngine.lightChunk(chunk, false);
+        }
         if (resend) {
-            sendChunk(chunk, chunkSource.getLightEngine());
+            sendChunk(chunk, lightEngine);
         }
         return applied;
     }

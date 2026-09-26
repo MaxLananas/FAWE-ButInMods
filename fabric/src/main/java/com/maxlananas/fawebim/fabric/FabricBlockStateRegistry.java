@@ -104,6 +104,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     @Override
     public int parse(String input) {
         String key = input.trim();
+        key = BlockStateRegistry.expandColourShorthand(key);
         if (key.isEmpty()) {
             return -1;
         }
@@ -160,6 +161,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public int defaultState(String blockName) {
+        blockName = BlockStateRegistry.expandColourShorthand(blockName);
         ResourceLocation id = ResourceLocation.tryParse(blockName.contains(":") ? blockName
                 : "minecraft:" + blockName);
         if (id == null) {
@@ -249,6 +251,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public List<Integer> statesOf(String blockName) {
+        blockName = BlockStateRegistry.expandColourShorthand(blockName);
         ResourceLocation key = ResourceLocation.tryParse(blockName);
         Block block = key == null ? null : BuiltInRegistries.BLOCK.getValue(key);
         if (block == null) {

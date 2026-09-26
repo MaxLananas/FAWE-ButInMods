@@ -121,6 +121,17 @@ public final class Msg {
                     continue;
                 }
             }
+            // A coordinate triple is one value to the reader, so the whole
+            // "(12, 64, -3)" takes the value colour instead of each number
+            // taking it with the separators left behind.
+            if (c == '(') {
+                int close = coordinateEnd(run, index);
+                if (close > index) {
+                    out.append(NUMBER).append(run, index, close + 1).append(colour);
+                    index = close + 1;
+                    continue;
+                }
+            }
             int end = index;
             while (end < run.length() && run.charAt(end) != ' ' && run.charAt(end) != '\t') {
                 end++;
@@ -136,6 +147,35 @@ public final class Msg {
             }
             index = end;
         }
+    }
+
+    /**
+     * The index of the bracket that closes a tuple of coordinates.
+     *
+     * @return the index of the closing parenthesis, or {@code -1} when the run
+     *         does not open a coordinate triple
+     */
+    private static int coordinateEnd(String run, int index) {
+        int i = index + 1;
+        for (int part = 0; part < 3; part++) {
+            int start = i;
+            if (i < run.length() && (run.charAt(i) == '-' || run.charAt(i) == '+')) {
+                i++;
+            }
+            while (i < run.length() && Character.isDigit(run.charAt(i))) {
+                i++;
+            }
+            if (i == start) {
+                return -1;
+            }
+            if (part < 2) {
+                if (i + 1 >= run.length() || run.charAt(i) != ',' || run.charAt(i + 1) != ' ') {
+                    return -1;
+                }
+                i += 2;
+            }
+        }
+        return i < run.length() && run.charAt(i) == ')' ? i : -1;
     }
 
     /** What colour a single token deserves, if any. */
@@ -181,7 +221,7 @@ public final class Msg {
     }
 
     /** The marker in front of a heading or a result line. */
-    private static final String MARKER = "\u00a78\u00bb ";
+    public static final String MARKER = "\u00a78\u00bb ";
 
     /** A heading: the mod's cyan-to-blue run, which every listing starts with. */
     public static Msg title(String text) {

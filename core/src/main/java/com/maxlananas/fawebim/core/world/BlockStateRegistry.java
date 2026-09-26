@@ -1,6 +1,7 @@
 package com.maxlananas.fawebim.core.world;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -28,6 +29,54 @@ public interface BlockStateRegistry {
      * id. Returns {@code -1} when the block or property is unknown.
      */
     int parse(String input);
+
+    /** The sixteen dye colours, and the wool each of them names. */
+    Map<String, String> COLOUR_WOOL = Map.ofEntries(
+            Map.entry("white", "minecraft:white_wool"),
+            Map.entry("orange", "minecraft:orange_wool"),
+            Map.entry("magenta", "minecraft:magenta_wool"),
+            Map.entry("light_blue", "minecraft:light_blue_wool"),
+            Map.entry("yellow", "minecraft:yellow_wool"),
+            Map.entry("lime", "minecraft:lime_wool"),
+            Map.entry("pink", "minecraft:pink_wool"),
+            Map.entry("gray", "minecraft:gray_wool"),
+            Map.entry("light_gray", "minecraft:light_gray_wool"),
+            Map.entry("cyan", "minecraft:cyan_wool"),
+            Map.entry("purple", "minecraft:purple_wool"),
+            Map.entry("blue", "minecraft:blue_wool"),
+            Map.entry("brown", "minecraft:brown_wool"),
+            Map.entry("green", "minecraft:green_wool"),
+            Map.entry("red", "minecraft:red_wool"),
+            Map.entry("black", "minecraft:black_wool"));
+
+    /**
+     * The block a colour word names, the way FAWE accepts {@code red} for
+     * {@code red_wool}: a name with no namespace that is exactly one of the
+     * sixteen dye colours is read as the wool of that colour, so
+     * {@code //set orange} and {@code //replace stone light_blue} are one word
+     * shorter than the block name.
+     *
+     * <p>Anything else is handed back untouched: a name that carries a
+     * namespace, and a name that is not a colour, keep the meaning the registry
+     * gives them.</p>
+     */
+    static String expandColourShorthand(String input) {
+        if (input == null) {
+            return null;
+        }
+        String trimmed = input.trim();
+        int bracket = trimmed.indexOf('[');
+        String base = (bracket < 0 ? trimmed : trimmed.substring(0, bracket))
+                .toLowerCase(Locale.ROOT);
+        if (base.indexOf(':') >= 0) {
+            return input;
+        }
+        String wool = COLOUR_WOOL.get(base);
+        if (wool == null) {
+            return input;
+        }
+        return bracket < 0 ? wool : wool + trimmed.substring(bracket);
+    }
 
     /** Default state id of a block name, or {@code -1} when unknown. */
     int defaultState(String blockName);

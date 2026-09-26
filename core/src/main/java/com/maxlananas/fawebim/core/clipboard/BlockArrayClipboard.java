@@ -207,6 +207,33 @@ public final class BlockArrayClipboard implements Extent {
         return true;
     }
 
+    /**
+     * Takes a whole section of blocks the caller has already read.
+     *
+     * <p>{@code data} is indexed the way {@link
+     * com.maxlananas.fawebim.core.world.World#readSection} fills it, which is
+     * also the way this clipboard stores a section, so the array is handed over
+     * as it is: copying a full section of a large selection costs one hash and
+     * one box update instead of 4096 of each.</p>
+     */
+    public void adoptSection(int sectionX, int sectionY, int sectionZ, int[] data) {
+        int baseX = sectionX << 4;
+        int baseY = sectionY << 4;
+        int baseZ = sectionZ << 4;
+        long key = sectionKey(baseX, baseY, baseZ);
+        sections.put(key, data);
+        lastSectionKey = key;
+        lastSection = data;
+        // A section is 16 blocks along each axis, so the extent it adds to the
+        // box is known without walking it.
+        box.set(Math.min(box.minX(), baseX), Math.min(box.minY(), baseY),
+                Math.min(box.minZ(), baseZ),
+                Math.max(box.maxX(), baseX + 15), Math.max(box.maxY(), baseY + 15),
+                Math.max(box.maxZ(), baseZ + 15));
+        minY = Math.min(minY, baseY);
+        maxY = Math.max(maxY, baseY + 15);
+    }
+
     @Override
     public int minY() {
         return minY == Integer.MAX_VALUE ? 0 : minY;

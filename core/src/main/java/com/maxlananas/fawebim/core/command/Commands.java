@@ -237,8 +237,9 @@ public final class Commands {
                     String item = ctx.hasFlag("n") ? com.maxlananas.fawebim.core.platform.Config.get().navigationWandItem
                             : com.maxlananas.fawebim.core.platform.Config.get().wandItem;
                     if (ctx.actor().giveWand(item)) {
-                        ctx.actor().message(Msg.success((ctx.hasFlag("n") ? "Navigation wand given: " : "Wand given: ")
-                                + item));
+                        ctx.actor().message(Msg.result(
+                                ctx.hasFlag("n") ? "Navigation wand" : "Wand",
+                                Msg.value(item).raw() + "\u00a77 given"));
                     } else {
                         ctx.actor().message(Msg.error("Could not give you the wand"));
                     }
@@ -960,14 +961,24 @@ public final class Commands {
                     // a region the mask excludes must not survive a //regen.
                     Mask previousMask = ctx.session().getMask();
                     ctx.session().setMask(null);
+                    // A seed is only set when the player asked for one: the
+                    // options take a primitive, and asking them to use nothing
+                    // is not the same as asking them to use the world's seed.
+                    com.maxlananas.fawebim.core.world.RegenOptions options =
+                            new com.maxlananas.fawebim.core.world.RegenOptions()
+                                    .setRegenBiomes(ctx.hasFlag("b") || biomeId >= 0
+                                            || settings.regenerateBiomes);
+                    if (seed != null) {
+                        options.setSeed(seed);
+                    }
+                    int regenerated = 0;
+                    com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
                     try {
                         for (BlockVector2 chunk : region.getChunks()) {
                             ctx.world().loadChunk(chunk.x(), chunk.z());
-                            ctx.world().regenerateChunk(chunk.x(), chunk.z(),
-                                    new com.maxlananas.fawebim.core.world.RegenOptions()
-                                            .setRegenBiomes(ctx.hasFlag("b") || biomeId >= 0
-                                                    || settings.regenerateBiomes)
-                                            .setSeed(seed));
+                            if (ctx.world().regenerateChunk(chunk.x(), chunk.z(), options)) {
+                                regenerated++;
+                            }
                         }
                     } finally {
                         ctx.session().setMask(previousMask);
@@ -981,7 +992,9 @@ public final class Commands {
                         });
                         editSession.flushQueue();
                     }
-                    ctx.actor().message(Msg.success("Regenerated " + region.getChunks().size() + " chunk(s)"));
+                    ctx.actor().message(Msg.result("Regenerated", Msg.count(regenerated)
+                            + "\u00a77 of " + Msg.count(region.getChunks().size())
+                            + "\u00a77 chunk(s) in \u00a7b" + timer.phrase()));
                 };
 
 
@@ -1893,7 +1906,7 @@ public final class Commands {
                                 com.maxlananas.fawebim.core.transform.Axis.Z, -rotateZ));
                     }
                     holder.setTransform(transform);
-                    ctx.actor().message(Msg.success("Clipboard rotated"));
+                    ctx.actor().message(Msg.result("Clipboard", "rotated"));
                 };
 
 
@@ -1915,7 +1928,7 @@ public final class Commands {
                     var holder = ctx.session().getClipboard();
                     holder.setTransform(holder.getTransform().combine(
                             com.maxlananas.fawebim.core.transform.Transforms.flip(holder.getClipboard().getOrigin(), axis)));
-                    ctx.actor().message(Msg.success("Clipboard flipped on " + axis));
+                    ctx.actor().message(Msg.result("Clipboard", "flipped on " + Msg.value(axis).raw()));
                 };
 
 
@@ -1924,7 +1937,7 @@ public final class Commands {
         e64.group = "clipboard";
         e64.handler = ctx -> {
                     ctx.session().setClipboard(new BlockArrayClipboard(BlockVector3.ZERO));
-                    ctx.actor().message(Msg.success("Clipboard cleared"));
+                    ctx.actor().message(Msg.result("Clipboard", "cleared"));
                 };
 
 
@@ -2053,7 +2066,7 @@ public final class Commands {
                         }
                         case "unload" -> {
                             ctx.session().setClipboard(null);
-                            ctx.actor().message(Msg.success("Clipboard unloaded"));
+                            ctx.actor().message(Msg.result("Clipboard", "unloaded"));
                         }
                         case "move", "m" -> {
                             String name = ctx.arg(1);
@@ -2077,7 +2090,7 @@ public final class Commands {
                         case "clear" -> {
                             ctx.session().setClipboard(null);
                             ctx.session().clearClipboardPool();
-                            ctx.actor().message(Msg.success("Clipboard cleared"));
+                            ctx.actor().message(Msg.result("Clipboard", "cleared"));
                         }
                         case "loadall" -> {
                             String format = ctx.arg(1, com.maxlananas.fawebim.core.platform.Config.get()
@@ -2125,8 +2138,7 @@ public final class Commands {
                     if (undone == 0) {
                         ctx.actor().message(Msg.error("Nothing to undo" + who));
                     } else {
-                        ctx.actor().message(Msg.success("Undid " + Msg.formatNumber(undone)
-                                + " block change(s)" + who));
+                        ctx.actor().message(Msg.result("Undid", Msg.count(undone) + "\u00a77 block change(s)" + who));
                     }
                 };
 
@@ -2144,8 +2156,7 @@ public final class Commands {
                     if (redone == 0) {
                         ctx.actor().message(Msg.error("Nothing to redo" + who));
                     } else {
-                        ctx.actor().message(Msg.success("Redid " + Msg.formatNumber(redone)
-                                + " block change(s)" + who));
+                        ctx.actor().message(Msg.result("Redid", Msg.count(redone) + "\u00a77 block change(s)" + who));
                     }
                 };
 
@@ -2155,7 +2166,7 @@ public final class Commands {
         e68.group = "history";
         e68.handler = ctx -> {
                     ctx.session().getHistory().clear();
-                    ctx.actor().message(Msg.success("History cleared"));
+                    ctx.actor().message(Msg.result("History", "cleared"));
                 };
 
     }
@@ -2353,8 +2364,9 @@ public final class Commands {
                             count++;
                         }
                     }
-                    ctx.actor().message(Msg.success("Deleted " + count + " chunk(s)"
-                            + (skipped > 0 ? ", kept " + skipped + " recently changed" : "")));
+                    ctx.actor().message(Msg.result("Deleted", Msg.count(count) + "\u00a77 chunk(s)"
+                            + (skipped > 0 ? ", kept " + Msg.count(skipped) + "\u00a77 recently changed"
+                                    : "")));
                 };
 
 
@@ -2431,7 +2443,7 @@ public final class Commands {
                     }
                     ctx.requirePosition();
                     Navigation.setOnGround(ctx.actor(), target);
-                    ctx.actor().message(Msg.success("Teleported to " + target));
+                    ctx.actor().message(Msg.result("Jumped to", Msg.value(target).raw()));
                 };
 
 
@@ -2457,7 +2469,7 @@ public final class Commands {
                     if (!Navigation.findFreePosition(ctx.actor())) {
                         throw CommandRegistry.error("Could not find a free spot");
                     }
-                    ctx.actor().message(Msg.success("Moved you to a free spot"));
+                    ctx.actor().message(Msg.result("Unstuck", "moved you to a free spot"));
                 };
 
 
@@ -2476,7 +2488,7 @@ public final class Commands {
                     if (moved == 0) {
                         throw CommandRegistry.error("You would hit something above you");
                     }
-                    ctx.actor().message(Msg.success("Ascended " + moved + " level(s)"));
+                    ctx.actor().message(Msg.result("Ascended", Msg.count(moved) + "\u00a77 level(s)"));
                 };
 
 
@@ -2495,7 +2507,7 @@ public final class Commands {
                     if (moved == 0) {
                         throw CommandRegistry.error("You would hit something below you");
                     }
-                    ctx.actor().message(Msg.success("Descended " + moved + " level(s)"));
+                    ctx.actor().message(Msg.result("Descended", Msg.count(moved) + "\u00a77 level(s)"));
                 };
 
 
@@ -2582,10 +2594,10 @@ public final class Commands {
                         return;
                     }
                     session.setFastMode(enabled);
-                    ctx.actor().message(Msg.success(enabled
-                            ? "Fast mode enabled. Lighting in the affected chunks may be wrong"
-                                    + " and/or you may need to rejoin to see changes."
-                            : "Fast mode disabled."));
+                    ctx.actor().message(Msg.result("Fast mode", enabled
+                            ? "on \u00a77- lighting in the affected chunks may be wrong and/or you"
+                                    + " may need to rejoin to see changes"
+                            : "off"));
                 };
 
 
@@ -2828,8 +2840,7 @@ public final class Commands {
                             // line that reached /we itself.
                             boolean tracing = !ctx.session().isTracing();
                             ctx.session().setTracing(tracing);
-                            ctx.actor().message(Msg.success(tracing
-                                    ? "Trace mode now active." : "Trace mode now inactive."));
+                            ctx.actor().message(Msg.result("Trace mode", tracing ? "active" : "inactive"));
                         }
                         default -> ctx.actor().message(Msg.info("Usage: /we version|reload|trace"));
                     }
@@ -2837,55 +2848,23 @@ public final class Commands {
 
 
         CommandRegistry.Entry e95 = registry.register("//help", "/help");
-        e95.description = "List the commands";
+        e95.description = "List the commands, page by page";
         e95.group = "utility";
         // -s lists the sub-commands of the given command, -p picks the page.
         e95.booleanFlags.add("s");
         e95.valueFlags.add("p");
         e95.arguments.add("[filter]");
         e95.arguments.add("[-p <page>]");
+        e95.arguments.add("[-s]");
         e95.handler = ctx -> {
-                    String filter = ctx.arg(0, "").toLowerCase(Locale.ROOT);
-                    if (ctx.hasFlag("s") && !filter.isEmpty()) {
-                        // Sub-commands are registered as "<container> <name>".
-                        int shown = 0;
-                        for (CommandRegistry.Entry entry : registry.all()) {
-                            String name = entry.name.toLowerCase(Locale.ROOT);
-                            if (!name.startsWith("/" + filter + " ") && !name.startsWith("//" + filter + " ")
-                                    && !name.equals("/" + filter) && !name.equals("//" + filter)) {
-                                continue;
-                            }
-                            ctx.actor().message(Msg.of("§b" + entry.usage() + " §7- §f" + entry.description));
-                            if (++shown > 60) {
-                                break;
-                            }
-                        }
-                        if (shown == 0) {
-                            ctx.actor().message(Msg.error("No sub-command found for '" + filter + "'"));
-                        }
-                        return;
+                    String filter = ctx.arg(0, "").trim().toLowerCase(Locale.ROOT);
+                    if (filter.isEmpty()) {
+                        Help.list(ctx, registry);
+                    } else if (ctx.hasFlag("s")) {
+                        Help.subCommands(ctx, registry, filter);
+                    } else {
+                        Help.search(ctx, registry, filter);
                     }
-                    List<CommandRegistry.Entry> matches = new ArrayList<>();
-                    for (CommandRegistry.Entry entry : registry.all()) {
-                        if (entry.status.equals("stub")) {
-                            continue;
-                        }
-                        if (!filter.isEmpty() && !entry.name.toLowerCase(Locale.ROOT).contains(filter)
-                                && !entry.description.toLowerCase(Locale.ROOT).contains(filter)) {
-                            continue;
-                        }
-                        matches.add(entry);
-                    }
-                    if (matches.isEmpty()) {
-                        ctx.actor().message(Msg.error("No command matches '" + filter + "'"));
-                        return;
-                    }
-                    Page page = Page.of(ctx, matches.size());
-                    for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
-                        ctx.actor().message(Msg.of("§b" + entry.usage() + " §7- §f" + entry.description));
-                    }
-                    ctx.actor().message(Msg.info(page.header("Commands matching '" + filter + "'", matches.size())));
-                    page.hint(ctx, "//help");
                 };
 
 

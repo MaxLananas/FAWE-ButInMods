@@ -29,8 +29,12 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
             "minecraft:oak_planks", "minecraft:spruce_log", "minecraft:birch_log",
             "minecraft:oak_stairs", "minecraft:oak_slab", "minecraft:glass", "minecraft:sandstone",
             "minecraft:obsidian", "minecraft:netherrack", "minecraft:end_stone",
-            "minecraft:white_wool", "minecraft:red_wool", "minecraft:blue_wool",
-            "minecraft:green_wool", "minecraft:black_wool", "minecraft:gold_ore",
+            "minecraft:white_wool", "minecraft:orange_wool", "minecraft:magenta_wool",
+            "minecraft:light_blue_wool", "minecraft:yellow_wool", "minecraft:lime_wool",
+            "minecraft:pink_wool", "minecraft:gray_wool", "minecraft:light_gray_wool",
+            "minecraft:cyan_wool", "minecraft:purple_wool", "minecraft:blue_wool",
+            "minecraft:brown_wool", "minecraft:green_wool", "minecraft:red_wool",
+            "minecraft:black_wool", "minecraft:gold_ore",
             "minecraft:iron_ore", "minecraft:coal_ore", "minecraft:diamond_ore",
             "minecraft:redstone_ore", "minecraft:lapis_ore", "minecraft:emerald_ore",
             "minecraft:copper_ore", "minecraft:deepslate", "minecraft:cobbled_deepslate",
@@ -136,6 +140,7 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
     @Override
     public int parse(String input) {
         String key = input.toLowerCase(Locale.ROOT);
+        key = BlockStateRegistry.expandColourShorthand(key);
         Integer exact = names.get(key);
         if (exact != null) {
             return exact;
@@ -162,6 +167,7 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public int defaultState(String blockName) {
+        blockName = BlockStateRegistry.expandColourShorthand(blockName);
         String key = blockName.contains(":") ? blockName.toLowerCase(Locale.ROOT)
                 : "minecraft:" + blockName.toLowerCase(Locale.ROOT);
         Integer id = names.get(key);

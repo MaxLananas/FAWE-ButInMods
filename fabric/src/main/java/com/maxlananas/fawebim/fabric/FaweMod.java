@@ -166,6 +166,23 @@ public final class FaweMod implements ModInitializer {
             }
         });
 
+        // A player landing in a world with the mod in it is told what it is and
+        // where the commands are. The banner is one config switch away for anyone
+        // who does not want it.
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            if (!Config.get().welcomeMessage) {
+                return;
+            }
+            FabricActor actor = new FabricActor(handler.getPlayer());
+            for (com.maxlananas.fawebim.core.util.Msg line
+                    : com.maxlananas.fawebim.core.platform.Welcome.lines()) {
+                actor.message(line);
+            }
+            actor.link("\u00a78\u00bb \u00a77Discord invite: \u00a7b\u00a7n"
+                            + com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE,
+                    com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE);
+        });
+
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             SessionManager.get().remove(handler.getPlayer().getUUID());
             FabricInteractions.forget(handler.getPlayer().getUUID());

@@ -54,6 +54,24 @@ public interface World extends Extent {
     }
 
     /**
+     * Reads one whole 16x16x16 section into {@code out}, which holds 4096 state
+     * ids indexed {@code (y & 15) << 8 | (z & 15) << 4 | (x & 15)}.
+     *
+     * <p>This is the same shortcut one step further than {@link
+     * #isSectionEmpty}: a section that is read whole costs one call instead of
+     * 4096, and the platform can read it from the palette the chunk already
+     * holds instead of looking each position up again. {\`//cut\`} and {\`//copy\`}
+     * of a large selection are the callers, and a section of solid ground is
+     * what makes it worth having.</p>
+     *
+     * @return false when the platform cannot answer, in which case the caller
+     *         walks the section position by position as before
+     */
+    default boolean readSection(int chunkX, int sectionY, int chunkZ, int[] out) {
+        return false;
+    }
+
+    /**
      * The dimension's {@code region} folder, used by {@code /anvil} to inspect
      * chunks the server has not loaded. Null when the platform has no world files.
      */

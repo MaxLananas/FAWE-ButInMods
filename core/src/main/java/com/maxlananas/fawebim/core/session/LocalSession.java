@@ -44,7 +44,6 @@ public final class LocalSession {
     private String lastFailedMessage;
     private boolean includeAir = false;
     private boolean tracing = false;
-    private boolean cuiEnabled = true;
     private boolean drawSelection = true;
     private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
     private String toolBindingName;
@@ -503,14 +502,6 @@ public final class LocalSession {
 
     public void setTracing(boolean tracing) {
         this.tracing = tracing;
-    }
-
-    public boolean isCuiEnabled() {
-        return cuiEnabled;
-    }
-
-    public void setCuiEnabled(boolean cuiEnabled) {
-        this.cuiEnabled = cuiEnabled;
     }
 
     public boolean isDrawSelection() {

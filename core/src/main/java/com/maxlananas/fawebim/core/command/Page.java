@@ -53,16 +53,34 @@ final class Page {
         return to;
     }
 
-    /** The header FAWE prints in front of a paginated listing. */
+    /** The header of a paginated listing: the title, the total, the page. */
     String header(String label, int total) {
-        return Msg.title(label) + "§7 (" + total + ", page "
-                + number + "/" + pages + "):";
+        return Msg.title(label).raw() + " §8(§b" + total + "§7, page §b"
+                + number + "§8/§b" + pages + "§8)";
     }
 
-    /** Tells the player how to see the rest, when there is a rest. */
+    /**
+     * The last line of a listing: which page this was, and the way to the ones
+     * around it, so a listing longer than the chat stays readable.
+     */
     void hint(Ctx ctx, String command) {
-        if (pages > 1) {
-            ctx.actor().message(Msg.info("Next page: " + command + " -p <page>"));
+        if (pages <= 1) {
+            return;
         }
+        StringBuilder line = new StringBuilder(Msg.MARKER);
+        line.append("§7Page §b").append(number).append("§8/§b").append(pages);
+        if (number < pages) {
+            line.append(" §8- §7next §b").append(command).append(" -p ")
+                    .append(number + 1);
+        }
+        if (number > 1) {
+            line.append(" §8- §7previous §b").append(command).append(" -p ")
+                    .append(number - 1);
+        }
+        // Clicking the line runs the command it prints, which is what makes a
+        // listing longer than the chat readable.
+        String next = number < pages ? command + " -p " + (number + 1)
+                : command + " -p " + (number - 1);
+        ctx.actor().commandLink(line.toString(), next, "Go to page " + (number + 1));
     }
 }

@@ -28,6 +28,29 @@ final class ConfigCommands {
 
     void register() {
         root();
+        discord();
+    }
+
+    /**
+     * {@code /fawebim-discord} - the invite to the mod's Discord server, in one
+     * line, so nobody has to copy it out of the README.
+     */
+    private void discord() {
+        CommandRegistry.Entry entry = registry.registerUnlessPresent("/fawebim-discord",
+                "/fawebim discord");
+        if (entry == null) {
+            return;
+        }
+        entry.description = "Show the invite to the FAWE-BIM Discord server";
+        entry.group = "utility";
+        entry.handler = ctx -> {
+            for (Msg line : com.maxlananas.fawebim.core.platform.Welcome.discord()) {
+                ctx.actor().message(line);
+            }
+            ctx.actor().link("§8» §7Click to open: §b§n"
+                            + com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE,
+                    com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE);
+        };
     }
 
     private void root() {

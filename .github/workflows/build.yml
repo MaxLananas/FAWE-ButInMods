@@ -181,6 +181,12 @@ jobs:
           python3 -c "import pathlib;t=pathlib.Path('/tmp/smoke.log').read_text(errors='replace')[-7000:];print('::error title=rcon smoke::'+t.replace('%','%25').replace(chr(10),'%0A'))"
           exit $status
 
+      # The engine tests run against a double; this is the only place a large
+      # edit runs on real chunk sections, with the real light engine and the real
+      # client sync behind it, and it prints what each edit costs.
+      - name: Time the large edits on the running server
+        run: python3 scripts/rcon_bench.py --wait 60
+
       - name: Read what the mod wrote to the configuration file
         run: |
           file=$(find . -name fawebim.yml -path '*config*' | head -1)

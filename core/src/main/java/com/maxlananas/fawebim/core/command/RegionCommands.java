@@ -78,7 +78,7 @@ final class RegionCommands {
                 return session.setBlock(x, y, z, air.apply(x, y, z));
             });
             session.flushQueue();
-            ctx.actor().message(Msg.success(changed + " block(s) set to air"));
+            ctx.actor().message(Msg.result("Set to air", Msg.count(changed) + "\u00a77 block(s)"));
         };
     }
 
@@ -170,7 +170,7 @@ final class RegionCommands {
                 world.queueBlockUpdate(x, region.getMinimumPoint().y(), z);
             }
         }
-        ctx.actor().message(Msg.success(message + " (light is engine-managed since 1.18, chunks relit)"));
+        ctx.actor().message(Msg.result(message, "light is engine-managed since 1.18, chunks relit"));
     }
 
     /** {@code //nbtinfo} — dumps the block entity of the targeted block. */
@@ -228,7 +228,7 @@ final class RegionCommands {
                 return wrote;
             });
             session.flushQueue();
-            ctx.actor().message(Msg.success(changed + " block(s) updated"));
+            ctx.actor().message(Msg.result("Updated", Msg.count(changed) + "\u00a77 block(s)"));
         };
     }
 
@@ -441,7 +441,8 @@ final class RegionCommands {
                 world.removeEntity(entity);
                 removed++;
             }
-            ctx.actor().message(Msg.success(removed + " entit(y/ies) have been marked for removal"));
+            ctx.actor().message(Msg.result("Butcher", Msg.count(removed)
+                    + "\u00a77 entit(y/ies) have been marked for removal"));
         };
     }
 
@@ -489,7 +490,8 @@ final class RegionCommands {
                 world.removeEntity(entity);
                 killed++;
             }
-            ctx.actor().message(Msg.success(killed + " entit(y/ies) removed within " + radius + " block(s)"));
+            ctx.actor().message(Msg.result("Butcher", Msg.count(killed) + "\u00a77 entit(y/ies) removed"
+                    + " within " + Msg.count(radius) + "\u00a77 block(s)"));
         };
     }
 

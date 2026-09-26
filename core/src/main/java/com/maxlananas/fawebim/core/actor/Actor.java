@@ -48,6 +48,22 @@ public interface Actor {
 
     void message(Msg message);
 
+    /**
+     * Sends a line whose text opens a URL when the client can do that, and prints
+     * it as plain text where nothing can be clicked (the console, a test).
+     */
+    default void link(String text, String url) {
+        message(Msg.of(text));
+    }
+
+    /**
+     * Sends a line the client can click to run a command. The fallback reads the
+     * line as it is, so the text has to name the command it would run.
+     */
+    default void commandLink(String text, String commandRun, String hover) {
+        message(Msg.of(text));
+    }
+
     default void message(String text) {
         message(Msg.of(text));
     }
