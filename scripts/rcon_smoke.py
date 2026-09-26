@@ -165,26 +165,32 @@ CHECKS = [
     # Light, as the game itself reads it. A 64x64 roof three blocks thick over
     # the open sky of the flat world - 768 blocks in each of its chunks - darkens
     # the air under its middle, 32 blocks from any open column, and taking it
-    # away lights that air again; the rows between an edit and its reading give
-    # the light thread its time. Flushes that large used to be re-lit from the
+    # away lights that air again. Flushes that large used to be re-lit from the
     # light sources the game already knew, which kept the sky light under a new
-    # roof and the dark under a removed one. The vanilla commands in here are
-    # left out by the smoke lint.
+    # roof and the dark under a removed one. The game propagates light on a
+    # thread of its own, a column of 140 blocks of air under each of the 4,096
+    # roof blocks here, so the reading is asked again for up to ten seconds
+    # (the third element of the row). The vanilla commands in here are left out
+    # by the smoke lint.
     ("weather clear", "weather"),
     ("time set noon", "time"),
     ("//pos1 -32,80,-32", "position 1: set"),
     ("//pos2 31,82,31", "position 2: set"),
     ("//set minecraft:stone", "12,288 block(s) affected"),
-    ("//size", "volume"),
-    ("//size", "volume"),
     ('execute positioned 0 79 0 if predicate '
-     '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed"),
+     '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed", 10),
     ("//set minecraft:air", "12,288 block(s) affected"),
-    ("//size", "volume"),
-    ("//size", "volume"),
     ('execute positioned 0 79 0 if predicate '
-     '{condition:"minecraft:location_check",predicate:{light:{light:{min:13}}}}', "passed"),
+     '{condition:"minecraft:location_check",predicate:{light:{light:{min:13}}}}', "passed", 10),
     ("//fixlighting", "Lighting propagated"),
+    # FAWE's //confirm: an edit over more than 524,288 columns stops and asks
+    # before it reads a chunk, and so does a count of undos past fifty. Neither
+    # is confirmed here, which would load two thousand chunks or take back the
+    # edits above.
+    ("//pos1 0,200,0", "position 1: set"),
+    ("//pos2 724,200,724", "position 2: set"),
+    ("//set minecraft:air", "Use //confirm to execute //set minecraft:air"),
+    ("//undo 51", "Use //confirm to execute //undo 51"),
 ]
 
 
@@ -290,10 +296,18 @@ def main():
 
     failures = []
     transcript = []
-    for command, expected in CHECKS:
-        answer = client.run(command)
+    for row in CHECKS:
+        command, expected = row[0], row[1]
+        # A row with a third element reads something the game settles in its
+        # own time, and is asked again until it holds or that many seconds pass.
+        deadline = time.time() + (row[2] if len(row) > 2 else 0)
+        while True:
+            answer = client.run(command)
+            ok = expected.lower() in plain(answer).lower()
+            if ok or time.time() >= deadline:
+                break
+            time.sleep(0.25)
         shown = answer.replace("\n", " / ")[:220]
-        ok = expected.lower() in plain(answer).lower()
         print("%s  /%s -> %s" % ("ok  " if ok else "FAIL", command, shown))
         transcript.append("%-45s %s" % ("/" + command, shown))
         if not ok:

@@ -32,6 +32,8 @@ public final class Ctx {
     private final Map<String, List<String>> flags = new LinkedHashMap<>();
     private EditSession editSession;
     private Region selection;
+    /** Set for a command line {@code //confirm} runs again: its checks have been answered. */
+    private boolean confirmed;
 
     Ctx(CommandRegistry.Entry entry, Actor actor, List<String> tokens) {
         this.entry = entry;
@@ -321,6 +323,64 @@ public final class Ctx {
 
     public boolean hasSelection() {
         return session().isSelectionDefined(world());
+    }
+
+    /** Marks a line {@code //confirm} runs again: the checks below let it through. */
+    void markConfirmed() {
+        confirmed = true;
+    }
+
+    /**
+     * FAWE's {@code @Confirm(REGION)}: stops the command for {@code //confirm}
+     * when the columns the region spans, times {@code times} - the copies of
+     * {@code //stack}, one for anything else - exceed
+     * {@link Confirmation#MAX_AREA}. Turned off by {@code confirm-large}.
+     *
+     * <p>FAWE counts one column less along X than the region has, which lets a
+     * selection one block wide through at any length; this counts them all.</p>
+     */
+    public void confirmRegion(Region region, long times) {
+        if (confirmed || !com.maxlananas.fawebim.core.platform.Config.get().confirmLarge || times <= 0) {
+            return;
+        }
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        long columns = (long) (max.x() - min.x() + 1) * (max.z() - min.z() + 1);
+        // times > MAX_AREA / columns is columns * times > MAX_AREA without the
+        // overflow a count of copies in the billions would give.
+        if (times <= Confirmation.MAX_AREA / columns) {
+            return;
+        }
+        long height = max.y() - min.y() + 1;
+        long blocks = columns > Long.MAX_VALUE / height ? Long.MAX_VALUE : columns * height;
+        throw new Confirmation.Required("Your selection is large (" + min + " -> " + max + ", containing "
+                + com.maxlananas.fawebim.core.util.Msg.formatNumber(blocks) + " blocks)");
+    }
+
+    /**
+     * FAWE's {@code @Confirm(LIMIT)}: stops the command for {@code //confirm}
+     * when a count - the steps of {@code //undo} and {@code //redo} - is over
+     * {@link Confirmation#MAX_COUNT}. FAWE asks whatever {@code confirm-large}
+     * says, and so does this.
+     */
+    public void confirmCount(long count) {
+        if (confirmed || count <= Confirmation.MAX_COUNT) {
+            return;
+        }
+        throw new Confirmation.Required("You're exceeding your limit for this action (" + count + " > "
+                + Confirmation.MAX_COUNT + ")");
+    }
+
+    /**
+     * FAWE's {@code @Confirm}: stops the command for {@code //confirm} every
+     * time, for the actions that rewrite what other players built. Turned off
+     * by {@code confirm-large}.
+     */
+    public void confirmAlways() {
+        if (confirmed || !com.maxlananas.fawebim.core.platform.Config.get().confirmLarge) {
+            return;
+        }
+        throw new Confirmation.Required(null);
     }
 
     /**

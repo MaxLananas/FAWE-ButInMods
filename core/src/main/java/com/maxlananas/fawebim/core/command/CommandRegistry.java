@@ -53,6 +53,12 @@ public final class CommandRegistry {
         public boolean requiresSelection;
         public boolean requiresPlayer;
         public boolean requiresWorld = true;
+        /**
+         * FAWE's {@code @Confirm(REGION)} on the command: before the handler runs,
+         * a selection over {@link Confirmation#MAX_AREA} columns stops it for
+         * {@code //confirm}. See {@link Ctx#confirmRegion}.
+         */
+        public boolean confirmRegion;
         public CommandHandler handler;
         public String status = "implemented";
         /**
@@ -70,6 +76,22 @@ public final class CommandRegistry {
         /** The raw string the platform must register (see class docs). */
         public String registrationName() {
             return name.startsWith("//") ? name.substring(1) : name;
+        }
+
+        /**
+         * The arguments a line must hold before the command can run: the ones
+         * printed without brackets by {@link #usage()}. The parser refuses a line
+         * with fewer first, the way WorldEdit's does, so the command is not
+         * confirmed only to answer with its usage.
+         */
+        int requiredArguments() {
+            int required = 0;
+            for (String argument : arguments) {
+                if (!argument.startsWith("-") && !argument.startsWith("[")) {
+                    required++;
+                }
+            }
+            return required;
         }
 
         public String usage() {
@@ -307,10 +329,25 @@ public final class CommandRegistry {
      * @return true when a command handled the input
      */
     public boolean dispatch(Actor actor, String line) {
+        return dispatch(actor, line, false);
+    }
+
+    /**
+     * Runs a command line that stopped for {@code //confirm} and has now been
+     * confirmed: the same command, with its checks answered.
+     */
+    public boolean dispatchConfirmed(Actor actor, String line) {
+        return dispatch(actor, line, true);
+    }
+
+    private boolean dispatch(Actor actor, String line, boolean confirmed) {
         Ctx context = context(actor, line);
         if (context == null) {
             actor.message(Msg.error("Unknown command: " + line.trim()));
             return false;
+        }
+        if (confirmed) {
+            context.markConfirmed();
         }
         Entry entry = context.entry();
         // A command binds the extent its masks read blocks through, and several of
@@ -336,8 +373,19 @@ public final class CommandRegistry {
                         + "' is registered but not implemented in this build."));
                 return true;
             }
+            // A command without a selection fails in its handler, as it would
+            // without the check.
+            if (entry.confirmRegion && context.args().size() >= entry.requiredArguments()
+                    && context.hasSelection()) {
+                context.confirmRegion(context.selection(), 1);
+            }
             entry.handler.run(context);
             context.reportTrace();
+        } catch (Confirmation.Required required) {
+            // Nothing was written: the checks come before the edit. The newest
+            // line waiting replaces an older one, as FAWE's does.
+            session.setPendingCommand(line.trim(), System.nanoTime());
+            actor.commandLink(required.prompt(line.trim()).raw(), "//confirm", "Run //confirm");
         } catch (Exception e) {
             failure = failureMessage(e, actor, "Command '" + line.trim() + "'");
         } finally {

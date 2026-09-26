@@ -122,9 +122,9 @@ final class UtilityExtras {
     }
 
     /**
-     * {@code //confirm} — runs the command that asked for confirmation. Commands
-     * that destroy a lot of data register themselves through
-     * {@link LocalSession#setPendingCommand}.
+     * {@code //confirm} — runs the command that stopped to ask for it (see
+     * {@link Confirmation}), when it asked less than fifteen seconds ago. The
+     * command answers for itself, as it does in FAWE.
      */
     private void confirm() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//confirm");
@@ -134,13 +134,12 @@ final class UtilityExtras {
         entry.description = "Confirm a command";
         entry.group = "utility";
         entry.handler = ctx -> {
-            if (ctx.session().hasPendingCommand()) {
-                String description = ctx.session().pendingDescription();
-                ctx.session().confirmPending();
-                ctx.actor().message(Msg.success("Confirmed: " + description));
+            String line = ctx.session().takePendingCommand(System.nanoTime(), Confirmation.WAIT_NANOS);
+            if (line == null) {
+                ctx.actor().message(Msg.info("You have no actions pending confirmation"));
                 return;
             }
-            ctx.actor().message(Msg.info("Nothing to confirm"));
+            registry.dispatchConfirmed(ctx.actor(), line);
         };
     }
 
@@ -735,6 +734,8 @@ final class UtilityExtras {
      * or as its after state (restore, which is what {@code -f} asks for).
      */
     private void applyMatches(Ctx ctx, boolean undo) {
+        // FAWE asks for //confirm before either, whatever they match.
+        ctx.confirmAlways();
         List<EditLog.Entry> matches = matches(ctx);
         if (matches.isEmpty()) {
             ctx.actor().message(Msg.error("No edit matches those filters"));

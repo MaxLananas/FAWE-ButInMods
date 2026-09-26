@@ -54,6 +54,7 @@ final class GenerationCommands {
         }
         entry.description = "Generates a cave network";
         entry.group = "generation";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.arguments.add("[size]");
         entry.arguments.add("[frequency]");
@@ -164,6 +165,7 @@ final class GenerationCommands {
         }
         entry.description = "Sets biome according to a formula";
         entry.group = "generation";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         // -c scales the formula around the centre of the selection, -o around the
         // player, -r is the plain world origin and the default scales the
@@ -372,6 +374,7 @@ final class GenerationCommands {
         }
         entry.description = "Generates a shape according to a formula";
         entry.group = "generation";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         // -h writes the shell, -r/-o/-c choose what the formula's coordinates
         // are measured from.

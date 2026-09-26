@@ -652,6 +652,7 @@ public final class Commands {
         CommandRegistry.Entry e19 = registry.register("//set");
         e19.description = "Set all blocks inside a region to a pattern";
         e19.group = "region";
+        e19.confirmRegion = true;
         e19.requiresSelection = true;
         e19.booleanFlags.add("n");
         e19.booleanFlags.add("e");
@@ -673,6 +674,7 @@ public final class Commands {
         CommandRegistry.Entry e20 = registry.register("//replace", "//re");
         e20.description = "Replace all blocks matching a mask with a pattern inside a region";
         e20.group = "region";
+        e20.confirmRegion = true;
         e20.requiresSelection = true;
         e20.booleanFlags.add("e");
         e20.arguments.add("[mask]");
@@ -693,6 +695,7 @@ public final class Commands {
         CommandRegistry.Entry e21 = registry.register("//overlay");
         e21.description = "Set a block on top of blocks in the region";
         e21.group = "region";
+        e21.confirmRegion = true;
         e21.requiresSelection = true;
         e21.arguments.add("pattern");
         e21.handler = ctx -> {
@@ -708,53 +711,14 @@ public final class Commands {
         CommandRegistry.Entry e22 = registry.register("//walls");
         e22.description = "Build the walls of the selection";
         e22.group = "region";
+        e22.confirmRegion = true;
         e22.requiresSelection = true;
         e22.arguments.add("pattern");
         e22.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    Region region = ctx.selection();
-                    BlockVector3 min = region.getMinimumPoint();
-                    BlockVector3 max = region.getMaximumPoint();
-                    if (!(region instanceof com.maxlananas.fawebim.core.region.CuboidRegion)) {
-                        // The walls of a shape are the cells of the shape with a
-                        // neighbour outside it - FAWE's WallMakeMask - and not the
-                        // planes of the box around it.
-                        int walls = 0;
-                        for (BlockVector3 cell : region) {
-                            if (region.contains(cell.x() + 1, cell.y(), cell.z())
-                                    && region.contains(cell.x() - 1, cell.y(), cell.z())
-                                    && region.contains(cell.x(), cell.y(), cell.z() + 1)
-                                    && region.contains(cell.x(), cell.y(), cell.z() - 1)) {
-                                continue;
-                            }
-                            if (session.setBlock(cell.x(), cell.y(), cell.z(),
-                                    pattern.apply(cell.x(), cell.y(), cell.z()))) {
-                                walls++;
-                            }
-                        }
-                        flush(ctx, session, "Walls", walls, "block(s)");
-                        return;
-                    }
-                    // One plane at a time. The two planes of a direction used to
-                    // be written alternately, which left the chunk the previous
-                    // write went into on every block; a plane walks sixteen
-                    // blocks of one chunk before it moves to the next one.
-                    for (int y = min.y(); y <= max.y(); y++) {
-                        for (int x = min.x(); x <= max.x(); x++) {
-                            session.setBlock(x, y, min.z(), pattern.apply(x, y, min.z()));
-                        }
-                        for (int x = min.x(); x <= max.x(); x++) {
-                            session.setBlock(x, y, max.z(), pattern.apply(x, y, max.z()));
-                        }
-                        for (int z = min.z(); z <= max.z(); z++) {
-                            session.setBlock(min.x(), y, z, pattern.apply(min.x(), y, z));
-                        }
-                        for (int z = min.z(); z <= max.z(); z++) {
-                            session.setBlock(max.x(), y, z, pattern.apply(max.x(), y, z));
-                        }
-                    }
+                    Operations.walls(session, ctx.selection(), pattern);
                     flush(ctx, session, "Walls");
                 };
 
@@ -762,6 +726,7 @@ public final class Commands {
         CommandRegistry.Entry e23 = registry.register("//faces", "//outline");
         e23.description = "Build the faces of the selection";
         e23.group = "region";
+        e23.confirmRegion = true;
         e23.requiresSelection = true;
         e23.arguments.add("pattern");
         e23.handler = ctx -> {
@@ -776,6 +741,7 @@ public final class Commands {
         CommandRegistry.Entry e24 = registry.register("//center");
         e24.description = "Set the center block(s) of the selection";
         e24.group = "region";
+        e24.confirmRegion = true;
         e24.requiresSelection = true;
         e24.arguments.add("pattern");
         e24.handler = ctx -> {
@@ -802,6 +768,7 @@ public final class Commands {
         CommandRegistry.Entry e25 = registry.register("//hollow");
         e25.description = "Hollow out the selection";
         e25.group = "region";
+        e25.confirmRegion = true;
         e25.requiresSelection = true;
         e25.valueFlags.add("m");
         e25.arguments.add("[thickness]");
@@ -826,6 +793,7 @@ public final class Commands {
         CommandRegistry.Entry e27 = registry.register("//smooth");
         e27.description = "Smooth the terrain in the selection";
         e27.group = "region";
+        e27.confirmRegion = true;
         e27.requiresSelection = true;
         // WorldEdit takes the mask of blocks the height map is built from as its
         // second argument, not as a switch.
@@ -844,6 +812,7 @@ public final class Commands {
         CommandRegistry.Entry e28 = registry.register("//naturalize");
         e28.description = "3 layers of dirt on top then rock below";
         e28.group = "region";
+        e28.confirmRegion = true;
         e28.requiresSelection = true;
         e28.handler = ctx -> {
                     EditSession session = ctx.editSession();
@@ -855,6 +824,7 @@ public final class Commands {
         CommandRegistry.Entry e29 = registry.register("//lay");
         e29.description = "Set the top block in the region";
         e29.group = "region";
+        e29.confirmRegion = true;
         e29.requiresSelection = true;
         e29.arguments.add("pattern");
         e29.handler = ctx -> {
@@ -948,6 +918,7 @@ public final class Commands {
         CommandRegistry.Entry e32 = registry.register("//regen");
         e32.description = "Regenerate the selection from the world seed";
         e32.group = "region";
+        e32.confirmRegion = true;
         e32.requiresSelection = true;
         e32.arguments.add("[seed]");
         e32.arguments.add("[biome]");
@@ -1218,6 +1189,7 @@ public final class Commands {
         CommandRegistry.Entry e43 = registry.register("//move");
         e43.description = "Move the contents of the selection";
         e43.group = "region";
+        e43.confirmRegion = true;
         e43.requiresSelection = true;
         e43.booleanFlags.add("s");
         e43.booleanFlags.add("a");
@@ -1281,6 +1253,8 @@ public final class Commands {
                     if (count < 1) {
                         throw CommandRegistry.error("The count must be at least 1");
                     }
+                    // FAWE weighs the selection by the copies asked for.
+                    ctx.confirmRegion(region, count);
                     BlockVector3 offset = Directions.offset(ctx.actor(), ctx.arg(next, "forward"));
                     // Each copy steps by the size of the selection along the
                     // offset, as in WorldEdit, or by the offset itself with -r.
@@ -1447,6 +1421,7 @@ public final class Commands {
         CommandRegistry.Entry e45 = registry.register("//line");
         e45.description = "Draw a line between selection corners";
         e45.group = "generation";
+        e45.confirmRegion = true;
         e45.requiresSelection = true;
         e45.booleanFlags.add("h");
         e45.arguments.add("pattern");
@@ -1465,6 +1440,7 @@ public final class Commands {
         CommandRegistry.Entry e46 = registry.register("//curve");
         e46.description = "Draw a spline through the convex selection's vertices";
         e46.group = "generation";
+        e46.confirmRegion = true;
         e46.requiresSelection = true;
         // -h draws the shell of the curve instead of the solid path.
         e46.booleanFlags.add("h");
@@ -1488,6 +1464,7 @@ public final class Commands {
         CommandRegistry.Entry e48 = registry.register("//deform");
         e48.description = "Deform blocks in the selection using an expression";
         e48.group = "generation";
+        e48.confirmRegion = true;
         e48.requiresSelection = true;
         e48.booleanFlags.add("r");
         e48.booleanFlags.add("o");
@@ -1518,6 +1495,7 @@ public final class Commands {
         CommandRegistry.Entry e49 = registry.register("//flora");
         e49.description = "Make flora within the region";
         e49.group = "generation";
+        e49.confirmRegion = true;
         e49.requiresSelection = true;
         e49.arguments.add("[density]");
         e49.handler = ctx -> {
@@ -1534,6 +1512,7 @@ public final class Commands {
         CommandRegistry.Entry e49b = registry.register("//forest");
         e49b.description = "Make a forest within the region";
         e49b.group = "generation";
+        e49b.confirmRegion = true;
         e49b.requiresSelection = true;
         e49b.arguments.add("<tree-type>");
         e49b.arguments.add("[density]");
@@ -1619,6 +1598,7 @@ public final class Commands {
         CommandRegistry.Entry e53 = registry.register("//ore", "/ore");
         e53.description = "Generates ores";
         e53.group = "generation";
+        e53.confirmRegion = true;
         e53.requiresSelection = true;
         e53.arguments.add("mask");
         e53.arguments.add("material");
@@ -1659,6 +1639,7 @@ public final class Commands {
         CommandRegistry.Entry e53b = registry.register("//ores", "/ores");
         e53b.description = "Generates ores";
         e53b.group = "generation";
+        e53b.confirmRegion = true;
         e53b.requiresSelection = true;
         // -b makes every ore below y=0 its deepslate form, -d only the ores that
         // land in deepslate, which are the two switches FAWE declares.
@@ -1682,6 +1663,7 @@ public final class Commands {
         CommandRegistry.Entry e55 = registry.register("//fall");
         e55.description = "Have the blocks in the selection fall";
         e55.group = "generation";
+        e55.confirmRegion = true;
         e55.requiresSelection = true;
         e55.arguments.add("[replace]");
         // -m keeps the blocks inside the vertical bounds of the selection.
@@ -1870,6 +1852,7 @@ public final class Commands {
         CommandRegistry.Entry e59 = registry.register("//copy", "//cp");
         e59.description = "Copy the selection to your clipboard";
         e59.group = "clipboard";
+        e59.confirmRegion = true;
         e59.requiresSelection = true;
         e59.booleanFlags.add("e");
         e59.booleanFlags.add("b");
@@ -1906,6 +1889,7 @@ public final class Commands {
         CommandRegistry.Entry e60 = registry.register("//cut");
         e60.description = "Cut the selection to your clipboard";
         e60.group = "clipboard";
+        e60.confirmRegion = true;
         e60.requiresSelection = true;
         e60.booleanFlags.add("e");
         e60.booleanFlags.add("b");
@@ -2266,6 +2250,7 @@ public final class Commands {
         e66.arguments.add("[player]");
         e66.handler = ctx -> {
                     int steps = undoCount(ctx.argument(0));
+                    ctx.confirmCount(steps);
                     com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx);
                     int undone = historySteps(ctx, target, steps, true);
                     String who = target == ctx.session() ? "" : " for " + target.ownerName();
@@ -2284,6 +2269,7 @@ public final class Commands {
         e67.arguments.add("[player]");
         e67.handler = ctx -> {
                     int steps = undoCount(ctx.argument(0));
+                    ctx.confirmCount(steps);
                     com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx);
                     int redone = historySteps(ctx, target, steps, false);
                     String who = target == ctx.session() ? "" : " for " + target.ownerName();
@@ -2369,6 +2355,7 @@ public final class Commands {
         CommandRegistry.Entry e69 = registry.register("/setbiome", "//setbiome", "//biome");
         e69.description = "Set the biome in the selection, or at your position with -p";
         e69.group = "biome";
+        e69.confirmRegion = true;
         e69.requiresSelection = true;
         // -p changes the biome of the block the player stands in only.
         e69.booleanFlags.add("p");

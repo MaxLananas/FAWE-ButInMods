@@ -16,6 +16,7 @@ import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.noise.Noise;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.expression.Expression;
+import com.maxlananas.fawebim.core.region.CuboidRegion;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
@@ -46,6 +47,28 @@ public final class Operations {
      * six caps of its bounding box.</p>
      */
     public static int faces(EditSession session, Region region, Pattern pattern) {
+        if (region instanceof CuboidRegion) {
+            // A box's cells with a neighbour outside it are its six faces: they
+            // are written plane by plane instead of walking the inside to find
+            // them, which was the whole volume for a hollow of its surface.
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            int changed = 0;
+            for (int y = min.y(); y <= max.y(); y++) {
+                if (y != min.y() && y != max.y()) {
+                    changed += ring(session, min, max, y, pattern);
+                    continue;
+                }
+                for (int z = min.z(); z <= max.z(); z++) {
+                    for (int x = min.x(); x <= max.x(); x++) {
+                        if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+            return changed;
+        }
         int[] changed = {0};
         region.forEachPosition((x, y, z) -> {
             for (int side = 0; side < NEIGHBOURS.length; side += 3) {
@@ -64,6 +87,71 @@ public final class Operations {
 
     /** The six neighbours of a cell, as x/y/z offsets. */
     private static final int[] NEIGHBOURS = {1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1};
+
+    /**
+     * {@code //walls}: the pattern on every cell of the region with a neighbour
+     * outside it on its own layer - FAWE's {@code WallMakeMask} - so the walls of
+     * a cylinder are its curved side and not the planes of the box around it. A
+     * cuboid is written as its four sides.
+     */
+    public static int walls(EditSession session, Region region, Pattern pattern) {
+        if (region instanceof CuboidRegion) {
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            int changed = 0;
+            for (int y = min.y(); y <= max.y(); y++) {
+                changed += ring(session, min, max, y, pattern);
+            }
+            return changed;
+        }
+        int[] changed = {0};
+        region.forEachPosition((x, y, z) -> {
+            if (!region.contains(x + 1, y, z) || !region.contains(x - 1, y, z)
+                    || !region.contains(x, y, z + 1) || !region.contains(x, y, z - 1)) {
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    changed[0]++;
+                }
+            }
+            return false;
+        });
+        return changed[0];
+    }
+
+    /**
+     * The border of one layer of a box, each cell once, as FAWE writes it: the
+     * two rows along X, then the two along Z between them, and one row where the
+     * box is one block thick. A row walks sixteen blocks of a chunk before it
+     * moves to the next one; alternating the two sides of the box put every
+     * write in another chunk than the one before.
+     */
+    private static int ring(EditSession session, BlockVector3 min, BlockVector3 max, int y, Pattern pattern) {
+        int changed = 0;
+        for (int x = min.x(); x <= max.x(); x++) {
+            if (session.setBlock(x, y, min.z(), pattern.apply(x, y, min.z()))) {
+                changed++;
+            }
+        }
+        if (max.z() != min.z()) {
+            for (int x = min.x(); x <= max.x(); x++) {
+                if (session.setBlock(x, y, max.z(), pattern.apply(x, y, max.z()))) {
+                    changed++;
+                }
+            }
+        }
+        for (int z = min.z() + 1; z < max.z(); z++) {
+            if (session.setBlock(min.x(), y, z, pattern.apply(min.x(), y, z))) {
+                changed++;
+            }
+        }
+        if (max.x() != min.x()) {
+            for (int z = min.z() + 1; z < max.z(); z++) {
+                if (session.setBlock(max.x(), y, z, pattern.apply(max.x(), y, z))) {
+                    changed++;
+                }
+            }
+        }
+        return changed;
+    }
 
     /**
      * {@code //thaw}: melts the snow and ice of a cylinder around a position.

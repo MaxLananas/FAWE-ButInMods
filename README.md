@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-1745%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-1829%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
 [![Commands](https://img.shields.io/badge/commands-300%20registered-58a6ff?style=flat-square)](#status)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](reference/commands-inventory.json)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](scripts/flag_audit.py)
@@ -152,7 +152,7 @@ the line above the hotbar whenever a corner is picked, drawing or not.
 | Selection | 19 | `//sel` with WorldEdit's seven types and FAWE's polyhedral and fuzzy, `//pos1`, `//pos2`, `//hpos1`, `//hpos2`, `//wand`, `//drawsel`, `//chunk` |
 | Anvil | 21 | `clear`, `copy`, `paste`, `count`, `countall`, `distr`, `replace*`, `removelayers`, `trimallair`, `trimallplots`, `deletebiomechunks`, `deleteallunvisited`, `deleteunclaimed`, … |
 | Navigation | 8 | `/nav`, `/up`, `/ceil`, `/descend`, `/thru`, `/unstuck`, `/jumpto`, `/ascend` |
-| Utility | 25 | `/worldedit`, `/we`, `/brush`, `/tool`, `/we report`, `/searchitem`, `/calculate`, `//registry`, `//cancel` |
+| Utility | 25 | `/worldedit`, `/we`, `/brush`, `/tool`, `/we report`, `/searchitem`, `/calculate`, `//registry`, `//cancel`, `//confirm` for FAWE's large-edit prompt |
 | History | 4 | `//undo`, `//redo`, `/history list|find|rollback|restore` |
 | Snapshot | 6 | `/snapshot list|use|before|after|sel|restore` |
 | Chunk | 4 | `//listchunks`, `//delchunks`, `//chunk`, `//regen` |
@@ -270,14 +270,14 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 
 | | |
 |---|---|
-| Engine tests | **1745 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **1829 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **300** |
 | Implemented | **253** |
 | Aliases of an implemented command | **47** |
 | Brushes with their upstream signature | **46** |
 | Command switches upstream declares but this build lacks | **0** |
 | Flags declared but never read | **0** |
-| Settings in `config/fawebim.yml` | **42, all read by the code** |
+| Settings in `config/fawebim.yml` | **43, all read by the code** |
 | Registered, behaviour still to port | **0** |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
 | Commands a console, a command block or a function can run | **146**, the other 107 are bound to a player |

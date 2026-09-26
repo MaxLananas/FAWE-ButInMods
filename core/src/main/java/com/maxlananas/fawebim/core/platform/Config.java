@@ -42,6 +42,7 @@ public final class Config {
     public int maxBrushRadius = 1000;
     public int maxRadius = 1000;
     public int maxBrushRange = 100;
+    public boolean confirmLarge = true;
     public int timeout = 0;
     public int threads = Runtime.getRuntime().availableProcessors();
     public boolean allowAncientBlocks = true;
@@ -105,6 +106,10 @@ public final class Config {
         integer("max-brush-range", "limits.max-brush-range", maxBrushRange,
                 "How far a brush reaches from the player, in blocks.", () -> maxBrushRange,
                 value -> maxBrushRange = value);
+        bool("confirm-large", "limits.confirm-large", confirmLarge,
+                "Ask for //confirm before an edit whose selection spans more than 524,288 columns,"
+                        + " and before a history rollback, as FAWE does.", () -> confirmLarge,
+                value -> confirmLarge = value);
         integer("timeout", "calculation.timeout", timeout,
                 "Seconds an operation may run before it is stopped, 0 for no limit.",
                 () -> timeout, value -> timeout = value);

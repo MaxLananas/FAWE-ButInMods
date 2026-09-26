@@ -68,6 +68,7 @@ final class RegionCommands {
         }
         entry.description = "Sets all the blocks in the region to air";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.handler = ctx -> {
             EditSession session = ctx.editSession();
@@ -106,6 +107,7 @@ final class RegionCommands {
         }
         entry.description = "Relight the chunks of the selection";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.handler = ctx -> {
             List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
@@ -125,6 +127,7 @@ final class RegionCommands {
         }
         entry.description = "Remove the lighting of the chunks of the selection";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.handler = ctx -> {
             List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
@@ -220,6 +223,7 @@ final class RegionCommands {
         }
         entry.description = "Fixes all blocks in the region to the correct shape and connections";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.handler = ctx -> {
             World world = ctx.world();
@@ -322,6 +326,7 @@ final class RegionCommands {
         }
         entry.description = "Smooth the elevation in the selection with snow layers";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         // -l is the snow height to place back, -m restricts the pass to a mask.
         entry.valueFlags.add("l");

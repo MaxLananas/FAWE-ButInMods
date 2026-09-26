@@ -74,8 +74,9 @@ public final class LocalSession {
     private java.nio.file.Path activeSnapshot;
     private com.maxlananas.fawebim.core.clipboard.ListFilter listFilter =
             com.maxlananas.fawebim.core.clipboard.ListFilter.ALL;
-    private Runnable pendingCommand;
-    private String pendingDescription;
+    /** The command line waiting for {@code //confirm}, and the {@link System#nanoTime()} it was parked at. */
+    private String pendingCommand;
+    private long pendingSince;
     private BlockVector3 lastClickedPosition;
     private com.maxlananas.fawebim.core.world.Direction lastClickedFace = com.maxlananas.fawebim.core.world.Direction.NORTH;
 
@@ -319,35 +320,28 @@ public final class LocalSession {
         this.watchdog = watchdog;
     }
 
-    /** Commands that need {@code /confirm} before running. */
-    public void setPendingCommand(Runnable command, String description) {
-        this.pendingCommand = command;
-        this.pendingDescription = description;
+    /**
+     * Parks a command line that stopped for {@code //confirm}. A newer one
+     * replaces it: {@code //confirm} runs the command that asked last.
+     *
+     * @param now {@link System#nanoTime()}
+     */
+    public void setPendingCommand(String line, long now) {
+        this.pendingCommand = line;
+        this.pendingSince = now;
     }
 
-    public boolean hasPendingCommand() {
-        return pendingCommand != null;
-    }
-
-    public String pendingDescription() {
-        return pendingDescription;
-    }
-
-    /** Runs the pending command, or returns false when there is none. */
-    public boolean confirmPending() {
-        Runnable command = pendingCommand;
+    /**
+     * The command line parked for {@code //confirm}, or null when there is none
+     * or it has waited longer than {@code maxWaitNanos}. Taking it clears it, so
+     * one {@code //confirm} runs it once.
+     *
+     * @param now {@link System#nanoTime()}
+     */
+    public String takePendingCommand(long now, long maxWaitNanos) {
+        String line = pendingCommand;
         pendingCommand = null;
-        pendingDescription = null;
-        if (command == null) {
-            return false;
-        }
-        command.run();
-        return true;
-    }
-
-    public void clearPending() {
-        pendingCommand = null;
-        pendingDescription = null;
+        return line == null || now - pendingSince > maxWaitNanos ? null : line;
     }
 
     public RegionSelector getSelector(World world) {
