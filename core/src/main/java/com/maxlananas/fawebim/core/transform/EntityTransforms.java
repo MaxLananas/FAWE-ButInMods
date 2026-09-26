@@ -23,7 +23,8 @@ public final class EntityTransforms {
 
     /**
      * A copy of the data with its facing turned: the yaw of {@code Rotation},
-     * the {@code Facing} of an item frame and the {@code facing} of a painting.
+     * the {@code Facing} of an item frame with the {@code ItemRotation} of what
+     * it holds, and the {@code facing} of a painting.
      */
     public static NbtCompound turn(NbtCompound nbt, Transform transform) {
         if (nbt == null) {
@@ -43,12 +44,61 @@ public final class EntityTransforms {
             }
         }
         if (turned.get("Facing") instanceof Byte facing && facing >= 0 && facing < BY_3D_VALUE.length) {
-            turned.putByte("Facing", nearest(transform, BY_3D_VALUE[facing], BY_3D_VALUE, facing));
+            int newFacing = nearest(transform, BY_3D_VALUE[facing], BY_3D_VALUE, facing);
+            turned.putByte("Facing", newFacing);
+            if (turned.get("ItemRotation") instanceof Byte rotation) {
+                boolean map = turned.getCompoundOrNull("Item") instanceof NbtCompound item
+                        && "minecraft:filled_map".equals(item.getString("id", null));
+                turned.putByte("ItemRotation", itemRotation(transform, facing, newFacing, rotation, map ? 4 : 8));
+            }
         }
         if (turned.get("facing") instanceof Byte facing && facing >= 0 && facing < BY_2D_VALUE.length) {
             turned.putByte("facing", nearest(transform, BY_2D_VALUE[facing], BY_2D_VALUE, facing));
         }
         return turned;
+    }
+
+    /**
+     * The {@code ItemRotation} of an item frame after the transform, as
+     * WorldEdit computes it: the direction the top of the item points to,
+     * tilted by the rotation around the way the frame faces, is turned, then
+     * measured again against the frame's new facing. A map turns in quarter
+     * turns, anything else in eighths.
+     */
+    private static int itemRotation(Transform transform, int facing, int newFacing, int rotation, int steps) {
+        double step = 2 * Math.PI / steps;
+        Vector3 top = rotate(itemBase(facing), vector(facing), -rotation * step);
+        Vector3 turnedTop = transform.applyDirection(top);
+        Vector3 base = itemBase(newFacing);
+        double angle = Math.atan2(vector(newFacing).dot(base.cross(turnedTop)), base.dot(turnedTop));
+        return Math.floorMod((int) Math.round(-angle / step), steps);
+    }
+
+    /**
+     * Where the game draws the top of an unrotated item in a frame facing that
+     * way: up the wall, north on a floor, south on a ceiling. WorldEdit counts
+     * a ceiling frame from north on the way in and from south on the way out,
+     * so each paste that turns one also turns its item half a turn; both ends
+     * count from south here.
+     */
+    private static Vector3 itemBase(int facing) {
+        return switch (facing) {
+            case 0 -> new Vector3(0, 0, 1);
+            case 1 -> new Vector3(0, 0, -1);
+            default -> new Vector3(0, 1, 0);
+        };
+    }
+
+    private static Vector3 vector(int facing) {
+        double[] d = BY_3D_VALUE[facing];
+        return new Vector3(d[0], d[1], d[2]);
+    }
+
+    /** {@code v} turned by {@code angle} radians around {@code axis}, by Rodrigues' formula. */
+    private static Vector3 rotate(Vector3 v, Vector3 axis, double angle) {
+        double cos = Math.cos(angle);
+        double sin = Math.sin(angle);
+        return v.multiply(cos).add(axis.cross(v).multiply(sin)).add(axis.multiply(axis.dot(v) * (1 - cos)));
     }
 
     /** The value of the direction closest to where {@code direction} turns, or {@code fallback}. */

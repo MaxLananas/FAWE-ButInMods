@@ -33,6 +33,7 @@ final class EntityTests {
         removeAllLeavesTheMobs();
         cutTakesTheEntitiesAlong();
         turnedPastesTurnTheEntities();
+        itemFramesTurnWhatTheyHold();
         turnedPastesKeepEntitiesOnTheirBlocks();
         hangingEntitiesMoveWithTheirWall();
         passengersTravelInTheirVehicle();
@@ -132,6 +133,36 @@ final class EntityTests {
     }
 
     /**
+     * The item in a frame is tilted in eighths of a turn, a map in quarters,
+     * counted clockwise from the top of the frame as the player facing it sees
+     * it: up on a wall, north on a floor, south on a ceiling.
+     */
+    private static void itemFramesTurnWhatTheyHold() {
+        var quarter = Transforms.rotate(BlockVector3.ZERO, Axis.Y, 90);
+        var mirror = Transforms.flip(BlockVector3.ZERO, Axis.X);
+        checkEquals("a turn keeps the tilt of the item in a frame on a wall", (byte) 3,
+                EntityTransforms.turn(frame(2, 3, "minecraft:clock"), quarter).get("ItemRotation"));
+        checkEquals("a mirror mirrors it", (byte) 7,
+                EntityTransforms.turn(frame(2, 1, "minecraft:clock"), mirror).get("ItemRotation"));
+        checkEquals("in quarter turns for a map", (byte) 3,
+                EntityTransforms.turn(frame(2, 1, "minecraft:filled_map"), mirror).get("ItemRotation"));
+        byte floor = (Byte) EntityTransforms.turn(frame(1, 0, "minecraft:clock"), quarter).get("ItemRotation");
+        byte ceiling = (Byte) EntityTransforms.turn(frame(0, 0, "minecraft:clock"), quarter).get("ItemRotation");
+        check("a quarter turn tilts an item on a floor a quarter one way (" + floor + ")", floor == 2 || floor == 6);
+        checkEquals("and one on a ceiling, seen from below, a quarter the other way", (8 - floor) % 8, (int) ceiling);
+        checkEquals("a mirror mirrors the tilt on a ceiling too", (byte) 7,
+                EntityTransforms.turn(frame(0, 1, "minecraft:clock"), mirror).get("ItemRotation"));
+        checkEquals("an item turned upside down with its frame keeps pointing the same way", (byte) 4,
+                EntityTransforms.turn(frame(1, 0, "minecraft:clock"), Transforms.flip(BlockVector3.ZERO, Axis.Y))
+                        .get("ItemRotation"));
+    }
+
+    private static NbtCompound frame(int facing, int rotation, String item) {
+        return new NbtCompound().putByte("Facing", facing).putByte("ItemRotation", rotation)
+                .put("Item", new NbtCompound().putString("id", item).putInt("count", 1));
+    }
+
+    /**
      * Blocks turn as points around the origin, so an entity turned around the
      * same corner landed a block away from the block it stood on.
      */
@@ -198,6 +229,14 @@ final class EntityTests {
         NbtCompound pig = new NbtCompound().putString("CustomName", "Babe");
         check("an entity that hangs from nothing keeps its data", com.maxlananas.fawebim.core.clipboard
                 .Clipboards.attachedTo(pig, null, BlockVector3.ZERO, BlockVector3.ONE) == pig);
+        NbtCompound tied = new NbtCompound().putIntArray("leash", new int[]{2, 71, 1});
+        NbtCompound retied = com.maxlananas.fawebim.core.clipboard.Clipboards.attachedTo(tied, null,
+                new BlockVector3(0, 70, 0), new BlockVector3(20, 70, 20));
+        check("an animal tied to a fence is tied to the pasted fence", java.util.Arrays.equals(
+                new int[]{22, 71, 21}, retied.getIntArray("leash")));
+        NbtCompound held = new NbtCompound().put("leash", new NbtCompound().putIntArray("UUID", new int[]{1, 2, 3, 4}));
+        check("one held by another entity keeps its data", com.maxlananas.fawebim.core.clipboard
+                .Clipboards.attachedTo(held, null, BlockVector3.ZERO, BlockVector3.ONE) == held);
     }
 
     /** A passenger is saved in its vehicle's data, so a copy of both takes the vehicle. */

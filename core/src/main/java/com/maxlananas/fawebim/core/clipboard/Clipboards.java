@@ -607,12 +607,14 @@ public final class Clipboards {
     private static final Vector3 BLOCK_CENTRE = new Vector3(0.5, 0.5, 0.5);
 
     /**
-     * The data of a painting, an item frame or a leash knot with the block it
-     * hangs from moved as the blocks move. The game places such an entity by
-     * that block and not by its position, so a paste that moved only the
-     * position left the entity where it was copied from. The {@code TileX},
-     * {@code TileY} and {@code TileZ} of older data become the {@code
-     * block_pos} the game reads now.
+     * The data of an entity with the blocks it is tied to moved as the blocks
+     * move: the block a painting, an item frame or a leash knot hangs from, and
+     * the fence a leashed animal is tied to. The game places a hanging entity
+     * by its block and not by its position, so a paste that moved only the
+     * position left it where it was copied from; an animal kept its old fence
+     * and, too far from it, broke the lead and dropped it, one more lead per
+     * paste. The {@code TileX}, {@code TileY} and {@code TileZ} of older data
+     * become the {@code block_pos} the game reads now.
      *
      * @param transform the paste's transform, null for none
      * @return the data, a copy of it when it changed
@@ -629,22 +631,35 @@ public final class Clipboards {
                 && nbt.get("TileZ") instanceof Number z) {
             block = new int[]{x.intValue(), y.intValue(), z.intValue()};
         }
-        if (block == null) {
+        // Tied to a fence, the lead is the fence's position; tied to another
+        // entity, it is a compound holding that entity's UUID.
+        int[] fence = nbt.get("leash") instanceof int[] position && position.length == 3 ? position : null;
+        if (block == null && fence == null) {
             return nbt;
         }
+        NbtCompound moved = nbt.clone();
+        if (block != null) {
+            moved.remove("TileX");
+            moved.remove("TileY");
+            moved.remove("TileZ");
+            moved.putIntArray("block_pos", moveBlock(block, transform, origin, destination));
+        }
+        if (fence != null) {
+            moved.putIntArray("leash", moveBlock(fence, transform, origin, destination));
+        }
+        return moved;
+    }
+
+    /** A block position moved the way a paste moves the block there. */
+    private static int[] moveBlock(int[] block, Transform transform, BlockVector3 origin, BlockVector3 destination) {
         Vector3 target = new Vector3(block[0], block[1], block[2]);
         if (transform != null) {
             target = transform.apply(target);
         }
-        NbtCompound moved = nbt.clone();
-        moved.remove("TileX");
-        moved.remove("TileY");
-        moved.remove("TileZ");
-        moved.putIntArray("block_pos", new int[]{
+        return new int[]{
             (int) Math.floor(target.x() - origin.x() + destination.x()),
             (int) Math.floor(target.y() - origin.y() + destination.y()),
-            (int) Math.floor(target.z() - origin.z() + destination.z())});
-        return moved;
+            (int) Math.floor(target.z() - origin.z() + destination.z())};
     }
 
     /**
