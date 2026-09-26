@@ -39,16 +39,25 @@ def reported_ms(answer):
     return int(match.group(1).replace(",", "")) if match else None
 
 
-# (label, command, text the answer must hold). The box is 64x32x64 blocks above
-# the ground of the flat world the job starts, so it holds air until this run
-# fills it: 131,072 blocks is a large edit by the standards of the commands, and
-# small enough to run several of them.
+# (label, command, text the answer must hold). Both boxes sit in the air above
+# the ground of the world the job starts - y 100 to 131 for the edits and y 160
+# to 191 for the paste that lands above them - and each is emptied before it is
+# used, so no row depends on the terrain underneath: a world whose surface is
+# different gives the same answers. 131,072 blocks is a large edit by the
+# standards of the commands and small enough to run seventeen of them.
 STEPS = [
-    ("select", "//pos1 -32,32,-32", "position 1: set"),
-    ("select", "//pos2 31,63,31", "position 2: set"),
+    ("select", "//pos1 -32,100,-32", "position 1: set"),
+    ("select", "//pos2 31,131,31", "position 2: set"),
     ("size", "//size", "131,072"),
-    # A copy of air stores nothing, however large the selection is.
-    ("copy of an empty box", "//copy", "0 block(s)"),
+    ("clear the box", "//set minecraft:air", "block(s) affected"),
+    ("select the paste box", "//pos1 -32,160,-32", "position 1: set"),
+    ("select the paste box", "//pos2 31,191,31", "position 2: set"),
+    ("clear the paste box", "//set minecraft:air", "block(s) affected"),
+    ("select", "//pos1 -32,100,-32", "position 1: set"),
+    ("select", "//pos2 31,131,31", "position 2: set"),
+    ("count of an empty box", "//count minecraft:stone", "count: 0"),
+    # A copy of a box that holds nothing stores nothing, however large it is.
+    ("copy of an empty box", "//copy", "copied: 0 block(s)"),
     ("set (fills the box)", "//set minecraft:stone", "131,072 block(s) affected"),
     ("count", "//count minecraft:stone", "count: 131,072"),
     ("copy of a solid box", "//copy", "copied: 131,072 block(s)"),
@@ -56,12 +65,15 @@ STEPS = [
     ("count after the cut", "//count minecraft:stone", "count: 0"),
     ("undo (puts the box back)", "//undo", "undid: 131,072 block change(s)"),
     ("count", "//count minecraft:stone", "count: 131,072"),
-    ("undo (empties it again)", "//undo", "undid: 131,072 block change(s)"),
-    # The clipboard still holds the box, pasted into the air above it. -a is the
-    # switch that skips the clipboard's air, so the paste has nothing to carve.
-    ("paste of a large box", "//paste -a 0,96,0", "pasted: 131,072 block(s)"),
-    ("select what was pasted", "//pos1 0,96,0", "position 1: set"),
-    ("select what was pasted", "//pos2 63,127,63", "position 2: set"),
+    # The second undo takes the first //set back, which changed as many blocks as
+    # the box had room for: that count belongs to the world, not to this list.
+    ("undo (empties it again)", "//undo", "undid:"),
+    # The clipboard holds the box that was cut, pasted into the empty box above
+    # it. -a is the switch that skips the clipboard's air, so the paste has
+    # nothing to carve and writes exactly the blocks it holds.
+    ("paste of a large box", "//paste -a -32,160,-32", "pasted: 131,072 block(s)"),
+    ("select what was pasted", "//pos1 -32,160,-32", "position 1: set"),
+    ("select what was pasted", "//pos2 31,191,31", "position 2: set"),
     ("count what the paste wrote", "//count minecraft:stone", "count: 131,072"),
     ("copy of what was pasted", "//copy", "copied: 131,072 block(s)"),
 ]
