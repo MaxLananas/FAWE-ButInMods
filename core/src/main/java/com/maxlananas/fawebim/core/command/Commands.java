@@ -1865,7 +1865,7 @@ public final class Commands {
                     int changed = 0;
                     if (!onlySelect) {
                         changed = com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, destination, session,
-                                holder.getTransform(), !ctx.hasFlag("a"), sourceMask, ctx.hasFlag("e"),
+                                holder.getTransform(), ctx.hasFlag("a"), sourceMask, ctx.hasFlag("e"),
                                 ctx.hasFlag("b"), ctx.hasFlag("x"), ctx.hasFlag("v"));
                     }
                     if (ctx.hasFlag("s") || onlySelect) {

@@ -1517,6 +1517,66 @@ public final class SelfTestMain {
             check("clipboard brush -m pasted onto the matching block", world.getBlock(70, 80, 70) == gold);
             check("clipboard brush -m skipped the other block", world.getBlock(71, 80, 70) == dirt);
         }
+
+        // Pasting a clipboard writes its air as well - which is what carves the
+        // box the selection was - and -a is the switch that skips it, the way
+        // FAWE spells it.
+        TestWorld carving = new TestWorld("paste-air");
+        carving.fillFlat(70);
+        TestActor builder = new TestActor("Carver", carving, new BlockVector3(0, 71, 0));
+        builder.session().setMaxBlocksChanged(1_000_000);
+        CommandManager.get().dispatch(builder, "//pos1 0,80,0");
+        CommandManager.get().dispatch(builder, "//pos2 3,84,3");
+        CommandManager.get().dispatch(builder, "//set stone");
+        CommandManager.get().dispatch(builder, "//pos1 0,71,0");
+        CommandManager.get().dispatch(builder, "//pos2 3,73,3");
+        CommandManager.get().dispatch(builder, "//set stone");
+        CommandManager.get().dispatch(builder, "//pos1 0,71,0");
+        CommandManager.get().dispatch(builder, "//pos2 3,75,3");
+        CommandManager.get().dispatch(builder, "//copy");
+        CommandManager.get().dispatch(builder, "//paste 0,80,0");
+        check("a paste writes the clipboard's air", carving.getBlock(0, 75, 0) == air
+                && carving.getBlock(3, 75, 3) == air);
+        check("a paste still writes the clipboard's blocks", carving.getBlock(0, 71, 0) == stone
+                && carving.getBlock(3, 73, 3) == stone);
+
+        CommandManager.get().dispatch(builder, "//set stone");
+        CommandManager.get().dispatch(builder, "//paste -a 0,80,0");
+        check("//paste -a skips the clipboard's air", carving.getBlock(0, 75, 0) == stone
+                && carving.getBlock(3, 74, 3) == stone);
+        check("//paste -a writes the clipboard's blocks", carving.getBlock(0, 73, 0) == stone);
+
+        // A build west and north of the origin, and below y 0, has negative
+        // section coordinates. A clipboard keys its sections by those, and every
+        // cell of one has to come back where it was copied from.
+        TestWorld far = new TestWorld("negative-sections");
+        for (int x = -22; x <= -5; x++) {
+            for (int z = -22; z <= -5; z++) {
+                for (int y = -40; y <= -30; y++) {
+                    far.setBlock(x, y, z, (x + y + z) % 2 == 0 ? stone : dirt);
+                }
+            }
+        }
+        TestActor farActor = new TestActor("Negative", far, new BlockVector3(0, 64, 0));
+        farActor.session().setMaxBlocksChanged(1_000_000);
+        CommandManager.get().dispatch(farActor, "//pos1 -22,-40,-22");
+        CommandManager.get().dispatch(farActor, "//pos2 -5,-30,-5");
+        CommandManager.get().dispatch(farActor, "//copy");
+        CommandManager.get().dispatch(farActor, "//paste -a 100,100,100");
+        int wrong = 0;
+        for (int x = -22; x <= -5; x++) {
+            for (int z = -22; z <= -5; z++) {
+                for (int y = -40; y <= -30; y++) {
+                    int expected = (x + y + z) % 2 == 0 ? stone : dirt;
+                    if (far.getBlock(x + 122, y + 140, z + 122) != expected) {
+                        wrong++;
+                    }
+                }
+            }
+        }
+        check("a clipboard of negative sections pastes every block", wrong == 0);
+        check("a paste of negative sections writes nothing elsewhere",
+                far.getBlock(99, 100, 100) == air && far.getBlock(100 + 18, 100, 100 + 18) == air);
     }
 
     /**

@@ -358,6 +358,36 @@ public final class Clipboards {
      */
     private static final int SECTION_READ_MINIMUM = 1024;
 
+    /**
+     * The paste of a clipboard that needs no per-cell decision.
+     *
+     * <p>Every cell the clipboard holds a block in is written at the offset the
+     * destination asks for, which is what the general walk does for it: the
+     * difference is that the air of the clipboard - the bulk of it, for the box
+     * a player copies - is never visited, and neither the mask, the transform nor
+     * the block entities are asked about anything.</p>
+     */
+    private static int pasteStored(BlockArrayClipboard clipboard, BlockVector3 destination,
+                                   EditSession session) {
+        BlockVector3 origin = clipboard.getOrigin();
+        int offsetX = destination.x() - origin.x();
+        int offsetY = destination.y() - origin.y();
+        int offsetZ = destination.z() - origin.z();
+        int air = BlockStateHolder.air();
+        return clipboard.forEachStored(air, (x, y, z, state) -> {
+            int targetX = x + offsetX;
+            int targetY = y + offsetY;
+            int targetZ = z + offsetZ;
+            // The queued changes count as the previous state: a cell written
+            // twice by one paste keeps its history straight.
+            int previous = session.getBlock(targetX, targetY, targetZ);
+            if (previous == state) {
+                return false;
+            }
+            return session.setBlockKnown(targetX, targetY, targetZ, previous, state, true);
+        });
+    }
+
     /** Copies one position, the way a shape that is not a box is copied. */
     private static void copyCell(World world, BlockArrayClipboard clipboard, int x, int y, int z,
                                  boolean withEntities, int air) {
@@ -451,6 +481,15 @@ public final class Clipboards {
         // without /transform the destination is an integer offset.
         boolean identity = transform.isIdentity();
         boolean hasBlockEntities = !clipboard.blockEntities().isEmpty();
+        // A paste that skips air - {@code //paste -a}, and the tool that stacks a
+        // clipboard - only writes the cells the clipboard holds a block in, so it
+        // never has to visit the air. The walk below stays for the flags that
+        // need to see those cells: pasting the clipboard's air is what carves the
+        // box a player pasted.
+        if (ignoreAir && identity && mask == null && !keepStructureVoid && !hasBlockEntities
+                && !pasteEntities && !removeEntities && clipboard.biomeEntries().isEmpty()) {
+            return pasteStored(clipboard, destination, session);
+        }
         int changed = clipboard.forEachPosition((x, y, z, state) -> {
             if (state == air && ignoreAir) {
                 return false;

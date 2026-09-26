@@ -158,8 +158,33 @@ public final class BlockArrayClipboard implements Extent {
         return (int) (key << 38 >> 38);
     }
 
+    /**
+     * Keys the section a block belongs to, by packing its chunk coordinates the
+     * way {@link #positionKey(int, int, int)} packs a block position.
+     *
+     * <p>The fields have to be masked on the way in. Packing them with a plain
+     * shift let the sign of a negative chunk - the west side of a build, or a
+     * section below y 0 - spill into the field above it, so a section key read
+     * back gave the coordinates of a different section: a paste of a clipboard
+     * copied west of the origin wrote its blocks somewhere else as well.</p>
+     */
     public static long sectionKey(int x, int y, int z) {
-        return ((long) (x >> 4) << 40) ^ ((long) (y >> 4) << 20) ^ (z >> 4);
+        return positionKey(x >> 4, y >> 4, z >> 4);
+    }
+
+    /** The block x of a key made by {@link #sectionKey(int, int, int)}. */
+    public static int sectionKeyX(long key) {
+        return keyX(key) << 4;
+    }
+
+    /** The block y of a key made by {@link #sectionKey(int, int, int)}. */
+    public static int sectionKeyY(long key) {
+        return keyY(key) << 4;
+    }
+
+    /** The block z of a key made by {@link #sectionKey(int, int, int)}. */
+    public static int sectionKeyZ(long key) {
+        return keyZ(key) << 4;
     }
 
     @Override
@@ -311,7 +336,8 @@ public final class BlockArrayClipboard implements Extent {
             }
         }
         long key = sectionKey(chunkX << 4, baseY, chunkZ << 4);
-        partial.put(key, new Partial(recorded, startX, startZ, startY, endY, stride));
+        partial.put(key, new Partial(recorded, chunkX << 4, baseY, chunkZ << 4,
+                startX, startZ, startY, endY, stride));
         sections.remove(key);
         lastSectionKey = key;
         lastSection = null;
@@ -327,7 +353,8 @@ public final class BlockArrayClipboard implements Extent {
     }
 
     /** The runs a partly read section holds, and where they start. */
-    private record Partial(int[][] rows, int startX, int startZ, int startY, int endY, int stride) {
+    private record Partial(int[][] rows, int baseX, int baseY, int baseZ, int startX, int startZ,
+                           int startY, int endY, int stride) {
     }
 
     @Override
@@ -422,6 +449,63 @@ public final class BlockArrayClipboard implements Extent {
             }
         }
         return filled;
+    }
+
+    /**
+     * Visits every cell the clipboard holds a block in, and only those: a
+     * {@code //paste} of a large clipboard used to walk the whole box - air
+     * included - and look each cell up through the bbox check and the section
+     * cache, which is work per cell of nothing.
+     *
+     * <p>The cells come in the order the clipboard stores them, section by
+     * section, which is also the order the paste writes them in: a region is
+     * walked x first, so the chunk the last cell went to is usually the chunk the
+     * next one belongs to.</p>
+     */
+    public int forEachStored(int air, CellVisitor visitor) {
+        int visited = 0;
+        if (lazyWorld != null) {
+            return forEachPosition(visitor);
+        }
+        long[] keys = sections.keys();
+        for (long key : keys) {
+            int[] section = sections.get(key);
+            int baseX = sectionKeyX(key);
+            int baseY = sectionKeyY(key);
+            int baseZ = sectionKeyZ(key);
+            for (int cell = 0; cell < 4096; cell++) {
+                int state = section[cell];
+                if (state == 0 || state == air) {
+                    continue;
+                }
+                if (visitor.visit(baseX + (cell & 15), baseY + ((cell >> 8) & 15),
+                        baseZ + ((cell >> 4) & 15), state)) {
+                    visited++;
+                }
+            }
+        }
+        for (Partial part : partial.values()) {
+            // The runs are stored per row, and the row's own coordinates say
+            // which world row it is: no need to look them up per cell.
+            for (int row = 0; row < part.rows().length; row++) {
+                int[] run = part.rows()[row];
+                if (run == null) {
+                    continue;
+                }
+                int y = part.baseY() + part.startY() + row / part.stride();
+                int z = part.baseZ() + part.startZ() + row % part.stride();
+                for (int index = 0; index < run.length; index++) {
+                    int state = run[index];
+                    if (state == 0 || state == air) {
+                        continue;
+                    }
+                    if (visitor.visit(part.baseX() + part.startX() + index, y, z, state)) {
+                        visited++;
+                    }
+                }
+            }
+        }
+        return visited;
     }
 
     /** True when the clipboard contains no non-air blocks (nothing to paste). */

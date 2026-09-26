@@ -57,6 +57,13 @@ STEPS = [
     ("undo (puts the box back)", "//undo", "undid: 131,072 block change(s)"),
     ("count", "//count minecraft:stone", "count: 131,072"),
     ("undo (empties it again)", "//undo", "undid: 131,072 block change(s)"),
+    # The clipboard still holds the box, pasted into the air above it. -a is the
+    # switch that skips the clipboard's air, so the paste has nothing to carve.
+    ("paste of a large box", "//paste -a 0,96,0", "pasted: 131,072 block(s)"),
+    ("select what was pasted", "//pos1 0,96,0", "position 1: set"),
+    ("select what was pasted", "//pos2 63,127,63", "position 2: set"),
+    ("count what the paste wrote", "//count minecraft:stone", "count: 131,072"),
+    ("copy of what was pasted", "//copy", "copied: 131,072 block(s)"),
 ]
 
 

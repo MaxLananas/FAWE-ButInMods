@@ -155,7 +155,7 @@ final class ClipboardExtras {
             int changed = 0;
             if (!onlySelect) {
                 changed = Clipboards.paste(clipboard, destination, session,
-                        com.maxlananas.fawebim.core.transform.Transform.identity(), !ctx.hasFlag("a"),
+                        com.maxlananas.fawebim.core.transform.Transform.identity(), ctx.hasFlag("a"),
                         session.getMask(), ctx.hasFlag("e"), ctx.hasFlag("b"), ctx.hasFlag("x"), false);
             }
             if (ctx.hasFlag("s") || onlySelect) {
