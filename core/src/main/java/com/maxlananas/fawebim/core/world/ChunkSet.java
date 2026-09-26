@@ -179,13 +179,15 @@ public final class ChunkSet {
     }
 
     public void setBiome(int x, int y, int z, int biomeId, int minY) {
+        int si = (y >> 4) - minSection;
+        if (si < 0 || si >= sectionCount) {
+            // Outside the chunk's sections nothing is stored, so nothing is
+            // to be applied either.
+            return;
+        }
         dirty = true;
         if (biomes == null) {
             biomes = new int[sectionCount][];
-        }
-        int si = (y >> 4) - minSection;
-        if (si < 0 || si >= sectionCount) {
-            return;
         }
         if (biomes[si] == null) {
             biomes[si] = new int[64];

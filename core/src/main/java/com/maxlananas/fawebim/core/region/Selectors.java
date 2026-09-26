@@ -87,8 +87,7 @@ public final class Selectors {
 
         private void rebuild() {
             if (pos1 != null && pos2 != null) {
-                region.setPos1(pos1.min(pos2));
-                region.setPos2(pos1.max(pos2));
+                region.setCorners(pos1, pos2);
             }
         }
 
@@ -119,7 +118,30 @@ public final class Selectors {
         public void clear() {
             pos1 = null;
             pos2 = null;
-            rebuild();
+            region.setCorners(BlockVector3.ZERO, BlockVector3.ZERO);
+        }
+
+        /**
+         * Takes the corners back from the region a command changed. Each corner
+         * keeps its side on every axis - the corner that was the lower one on X
+         * takes the region's lower X - which is how WorldEdit's region moves the
+         * corner on the side it grows. Without this the next click rebuilt the
+         * box from the corners of before {@code //expand}, and the expansion was
+         * gone.
+         */
+        @Override
+        public void learnChanges() {
+            if (pos1 == null || pos2 == null) {
+                return;
+            }
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            BlockVector3 first = new BlockVector3(pos1.x() <= pos2.x() ? min.x() : max.x(),
+                    pos1.y() <= pos2.y() ? min.y() : max.y(), pos1.z() <= pos2.z() ? min.z() : max.z());
+            BlockVector3 second = new BlockVector3(pos1.x() <= pos2.x() ? max.x() : min.x(),
+                    pos1.y() <= pos2.y() ? max.y() : min.y(), pos1.z() <= pos2.z() ? max.z() : min.z());
+            pos1 = first;
+            pos2 = second;
         }
 
         @Override
@@ -182,8 +204,7 @@ public final class Selectors {
 
         private void rebuild() {
             if (origin != null && pos1 != null && pos2 != null) {
-                region.setPos1(origin.min(pos1).min(pos2));
-                region.setPos2(origin.max(pos1).max(pos2));
+                region.setCorners(origin.min(pos1).min(pos2), origin.max(pos1).max(pos2));
             }
         }
 
@@ -207,7 +228,18 @@ public final class Selectors {
             origin = null;
             pos1 = null;
             pos2 = null;
-            rebuild();
+            region.setCorners(BlockVector3.ZERO, BlockVector3.ZERO);
+        }
+
+        /** Takes the box back from the region a command changed; the next click extends it. */
+        @Override
+        public void learnChanges() {
+            if (!isDefined()) {
+                return;
+            }
+            origin = region.getMinimumPoint();
+            pos1 = origin;
+            pos2 = region.getMaximumPoint();
         }
 
         @Override
@@ -230,62 +262,80 @@ public final class Selectors {
 
     // --------------------------------------------------------------------- poly
 
+    /**
+     * WorldEdit's polygon: the left click starts a new outline at the clicked
+     * block, each right click adds a point to it, and the height runs from the
+     * lowest to the highest block clicked.
+     *
+     * <p>The port used to append on the left click, move the last point on the
+     * right one and span the whole height of the world, so a {@code //set} on a
+     * polygon filled every layer from the bottom of the world to the top.</p>
+     */
     public static final class Polygonal2DSelector extends BaseSelector {
 
         private final List<BlockVector2> points = new ArrayList<>();
         private final Polygonal2DRegion region;
+        private BlockVector3 first;
 
         public Polygonal2DSelector(int minY, int maxY) {
             super(minY, maxY);
-            this.region = new Polygonal2DRegion(List.of(), minY, maxY);
+            this.region = new Polygonal2DRegion(List.of(), minY, minY);
         }
 
         @Override
         public boolean selectPrimary(BlockVector3 position, SelectorLimits limits) {
             BlockVector3 clamped = clamp(position);
-            BlockVector2 point = new BlockVector2(clamped.x(), clamped.z());
-            int vertexLimit = limits.getPolygonVertexLimit();
-            if (points.size() >= vertexLimit + 1) {
+            if (clamped.equals(first) && points.size() == 1) {
                 return false;
             }
-            if (points.size() == 1 && points.get(0).equals(point)) {
-                return false;
-            }
-            points.add(point);
-            rebuild();
+            first = clamped;
+            points.clear();
+            points.add(new BlockVector2(clamped.x(), clamped.z()));
+            region.setMinY(clamped.y());
+            region.setMaxY(clamped.y());
+            region.setPoints(points);
             return true;
         }
 
         @Override
         public boolean selectSecondary(BlockVector3 position, SelectorLimits limits) {
-            if (points.size() <= 1) {
-                return false;
-            }
             BlockVector3 clamped = clamp(position);
-            BlockVector2 last = points.get(points.size() - 1);
-            // The second click moves the last vertex before closing the polygon.
-            points.set(points.size() - 1, new BlockVector2(clamped.x(), clamped.z()));
-            if (!last.equals(points.get(points.size() - 1))) {
-                rebuild();
-                return true;
+            BlockVector2 point = new BlockVector2(clamped.x(), clamped.z());
+            if (!points.isEmpty()) {
+                if (points.get(points.size() - 1).equals(point)) {
+                    return false;
+                }
+                if (points.size() > limits.getPolygonVertexLimit()) {
+                    return false;
+                }
+            } else {
+                first = clamped;
+                region.setMinY(clamped.y());
+                region.setMaxY(clamped.y());
             }
-            return false;
-        }
-
-        /** Adds a vertex programmatically (used for the closing point). */
-        public boolean addVertex(BlockVector2 point) {
             points.add(point);
-            rebuild();
+            region.setPoints(points);
+            region.expandY(clamped.y());
             return true;
         }
 
-        private void rebuild() {
-            region.getPoints().clear();
-            region.getPoints().addAll(points);
+        /** Adds a point without a click, extending the height to it like a click does. */
+        public boolean addVertex(BlockVector2 point) {
+            if (!points.isEmpty() && points.get(points.size() - 1).equals(point)) {
+                return false;
+            }
+            points.add(point);
+            region.setPoints(points);
+            return true;
         }
 
         public List<BlockVector2> getPoints() {
-            return points;
+            return java.util.Collections.unmodifiableList(points);
+        }
+
+        @Override
+        public BlockVector3 getPrimaryPosition() {
+            return first == null ? getRegion().getMinimumPoint() : first;
         }
 
         @Override
@@ -306,7 +356,18 @@ public final class Selectors {
         @Override
         public void clear() {
             points.clear();
-            rebuild();
+            first = null;
+            region.setPoints(points);
+        }
+
+        /** Takes the outline back from the region a command moved or stretched. */
+        @Override
+        public void learnChanges() {
+            points.clear();
+            points.addAll(region.getPoints());
+            if (!points.isEmpty()) {
+                first = new BlockVector3(points.get(0).x(), region.getMinY(), points.get(0).z());
+            }
         }
 
         @Override
@@ -316,20 +377,29 @@ public final class Selectors {
 
         @Override
         public String describe() {
-            return "poly: " + points.size() + " points";
+            return "poly: " + points.size() + " points, y " + region.getMinY() + ".." + region.getMaxY();
         }
 
         @Override
         public RegionSelector copy() {
             Polygonal2DSelector copy = new Polygonal2DSelector(minY(), maxY());
             copy.points.addAll(points);
-            copy.rebuild();
+            copy.first = first;
+            copy.region.setMinY(region.getMinY());
+            copy.region.setMaxY(region.getMaxY());
+            copy.region.setPoints(copy.points);
             return copy;
         }
     }
 
     // ---------------------------------------------------------- ellipsoid/sphere
 
+    /**
+     * WorldEdit's sphere and ellipsoid: the left click sets the centre and
+     * starts from no radius; a right click sets a sphere's radius to its
+     * distance from the centre, rounded up, and extends each radius of an
+     * ellipsoid to reach the clicked block on that axis.
+     */
     public static final class EllipsoidSelector extends BaseSelector {
 
         private BlockVector3 center;
@@ -346,13 +416,13 @@ public final class Selectors {
         @Override
         public boolean selectPrimary(BlockVector3 position, SelectorLimits limits) {
             BlockVector3 clamped = clamp(position);
-            boolean changed = !clamped.equals(center);
-            center = clamped;
-            if (radii == null) {
-                radii = new Vector3(0, 0, 0);
+            if (clamped.equals(center) && radii != null && radii.lengthSq() == 0) {
+                return false;
             }
+            center = clamped;
+            radii = Vector3.ZERO;
             apply();
-            return changed;
+            return true;
         }
 
         @Override
@@ -361,14 +431,16 @@ public final class Selectors {
                 return false;
             }
             BlockVector3 clamped = clamp(position);
-            double dx = Math.abs(clamped.x() + 0.5 - center.x() - 0.5);
-            double dy = Math.abs(clamped.y() + 0.5 - center.y() - 0.5);
-            double dz = Math.abs(clamped.z() + 0.5 - center.z() - 0.5);
+            double dx = Math.abs((double) clamped.x() - center.x());
+            double dy = Math.abs((double) clamped.y() - center.y());
+            double dz = Math.abs((double) clamped.z() - center.z());
             if (sphere) {
-                double r = Math.max(dx, Math.max(dy, dz));
-                radii = new Vector3(Math.max(r, 1), Math.max(r, 1), Math.max(r, 1));
+                // The Euclidean distance, rounded up: the farthest of the three
+                // axes gave a smaller ball than the one clicked on a diagonal.
+                double r = Math.ceil(Math.sqrt(dx * dx + dy * dy + dz * dz));
+                radii = new Vector3(r, r, r);
             } else {
-                radii = new Vector3(Math.max(dx, 1), Math.max(dy, 1), Math.max(dz, 1));
+                radii = new Vector3(Math.max(radii.x(), dx), Math.max(radii.y(), dy), Math.max(radii.z(), dz));
             }
             apply();
             return true;
@@ -379,6 +451,11 @@ public final class Selectors {
                 region.setCenter(center.toCenter());
                 region.setRadii(radii);
             }
+        }
+
+        @Override
+        public BlockVector3 getPrimaryPosition() {
+            return center == null ? getRegion().getMinimumPoint() : center;
         }
 
         @Override
@@ -393,14 +470,25 @@ public final class Selectors {
 
         @Override
         public boolean isDefined() {
-            return center != null && radii != null && radii.x() > 0;
+            return center != null && radii != null && radii.lengthSq() > 0;
         }
 
         @Override
         public void clear() {
             center = null;
             radii = null;
-            apply();
+        }
+
+        /** Takes the centre and the radii back from the region a command changed. */
+        @Override
+        public void learnChanges() {
+            if (center == null) {
+                return;
+            }
+            Vector3 moved = region.getCenter();
+            center = new BlockVector3((int) Math.floor(moved.x()), (int) Math.floor(moved.y()),
+                    (int) Math.floor(moved.z()));
+            radii = region.getRadii();
         }
 
         @Override
@@ -422,6 +510,11 @@ public final class Selectors {
 
     // --------------------------------------------------------------------- cyl
 
+    /**
+     * WorldEdit's cylinder: the left click sets the centre, with no radius and
+     * the height of that block; each right click extends the radii to reach the
+     * clicked block and the height to include it.
+     */
     public static final class CylinderSelector extends BaseSelector {
 
         private BlockVector3 center;
@@ -439,8 +532,14 @@ public final class Selectors {
 
         @Override
         public boolean selectPrimary(BlockVector3 position, SelectorLimits limits) {
-            center = clamp(position);
-            radii = null;
+            BlockVector3 clamped = clamp(position);
+            if (clamped.equals(center) && radii != null && radii.x() == 0 && radii.z() == 0) {
+                return false;
+            }
+            center = clamped;
+            radii = new Vector2(0, 0);
+            minY = clamped.y();
+            maxY = clamped.y();
             apply();
             return true;
         }
@@ -451,11 +550,11 @@ public final class Selectors {
                 return false;
             }
             BlockVector3 clamped = clamp(position);
-            double dx = Math.abs(clamped.x() - center.x());
-            double dz = Math.abs(clamped.z() - center.z());
-            radii = new Vector2(Math.max(dx, 1), Math.max(dz, 1));
-            minY = Math.min(center.y(), clamped.y());
-            maxY = Math.max(center.y(), clamped.y());
+            double dx = Math.abs((double) clamped.x() - center.x());
+            double dz = Math.abs((double) clamped.z() - center.z());
+            radii = new Vector2(Math.max(radii.x(), dx), Math.max(radii.z(), dz));
+            minY = Math.min(minY, clamped.y());
+            maxY = Math.max(maxY, clamped.y());
             apply();
             return true;
         }
@@ -479,11 +578,13 @@ public final class Selectors {
             if (center != null && radii != null) {
                 region.setCenter(new Vector2(center.x() + 0.5, center.z() + 0.5));
                 region.setRadius(radii.x(), radii.z());
-                // The region starts at the world's full height, so the y range has
-                // to be set rather than grown: Region.setY() expands towards the
-                // bounds, which can never take the world height back off.
                 region.setYRange(minY, maxY);
             }
+        }
+
+        @Override
+        public BlockVector3 getPrimaryPosition() {
+            return center == null ? getRegion().getMinimumPoint() : center;
         }
 
         @Override
@@ -498,14 +599,26 @@ public final class Selectors {
 
         @Override
         public boolean isDefined() {
-            return center != null && radii != null;
+            return center != null && radii != null && (radii.x() > 0 || radii.z() > 0);
         }
 
         @Override
         public void clear() {
             center = null;
             radii = null;
-            apply();
+        }
+
+        /** Takes the centre, the radii and the height back from the region a command changed. */
+        @Override
+        public void learnChanges() {
+            if (center == null) {
+                return;
+            }
+            Vector2 moved = region.getCenter2D();
+            center = new BlockVector3((int) Math.floor(moved.x()), center.y(), (int) Math.floor(moved.z()));
+            radii = new Vector2(region.getRadiusX(), region.getRadiusZ());
+            minY = region.getMinY();
+            maxY = region.getMaxY();
         }
 
         @Override
@@ -529,10 +642,19 @@ public final class Selectors {
 
     // ------------------------------------------------------------------ convex
 
+    /**
+     * WorldEdit's convex selection: the left click starts a new hull at the
+     * clicked block and each right click adds a vertex; the hull is defined as
+     * soon as three vertices are not on a line.
+     *
+     * <p>The port used to add on the left click and remove on the right one, and
+     * built a face from every three consecutive clicks, which is not a hull: the
+     * selection held nothing until twelve vertices were clicked.</p>
+     */
     public static final class ConvexSelector extends BaseSelector {
 
         private final ConvexPolyhedralRegion region = new ConvexPolyhedralRegion();
-        private final List<BlockVector3> vertices = new ArrayList<>();
+        private BlockVector3 first;
 
         public ConvexSelector(int minY, int maxY) {
             super(minY, maxY);
@@ -541,31 +663,31 @@ public final class Selectors {
 
         @Override
         public boolean selectPrimary(BlockVector3 position, SelectorLimits limits) {
-            if (vertices.size() / 3 >= limits.getPolyhedronVertexLimit()) {
-                return false;
-            }
             BlockVector3 clamped = clamp(position);
-            if (!region.addVertex(clamped)) {
-                region.removeLastVertex();
-                return false;
-            }
-            vertices.add(clamped);
-            return true;
+            region.clear();
+            first = clamped;
+            return region.addVertex(clamped);
         }
 
         @Override
         public boolean selectSecondary(BlockVector3 position, SelectorLimits limits) {
-            if (vertices.isEmpty()) {
+            if (region.getVertices().size() > limits.getPolyhedronVertexLimit()) {
                 return false;
             }
-            // Right click removes the last vertex, as in WorldEdit.
-            vertices.remove(vertices.size() - 1);
-            region.removeLastVertex();
-            return true;
+            BlockVector3 clamped = clamp(position);
+            if (first == null) {
+                first = clamped;
+            }
+            return region.addVertex(clamped);
         }
 
         public List<BlockVector3> getVertices() {
-            return vertices;
+            return region.getVertices();
+        }
+
+        @Override
+        public BlockVector3 getPrimaryPosition() {
+            return first == null ? getRegion().getMinimumPoint() : first;
         }
 
         @Override
@@ -580,35 +702,38 @@ public final class Selectors {
 
         @Override
         public boolean isDefined() {
-            return region.getTriangleCount() >= 4;
+            return region.isDefined();
         }
 
         @Override
         public void clear() {
-            vertices.clear();
-            ConvexPolyhedralRegion cleared = new ConvexPolyhedralRegion();
-            cleared.setBounds(minY(), maxY());
-            // ConvexPolyhedralRegion has no clear(); recreate through the selector contract.
-            while (region.removeLastVertex()) {
-                // keep removing until empty
-            }
+            first = null;
+            region.clear();
+        }
+
+        /** The hull is the region's own; only the first vertex is taken back. */
+        @Override
+        public void learnChanges() {
+            List<BlockVector3> vertices = region.getVertices();
+            first = vertices.isEmpty() ? null : vertices.get(0);
         }
 
         @Override
         public int vertexCount() {
-            return vertices.size();
+            return region.getVertices().size();
         }
 
         @Override
         public String describe() {
-            return "convex: " + region.getTriangleCount() + " triangles";
+            return "convex: " + region.getVertices().size() + " vertices";
         }
 
         @Override
         public RegionSelector copy() {
             ConvexSelector copy = new ConvexSelector(minY(), maxY());
-            for (BlockVector3 vertex : vertices) {
-                copy.selectPrimary(vertex, SelectorLimits.unlimited());
+            copy.first = first;
+            for (BlockVector3 vertex : region.getVertices()) {
+                copy.region.addVertex(vertex);
             }
             return copy;
         }

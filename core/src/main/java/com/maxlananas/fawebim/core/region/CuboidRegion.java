@@ -3,7 +3,6 @@ package com.maxlananas.fawebim.core.region;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 
 import java.util.Iterator;
-import java.util.NoSuchElementException;
 
 /** The classic two-corner selection ({@code //pos1} / {@code //pos2}). */
 public class CuboidRegion implements Region {
@@ -64,16 +63,58 @@ public class CuboidRegion implements Region {
         return maxZ;
     }
 
+    /** Sets both corners at once, in any order. */
+    public void setCorners(BlockVector3 corner1, BlockVector3 corner2) {
+        this.minX = Math.min(corner1.x(), corner2.x());
+        this.minY = Math.min(corner1.y(), corner2.y());
+        this.minZ = Math.min(corner1.z(), corner2.z());
+        this.maxX = Math.max(corner1.x(), corner2.x());
+        this.maxY = Math.max(corner1.y(), corner2.y());
+        this.maxZ = Math.max(corner1.z(), corner2.z());
+    }
+
+    /** Sets the lower corner; a corner past the upper one swaps with it on that axis. */
     public void setPos1(BlockVector3 pos) {
         this.minX = pos.x();
         this.minY = pos.y();
         this.minZ = pos.z();
+        normalize();
     }
 
+    /** Sets the upper corner; a corner past the lower one swaps with it on that axis. */
     public void setPos2(BlockVector3 pos) {
         this.maxX = pos.x();
         this.maxY = pos.y();
         this.maxZ = pos.z();
+        normalize();
+    }
+
+    /**
+     * Keeps {@code min <= max} on every axis.
+     *
+     * <p>A contraction past the opposite side, or a corner set past the other
+     * one, used to leave the minimum above the maximum: the volume came out as a
+     * product of negative sizes, positive again, and the walk visited nothing
+     * while the size claimed blocks. WorldEdit keeps the two corners a player
+     * set and reads the box from them, so going past the other side flips the
+     * box, which is what swapping does here.</p>
+     */
+    private void normalize() {
+        if (minX > maxX) {
+            int swap = minX;
+            minX = maxX;
+            maxX = swap;
+        }
+        if (minY > maxY) {
+            int swap = minY;
+            minY = maxY;
+            maxY = swap;
+        }
+        if (minZ > maxZ) {
+            int swap = minZ;
+            minZ = maxZ;
+            maxZ = swap;
+        }
     }
 
     @Override
@@ -90,8 +131,8 @@ public class CuboidRegion implements Region {
     public boolean expand(BlockVector3 amount) {
         boolean changed = false;
         if (amount.x() < 0) {
-            changed |= minX != minX + amount.x();
             minX += amount.x();
+            changed = true;
         } else if (amount.x() > 0) {
             maxX += amount.x();
             changed = true;
@@ -110,6 +151,7 @@ public class CuboidRegion implements Region {
             maxZ += amount.z();
             changed = true;
         }
+        normalize();
         return changed;
     }
 
@@ -137,7 +179,19 @@ public class CuboidRegion implements Region {
             maxZ += amount.z();
             changed = true;
         }
+        normalize();
         return changed;
+    }
+
+    @Override
+    public boolean shift(BlockVector3 amount) {
+        minX += amount.x();
+        maxX += amount.x();
+        minY += amount.y();
+        maxY += amount.y();
+        minZ += amount.z();
+        maxZ += amount.z();
+        return !amount.equals(BlockVector3.ZERO);
     }
 
     /** The cuboid's corners, in the order WorldEdit reports them. */
@@ -173,8 +227,8 @@ public class CuboidRegion implements Region {
      * so the writes of a section are sequential.</p>
      */
     @Override
-    public int forEachPosition(BlockVisitor visitor) {
-        int visited = 0;
+    public long forEachPosition(BlockVisitor visitor) {
+        long visited = 0;
         for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
             int xStart = Math.max(minX, chunkX << 4);
             int xEnd = Math.min(maxX, (chunkX << 4) + 15);
@@ -199,38 +253,13 @@ public class CuboidRegion implements Region {
         return visited;
     }
 
+    /** The same order as {@link #forEachPosition}, one position at a time. */
     @Override
     public Iterator<BlockVector3> iterator() {
-        return new Iterator<>() {
-            private int x = minX;
-            private int y = minY;
-            private int z = minZ;
-            private boolean done = getVolume() == 0 || maxY < minY;
-
-            @Override
-            public boolean hasNext() {
-                return !done;
-            }
-
-            @Override
-            public BlockVector3 next() {
-                if (done) {
-                    throw new NoSuchElementException();
-                }
-                BlockVector3 result = new BlockVector3(x, y, z);
-                // Iterate x fastest so writes land inside the same chunk section.
-                if (++x > maxX) {
-                    x = minX;
-                    if (++z > maxZ) {
-                        z = minZ;
-                        if (++y > maxY) {
-                            done = true;
-                        }
-                    }
-                }
-                return result;
-            }
-        };
+        return ColumnWalk.iterator(minX, minZ, maxX, maxZ, (baseX, baseZ, lo, hi) -> {
+            java.util.Arrays.fill(lo, minY);
+            java.util.Arrays.fill(hi, maxY);
+        });
     }
 
     @Override

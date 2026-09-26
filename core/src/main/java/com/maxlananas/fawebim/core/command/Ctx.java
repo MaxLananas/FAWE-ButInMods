@@ -256,6 +256,12 @@ public final class Ctx {
      */
     long close() {
         long changed = editSession == null ? 0 : editSession.getBlocksChanged();
+        if (selection != null) {
+            // A command that took the selection may have changed it - //expand,
+            // //shift, //move -s - and the selector keeps points of its own that
+            // the next click builds on.
+            session().getSelector(world()).learnChanges();
+        }
         RuntimeException failure = null;
         for (EditSession opened : new EditSession[] {editSession, readSession}) {
             if (opened == null) {

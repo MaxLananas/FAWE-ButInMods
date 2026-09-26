@@ -73,7 +73,7 @@ final class RegionCommands {
             EditSession session = ctx.editSession();
             Region region = ctx.selection();
             Pattern air = new Patterns.Single(BlockState.registry().air());
-            int changed = region.forEachPosition((x, y, z) -> {
+            long changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
                 return session.setBlock(x, y, z, air.apply(x, y, z));
             });
@@ -215,7 +215,7 @@ final class RegionCommands {
             World world = ctx.world();
             Region region = ctx.selection();
             EditSession session = ctx.editSession("fixblocks");
-            int changed = region.forEachPosition((x, y, z) -> {
+            long changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
                 int state = world.getBlock(x, y, z);
                 if (state == BlockState.registry().air()) {

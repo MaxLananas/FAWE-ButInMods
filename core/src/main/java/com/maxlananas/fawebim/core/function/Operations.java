@@ -923,7 +923,7 @@ public final class Operations {
     }
 
     /** {@code //fixwater}, {@code //fixlava} — makes liquid flow to its neighbours. */
-    public static int fixLiquid(World world, EditSession session, Region region, String liquid, int radius) {
+    public static long fixLiquid(World world, EditSession session, Region region, String liquid, int radius) {
         BlockStateRegistry registry = BlockState.registry();
         int source = registry.parse("minecraft:" + liquid);
         if (source < 0) {
@@ -1568,7 +1568,7 @@ public final class Operations {
     }
 
     /** {@code //fall} — drops every block in the region to the ground. */
-    public static int fall(World world, EditSession session, Region region) {
+    public static long fall(World world, EditSession session, Region region) {
         return fall(world, session, region, false, null);
     }
 
@@ -1581,8 +1581,8 @@ public final class Operations {
      *                        rather than the floor of the world
      * @param replace         the block left behind, or {@code null} for air
      */
-    public static int fall(World world, EditSession session, Region region, boolean withinSelection,
-                           int[] replace) {
+    public static long fall(World world, EditSession session, Region region, boolean withinSelection,
+                            int[] replace) {
         BlockStateRegistry registry = BlockState.registry();
         int left = replace == null ? registry.air() : replace[0];
         int floor = withinSelection ? region.getMinimumPoint().y() : world.minY();
@@ -1795,7 +1795,7 @@ public final class Operations {
      * Removes the water of every waterlogged block of the region, {@code //drain -w}.
      * The block itself stays, only its {@code waterlogged} property is cleared.
      */
-    public static int drainWaterlogged(EditSession session, Region region) {
+    public static long drainWaterlogged(EditSession session, Region region) {
         BlockStateRegistry registry = BlockState.registry();
         return region.forEachPosition((x, y, z) -> {
             int state = session.getBlock(x, y, z);

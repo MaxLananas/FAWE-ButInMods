@@ -72,7 +72,7 @@ public final class Commands {
     }
 
     /** Replaces every block in a region matching {@code mask} with {@code pattern}. */
-    private int fill(EditSession session, Region region, Pattern pattern, Mask mask) {
+    private long fill(EditSession session, Region region, Pattern pattern, Mask mask) {
         return region.forEachPosition((x, y, z) -> {
             if (mask != null && !mask.test(x, y, z)) {
                 return false;
@@ -402,9 +402,8 @@ public final class Commands {
                         return;
                     }
                     int amount = ctx.intArg(0);
-                    int reverse = ctx.intArg(1, 0);
-                    List<BlockVector3> directions = expandDirections(ctx,
-                            ctx.args().size() > 2 ? ctx.joined(2) : "me");
+                    int reverse = reverseAmount(ctx);
+                    List<BlockVector3> directions = expandDirections(ctx, directionArgument(ctx));
                     for (BlockVector3 direction : directions) {
                         region.expand(direction.multiply(capped(region, amount,
                                 roomToGrow(region, direction.multiply(Integer.signum(amount)), ctx.world()))));
@@ -428,9 +427,8 @@ public final class Commands {
         e15.handler = ctx -> {
                     Region region = ctx.selection();
                     int amount = ctx.intArg(0);
-                    int reverse = ctx.intArg(1, 0);
-                    List<BlockVector3> directions = expandDirections(ctx,
-                            ctx.args().size() > 2 ? ctx.joined(2) : "me");
+                    int reverse = reverseAmount(ctx);
+                    List<BlockVector3> directions = expandDirections(ctx, directionArgument(ctx));
                     for (BlockVector3 direction : directions) {
                         region.contract(direction.multiply(capped(region, amount,
                                 roomToShrink(region, direction))));
@@ -663,6 +661,24 @@ public final class Commands {
             out.add(directionVector(ctx, part.trim(), 1));
         }
         return out;
+    }
+
+    /**
+     * The optional reverse amount of {@code //expand} and {@code //contract}.
+     * WorldEdit reads a word in its place as the start of the directions, so
+     * {@code //expand 10 up} grows ten blocks up; the port refused it as a
+     * number it could not read.
+     */
+    private static int reverseAmount(Ctx ctx) {
+        Ctx.Argument second = ctx.argument(1);
+        return second != null && second.isNumber() ? ctx.intArg(1) : 0;
+    }
+
+    /** The directions of {@code //expand} and {@code //contract}, after the optional reverse amount. */
+    private static String directionArgument(Ctx ctx) {
+        Ctx.Argument second = ctx.argument(1);
+        int from = second != null && second.isNumber() ? 2 : 1;
+        return ctx.args().size() > from ? ctx.joined(from) : "me";
     }
 
     /**
@@ -1045,7 +1061,7 @@ public final class Commands {
                             ? Parsers.mask("minecraft:water,minecraft:lava,minecraft:kelp,minecraft:seagrass,"
                             + "minecraft:tall_seagrass,minecraft:lily_pad,minecraft:bubble_column", ctx)
                             : new Masks.LiquidMask(session);
-                    int changed = com.maxlananas.fawebim.core.function.Operations.drain(ctx.world(), session, start,
+                    long changed = com.maxlananas.fawebim.core.function.Operations.drain(ctx.world(), session, start,
                             drainMask, ctx.intArg(0, 256));
                     if (ctx.hasFlag("w")) {
                         changed += com.maxlananas.fawebim.core.function.Operations.drainWaterlogged(session,
@@ -1302,7 +1318,7 @@ public final class Commands {
         e41.arguments.add("[radius]");
         e41.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
+                    long changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
                             ctx.selection(), "water", ctx.intArg(0, 5));
                     flush(ctx, session, "Fixed water", changed, "water block(s)");
                 };
@@ -1315,7 +1331,7 @@ public final class Commands {
         e42.arguments.add("[radius]");
         e42.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
+                    long changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
                             ctx.selection(), "lava", ctx.intArg(0, 5));
                     flush(ctx, session, "Fixed lava", changed, "lava block(s)");
                 };
@@ -1409,23 +1425,24 @@ public final class Commands {
                     Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
                     BlockArrayClipboard original = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(), region,
                             session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, false);
-                    BlockVector3 origin = original.getOrigin();
-                    BlockVector3 min = region.getMinimumPoint();
-                    int step = ctx.hasFlag("r") ? 1 : region.getHeight();
-                    int dx = direction.x() * step;
-                    int dy = direction.y() * step;
-                    int dz = direction.z() * step;
+                    // Each copy steps by the size of the selection along the
+                    // direction, like WorldEdit: the height was used on every
+                    // axis, so stacking a wide selection sideways overlapped it.
+                    int dx = direction.x() * (ctx.hasFlag("r") ? 1 : region.getWidth());
+                    int dy = direction.y() * (ctx.hasFlag("r") ? 1 : region.getHeight());
+                    int dz = direction.z() * (ctx.hasFlag("r") ? 1 : region.getLength());
+                    boolean skipAir = ctx.hasFlag("a");
                     for (int i = 1; i <= count; i++) {
-                        for (BlockVector3 position : original.positions()) {
-                            int state = original.getBlock(position);
-                            if (ctx.hasFlag("a") && BlockState.registry().isAirLike(state)) {
-                                continue;
+                        int offsetX = dx * i;
+                        int offsetY = dy * i;
+                        int offsetZ = dz * i;
+                        original.forEachPosition((x, y, z, state) -> {
+                            if (skipAir && BlockState.registry().isAirLike(state)) {
+                                return false;
                             }
-                            int x = position.x() - origin.x() + min.x() + dx * i;
-                            int y = position.y() - origin.y() + min.y() + dy * i;
-                            int z = position.z() - origin.z() + min.z() + dz * i;
-                            session.setBlock(x, y, z, state);
-                        }
+                            session.checkTimeout();
+                            return session.setBlock(x + offsetX, y + offsetY, z + offsetZ, state);
+                        });
                     }
                     // -s moves the selection onto the last copy.
                     if (ctx.hasFlag("s")) {
@@ -1697,7 +1714,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     int[] replace = ctx.args().isEmpty() ? null
                             : new int[]{ctx.pattern(0).apply(ctx.placement())};
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fall(ctx.world(), session,
+                    long changed = com.maxlananas.fawebim.core.function.Operations.fall(ctx.world(), session,
                             ctx.selection(), ctx.hasFlag("m"), replace);
                     flush(ctx, session, "Generated", changed, "block(s)");
                 };

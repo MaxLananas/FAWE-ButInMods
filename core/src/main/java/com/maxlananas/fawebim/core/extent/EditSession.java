@@ -50,6 +50,17 @@ public final class EditSession implements Extent {
      */
     private boolean applyingSourceMask;
     private long currentChunkKey;
+    /**
+     * The last chunk a read found no buffer for. An edit that writes nothing
+     * where it reads - a {@code //replace} over blocks that do not match - asks
+     * the buffer about every block it visits, and without this every one of
+     * those questions was a hash lookup that finds nothing.
+     */
+    private long missingChunkKey;
+    private boolean missingChunkKnown;
+    /** The world's height, read once: it does not change while an edit runs. */
+    private final int minY;
+    private final int maxY;
 
     private final com.maxlananas.fawebim.core.util.LongObjectMap<ChunkSet> chunks =
             new com.maxlananas.fawebim.core.util.LongObjectMap<>();
@@ -97,6 +108,8 @@ public final class EditSession implements Extent {
     public EditSession(World world, LocalSession session, String description, boolean recordHistory) {
         this.world = world;
         this.session = session;
+        this.minY = world.minY();
+        this.maxY = world.maxY();
         session.setLastWorldName(world.name());
         this.registry = BlockStateRegistryHolder.registry();
         com.maxlananas.fawebim.core.session.SideEffectSet effects = session.getSideEffectSet();
@@ -262,12 +275,12 @@ public final class EditSession implements Extent {
 
     @Override
     public int minY() {
-        return world.minY();
+        return minY;
     }
 
     @Override
     public int maxY() {
-        return world.maxY();
+        return maxY;
     }
 
     @Override
@@ -295,7 +308,7 @@ public final class EditSession implements Extent {
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
         checkOpen();
-        if (y < world.minY() || y > world.maxY()) {
+        if (y < minY || y > maxY) {
             return false;
         }
         ChunkSet chunk = chunkFor(x, z, true);
@@ -317,7 +330,7 @@ public final class EditSession implements Extent {
         if (record != null) {
             record.addBiome(x, y, z, previous, biomeId);
         }
-        chunk.setBiome(x, y, z, biomeId, world.minY());
+        chunk.setBiome(x, y, z, biomeId, minY);
         return true;
     }
 
@@ -348,14 +361,22 @@ public final class EditSession implements Extent {
     }
 
     /** Core write path; {@code record} controls whether history is recorded. */
+    /**
+     * The write path.
+     *
+     * <p>The state a write replaces is what the position holds for this edit:
+     * the write still waiting in the buffer, else the world. A cell the edit
+     * already wrote and has not flushed still holds its old state in the world;
+     * comparing against that dropped a write that put the old state back as a
+     * no-op - the pending write then reached the world anyway, which is how an
+     * overlapping move left holes - and recorded a "before" in the history the
+     * cell never had at that point.</p>
+     */
     public boolean setBlock(int x, int y, int z, int stateId, boolean recordChange) {
-        if (cancelled) {
+        if (cancelled || stateId < 0) {
             return false;
         }
-        if (stateId < 0) {
-            return false;
-        }
-        if (y < world.minY() || y > world.maxY()) {
+        if (y < minY || y > maxY) {
             // There is no block outside the world: counting one here would put a
             // change that never happened into the block count and the history.
             return false;
@@ -363,33 +384,17 @@ public final class EditSession implements Extent {
         if (mask != null && !mask.isRegion() && !mask.test(x, y, z)) {
             return false;
         }
-        int previous = currentState(x, y, z);
+        // Nothing buffered means nothing to find: an edit that writes what the
+        // world already holds skips the lookup entirely.
+        ChunkSet chunk = chunks.isEmpty() ? null : chunkFor(x, z, false);
+        int previous = chunk == null ? -1 : chunk.getBlock(x, y, z);
+        if (previous == -1) {
+            previous = world.getBlock(x, y, z);
+        }
         if (previous == stateId) {
             return false;
         }
-        return write(x, y, z, previous, stateId, recordChange);
-    }
-
-    /**
-     * What a position holds for this edit: the write still waiting in the
-     * buffer, else the world.
-     *
-     * <p>The state a write replaces has to come from here, not from the world
-     * alone. A cell the edit already wrote and has not flushed still holds its
-     * old state in the world; comparing against that dropped a write that put
-     * the old state back as a no-op - the pending write then reached the world
-     * anyway, which is how an overlapping move left holes - and recorded a
-     * "before" in the history the cell never had at that point.</p>
-     */
-    private int currentState(int x, int y, int z) {
-        ChunkSet chunk = chunkFor(x, z, false);
-        if (chunk != null) {
-            int buffered = chunk.getBlock(x, y, z);
-            if (buffered != -1) {
-                return buffered;
-            }
-        }
-        return world.getBlock(x, y, z);
+        return write(chunk, x, y, z, previous, stateId, recordChange);
     }
 
     /**
@@ -407,7 +412,7 @@ public final class EditSession implements Extent {
         if (cancelled || stateId < 0) {
             return false;
         }
-        if (y < world.minY() || y > world.maxY()) {
+        if (y < minY || y > maxY) {
             return false;
         }
         // The caller read the world; a write of this edit still in the buffer
@@ -426,16 +431,22 @@ public final class EditSession implements Extent {
         if (mask != null && !mask.isRegion() && !mask.test(x, y, z)) {
             return false;
         }
-        return write(x, y, z, previous, stateId, recordChange);
+        return write(chunk, x, y, z, previous, stateId, recordChange);
     }
 
     /** The back half of the write path, shared by both entry points. */
-    private boolean write(int x, int y, int z, int previous, int stateId, boolean recordChange) {
+    /**
+     * @param chunk the buffer of the position's chunk, or {@code null} when the
+     *              caller found none and it has to be created
+     */
+    private boolean write(ChunkSet chunk, int x, int y, int z, int previous, int stateId, boolean recordChange) {
         checkOpen();
         if (changeLimit > 0 && blocksChanged >= changeLimit) {
             throw new MaxChangedBlocksException(changeLimit);
         }
-        ChunkSet chunk = chunkFor(x, z, true);
+        if (chunk == null) {
+            chunk = chunkFor(x, z, true);
+        }
         chunk.set(x, y, z, stateId);
         if (recordChange) {
             record(chunk, x, y, z, previous, stateId);
@@ -484,13 +495,21 @@ public final class EditSession implements Extent {
         if (cached != null && currentChunkKey == key) {
             return cached;
         }
+        if (!create && missingChunkKnown && missingChunkKey == key) {
+            return null;
+        }
         ChunkSet chunk = chunks.get(key);
         if (chunk == null) {
             if (!create) {
+                missingChunkKey = key;
+                missingChunkKnown = true;
                 return null;
             }
-            chunk = new ChunkSet(x >> 4, z >> 4, world.minY(), world.maxY());
+            chunk = new ChunkSet(x >> 4, z >> 4, minY, maxY);
             chunks.put(key, chunk);
+            if (missingChunkKnown && missingChunkKey == key) {
+                missingChunkKnown = false;
+            }
         }
         currentChunk = chunk;
         currentChunkKey = key;

@@ -4,9 +4,17 @@ import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.Vector3;
 
 import java.util.Iterator;
-import java.util.NoSuchElementException;
 
-/** A sphere/ellipsoid region ({@code //sel sphere|ellipsoid}). */
+/**
+ * A sphere/ellipsoid region ({@code //sel sphere|ellipsoid}).
+ *
+ * <p>The radii are the ones a player picks. Like WorldEdit, a block is inside
+ * when its centre is within the radius plus half a block of the centre: a
+ * sphere of radius 5 reaches the blocks five away along an axis and the ones a
+ * little further on the diagonals, which is the rounded ball players know from
+ * WorldEdit. Testing the bare radius made every round selection one shell thinner
+ * than upstream's.</p>
+ */
 public class EllipsoidRegion implements Region {
 
     private Vector3 center;
@@ -20,9 +28,13 @@ public class EllipsoidRegion implements Region {
 
     public EllipsoidRegion(Vector3 center, Vector3 radii, int minY, int maxY) {
         this.center = center;
-        this.radii = new Vector3(Math.abs(radii.x()), Math.abs(radii.y()), Math.abs(radii.z()));
-        this.minY = minY;
-        this.maxY = maxY;
+        this.radii = abs(radii);
+        this.minY = Math.min(minY, maxY);
+        this.maxY = Math.max(minY, maxY);
+    }
+
+    private static Vector3 abs(Vector3 radii) {
+        return new Vector3(Math.abs(radii.x()), Math.abs(radii.y()), Math.abs(radii.z()));
     }
 
     public Vector3 getCenter() {
@@ -38,12 +50,12 @@ public class EllipsoidRegion implements Region {
     }
 
     public void setRadii(Vector3 radii) {
-        this.radii = radii;
+        this.radii = abs(radii);
     }
 
     public void setYBounds(int minY, int maxY) {
-        this.minY = minY;
-        this.maxY = maxY;
+        this.minY = Math.min(minY, maxY);
+        this.maxY = Math.max(minY, maxY);
     }
 
     public void extendRadius(Vector3 radius) {
@@ -57,23 +69,32 @@ public class EllipsoidRegion implements Region {
         radii = radii.withY(Math.abs(radius));
     }
 
+    /**
+     * The lowest corner of the blocks the shape holds: a block is in when its
+     * centre is within the radius plus half a block, so the lowest one is the
+     * first whose coordinate reaches {@code center - radius - 1}.
+     */
     @Override
     public BlockVector3 getMinimumPoint() {
-        return BlockVector3.floor(center.subtract(radii));
+        return new BlockVector3((int) Math.ceil(center.x() - radii.x() - 1),
+                Math.max(minY, (int) Math.ceil(center.y() - radii.y() - 1)),
+                (int) Math.ceil(center.z() - radii.z() - 1));
     }
 
     @Override
     public BlockVector3 getMaximumPoint() {
-        return BlockVector3.floor(center.add(radii));
+        return new BlockVector3((int) Math.floor(center.x() + radii.x()),
+                Math.min(maxY, (int) Math.floor(center.y() + radii.y())),
+                (int) Math.floor(center.z() + radii.z()));
     }
 
+    /** WorldEdit's formula: {@code 4/3 * pi * rX * rY * rZ} over the radii it tests, rounded down. */
     @Override
-    /** Same formula as WorldEdit: {@code 4/3 * pi * rX * rY * rZ}, rounded down. */
     public long getVolume() {
         return (long) java.math.BigDecimal.valueOf(4.0 / 3.0 * Math.PI)
-                .multiply(java.math.BigDecimal.valueOf(radii.x()))
-                .multiply(java.math.BigDecimal.valueOf(radii.y()))
-                .multiply(java.math.BigDecimal.valueOf(radii.z()))
+                .multiply(java.math.BigDecimal.valueOf(radii.x() + 0.5))
+                .multiply(java.math.BigDecimal.valueOf(radii.y() + 0.5))
+                .multiply(java.math.BigDecimal.valueOf(radii.z() + 0.5))
                 .setScale(0, java.math.RoundingMode.FLOOR)
                 .longValue();
     }
@@ -95,81 +116,107 @@ public class EllipsoidRegion implements Region {
         if (y < minY || y > maxY) {
             return false;
         }
-        if (radii.x() < 1e-6 || radii.y() < 1e-6 || radii.z() < 1e-6) {
-            return false;
-        }
-        double dx = (x + 0.5 - center.x()) / radii.x();
-        double dy = (y + 0.5 - center.y()) / radii.y();
-        double dz = (z + 0.5 - center.z()) / radii.z();
+        double dx = (x + 0.5 - center.x()) / (radii.x() + 0.5);
+        double dy = (y + 0.5 - center.y()) / (radii.y() + 0.5);
+        double dz = (z + 0.5 - center.z()) / (radii.z() + 0.5);
         return dx * dx + dy * dy + dz * dz <= 1.0;
     }
 
+    /**
+     * WorldEdit's expansion: the centre moves by half the sum of the amounts,
+     * which therefore has to be even on each axis, and each radius grows by
+     * half of the amounts along it. Growing both horizontal radii by the larger
+     * amount, whatever its sign, was a different shape from the one asked for.
+     */
     @Override
     public boolean expand(BlockVector3 amount) {
-        double dx = amount.x();
-        double dy = amount.y();
-        double dz = amount.z();
-        if (dx != 0 || dz != 0) {
-            double n = Math.max(Math.abs(dx), Math.abs(dz));
-            radii = new Vector3(radii.x() + n, radii.y(), radii.z() + n);
+        center = center.add(half(amount));
+        radii = radii.add(new Vector3(Math.abs(amount.x()) / 2, Math.abs(amount.y()) / 2,
+                Math.abs(amount.z()) / 2));
+        return !amount.equals(BlockVector3.ZERO);
+    }
+
+    /** The reverse of {@link #expand}, with WorldEdit's floor of one block per radius. */
+    @Override
+    public boolean contract(BlockVector3 amount) {
+        center = center.subtract(half(amount));
+        radii = new Vector3(Math.max(1, radii.x() - Math.abs(amount.x()) / 2),
+                Math.max(1, radii.y() - Math.abs(amount.y()) / 2),
+                Math.max(1, radii.z() - Math.abs(amount.z()) / 2));
+        return !amount.equals(BlockVector3.ZERO);
+    }
+
+    private static Vector3 half(BlockVector3 amount) {
+        if ((amount.x() & 1) != 0 || (amount.y() & 1) != 0 || (amount.z() & 1) != 0) {
+            throw new com.maxlananas.fawebim.core.util.InputException(
+                    "A round selection grows and shrinks by an even amount on each axis");
         }
-        if (dy != 0) {
-            radii = radii.withY(radii.y() + dy);
+        return new Vector3(amount.x() / 2, amount.y() / 2, amount.z() / 2);
+    }
+
+    /**
+     * Moves the centre. The Y bounds are the world's, which the shape is clipped
+     * to, so they stay where they are.
+     */
+    @Override
+    public boolean shift(BlockVector3 amount) {
+        center = center.add(amount.toVector3());
+        return !amount.equals(BlockVector3.ZERO);
+    }
+
+    /** Fills the Y run of each column, from the same test {@link #contains} makes. */
+    private void fillColumns(int baseX, int baseZ, int[] lo, int[] hi) {
+        double ry = radii.y() + 0.5;
+        for (int z = 0; z < 16; z++) {
+            double dz = (baseZ + z + 0.5 - center.z()) / (radii.z() + 0.5);
+            for (int x = 0; x < 16; x++) {
+                int column = z << 4 | x;
+                double dx = (baseX + x + 0.5 - center.x()) / (radii.x() + 0.5);
+                double rest = 1.0 - dx * dx - dz * dz;
+                if (rest < 0) {
+                    lo[column] = 1;
+                    hi[column] = 0;
+                    continue;
+                }
+                double reach = ry * Math.sqrt(rest);
+                int low = (int) Math.ceil(center.y() - 0.5 - reach);
+                int high = (int) Math.floor(center.y() - 0.5 + reach);
+                // The rounding of the square root is settled against the test
+                // itself, so the walk and contains never disagree on a block.
+                int cellX = baseX + x;
+                int cellZ = baseZ + z;
+                while (low <= high && !contains(cellX, low, cellZ)) {
+                    low++;
+                }
+                while (high >= low && !contains(cellX, high, cellZ)) {
+                    high--;
+                }
+                if (low <= high) {
+                    while (contains(cellX, low - 1, cellZ)) {
+                        low--;
+                    }
+                    while (contains(cellX, high + 1, cellZ)) {
+                        high++;
+                    }
+                }
+                lo[column] = low;
+                hi[column] = high;
+            }
         }
-        return true;
     }
 
     @Override
-    public boolean contract(BlockVector3 amount) {
-        return expand(amount.multiply(-1));
+    public long forEachPosition(BlockVisitor visitor) {
+        BlockVector3 min = getMinimumPoint();
+        BlockVector3 max = getMaximumPoint();
+        return ColumnWalk.walk(min.x(), min.z(), max.x(), max.z(), this::fillColumns, visitor);
     }
 
     @Override
     public Iterator<BlockVector3> iterator() {
         BlockVector3 min = getMinimumPoint();
         BlockVector3 max = getMaximumPoint();
-        return new Iterator<>() {
-            private int x = min.x();
-            private int y = min.y();
-            private int z = min.z();
-            private BlockVector3 next = seek();
-
-            private BlockVector3 seek() {
-                while (y <= max.y()) {
-                    while (z <= max.z()) {
-                        while (x <= max.x()) {
-                            int cx = x++;
-                            if (contains(cx, y, z)) {
-                                return new BlockVector3(cx, y, z);
-                            }
-                        }
-                        x = min.x();
-                        z++;
-                    }
-                    z = min.z();
-                    y++;
-                }
-                return null;
-            }
-
-            @Override
-            public boolean hasNext() {
-                if (next == null) {
-                    next = seek();
-                }
-                return next != null;
-            }
-
-            @Override
-            public BlockVector3 next() {
-                if (!hasNext()) {
-                    throw new NoSuchElementException();
-                }
-                BlockVector3 result = next;
-                next = null;
-                return result;
-            }
-        };
+        return ColumnWalk.iterator(min.x(), min.z(), max.x(), max.z(), this::fillColumns);
     }
 
     @Override

@@ -98,18 +98,23 @@ public record BlockVector3(int x, int y, int z) implements Comparable<BlockVecto
         return new BlockVector2(x, z);
     }
 
-    public int lengthSq() {
-        return x * x + y * y + z * z;
+    /**
+     * The squared length, in {@code long}: a component past 46,341 squares to
+     * more than an {@code int} holds, and 65,536 squared wrapped round to zero.
+     */
+    public long lengthSq() {
+        return (long) x * x + (long) y * y + (long) z * z;
     }
 
     public double length() {
         return Math.sqrt(lengthSq());
     }
 
-    public int distanceSq(BlockVector3 o) {
-        int dx = x - o.x;
-        int dy = y - o.y;
-        int dz = z - o.z;
+    /** The squared distance, in {@code long} for the same reason as {@link #lengthSq()}. */
+    public long distanceSq(BlockVector3 o) {
+        long dx = (long) x - o.x;
+        long dy = (long) y - o.y;
+        long dz = (long) z - o.z;
         return dx * dx + dy * dy + dz * dz;
     }
 

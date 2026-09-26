@@ -136,6 +136,8 @@ public final class SelfTestMain {
         testEveryAnswerIsColoured();
         testEveryCommandAnswersInColour();
         HistoryIntegrityTests.run();
+        DataStructureTests.run();
+        RegionGeometryTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -301,7 +303,7 @@ public final class SelfTestMain {
         checkEquals("max", b, a.max(b));
         checkEquals("floor of Vector3", new BlockVector3(1, 2, 3),
                 BlockVector3.floor(new Vector3(1.9, 2.1, 3.99)));
-        checkEquals("distanceSq", 27, a.distanceSq(b));
+        checkEquals("distanceSq", 27L, a.distanceSq(b));
         check("toCenter", Math.abs(a.toCenter().x() - 1.5) < 1e-9);
         checkEquals("BlockVector2.at", new BlockVector2(5, 6), BlockVector2.at(5, 6));
         Vector3 v = new Vector3(3, 4, 0);
@@ -433,8 +435,14 @@ public final class SelfTestMain {
         Region ellipsoid = new com.maxlananas.fawebim.core.region.EllipsoidRegion(
                 new Vector3(0.5, 0.5, 0.5), new Vector3(3, 3, 3), world.minY(), world.maxY());
         check("ellipsoid contains", ellipsoid.contains(0, 0, 0));
-        check("expand", sphere.expand(new BlockVector3(5, 0, 0)));
-        check("contract", sphere.contract(new BlockVector3(1, 0, 0)));
+        // WorldEdit's round expansion: the centre moves by half the amount and
+        // the radius along it grows by half, so the side the amount points to
+        // moves by all of it, the other side stays, and the amount has to be even.
+        check("expand", sphere.expand(new BlockVector3(6, 0, 0)));
+        checkEquals("an expanded sphere moves its east side by the amount", 11, sphere.getMaximumPoint().x());
+        checkEquals("an expanded sphere keeps its west side", -5, sphere.getMinimumPoint().x());
+        check("contract", sphere.contract(new BlockVector3(2, 0, 0)));
+        checkEquals("a contracted sphere gives two blocks back", 9, sphere.getMaximumPoint().x());
         session.setSelector(selector);
         check("session selection", session.isSelectionDefined(world));
     }

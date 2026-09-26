@@ -385,17 +385,17 @@ public final class BenchMain {
             dispatch(actor, "//pos1 96,32,96", "//pos2 160,96,160", "//set air");
             actor.session().getHistory().clear();
         };
-        timed("//sphere stone 40", 268_000L, clearSphere, () -> {
-            dispatch(actor, "//center 128,64,128", "//sphere stone 40");
-        });
+        // The shapes are built where the player stands, so the player stands in
+        // the middle of the world. //center is WorldEdit's "set the middle of the
+        // selection to a pattern", not a move: the rows below used to run it with
+        // a position as the pattern, build around 0,64,0 and fail at the edge of
+        // the bench world - and time the failure.
+        actor.setPosition(new BlockVector3(128, 64, 128));
+        timed("//sphere stone 40", 268_000L, clearSphere, () -> dispatch(actor, "//sphere stone 40"));
         // The hollow form only writes the shell, so the row counts the shell:
         // a sphere of radius 40 holds about 20k surface cells and 268k in all.
-        timed("//hsphere stone 40", 20_100L, clearSphere, () -> {
-            dispatch(actor, "//center 128,64,128", "//hsphere stone 40");
-        });
-        timed("//hcyl stone 40 20", 21_200L, clearSphere, () -> {
-            dispatch(actor, "//center 128,64,128", "//hcyl stone 40 20");
-        });
+        timed("//hsphere stone 40", 20_100L, clearSphere, () -> dispatch(actor, "//hsphere stone 40"));
+        timed("//hcyl stone 40 20", 21_200L, clearSphere, () -> dispatch(actor, "//hcyl stone 40 20"));
     }
 
     private static void writeAll(EditSession edit, int state) {

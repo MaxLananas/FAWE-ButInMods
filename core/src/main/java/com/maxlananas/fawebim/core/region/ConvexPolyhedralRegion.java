@@ -1,28 +1,50 @@
 package com.maxlananas.fawebim.core.region;
 
 import com.maxlananas.fawebim.core.math.BlockVector3;
-import com.maxlananas.fawebim.core.math.Vector3;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.NoSuchElementException;
+import java.util.Set;
 
 /**
- * A convex polyhedron defined by triangles ({@code //sel convex}); vertices are
- * added one by one and a new triangle is created with every third vertex, the
- * same rule WorldEdit uses.
+ * A convex polyhedron: the convex hull of the vertices a player clicked
+ * ({@code //sel convex}).
+ *
+ * <p>The hull is built the way WorldEdit builds it, one vertex at a time: the
+ * faces the new vertex can see are removed and the hole is closed with faces
+ * from its rim to the vertex. A vertex inside the hull, or on the line of the
+ * first two, waits in a backlog until the hull has a volume. A point is inside
+ * when no face has it above its plane.</p>
+ *
+ * <p>The faces are kept as integer planes relative to the first vertex, so the
+ * test is exact: a block on a face belongs to the selection, whatever the
+ * rounding of a normalised normal would have said. The products involved fit in
+ * a {@code long} while every vertex is within {@value #MAX_SPAN} blocks of the
+ * first one, which is the limit of a convex selection.</p>
  */
 public class ConvexPolyhedralRegion implements Region {
 
-    private final List<BlockVector3> vertices = new ArrayList<>();
-    private final List<Triangle> triangles = new ArrayList<>();
-    private int minY;
-    private int maxY;
+    /** How far a vertex may be from the first one on any axis. */
+    public static final int MAX_SPAN = 500_000;
 
+    private final List<BlockVector3> vertices = new ArrayList<>();
+    private final Set<BlockVector3> backlog = new LinkedHashSet<>();
+    private final List<Face> faces = new ArrayList<>();
+    private BlockVector3 origin;
+    private BlockVector3 minimum;
+    private BlockVector3 maximum;
+    private int minY = Integer.MIN_VALUE / 2;
+    private int maxY = Integer.MAX_VALUE / 2;
+    /** The face that last had a point above it, which usually has the next one too. */
+    private Face lastOutside;
+
+    /** Clips the region to a range of Y, the world's. */
     public void setBounds(int minY, int maxY) {
-        this.minY = minY;
-        this.maxY = maxY;
+        this.minY = Math.min(minY, maxY);
+        this.maxY = Math.max(minY, maxY);
     }
 
     public void setMaxY(int maxY) {
@@ -37,205 +59,409 @@ public class ConvexPolyhedralRegion implements Region {
         return minY;
     }
 
+    /** The vertices of the hull, then the ones still in the backlog. */
     public List<BlockVector3> getVertices() {
-        return vertices;
+        if (backlog.isEmpty()) {
+            return Collections.unmodifiableList(vertices);
+        }
+        List<BlockVector3> all = new ArrayList<>(vertices);
+        all.addAll(backlog);
+        return all;
     }
 
     public int getTriangleCount() {
-        return triangles.size();
+        return faces.size();
     }
 
-    public boolean canAddVertexIndex(int index) {
+    /** True once the hull has faces, i.e. three vertices that are not on a line. */
+    public boolean isDefined() {
+        return !faces.isEmpty();
+    }
+
+    public void clear() {
+        vertices.clear();
+        backlog.clear();
+        faces.clear();
+        origin = null;
+        minimum = null;
+        maximum = null;
+        lastOutside = null;
+    }
+
+    /**
+     * Adds a vertex to the hull.
+     *
+     * @return whether the selection changed
+     */
+    public boolean addVertex(BlockVector3 vertex) {
+        lastOutside = null;
+        if (vertices.contains(vertex)) {
+            return false;
+        }
+        if (origin != null && (Math.abs((long) vertex.x() - origin.x()) > MAX_SPAN
+                || Math.abs((long) vertex.y() - origin.y()) > MAX_SPAN
+                || Math.abs((long) vertex.z() - origin.z()) > MAX_SPAN)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("A convex selection spans at most "
+                    + MAX_SPAN + " blocks from its first point");
+        }
+        if (vertices.size() == 3) {
+            if (backlog.contains(vertex)) {
+                return false;
+            }
+            if (insideHull(vertex)) {
+                return backlog.add(vertex);
+            }
+        } else if (vertices.size() == 2 && collinear(vertices.get(0), vertices.get(1), vertex)) {
+            return backlog.add(vertex);
+        }
+
+        if (origin == null) {
+            origin = vertex;
+        }
+        vertices.add(vertex);
+        minimum = minimum == null ? vertex : minimum.min(vertex);
+        maximum = maximum == null ? vertex : maximum.max(vertex);
+
+        if (vertices.size() < 3) {
+            return true;
+        }
+        if (vertices.size() == 3) {
+            // Two faces back to back: a flat hull that later vertices open up.
+            BlockVector3 a = vertices.get(0);
+            BlockVector3 b = vertices.get(1);
+            BlockVector3 c = vertices.get(2);
+            faces.add(face(a, b, c));
+            faces.add(face(a, c, b));
+            return true;
+        }
+
+        // The faces the vertex sees go; their edges that only one of them had
+        // are the rim of the hole, closed with faces to the new vertex.
+        Set<Edge> rim = new LinkedHashSet<>();
+        for (Iterator<Face> it = faces.iterator(); it.hasNext(); ) {
+            Face face = it.next();
+            if (!face.above(vertex.x() - origin.x(), vertex.y() - origin.y(), vertex.z() - origin.z())) {
+                continue;
+            }
+            it.remove();
+            for (int i = 0; i < 3; i++) {
+                Edge edge = face.edge(i);
+                if (!rim.remove(edge)) {
+                    rim.add(edge);
+                }
+            }
+        }
+        for (Edge edge : rim) {
+            faces.add(face(edge.start, edge.end, vertex));
+        }
+
+        if (!backlog.isEmpty()) {
+            // The hull has a volume now: the vertices that waited are added
+            // again, before the new one, which is what WorldEdit does too.
+            vertices.remove(vertices.size() - 1);
+            List<BlockVector3> waiting = new ArrayList<>(backlog);
+            backlog.clear();
+            for (BlockVector3 each : waiting) {
+                addVertex(each);
+            }
+            vertices.add(vertex);
+        }
         return true;
     }
 
-    public boolean addVertex(BlockVector3 vertex) {
-        if (!vertices.isEmpty() && vertices.get(vertices.size() - 1).equals(vertex)) {
-            return false;
-        }
-        vertices.add(vertex);
-        if (vertices.size() >= 3 && vertices.size() % 3 == 0) {
-            Triangle t = new Triangle(
-                    vertices.get(vertices.size() - 3),
-                    vertices.get(vertices.size() - 2),
-                    vertices.get(vertices.size() - 1));
-            if (t.isValid()) {
-                triangles.add(t);
-            } else {
+    private static boolean collinear(BlockVector3 a, BlockVector3 b, BlockVector3 c) {
+        long abx = (long) b.x() - a.x();
+        long aby = (long) b.y() - a.y();
+        long abz = (long) b.z() - a.z();
+        long acx = (long) c.x() - a.x();
+        long acy = (long) c.y() - a.y();
+        long acz = (long) c.z() - a.z();
+        return aby * acz - abz * acy == 0 && abz * acx - abx * acz == 0 && abx * acy - aby * acx == 0;
+    }
+
+    private Face face(BlockVector3 a, BlockVector3 b, BlockVector3 c) {
+        return new Face(a, b, c, origin);
+    }
+
+    /** Whether a vertex is inside the current hull, faces included. */
+    private boolean insideHull(BlockVector3 vertex) {
+        long x = (long) vertex.x() - origin.x();
+        long y = (long) vertex.y() - origin.y();
+        long z = (long) vertex.z() - origin.z();
+        for (Face face : faces) {
+            if (face.above(x, y, z)) {
                 return false;
             }
         }
         return true;
     }
 
+    /** Removes the last vertex, rebuilding the hull from the others. */
     public boolean removeLastVertex() {
-        if (vertices.isEmpty()) {
+        List<BlockVector3> all = getVertices();
+        if (all.isEmpty()) {
             return false;
         }
-        vertices.remove(vertices.size() - 1);
-        if (!triangles.isEmpty() && vertices.size() % 3 == 2) {
-            triangles.remove(triangles.size() - 1);
+        List<BlockVector3> kept = new ArrayList<>(all.subList(0, all.size() - 1));
+        clear();
+        for (BlockVector3 vertex : kept) {
+            addVertex(vertex);
         }
         return true;
     }
 
     @Override
     public BlockVector3 getMinimumPoint() {
-        int minX = Integer.MAX_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int lowestY = Integer.MAX_VALUE;
-        for (BlockVector3 v : vertices) {
-            minX = Math.min(minX, v.x());
-            minZ = Math.min(minZ, v.z());
-            lowestY = Math.min(lowestY, v.y());
-        }
-        if (vertices.isEmpty()) {
+        if (minimum == null) {
             return BlockVector3.ZERO;
         }
-        return new BlockVector3(minX, Math.min(lowestY, minY), minZ);
+        return minimum.withY(Math.max(minimum.y(), minY));
     }
 
     @Override
     public BlockVector3 getMaximumPoint() {
-        if (vertices.isEmpty()) {
+        if (maximum == null) {
             return BlockVector3.ZERO;
         }
-        int maxX = Integer.MIN_VALUE;
-        int maxZ = Integer.MIN_VALUE;
-        int highestY = Integer.MIN_VALUE;
-        for (BlockVector3 v : vertices) {
-            maxX = Math.max(maxX, v.x());
-            maxZ = Math.max(maxZ, v.z());
-            highestY = Math.max(highestY, v.y());
-        }
-        return new BlockVector3(maxX, Math.max(highestY, maxY), maxZ);
+        return maximum.withY(Math.min(maximum.y(), maxY));
     }
 
+    /**
+     * The number of blocks inside, exactly: the Y run of each column of the
+     * bounding box, from the face planes. The bounding box's volume used to be
+     * the answer, which a pyramid overstates three times.
+     */
     @Override
     public long getVolume() {
-        return (long) getWidth() * getHeight() * getLength();
+        if (!isDefined()) {
+            return 0;
+        }
+        BlockVector3 min = getMinimumPoint();
+        BlockVector3 max = getMaximumPoint();
+        long total = 0;
+        int[] range = new int[2];
+        for (int x = min.x(); x <= max.x(); x++) {
+            for (int z = min.z(); z <= max.z(); z++) {
+                if (columnRange(x, z, min.y(), max.y(), range)) {
+                    total += (long) range[1] - range[0] + 1;
+                }
+            }
+        }
+        return total;
     }
 
     @Override
     public boolean contains(int x, int y, int z) {
-        if (triangles.size() < 4 || y < minY || y > maxY) {
+        if (!isDefined() || y < minY || y > maxY
+                || x < minimum.x() || x > maximum.x() || y < minimum.y() || y > maximum.y()
+                || z < minimum.z() || z > maximum.z()) {
             return false;
         }
-        // A point is inside when it is on the inner side of every face plane.
-        for (Plane plane : planes()) {
-            if (plane.distance(x + 0.5, y + 0.5, z + 0.5) > 0) {
+        long px = (long) x - origin.x();
+        long py = (long) y - origin.y();
+        long pz = (long) z - origin.z();
+        Face last = lastOutside;
+        if (last != null && last.above(px, py, pz)) {
+            return false;
+        }
+        for (Face face : faces) {
+            if (face != last && face.above(px, py, pz)) {
+                lastOutside = face;
                 return false;
             }
         }
         return true;
     }
 
-    private List<Plane> planes() {
-        List<Plane> planes = new ArrayList<>();
-        // Faces of the hull: every triangle with its outward normal.
-        for (Triangle t : triangles) {
-            Vector3 normal = t.normal();
-            Vector3 center = new Vector3(0, 0, 0);
-            for (BlockVector3 v : vertices) {
-                center = center.add(v.toVector3());
+    /**
+     * The Y run of one column, from the planes: each face bounds Y from above
+     * or below in a column, or leaves the column out entirely when it is
+     * vertical and the column is on its outer side.
+     *
+     * @return false when the column holds nothing
+     */
+    private boolean columnRange(int x, int z, int lowY, int highY, int[] out) {
+        long px = (long) x - origin.x();
+        long pz = (long) z - origin.z();
+        long low = (long) lowY - origin.y();
+        long high = (long) highY - origin.y();
+        for (Face face : faces) {
+            // normal . (px, y, pz) <= limit, so normalY * y <= rest
+            long rest = face.limit - face.normalX * px - face.normalZ * pz;
+            if (face.normalY > 0) {
+                high = Math.min(high, Math.floorDiv(rest, face.normalY));
+            } else if (face.normalY < 0) {
+                low = Math.max(low, -Math.floorDiv(rest, -face.normalY));
+            } else if (rest < 0) {
+                return false;
             }
-            if (vertices.isEmpty()) {
-                continue;
-            }
-            center = center.divide(vertices.size());
-            Plane plane = new Plane(normal, t.a.toVector3());
-            if (plane.distance(center.x(), center.y(), center.z()) > 0) {
-                plane = plane.flip();
-            }
-            planes.add(plane);
-        }
-        return planes;
-    }
-
-    @Override
-    public boolean expand(BlockVector3 amount) {
-        if (amount.y() != 0) {
-            int dy = amount.y();
-            List<BlockVector3> moved = new ArrayList<>(vertices.size());
-            for (BlockVector3 v : vertices) {
-                moved.add(v.withY(Math.min(maxY, Math.max(minY, v.y() + dy))));
-            }
-            vertices.clear();
-            vertices.addAll(moved);
-            triangles.clear();
-            for (int i = 0; i + 2 < vertices.size(); i += 3) {
-                Triangle t = new Triangle(vertices.get(i), vertices.get(i + 1), vertices.get(i + 2));
-                if (t.isValid()) {
-                    triangles.add(t);
-                }
+            if (low > high) {
+                return false;
             }
         }
+        out[0] = (int) (low + origin.y());
+        out[1] = (int) (high + origin.y());
         return true;
     }
 
+    private void fillColumns(int baseX, int baseZ, int[] lo, int[] hi) {
+        BlockVector3 min = getMinimumPoint();
+        BlockVector3 max = getMaximumPoint();
+        int[] range = new int[2];
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                int column = z << 4 | x;
+                if (columnRange(baseX + x, baseZ + z, min.y(), max.y(), range)) {
+                    lo[column] = range[0];
+                    hi[column] = range[1];
+                } else {
+                    lo[column] = 1;
+                    hi[column] = 0;
+                }
+            }
+        }
+    }
+
     @Override
-    public boolean contract(BlockVector3 amount) {
-        return expand(amount.multiply(-1));
+    public long forEachPosition(BlockVisitor visitor) {
+        if (!isDefined()) {
+            return 0;
+        }
+        BlockVector3 min = getMinimumPoint();
+        BlockVector3 max = getMaximumPoint();
+        return ColumnWalk.walk(min.x(), min.z(), max.x(), max.z(), this::fillColumns, visitor);
     }
 
     @Override
     public Iterator<BlockVector3> iterator() {
-        List<BlockVector3> blocks = new ArrayList<>();
-        if (triangles.size() >= 4) {
-            BlockVector3 min = getMinimumPoint();
-            BlockVector3 max = getMaximumPoint();
-            for (int y = Math.max(min.y(), minY); y <= Math.min(max.y(), maxY); y++) {
-                for (int z = min.z(); z <= max.z(); z++) {
-                    for (int x = min.x(); x <= max.x(); x++) {
-                        if (contains(x, y, z)) {
-                            blocks.add(new BlockVector3(x, y, z));
-                        }
-                    }
-                }
-            }
+        if (!isDefined()) {
+            return Collections.emptyIterator();
         }
-        return new Iterator<>() {
-            private int index;
+        BlockVector3 min = getMinimumPoint();
+        BlockVector3 max = getMaximumPoint();
+        return ColumnWalk.iterator(min.x(), min.z(), max.x(), max.z(), this::fillColumns);
+    }
 
-            @Override
-            public boolean hasNext() {
-                return index < blocks.size();
-            }
+    /** A hull cannot grow by a number of blocks, as in WorldEdit. */
+    @Override
+    public boolean expand(BlockVector3 amount) {
+        throw new com.maxlananas.fawebim.core.util.InputException("A convex selection cannot be expanded");
+    }
 
-            @Override
-            public BlockVector3 next() {
-                if (index >= blocks.size()) {
-                    throw new NoSuchElementException();
-                }
-                return blocks.get(index++);
-            }
-        };
+    @Override
+    public boolean contract(BlockVector3 amount) {
+        throw new com.maxlananas.fawebim.core.util.InputException("A convex selection cannot be contracted");
+    }
+
+    /** Moves every vertex; the planes are relative to the first one, so they move with it. */
+    @Override
+    public boolean shift(BlockVector3 amount) {
+        if (amount.equals(BlockVector3.ZERO) || origin == null) {
+            return false;
+        }
+        List<BlockVector3> moved = new ArrayList<>(vertices.size());
+        for (BlockVector3 vertex : vertices) {
+            moved.add(vertex.add(amount));
+        }
+        List<BlockVector3> waiting = new ArrayList<>(backlog.size());
+        for (BlockVector3 vertex : backlog) {
+            waiting.add(vertex.add(amount));
+        }
+        vertices.clear();
+        vertices.addAll(moved);
+        backlog.clear();
+        backlog.addAll(waiting);
+        List<Face> movedFaces = new ArrayList<>(faces.size());
+        for (Face face : faces) {
+            movedFaces.add(face.shift(amount));
+        }
+        faces.clear();
+        faces.addAll(movedFaces);
+        origin = origin.add(amount);
+        minimum = minimum.add(amount);
+        maximum = maximum.add(amount);
+        lastOutside = null;
+        return true;
     }
 
     @Override
     public String describe() {
-        return "convex (" + (vertices.size() / 3) + " triangles)";
+        return "convex (" + getVertices().size() + " vertices, " + faces.size() + " faces)";
     }
 
-    private record Triangle(BlockVector3 a, BlockVector3 b, BlockVector3 c) {
+    /** An undirected edge between two vertices. */
+    private record Edge(BlockVector3 start, BlockVector3 end) {
 
-        boolean isValid() {
-            return normal().lengthSq() > 1e-9;
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Edge edge && ((start.equals(edge.start) && end.equals(edge.end))
+                    || (start.equals(edge.end) && end.equals(edge.start)));
         }
 
-        Vector3 normal() {
-            return b.subtract(a).toVector3().cross(c.subtract(a).toVector3()).normalize();
+        @Override
+        public int hashCode() {
+            return start.hashCode() ^ end.hashCode();
         }
     }
 
-    private record Plane(Vector3 normal, Vector3 point) {
+    /**
+     * A face: three vertices counter-clockwise and the plane through them,
+     * {@code normal . p <= limit} on the inner side, in coordinates relative to
+     * the region's first vertex.
+     */
+    private static final class Face {
 
-        double distance(double x, double y, double z) {
-            return normal.dot(new Vector3(x, y, z).subtract(point));
+        final BlockVector3 a;
+        final BlockVector3 b;
+        final BlockVector3 c;
+        final long normalX;
+        final long normalY;
+        final long normalZ;
+        final long limit;
+
+        Face(BlockVector3 a, BlockVector3 b, BlockVector3 c, BlockVector3 origin) {
+            this.a = a;
+            this.b = b;
+            this.c = c;
+            long abx = (long) b.x() - a.x();
+            long aby = (long) b.y() - a.y();
+            long abz = (long) b.z() - a.z();
+            long acx = (long) c.x() - a.x();
+            long acy = (long) c.y() - a.y();
+            long acz = (long) c.z() - a.z();
+            this.normalX = aby * acz - abz * acy;
+            this.normalY = abz * acx - abx * acz;
+            this.normalZ = abx * acy - aby * acx;
+            this.limit = normalX * ((long) a.x() - origin.x()) + normalY * ((long) a.y() - origin.y())
+                    + normalZ * ((long) a.z() - origin.z());
         }
 
-        Plane flip() {
-            return new Plane(normal.multiply(-1), point);
+        private Face(BlockVector3 a, BlockVector3 b, BlockVector3 c, long normalX, long normalY, long normalZ,
+                     long limit) {
+            this.a = a;
+            this.b = b;
+            this.c = c;
+            this.normalX = normalX;
+            this.normalY = normalY;
+            this.normalZ = normalZ;
+            this.limit = limit;
+        }
+
+        boolean above(long x, long y, long z) {
+            return normalX * x + normalY * y + normalZ * z > limit;
+        }
+
+        Edge edge(int index) {
+            return switch (index) {
+                case 0 -> new Edge(a, b);
+                case 1 -> new Edge(b, c);
+                default -> new Edge(c, a);
+            };
+        }
+
+        /** The same face moved by an amount, the origin moving with it. */
+        Face shift(BlockVector3 amount) {
+            return new Face(a.add(amount), b.add(amount), c.add(amount), normalX, normalY, normalZ, limit);
         }
     }
 }

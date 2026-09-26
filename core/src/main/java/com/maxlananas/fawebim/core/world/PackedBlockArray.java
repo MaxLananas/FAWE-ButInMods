@@ -89,7 +89,7 @@ public final class PackedBlockArray {
     }
 
     public void set(int index, int stateId) {
-        int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId);
+        int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId, index);
         int slot = slotOf(index);
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         long clearMask = ~(mask << offset);
@@ -119,7 +119,7 @@ public final class PackedBlockArray {
         // anything, so the common write reads the entry here instead of calling
         // for it: a buffer is filled a run at a time and a run repeats its
         // state, which made the call itself the share the profile showed.
-        int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId);
+        int paletteIndex = stateId == lastState ? lastStateIndex : paletteIndex(stateId, index);
         int slot = slotOf(index);
         int offset = (index - slot * valuesPerLong) * bitsPerBlock;
         if (wasWritten && palette[(int) ((data[slot] >>> offset) & mask)] == stateId) {
@@ -133,18 +133,18 @@ public final class PackedBlockArray {
         return 0;
     }
 
-    /** The palette index of a state, adding it - and growing the cells - when new. */
-    private int paletteIndex(int stateId) {
+    /**
+     * The palette index of a state, adding it - and growing the cells - when new.
+     *
+     * @param cell the cell the state is about to be written to
+     */
+    private int paletteIndex(int stateId, int cell) {
         if (stateId == lastState) {
             return lastStateIndex;
         }
-        return lookupOrAdd(stateId);
-    }
-
-    private int lookupOrAdd(int stateId) {
         int index = paletteLookup(stateId);
         if (index < 0) {
-            index = paletteAdd(stateId);
+            index = paletteAdd(stateId, cell);
             if (index >= (1 << bitsPerBlock)) {
                 growBits();
             }
@@ -204,9 +204,12 @@ public final class PackedBlockArray {
         }
     }
 
-    private int paletteAdd(int stateId) {
+    private int paletteAdd(int stateId, int cell) {
+        if (paletteSize == VOLUME) {
+            compact(cell);
+        }
         if (paletteSize == palette.length) {
-            palette = Arrays.copyOf(palette, Math.min(1 << 12, palette.length << 1));
+            palette = Arrays.copyOf(palette, Math.min(VOLUME, palette.length << 1));
         }
         palette[paletteSize] = stateId;
         int index = paletteSize++;
@@ -240,6 +243,49 @@ public final class PackedBlockArray {
 
     private static int spread(int stateId) {
         return stateId * 0x9E3779B1;
+    }
+
+    /**
+     * Drops the palette entries no written cell holds any more.
+     *
+     * <p>The palette only grows: a state a cell was given and then lost keeps its
+     * entry. A section has 4096 cells, so it never holds more than 4096 states
+     * at once, but a buffer written over and over - a brush stroke on a stroke,
+     * a pattern with hundreds of states - collects more entries than that, and
+     * the next new state had nowhere to go. The cell about to be written is left
+     * out: its state is being replaced, so the other 4095 cells hold at most
+     * 4095 states and the new one always fits. The cells keep their width.</p>
+     */
+    private void compact(int cell) {
+        int[] remap = new int[paletteSize];
+        Arrays.fill(remap, -1);
+        int[] kept = new int[palette.length];
+        int keptSize = 0;
+        int[] indices = new int[VOLUME];
+        for (int index = 0; index < VOLUME; index++) {
+            if (index == cell || !isWritten(index)) {
+                continue;
+            }
+            int slot = slotOf(index);
+            int old = (int) ((data[slot] >>> ((index - slot * valuesPerLong) * bitsPerBlock)) & mask);
+            if (remap[old] < 0) {
+                remap[old] = keptSize;
+                kept[keptSize++] = palette[old];
+            }
+            indices[index] = remap[old];
+        }
+        Arrays.fill(data, 0L);
+        for (int index = 0; index < VOLUME; index++) {
+            if (index == cell || !isWritten(index)) {
+                continue;
+            }
+            int slot = slotOf(index);
+            data[slot] |= (long) indices[index] << ((index - slot * valuesPerLong) * bitsPerBlock);
+        }
+        palette = kept;
+        paletteSize = keptSize;
+        rehashIndex(Math.max(16, paletteSize * 2));
+        lastState = -1;
     }
 
     private void growBits() {

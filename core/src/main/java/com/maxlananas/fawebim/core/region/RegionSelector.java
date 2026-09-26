@@ -43,7 +43,11 @@ public interface RegionSelector {
     /** Human readable size/messages for {@code //size}. */
     String describe();
 
-    /** Called before an operation that modifies the selection. */
+    /**
+     * Called after a command changed the region - {@code //expand},
+     * {@code //shift}, {@code //move -s} - so the points the selector keeps
+     * follow it and the next click starts from the changed region.
+     */
     default void learnChanges() {
     }
 
