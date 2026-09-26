@@ -2144,14 +2144,15 @@ public final class Commands {
                     }
                     switch (action) {
                         case "list" -> {
-                            // //schem list [filter] overrides the filter /list set.
-                            com.maxlananas.fawebim.core.clipboard.ListFilter filter =
-                                    com.maxlananas.fawebim.core.clipboard.ListFilter.parse(ctx.arg(1, ""));
-                            if (filter == null) {
-                                filter = ctx.session().getListFilter();
+                            // A filter name picks between the shared folder and the
+                            // player's own, which only exists with FAWE's per-player
+                            // schematics: every schematic is shared here. Another word
+                            // keeps the names it starts, as in FAWE.
+                            List<String> names = Schematics.list();
+                            String word = ctx.arg(1, "");
+                            if (!word.isEmpty() && com.maxlananas.fawebim.core.clipboard.ListFilter.parse(word) == null) {
+                                names = Schematics.matching(names, word);
                             }
-                            List<String> names = Schematics.list(filter,
-                                    ctx.actor().isPlayer() ? ctx.actor().name() : null);
                             // -f <format> keeps one format, -d and -n sort by
                             // write time instead of by name.
                             String format = ctx.hasFlag("f")
@@ -2173,7 +2174,7 @@ public final class Commands {
                             }
                             Page page = Page.of(ctx, names.size());
                             ctx.actor().message(Msg.title("Schematics (" + names.size() + ", page " + page.number()
-                                    + "/" + page.pages() + ", " + filter.describe() + ")"));
+                                    + "/" + page.pages() + ")"));
                             for (String name : names.subList(page.from(), page.to())) {
                                 ctx.actor().message(Msg.item(name, Schematics.formatOf(name)));
                             }

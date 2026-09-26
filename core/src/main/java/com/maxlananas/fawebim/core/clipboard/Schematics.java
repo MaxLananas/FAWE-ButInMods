@@ -49,25 +49,40 @@ public final class Schematics {
         return List.of("sponge.3", "sponge.2", "mcedit", "schem", "structure");
     }
 
+    /**
+     * The schematics of the shared folder, sorted by name.
+     *
+     * <p>FAWE keeps a folder per player only with {@code per-player-schematics}
+     * on; with it off, its default and the only mode here, every filter of
+     * {@code //schem list} lists the shared folder. The player's folder this
+     * used to read for {@code local} was written by nothing, and a name listed
+     * from it could not be loaded, since every other command reads the shared
+     * folder.</p>
+     */
     public static List<String> list() {
-        return list(ListFilter.ALL, null);
+        List<String> names = new ArrayList<>();
+        collect(directory(), names);
+        names.sort(String::compareToIgnoreCase);
+        return names;
     }
 
     /**
-     * Lists schematics, optionally only the shared ones or only the player's own.
-     *
-     * @param owner the player whose directory {@link ListFilter#LOCAL} reads
+     * The names FAWE's list keeps for a word that is not a filter name: those
+     * that start with it, else those that contain it, ignoring case.
      */
-    public static List<String> list(ListFilter filter, String owner) {
-        List<String> names = new ArrayList<>();
-        if (filter != ListFilter.LOCAL) {
-            collect(directory(), names);
+    public static List<String> matching(List<String> names, String word) {
+        String lower = word.toLowerCase(java.util.Locale.ROOT);
+        List<String> starting = new ArrayList<>();
+        List<String> containing = new ArrayList<>();
+        for (String name : names) {
+            String candidate = name.toLowerCase(java.util.Locale.ROOT);
+            if (candidate.startsWith(lower)) {
+                starting.add(name);
+            } else if (candidate.contains(lower)) {
+                containing.add(name);
+            }
         }
-        if (filter != ListFilter.GLOBAL && owner != null) {
-            collect(directory().resolve(owner.toLowerCase(java.util.Locale.ROOT)), names);
-        }
-        names.sort(String::compareToIgnoreCase);
-        return names;
+        return starting.isEmpty() ? containing : starting;
     }
 
     /** The format a listed name was written in, derived from its extension. */
@@ -168,7 +183,7 @@ public final class Schematics {
         java.nio.file.PathMatcher matcher = java.nio.file.FileSystems.getDefault()
                 .getPathMatcher("glob:" + (glob == null || glob.isBlank() ? "*" : glob));
         List<BlockArrayClipboard> loaded = new ArrayList<>();
-        for (String name : list(ListFilter.ALL, null)) {
+        for (String name : list()) {
             if (!matcher.matches(java.nio.file.Path.of(name))) {
                 continue;
             }

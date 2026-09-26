@@ -58,6 +58,7 @@ final class SchematicFormatTests {
             nbtIsStrictAndBounded();
             sidesAreLimited();
             saveOverwritesWithTheForceSwitch();
+            listingShowsWhatLoads();
         } finally {
             Schematics.setDirectory(previous);
             try (Stream<Path> files = Files.walk(dir)) {
@@ -539,6 +540,32 @@ final class SchematicFormatTests {
             check(format + " refuses a side longer than an unsigned short (" + answer + ")",
                     answer.contains("at most 65535"));
         }
+    }
+
+    /**
+     * Every filter lists the shared folder, which is where every command reads
+     * and writes; a word that is not a filter keeps the names it starts, as in
+     * FAWE. {@code local} read a folder of the player's that nothing wrote.
+     */
+    private static void listingShowsWhatLoads() {
+        TestWorld world = new TestWorld("SchemList");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("SchemList", world, new BlockVector3(0, 71, 0));
+        actor.session().setClipboard(offsetClipboard());
+        CommandManager.get().dispatch(actor, "//schem save listed-house");
+        CommandManager.get().dispatch(actor, "//schem save listed-tower");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//schem list local");
+        String local = String.join("\n", actor.messages()).replaceAll("\u00a7.", "");
+        check("//schem list local shows the schematics the player saved (" + local + ")",
+                local.contains("listed-house.schem") && local.contains("listed-tower.schem"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//schem list listed-h");
+        String matched = String.join("\n", actor.messages()).replaceAll("\u00a7.", "");
+        check("a word keeps the names it starts (" + matched + ")",
+                matched.contains("listed-house.schem") && !matched.contains("listed-tower.schem"));
+        checkEquals("and falls back to the names containing it", List.of("listed-tower.schem"),
+                Schematics.matching(List.of("listed-house.schem", "listed-tower.schem"), "tower"));
     }
 
     /** {@code -f} is the value flag of {@code //schem list}; under {@code save} it is WorldEdit's overwrite switch. */

@@ -594,7 +594,10 @@ final class UtilityExtras {
                         + "'. Try all, global, public, local, private, me or mine");
             }
             ctx.session().setListFilter(filter);
-            ctx.actor().message(Msg.success("//schem list now shows " + filter.describe()));
+            // Without FAWE's per-player folders, every filter lists the shared one.
+            ctx.actor().message(filter == com.maxlananas.fawebim.core.clipboard.ListFilter.LOCAL
+                    ? Msg.warn("Schematics are not kept per player here: //schem list shows the shared folder")
+                    : Msg.success("//schem list now shows " + filter.describe()));
         };
     }
 
