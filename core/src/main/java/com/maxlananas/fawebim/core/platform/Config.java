@@ -49,6 +49,7 @@ public final class Config {
     public int maxRegenVolume = 100000000;
     public boolean superPickaxeDrop = true;
     public boolean superPickaxeManyDrop = true;
+    public int maxSuperPickaxeSize = 5;
     public int butcherDefaultRadius = 20;
     public int butcherMaxRadius = 100;
     public boolean historyEnabled = true;
@@ -126,8 +127,12 @@ public final class Config {
                 "Drop the blocks the super pickaxe breaks.", () -> superPickaxeDrop,
                 value -> superPickaxeDrop = value);
         bool("super-pickaxe-many-drop", "super-pickaxe.many-drop-items", superPickaxeManyDrop,
-                "Drop the blocks of an area super-pickaxe break.", () -> superPickaxeManyDrop,
+                "Drop the blocks of an area or recursive super-pickaxe break.", () -> superPickaxeManyDrop,
                 value -> superPickaxeManyDrop = value);
+        integer("max-super-pickaxe-size", "limits.max-super-pickaxe-size", maxSuperPickaxeSize,
+                "Largest range /sp area and /sp recursive accept, at most "
+                        + com.maxlananas.fawebim.core.tool.SuperPickaxe.MAX_RANGE + ".",
+                () -> maxSuperPickaxeSize, value -> maxSuperPickaxeSize = value);
         integer("butcher-default-radius", "limits.butcher-radius.default", butcherDefaultRadius,
                 "Radius //butcher takes when the command gives none.", () -> butcherDefaultRadius,
                 value -> butcherDefaultRadius = value);

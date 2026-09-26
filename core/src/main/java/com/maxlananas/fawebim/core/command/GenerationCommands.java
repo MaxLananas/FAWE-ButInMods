@@ -66,10 +66,29 @@ final class GenerationCommands {
         entry.arguments.add("[pocketMax]");
         entry.handler = ctx -> {
             Region region = ctx.selection();
+            // Every number sizes a loop or a random draw of the generator: the
+            // size is how many chunks around each one seed caves into it, the
+            // frequencies how many caves and branches a chunk starts. Out of
+            // these ranges a draw throws or the carving never ends.
+            int size = ctx.intArg(0, 8, 2, 32, "size");
+            int frequency = ctx.intArg(1, 40, 1, 1000, "frequency");
+            int rarity = ctx.intArg(2, 7, 0, 100, "rarity");
+            int minY = Math.max(ctx.intArg(3, 8), ctx.world().minY());
+            int maxY = Math.min(ctx.intArg(4, 127), ctx.world().maxY());
+            if (minY > maxY) {
+                throw CommandRegistry.error("minY must not be above maxY, inside the world's height");
+            }
+            int systemFrequency = ctx.intArg(5, 1, 0, 100, "systemFrequency");
+            int individualRarity = ctx.intArg(6, 25, 0, 100, "individualRarity");
+            int pocketChance = ctx.intArg(7, 0, 0, 100, "pocketChance");
+            int pocketMin = ctx.intArg(8, 0, 0, 100, "pocketMin");
+            int pocketMax = ctx.intArg(9, 3, 0, 100, "pocketMax");
+            if (pocketMin > pocketMax) {
+                throw CommandRegistry.error("pocketMin must not be above pocketMax");
+            }
             EditSession session = ctx.editSession("caves");
-            CaveGen gen = new CaveGen(ctx.intArg(0, 8), ctx.intArg(1, 40), ctx.intArg(2, 7),
-                    ctx.intArg(3, 8), ctx.intArg(4, 127), ctx.intArg(5, 1), ctx.intArg(6, 25),
-                    ctx.intArg(7, 0), ctx.intArg(8, 0), ctx.intArg(9, 3), new Random());
+            CaveGen gen = new CaveGen(size, frequency, rarity, minY, maxY, systemFrequency, individualRarity,
+                    pocketChance, pocketMin, pocketMax, new Random());
             int changed = gen.generate(ctx.world(), session, region);
             session.flushQueue();
             ctx.actor().message(Msg.result("Generated", Msg.count(changed) + " block(s) affected"));

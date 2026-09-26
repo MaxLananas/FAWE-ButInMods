@@ -46,7 +46,7 @@ public final class Tools {
             case "tree" -> new TreeTool(ctx.arg(1, "tree"));
             case "repl", "replace" -> new ReplaceTool();
             case "cycler" -> new CyclerTool();
-            case "floodfill", "flood-fill", "flood" -> new FloodFillTool();
+            case "floodfill", "flood-fill", "flood" -> FloodFillTool.of(ctx);
             case "info", "inspect" -> new InfoTool();
             case "farwand", "warwand" -> new FarWandTool();
             case "navwand", "navigation" -> new NavigationWandTool();
@@ -59,6 +59,19 @@ public final class Tools {
             case "featureplacer", "featuretool" -> new FeaturePlacerTool(null);
             case "structureplacer", "structuretool" -> new StructurePlacerTool(null);
             default -> null;
+        };
+    }
+
+    /**
+     * Where the item to bind to sits among the arguments of {@code /tool}: right
+     * after the type, or after the arguments of a tool that takes some - the
+     * type of tree, the pattern and range of the flood fill.
+     */
+    public static int targetArgument(String name) {
+        return switch (name.toLowerCase(Locale.ROOT)) {
+            case "tree" -> 2;
+            case "floodfill", "flood-fill", "flood" -> 3;
+            default -> 1;
         };
     }
 
@@ -212,10 +225,27 @@ public final class Tools {
         }
     }
 
-    /** {@code /tool floodfill <pattern> [range] [radius]}. */
+    /**
+     * {@code /tool floodfill [pattern] [range]}: WorldEdit's flood fill tool,
+     * which turns the clicked block and the blocks of its type joined to it,
+     * within the range, into the pattern - the walk of the recursive super
+     * pickaxe, under the same ceiling. A click on air fills nothing.
+     */
     public static final class FloodFillTool implements Tool {
 
         private Pattern pattern;
+        private double range = 5;
+
+        /** The tool {@code /tool floodfill} describes; the range is refused above the ceiling. */
+        static FloodFillTool of(Ctx ctx) {
+            FloodFillTool tool = new FloodFillTool();
+            if (ctx.args().size() > 1) {
+                tool.pattern = com.maxlananas.fawebim.core.command.Parsers.pattern(ctx.arg(1), ctx);
+            }
+            tool.range = ctx.args().size() > 2 ? ctx.intArg(2) : SuperPickaxe.ceiling();
+            SuperPickaxe.checkRange(tool.range);
+            return tool;
+        }
 
         public void setPattern(Pattern pattern) {
             this.pattern = pattern;
@@ -229,12 +259,26 @@ public final class Tools {
         @Override
         public boolean onRightClick(ToolContext context) {
             Pattern fill = pattern != null ? pattern : pattern(context.actor, stonePattern());
+            BlockVector3 origin = context.position;
+            // The ceiling is read again at the click: it may have been lowered
+            // since the tool was bound.
+            double reach = Math.min(range, SuperPickaxe.ceiling());
+            int[] targets = SuperPickaxe.targets(context.actor.world(), SuperPickaxe.RECURSIVE, Math.max(0, reach),
+                    origin.x(), origin.y(), origin.z());
+            if (targets.length == 0) {
+                return true;
+            }
             EditSession session = open(context, "tool floodfill");
-            int changed;
+            int changed = 0;
             try {
-                changed = com.maxlananas.fawebim.core.function.Operations.floodFill(
-                        context.actor.world(), session, context.position.add(context.face.toVector()), fill, 256,
-                        false);
+                for (int i = 0; i < targets.length; i += 3) {
+                    int x = targets[i];
+                    int y = targets[i + 1];
+                    int z = targets[i + 2];
+                    if (session.setBlock(x, y, z, fill.apply(x, y, z))) {
+                        changed++;
+                    }
+                }
             } finally {
                 finish(context, session);
             }

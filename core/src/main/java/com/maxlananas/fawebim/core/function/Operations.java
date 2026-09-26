@@ -8,6 +8,8 @@ import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.transform.Axis;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.transform.Transforms;
+import com.maxlananas.fawebim.core.util.LongQueue;
+import com.maxlananas.fawebim.core.util.LongSet;
 import com.maxlananas.fawebim.core.util.noise.Noise;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.expression.Expression;
@@ -547,10 +549,14 @@ public final class Operations {
     /** {@code //pyramid}. */
     public static int pyramid(EditSession session, BlockVector3 center, int size, Pattern pattern, boolean hollow) {
         int changed = 0;
-        int base = center.y() - size / 2;
-        for (int layer = 0; layer <= size; layer++) {
-            int y = base + layer;
-            int r = size - layer;
+        // The layers are walked in long arithmetic and only where the world is:
+        // a size near the int range would otherwise wrap the layer counter.
+        long base = (long) center.y() - size / 2;
+        long from = Math.max(base, session.minY());
+        long to = Math.min(base + size, session.maxY());
+        for (long level = from; level <= to; level++) {
+            int y = (int) level;
+            int r = (int) (size - (level - base));
             for (int z = -r; z <= r; z++) {
                 for (int x = -r; x <= r; x++) {
                     boolean edge = Math.abs(x) == r || Math.abs(z) == r;
@@ -767,63 +773,83 @@ public final class Operations {
     // ---------------------------------------------------------------- flood fill
 
     /** {@code //fill}/{@code //drain} — 3D flood fill of the connected blocks. */
-    public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
-                                boolean hollow) {
-        return floodFill(world, session, start, pattern, radius, hollow, null);
-    }
-
-    public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
-                                boolean hollow, Mask replaceMask) {
-        return floodFill(world, session, start, pattern, radius, hollow, replaceMask, 0);
-    }
-
     /**
-     * A flood fill that also stops {@code depth} blocks below the start, which is
-     * how WorldEdit's {@code /fillr} keeps a recursive fill from following a hole
-     * to the bottom of the world.
+     * A flood fill that, given a depth, is WorldEdit's {@code /fillr}: it fills
+     * no higher than the start and stops {@code depth} blocks below it, which
+     * keeps a recursive fill from following a hole to the bottom of the world.
      *
-     * @param depth how many blocks below the start may be filled, 0 for no limit
+     * @param depth       how many blocks below the start may be filled, 0 for a
+     *                    fill in every direction
+     * @param replaceMask what the fill may replace; {@code null} for what the
+     *                    start holds
      */
     public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
                                 boolean hollow, Mask replaceMask, int depth) {
         BlockStateRegistry registry = BlockState.registry();
         int targetState = world.getBlock(start.x(), start.y(), start.z());
-        if (!registry.isAirLike(targetState) && replaceMask == null) {
-            // Filling a solid block only replaces that same block type.
-            replaceMask = new com.maxlananas.fawebim.core.mask.Masks.BlockMask(session,
-                    List.of(registry.describe(targetState)));
+        if (replaceMask == null) {
+            // Without a mask the fill replaces what its start holds: the same
+            // block, or the air joined to it - never everything in its radius.
+            replaceMask = registry.isAirLike(targetState)
+                    ? new com.maxlananas.fawebim.core.mask.Masks.AirMask(session, false)
+                    : new com.maxlananas.fawebim.core.mask.Masks.BlockMask(session,
+                            List.of(registry.describe(targetState)));
         }
-        int lowest = depth > 0 ? start.y() - depth + 1 : Integer.MIN_VALUE;
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
+        // The walk stays inside the world, as WorldEdit's fills do: one that left
+        // it through the sky came back down into holes it could not reach. With
+        // a depth it is /fillr, which fills down from its start and no higher.
+        // The lowest level is found in long arithmetic: the default depth is the
+        // int range, and below y 0 the level wrapped round to the top of it.
+        int lowest = (int) Math.max(depth > 0 ? (long) start.y() - depth + 1 : Long.MIN_VALUE, world.minY());
+        int highest = depth > 0 ? Math.min(world.maxY(), start.y()) : world.maxY();
+        long reach = (long) radius * radius;
+        LongQueue queue = new LongQueue();
+        LongSet visited = new LongSet();
+        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
         int changed = 0;
         while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
+            long current = queue.poll();
             if (!visited.add(current)) {
                 continue;
             }
-            if (current.distance(start) > radius || current.y() < lowest) {
+            int x = BlockArrayClipboard.keyX(current);
+            int y = BlockArrayClipboard.keyY(current);
+            int z = BlockArrayClipboard.keyZ(current);
+            if (distanceSq(x, y, z, start) > reach || y < lowest || y > highest) {
                 continue;
             }
             Mask reject = replaceMask;
-            if (reject != null && !reject.test(current)) {
+            if (reject != null && !reject.test(x, y, z)) {
                 continue;
             }
-            boolean shouldPlace = !hollow || isEdge(world, current, replaceMask);
-            if (shouldPlace && session.setBlock(current.x(), current.y(), current.z(),
-                    pattern.apply(current.x(), current.y(), current.z()))) {
+            boolean shouldPlace = !hollow || isEdge(world, x, y, z, replaceMask);
+            if (shouldPlace && session.setBlock(x, y, z, pattern.apply(x, y, z))) {
                 changed++;
             }
             session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                BlockVector3 next = current.add(direction.toVector());
-                if (!visited.contains(next) && next.distance(start) <= radius && next.y() >= lowest) {
+            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                int nx = x + direction.x();
+                int ny = y + direction.y();
+                int nz = z + direction.z();
+                long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                if (!visited.contains(next) && distanceSq(nx, ny, nz, start) <= reach
+                        && ny >= lowest && ny <= highest) {
                     queue.add(next);
                 }
             }
         }
         return changed;
+    }
+
+    /** The six directions in their declared order, read without copying the enum's array per block. */
+    private static final com.maxlananas.fawebim.core.world.Direction[] DIRECTIONS =
+            com.maxlananas.fawebim.core.world.Direction.values();
+
+    private static long distanceSq(int x, int y, int z, BlockVector3 origin) {
+        long dx = (long) x - origin.x();
+        long dy = (long) y - origin.y();
+        long dz = (long) z - origin.z();
+        return dx * dx + dy * dy + dz * dz;
     }
 
     /**
@@ -843,30 +869,33 @@ public final class Operations {
         if (registry.isAirLike(world.getBlock(start.x(), start.y(), start.z()))) {
             return clipboard;
         }
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
+        LongQueue queue = new LongQueue();
+        LongSet visited = new LongSet();
+        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
+        long reach = (long) limit * limit;
         while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
+            long current = queue.poll();
             if (!visited.add(current)) {
                 continue;
             }
-            if (current.y() < start.y() || current.distance(start) > limit) {
+            int x = BlockArrayClipboard.keyX(current);
+            int y = BlockArrayClipboard.keyY(current);
+            int z = BlockArrayClipboard.keyZ(current);
+            if (y < start.y() || distanceSq(x, y, z, start) > reach) {
                 continue;
             }
-            int state = world.getBlock(current.x(), current.y(), current.z());
-            if (registry.isAirLike(state) || mask != null && !mask.test(current.x(), current.y(), current.z())) {
+            int state = world.getBlock(x, y, z);
+            if (registry.isAirLike(state) || mask != null && !mask.test(x, y, z)) {
                 continue;
             }
-            clipboard.setBlock(current.x(), current.y(), current.z(), state);
-            com.maxlananas.fawebim.core.util.NbtCompound nbt = world.getBlockEntity(current.x(), current.y(), current.z());
+            clipboard.setBlock(x, y, z, state);
+            com.maxlananas.fawebim.core.util.NbtCompound nbt = world.getBlockEntity(x, y, z);
             if (nbt != null) {
-                clipboard.addBlockEntity(current, nbt);
+                clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
             }
             session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction
-                    : com.maxlananas.fawebim.core.world.Direction.values()) {
-                BlockVector3 next = current.add(direction.toVector());
+            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                long next = BlockArrayClipboard.positionKey(x + direction.x(), y + direction.y(), z + direction.z());
                 if (!visited.contains(next)) {
                     queue.add(next);
                 }
@@ -875,14 +904,15 @@ public final class Operations {
         return clipboard;
     }
 
-    private static boolean isEdge(World world, BlockVector3 position, Mask mask) {
-        for (com.maxlananas.fawebim.core.world.Direction direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-            BlockVector3 next = position.add(direction.toVector());
-            if (mask != null && !mask.test(next)) {
+    private static boolean isEdge(World world, int x, int y, int z, Mask mask) {
+        for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+            int nx = x + direction.x();
+            int ny = y + direction.y();
+            int nz = z + direction.z();
+            if (mask != null && !mask.test(nx, ny, nz)) {
                 return true;
             }
-            if (mask == null && !BlockState.registry()
-                    .isAirLike(world.getBlock(next.x(), next.y(), next.z()))) {
+            if (mask == null && !BlockState.registry().isAirLike(world.getBlock(nx, ny, nz))) {
                 return true;
             }
         }
@@ -891,32 +921,35 @@ public final class Operations {
 
     /** {@code //drain} — removes connected liquid. */
     public static int drain(World world, EditSession session, BlockVector3 start, Mask liquidMask, int radius) {
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
+        LongQueue queue = new LongQueue();
+        LongSet visited = new LongSet();
+        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
+        long reach = (long) radius * radius;
         int changed = 0;
         int air = BlockState.registry().air();
         while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
-            if (!visited.add(current) || current.distance(start) > radius) {
+            long current = queue.poll();
+            int x = BlockArrayClipboard.keyX(current);
+            int y = BlockArrayClipboard.keyY(current);
+            int z = BlockArrayClipboard.keyZ(current);
+            if (!visited.add(current) || distanceSq(x, y, z, start) > reach) {
                 continue;
             }
             if (visited.size() > 1_000_000) {
                 break;
             }
-            if (!liquidMask.test(current)) {
+            if (!liquidMask.test(x, y, z)) {
                 continue;
             }
-            if (session.setBlock(current.x(), current.y(), current.z(), air)) {
+            if (session.setBlock(x, y, z, air)) {
                 changed++;
             }
             session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction
-                    : com.maxlananas.fawebim.core.world.Direction.values()) {
+            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
                 if (direction == com.maxlananas.fawebim.core.world.Direction.UP) {
                     continue;
                 }
-                queue.add(current.add(direction.toVector()));
+                queue.add(BlockArrayClipboard.positionKey(x + direction.x(), y + direction.y(), z + direction.z()));
             }
         }
         return changed;
@@ -952,6 +985,10 @@ public final class Operations {
                                 boolean onlyAir, int minFreqDiff) {
         BlockStateRegistry registry = BlockState.registry();
         int changed = 0;
+        // The 27 cells around a block hold at most 27 states: a tally in two
+        // small arrays reused for every block, instead of a map per block.
+        int[] states = new int[27];
+        int[] counts = new int[27];
         for (int y = -radius; y <= radius; y++) {
             for (int z = -radius; z <= radius; z++) {
                 for (int x = -radius; x <= radius; x++) {
@@ -965,7 +1002,7 @@ public final class Operations {
                         continue;
                     }
                     int current = session.getBlock(bx, by, bz);
-                    java.util.Map<Integer, Integer> counts = new java.util.HashMap<>();
+                    int distinct = 0;
                     for (int dx = -1; dx <= 1; dx++) {
                         for (int dy = -1; dy <= 1; dy++) {
                             for (int dz = -1; dz <= 1; dz++) {
@@ -973,19 +1010,32 @@ public final class Operations {
                                 if (onlyAir) {
                                     state = registry.isAirLike(state) ? registry.air() : current;
                                 }
-                                counts.merge(state, 1, Integer::sum);
+                                int slot = 0;
+                                while (slot < distinct && states[slot] != state) {
+                                    slot++;
+                                }
+                                if (slot == distinct) {
+                                    states[distinct] = state;
+                                    counts[distinct++] = 0;
+                                }
+                                counts[slot]++;
                             }
                         }
                     }
+                    // Ties go to the state seen first, as the map's order used to
+                    // decide them is not one anybody chose.
                     int best = current;
                     int bestCount = 0;
-                    for (var entry : counts.entrySet()) {
-                        if (entry.getValue() > bestCount && !registry.isAirLike(entry.getKey())) {
-                            bestCount = entry.getValue();
-                            best = entry.getKey();
+                    int currentCount = 0;
+                    for (int slot = 0; slot < distinct; slot++) {
+                        if (counts[slot] > bestCount && !registry.isAirLike(states[slot])) {
+                            bestCount = counts[slot];
+                            best = states[slot];
+                        }
+                        if (states[slot] == current) {
+                            currentCount = counts[slot];
                         }
                     }
-                    int currentCount = counts.getOrDefault(current, 0);
                     if (best != current && bestCount - currentCount >= minFreqDiff
                             && session.setBlock(bx, by, bz, best)) {
                         changed++;
@@ -1205,40 +1255,33 @@ public final class Operations {
 
     /** {@code //deltree} — removes a tree starting from its trunk. */
     public static int removeTree(World world, EditSession session, BlockVector3 start) {
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
+        LongQueue queue = new LongQueue();
+        LongSet visited = new LongSet();
+        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
         int changed = 0;
         int air = BlockState.registry().air();
         while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
+            long current = queue.poll();
             if (!visited.add(current) || visited.size() > 20000) {
                 continue;
             }
-            String name = BlockState.registry()
-                    .name(world.getBlock(current.x(), current.y(), current.z()));
+            int x = BlockArrayClipboard.keyX(current);
+            int y = BlockArrayClipboard.keyY(current);
+            int z = BlockArrayClipboard.keyZ(current);
+            String name = BlockState.registry().name(world.getBlock(x, y, z));
             if (!name.contains("log") && !name.contains("leaves") && !name.contains("wood")) {
                 continue;
             }
-            if (session.setBlock(current.x(), current.y(), current.z(), air)) {
+            if (session.setBlock(x, y, z, air)) {
                 changed++;
             }
-            for (com.maxlananas.fawebim.core.world.Direction direction
-                    : com.maxlananas.fawebim.core.world.Direction.values()) {
-                queue.add(current.add(direction.toVector()));
+            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                queue.add(BlockArrayClipboard.positionKey(x + direction.x(), y + direction.y(), z + direction.z()));
             }
         }
         return changed;
     }
 
-    /**
-     * {@code //ores} — scatters ore veins through the selection.
-     *
-     * @param mask      blocks a vein may replace
-     * @param size      blocks per vein
-     * @param frequency one vein per this many blocks
-     * @param rarity    1 in {@code rarity} veins is actually placed
-     */
     /**
      * FAWE's {@code addOre}: scatters veins of the pattern through the selection.
      *

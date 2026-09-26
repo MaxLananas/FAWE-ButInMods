@@ -30,8 +30,8 @@ public final class LocalSession {
     // FAWE starts with the super pickaxe off: the pickaxe only breaks areas
     // after //togglepickaxe (or //, ) turns it on.
     private boolean superPickaxeEnabled = false;
-    private int superPickaxeMode = 1; // 0 = single, 1 = area, 2 = recursive
-    private int superPickaxeRadius = 1;
+    private int superPickaxeMode = com.maxlananas.fawebim.core.tool.SuperPickaxe.AREA;
+    private double superPickaxeRange = 1;
     private int maxBlocksChanged = -1;
     private int timeout = -1;
     // -1 means "whatever the configuration says", so a setting changed in
@@ -40,7 +40,7 @@ public final class LocalSession {
     private double maxBrushRange = -1;
     private int changeLimit = -1;
     private SideEffectSet sideEffectSet = SideEffectSet.defaults();
-    private int wandItemId = -1;
+    private boolean selectionWandEnabled = true;
     private String lastFailedMessage;
     private boolean includeAir = false;
     private boolean tracing = false;
@@ -457,12 +457,13 @@ public final class LocalSession {
         this.superPickaxeMode = mode;
     }
 
-    public int getSuperPickaxeRadius() {
-        return superPickaxeRadius;
+    /** The range of the area or recursive super pickaxe. */
+    public double getSuperPickaxeRange() {
+        return superPickaxeRange;
     }
 
-    public void setSuperPickaxeRadius(int radius) {
-        this.superPickaxeRadius = radius;
+    public void setSuperPickaxeRange(double range) {
+        this.superPickaxeRange = range;
     }
 
     public int getMaxBlocksChanged() {
@@ -527,12 +528,17 @@ public final class LocalSession {
         this.sideEffectSet = sideEffectSet == null ? SideEffectSet.defaults() : sideEffectSet;
     }
 
-    public int getWandItemId() {
-        return wandItemId;
+    /**
+     * Whether the wand item selects when clicked; {@code //toggleeditwand}
+     * turns it off for a player who wants the item back as an item, and the
+     * selection commands keep working.
+     */
+    public boolean isSelectionWandEnabled() {
+        return selectionWandEnabled;
     }
 
-    public void setWandItemId(int wandItemId) {
-        this.wandItemId = wandItemId;
+    public void setSelectionWandEnabled(boolean enabled) {
+        this.selectionWandEnabled = enabled;
     }
 
     public boolean isIncludeAir() {

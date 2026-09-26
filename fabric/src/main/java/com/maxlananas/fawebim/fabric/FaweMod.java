@@ -206,6 +206,10 @@ public final class FaweMod implements ModInitializer {
                 return;
             }
             FabricActor actor = new FabricActor(handler.getPlayer());
+            if (!actor.mayEdit()) {
+                // The banner points at commands this player cannot run.
+                return;
+            }
             for (com.maxlananas.fawebim.core.platform.Welcome.Line line
                     : com.maxlananas.fawebim.core.platform.Welcome.lines()) {
                 if (line.openUrl() != null) {
@@ -258,12 +262,12 @@ public final class FaweMod implements ModInitializer {
                 continue;
             }
             LiteralArgumentBuilder<CommandSourceStack> builder = build(child);
-            // An operator, and anyone on a single-player world, may run them: the
-            // per-command permissions are checked by the engine when a command
-            // actually runs. A command block and a function are automated sources
-            // and are the ones command-block-support governs - they are the
-            // sources that refuse the success messages a console wants.
-            builder.requires(source -> (source.hasPermission(2) || !source.getServer().isDedicatedServer())
+            // Who may use the mod is decided in one place, FabricActor.mayEdit,
+            // which the clicks of the wand, the tools and the brushes answer to
+            // as well. A command block and a function are automated sources and
+            // are the ones command-block-support governs - they are the sources
+            // that refuse the success messages a console wants.
+            builder.requires(source -> FabricActor.mayEdit(source)
                     && (source.getEntity() != null || source.source.acceptsSuccess()
                         || Config.get().commandBlockSupport));
             dispatcher.register(builder);

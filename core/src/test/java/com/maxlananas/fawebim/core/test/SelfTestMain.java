@@ -138,6 +138,7 @@ public final class SelfTestMain {
         HistoryIntegrityTests.run();
         DataStructureTests.run();
         RegionGeometryTests.run();
+        CommandLimitTests.run();
         MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
@@ -2604,7 +2605,8 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(solidBuilder, "//pyramid stone 6");
         check("//pyramid is solid", solidWorld.getBlock(0, 75, 0) == stone);
 
-        // //fillr fills the air above the ground and stops at its depth.
+        // //fillr fills the air from its start down, stopping at its depth, and
+        // nothing above its start, as WorldEdit's does.
         TestWorld hole = new TestWorld("own-name-fill");
         hole.fillFlat(60);
         int grass = BlockState.registry().defaultState("minecraft:grass_block");
@@ -2619,7 +2621,9 @@ public final class SelfTestMain {
         }
         CommandManager.get().dispatch(digger, "//fillr stone 5 2");
         check("//fillr fills the hole", hole.getBlock(3, 61, 3) == stone
-                && hole.getBlock(4, 63, 4) == stone);
+                && hole.getBlock(4, 61, 4) == stone);
+        check("//fillr leaves what is above its start", hole.getBlock(4, 62, 4) == air
+                && hole.getBlock(4, 63, 4) == air);
         check("//fillr stops at its depth", hole.getBlock(3, 59, 3) == grass
                 && hole.getBlock(4, 60, 4) == stone);
         digger.clearMessages();
@@ -3661,18 +3665,28 @@ public final class SelfTestMain {
         section("hostile arguments");
         TestWorld world = new TestWorld("hostile");
         world.fillFlat(70);
+        // The last shapes put the largest numbers where commands take a size, a
+        // count or a thickness: each of them, with a selection, used to walk
+        // billions of blocks on the thread that answers everyone.
         String[][] shapes = {
             {"2147483647"},
             {"-2147483647", "minecraft:", "#perlin["},
             {"%50", "-5", "0"},
             {"stone,stone,stone", "1,2,3,4,5"},
             {"nan", "1e400", "0,0,0"},
+            {"1e400,0,0", "~NaN,~,~", "^1,2,3"},
+            {"30000001,64,0", "-", "\"unterminated"},
+            {"#", "[", "0x10", "9223372036854775808"},
+            {"stone", "2147483647", "2147483647"},
+            {"1000000", "1000000", "1000000"},
         };
         List<String> failed = new ArrayList<>();
         int answers = 0;
         int step = 0;
         for (CommandRegistry.Entry entry : CommandManager.get().registry().all()) {
-            for (String[] shape : shapes) {
+            for (int pass = 0; pass < 2 * shapes.length; pass++) {
+                String[] shape = shapes[pass % shapes.length];
+                boolean withSelection = pass >= shapes.length;
                 StringBuilder line = new StringBuilder(entry.name);
                 for (String argument : shape) {
                     line.append(' ').append(argument);
@@ -3681,6 +3695,18 @@ public final class SelfTestMain {
                 // id, so one name would hand a selection made by //expand to the
                 // command after it, which is how a test turns into a grind.
                 TestActor actor = new TestActor("Hostile" + (step++), world, new BlockVector3(0, 71, 0));
+                // A server that lets a player edit sets a change limit; without one
+                // a stack of millions of copies inside the world is a legitimate
+                // edit that only memory ends, which is not what this sweep is for.
+                actor.session().setMaxBlocksChanged(100_000);
+                if (withSelection) {
+                    // The second pass runs the same lines with a small selection,
+                    // so that the commands that need one get to their arguments.
+                    actor.session().getSelector(world).selectPrimary(new BlockVector3(0, 68, 0),
+                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+                    actor.session().getSelector(world).selectSecondary(new BlockVector3(3, 71, 3),
+                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+                }
                 int before = TestActor.receivedMessages().size();
                 try {
                     CommandManager.get().dispatch(actor, line.toString());

@@ -256,9 +256,14 @@ public final class Commands {
         e8.group = "selection";
         e8.handler = ctx -> {
                     LocalSession session = ctx.session();
-                    session.setFastMode(!session.isFastMode());
-                    ctx.actor().message(Msg.info("Edit wand is now "
-                            + (session.isFastMode() ? "enabled" : "disabled")));
+                    boolean enabled = !session.isSelectionWandEnabled();
+                    session.setSelectionWandEnabled(enabled);
+                    if (enabled) {
+                        ctx.actor().message(Msg.success("The selection wand selects again"));
+                    } else {
+                        ctx.actor().message(Msg.success("The selection wand is off: it is an item again"));
+                        ctx.actor().message(Msg.hint("//pos1 and //pos2 still select, //toggleeditwand turns it back on"));
+                    }
                 };
 
 
@@ -308,7 +313,7 @@ public final class Commands {
                     ctx.actor().message(Msg.keyValue("Dimensions",
                             region.getWidth() + " x " + region.getHeight() + " x " + region.getLength()));
                     ctx.actor().message(Msg.keyValue("Volume", Msg.formatNumber(region.getVolume())));
-                    ctx.actor().message(Msg.keyValue("Chunks", region.getChunks().size()));
+                    ctx.actor().message(Msg.keyValue("Chunks", Msg.formatNumber(region.getChunkCount())));
                 };
 
 
@@ -319,12 +324,7 @@ public final class Commands {
         e12.arguments.add("mask");
         e12.handler = ctx -> {
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    int count = 0;
-                    for (BlockVector3 position : ctx.selection()) {
-                        if (mask.test(position)) {
-                            count++;
-                        }
-                    }
+                    long count = ctx.selection().forEachPosition(mask::test);
                     ctx.actor().message(Msg.keyValue("Count", Msg.formatNumber(count)));
                 };
 
@@ -332,53 +332,49 @@ public final class Commands {
         CommandRegistry.Entry e13 = registry.register("//distr", "//distribution");
         e13.description = "Show the block distribution in the selection";
         e13.group = "selection";
-        e13.requiresSelection = true;
         e13.booleanFlags.add("c");
         e13.booleanFlags.add("d");
         e13.valueFlags.add("p");
         e13.arguments.add("[-p <page>]");
+        // -c reads the clipboard, which needs no selection: the selection is
+        // asked for below when it is the one read.
         e13.requiresSelection = false;
         e13.handler = ctx -> {
-                    java.util.Map<Integer, Integer> counts = new java.util.LinkedHashMap<>();
+                    BlockStateRegistry blockRegistry = BlockState.registry();
+                    com.maxlananas.fawebim.core.util.StateCounts counts =
+                            new com.maxlananas.fawebim.core.util.StateCounts(blockRegistry.stateCount());
                     if (ctx.hasFlag("c")) {
                         if (!ctx.session().hasClipboard()) {
                             throw CommandRegistry.error("No clipboard: use //copy first");
                         }
                         BlockArrayClipboard clip = ctx.session().getClipboard().getClipboard();
-                        for (BlockVector3 position : clip.positions()) {
-                            int state = clip.getBlock(position);
-                            if (BlockState.registry().isAirLike(state)) {
-                                continue;
+                        clip.forEachPosition((x, y, z, state) -> {
+                            if (!blockRegistry.isAirLike(state)) {
+                                counts.add(state);
                             }
-                            counts.merge(state, 1, Integer::sum);
-                        }
+                            return false;
+                        });
                     } else {
-                        for (BlockVector3 position : ctx.selection()) {
-                            int state = ctx.world().getBlock(position.x(), position.y(), position.z());
-                            counts.merge(state, 1, Integer::sum);
-                        }
+                        World world = ctx.world();
+                        ctx.selection().forEachPosition((x, y, z) -> {
+                            counts.add(world.getBlock(x, y, z));
+                            return false;
+                        });
                     }
-                    final long total = counts.values().stream().mapToLong(Integer::longValue).sum();
+                    long total = counts.total();
                     ctx.actor().message(Msg.title("Block distribution (" + Msg.formatNumber(total) + " blocks)"));
-                    BlockStateRegistry blockRegistry = BlockState.registry();
                     // -d separates the states of a block, e.g. oak_log[axis=x].
-                    boolean separate = ctx.hasFlag("d");
-                    java.util.Map<String, Integer> named = new java.util.LinkedHashMap<>();
-                    for (java.util.Map.Entry<Integer, Integer> entry : counts.entrySet()) {
-                        String name = separate ? blockRegistry.describe(entry.getKey())
-                                : blockRegistry.name(entry.getKey());
-                        named.merge(name, entry.getValue(), Integer::sum);
-                    }
-                    java.util.List<java.util.Map.Entry<String, Integer>> sorted = new java.util.ArrayList<>(named.entrySet());
-                    sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+                    java.util.Map<String, Long> named = counts.byName(ctx.hasFlag("d")
+                            ? blockRegistry::describe : blockRegistry::name);
+                    java.util.List<java.util.Map.Entry<String, Long>> sorted = new java.util.ArrayList<>(named.entrySet());
+                    sorted.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
                     Page page = Page.of(ctx, sorted.size());
-                    for (java.util.Map.Entry<String, Integer> entry : sorted.subList(page.from(), page.to())) {
+                    for (java.util.Map.Entry<String, Long> entry : sorted.subList(page.from(), page.to())) {
                         ctx.actor().message(Msg.item(entry.getKey(), Msg.formatNumber(entry.getValue()) + " ("
                                 + String.format(Locale.ROOT, "%.2f", entry.getValue() * 100.0 / Math.max(1, total))
                                 + "%)"));
                     }
                     page.hint(ctx, "//distr");
-
                 };
 
 
@@ -1031,7 +1027,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = Math.max(1, ctx.doubleArg(1, 1));
+                    double radius = Math.max(1, ctx.radiusArg(1, 1));
                     int depth = Math.max(1, ctx.intArg(2, Integer.MAX_VALUE));
                     BlockVector3 start = ctx.placement() != null
                             ? ctx.placement() : ctx.selection().getMinimumPoint();
@@ -1153,9 +1149,12 @@ public final class Commands {
                     BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
                     int size = ctx.sizeArg(0, 0);
                     int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() + 1;
+                    // The columns start inside the world whatever height was typed:
+                    // a height of minus two billion is not two billion empty steps.
+                    int from = Math.max(height, ctx.world().minY());
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
                         for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                            for (int y = height; y <= ctx.world().maxY(); y++) {
+                            for (int y = from; y <= ctx.world().maxY(); y++) {
                                 session.setBlock(x, y, z, air());
                             }
                         }
@@ -1174,9 +1173,10 @@ public final class Commands {
                     BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
                     int size = ctx.sizeArg(0, 0);
                     int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() - 1;
+                    int to = Math.min(height, ctx.world().maxY());
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
                         for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                            for (int y = ctx.world().minY(); y <= height; y++) {
+                            for (int y = ctx.world().minY(); y <= to; y++) {
                                 session.setBlock(x, y, z, air());
                             }
                         }
@@ -1194,7 +1194,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    int size = ctx.intArg(1, 10);
+                    int size = ctx.sizeArg(1, 10);
                     BlockVector3 origin = ctx.placement();
                     int changed = 0;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
@@ -1302,7 +1302,8 @@ public final class Commands {
         e40.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    int radius = Math.max(1, ctx.intArg(0, 40));
+                    int ceiling = com.maxlananas.fawebim.core.platform.Config.get().maxRadius;
+                    int radius = Math.max(1, ctx.sizeArg(0, ceiling > 0 ? Math.min(40, ceiling) : 40));
                     Mask fire = Parsers.mask("minecraft:fire", ctx);
                     int changed = com.maxlananas.fawebim.core.function.Operations.removeNear(
                             ctx.world(), session, ctx.placement(), radius, fire);
@@ -1417,6 +1418,9 @@ public final class Commands {
         e44.handler = ctx -> {
                     Region region = ctx.selection();
                     int count = ctx.intArg(0, 1);
+                    if (count < 1) {
+                        throw CommandRegistry.error("The count must be at least 1");
+                    }
                     String dir = ctx.arg(1, "me");
                     Direction direction = dir.equalsIgnoreCase("me") ? ctx.actor().facing() : Parsers.direction(dir);
                     EditSession session = ctx.editSession();
@@ -1430,6 +1434,10 @@ public final class Commands {
                     int dx = direction.x() * (ctx.hasFlag("r") ? 1 : region.getWidth());
                     int dy = direction.y() * (ctx.hasFlag("r") ? 1 : region.getHeight());
                     int dz = direction.z() * (ctx.hasFlag("r") ? 1 : region.getLength());
+                    // The copies past the edge of the world write nothing; walking
+                    // them was two billion passes over the selection, and their
+                    // offsets overflowed into copies on the far side of the world.
+                    count = copiesInWorld(region, ctx.world(), dx, dy, dz, count);
                     boolean skipAir = ctx.hasFlag("a");
                     for (int i = 1; i <= count; i++) {
                         int offsetX = dx * i;
@@ -1450,6 +1458,46 @@ public final class Commands {
                     flush(ctx, session, "Stacked");
                 };
 
+    }
+
+    /**
+     * How many copies of a stack, each {@code (dx, dy, dz)} further than the
+     * one before, still reach into the world: between the world's floor and
+     * ceiling, and inside the border horizontally.
+     */
+    static int copiesInWorld(Region region, World world, int dx, int dy, int dz, int count) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        long border = Parsers.MAX_COORDINATE;
+        long fit = count;
+        fit = Math.min(fit, copiesAlong(min.x(), max.x(), dx, -border, border));
+        fit = Math.min(fit, copiesAlong(min.y(), max.y(), dy, world.minY(), world.maxY()));
+        fit = Math.min(fit, copiesAlong(min.z(), max.z(), dz, -border, border));
+        return (int) fit;
+    }
+
+    /** The copies along one axis whose span still meets {@code [low, high]}. */
+    private static long copiesAlong(int min, int max, int step, long low, long high) {
+        if (step > 0) {
+            return Math.max(0, (high - min) / step);
+        }
+        if (step < 0) {
+            return Math.max(0, (max - low) / -step);
+        }
+        return Long.MAX_VALUE;
+    }
+
+    /**
+     * The thickness of {@code //line} and {@code //curve}: a radius around the
+     * path, walked as a sphere at every step of it, so it answers to the
+     * radius ceiling. WorldEdit refuses a negative one.
+     */
+    private static double lineThickness(Ctx ctx) {
+        double thickness = ctx.radiusArg(1, 0);
+        if (thickness < 0) {
+            throw CommandRegistry.error("Thickness must be >= 0");
+        }
+        return thickness;
     }
 
     /** The origin a rotation transform turns around. */
@@ -1473,7 +1521,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double thickness = ctx.doubleArg(1, 0);
+                    double thickness = lineThickness(ctx);
                     BlockVector3 min = ctx.selection().getMinimumPoint();
                     BlockVector3 max = ctx.selection().getMaximumPoint();
                     int changed = com.maxlananas.fawebim.core.function.Operations.line(session, min, max, pattern, thickness,
@@ -1494,7 +1542,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double thickness = ctx.doubleArg(1, 0);
+                    double thickness = lineThickness(ctx);
                     Region region = ctx.selection();
                     List<BlockVector3> points = region instanceof com.maxlananas.fawebim.core.region.ConvexPolyhedralRegion convex
                             ? convex.getVertices() : List.of(region.getMinimumPoint(), region.getMaximumPoint());
@@ -1833,7 +1881,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    int size = ctx.intArg(1);
+                    int size = ctx.sizeArg(1);
                     boolean hollowShape = ctx.hasFlag("h");
                     int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, hollowShape);
@@ -1850,7 +1898,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    int size = ctx.intArg(1);
+                    int size = ctx.sizeArg(1);
                     int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, true);
                     flush(ctx, session, "Created", changed, "block(s)");
@@ -3123,37 +3171,50 @@ public final class Commands {
                     if (tool == null) {
                         throw CommandRegistry.error("Unknown tool '" + type + "'");
                     }
-                    com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), ctx.arg(1, ""));
+                    com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(),
+                            ctx.arg(com.maxlananas.fawebim.core.tool.Tools.targetArgument(type), ""));
                     ctx.actor().message(Msg.success("Tool '" + type + "' bound to your held item"));
                 };
 
 
         CommandRegistry.Entry e101 = registry.register("/superpickaxe", "/sp", "//sp");
-        e101.description = "Super-pickaxe: single, area <radius>, recursive";
+        e101.description = "Super-pickaxe: single, area <range>, recursive <range>";
         e101.group = "tool";
         e101.arguments.add("[single|area|recursive|recur|off]");
-        e101.arguments.add("[radius]");
+        e101.arguments.add("[range]");
         e101.handler = ctx -> {
                     String mode = ctx.arg(0, "area").toLowerCase(Locale.ROOT);
                     LocalSession session = ctx.session();
                     switch (mode) {
                         case "single" -> {
+                            session.setSuperPickaxeMode(com.maxlananas.fawebim.core.tool.SuperPickaxe.SINGLE);
                             session.setSuperPickaxeEnabled(true);
-                            session.setSuperPickaxeMode(0);
-                        }
-                        case "recursive", "recur" -> {
-                            session.setSuperPickaxeEnabled(true);
-                            session.setSuperPickaxeMode(2);
+                            ctx.actor().message(Msg.success("Super pickaxe: single block"));
                         }
                         case "area" -> {
+                            int range = ctx.intArg(1, 1);
+                            com.maxlananas.fawebim.core.tool.SuperPickaxe.checkRange(range);
+                            session.setSuperPickaxeMode(com.maxlananas.fawebim.core.tool.SuperPickaxe.AREA);
+                            session.setSuperPickaxeRange(range);
                             session.setSuperPickaxeEnabled(true);
-                            session.setSuperPickaxeMode(1);
-                            session.setSuperPickaxeRadius(ctx.intArg(1, 1));
+                            ctx.actor().message(Msg.success("Super pickaxe: area of range " + Msg.value(range).raw()));
                         }
-                        case "off" -> session.setSuperPickaxeEnabled(false);
-                        default -> throw CommandRegistry.error("Usage: /sp single|area <radius>|recursive|off");
+                        case "recursive", "recur" -> {
+                            double range = ctx.doubleArg(1, 1);
+                            com.maxlananas.fawebim.core.tool.SuperPickaxe.checkRange(range);
+                            session.setSuperPickaxeMode(com.maxlananas.fawebim.core.tool.SuperPickaxe.RECURSIVE);
+                            session.setSuperPickaxeRange(range);
+                            session.setSuperPickaxeEnabled(true);
+                            ctx.actor().message(Msg.success("Super pickaxe: recursive, range "
+                                    + Msg.value(Msg.formatDouble(range)).raw()));
+                        }
+                        case "off" -> {
+                            session.setSuperPickaxeEnabled(false);
+                            ctx.actor().message(Msg.success("Super pickaxe disabled"));
+                        }
+                        default -> throw CommandRegistry.error(
+                                "Usage: /sp single|area <range>|recursive <range>|off");
                     }
-                    ctx.actor().message(Msg.success("Super-pickaxe mode: " + mode));
                 };
 
 

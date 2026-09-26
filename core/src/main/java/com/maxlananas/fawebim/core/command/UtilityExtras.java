@@ -669,19 +669,20 @@ final class UtilityExtras {
         if (current == null) {
             throw CommandRegistry.error("No edit recorded yet");
         }
-        Map<String, Integer> counts = new LinkedHashMap<>();
+        com.maxlananas.fawebim.core.util.StateCounts counts =
+                new com.maxlananas.fawebim.core.util.StateCounts(BlockState.registry().stateCount());
         for (var sets : current.changes().values()) {
             for (var set : sets) {
                 for (int i = 0; i < set.size(); i++) {
-                    counts.merge(BlockState.registry().name(set.beforeAt(i)), 1, Integer::sum);
+                    counts.add(set.beforeAt(i));
                 }
             }
         }
-        List<Map.Entry<String, Integer>> sorted = new ArrayList<>(counts.entrySet());
-        sorted.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
+        List<Map.Entry<String, Long>> sorted = new ArrayList<>(counts.byName(BlockState.registry()::name).entrySet());
+        sorted.sort(Map.Entry.<String, Long>comparingByValue().reversed());
         Page page = Page.of(ctx, sorted.size());
         ctx.actor().message(page.header("Blocks changed by the last edit (before state)", sorted.size()));
-        for (Map.Entry<String, Integer> counted : sorted.subList(page.from(), page.to())) {
+        for (Map.Entry<String, Long> counted : sorted.subList(page.from(), page.to())) {
             ctx.actor().message(Msg.item(counted.getKey(), Msg.formatNumber(counted.getValue())));
         }
         page.hint(ctx, "//history distr");

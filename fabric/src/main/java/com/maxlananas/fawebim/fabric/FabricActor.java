@@ -185,14 +185,30 @@ public final class FabricActor implements Actor {
         return ConfigurationScreens.open();
     }
 
-    @Override
-    public boolean hasPermission(String permission) {
-        // Single player: everything is allowed unless the player is not op and
-        // the game is in a restricted mode.
-        if (player == null) {
+    /**
+     * The one permission the mod has: whether a source may use it at all. An
+     * operator may - level 2, what vanilla asks for {@code /fill} - and so may
+     * the console, a command block and the owner of a single-player world, even
+     * with its cheats off. A player who joined a world opened to LAN is none of
+     * these unless the host allowed commands, which makes every player an
+     * operator.
+     */
+    static boolean mayEdit(CommandSourceStack source) {
+        if (source.hasPermission(2)) {
             return true;
         }
-        return source.hasPermission(2) || !player.level().getServer().isDedicatedServer();
+        ServerPlayer player = source.getPlayer();
+        return player != null && source.getServer().isSingleplayerOwner(player.nameAndId());
+    }
+
+    /** {@link #mayEdit(CommandSourceStack)} for this actor. */
+    boolean mayEdit() {
+        return mayEdit(source);
+    }
+
+    @Override
+    public boolean hasPermission(String permission) {
+        return mayEdit(source);
     }
 
     @Override

@@ -165,6 +165,19 @@ public final class Ctx {
     }
 
     /**
+     * A whole number between {@code min} and {@code max}, both included: an
+     * argument a command sizes a loop or a random draw with is refused outside
+     * that range before anything runs.
+     */
+    public int intArg(int index, int fallback, int min, int max, String name) {
+        int value = intArg(index, fallback);
+        if (value < min || value > max) {
+            throw CommandRegistry.error("The " + name + " must be between " + min + " and " + max);
+        }
+        return value;
+    }
+
+    /**
      * A number argument; {@code NaN} and the infinities are refused. Coordinate
      * style arguments ({@code ~5}, {@code ^3}) are read by {@link #blockVector}.
      */
@@ -184,15 +197,35 @@ public final class Ctx {
      * generator takes already answers to, with the same line that reports it.
      */
     public int sizeArg(int index, int fallback) {
+        return index < positional.size() ? sizeArg(index) : fallback;
+    }
+
+    /** {@link #sizeArg(int, int)} for an argument the command cannot do without. */
+    public int sizeArg(int index) {
+        int size = intArg(index);
+        checkRadius(size);
+        return size;
+    }
+
+    /**
+     * A radius that may have decimals, under the same ceiling as
+     * {@link #sizeArg(int, int)}: {@code NaN} and the infinities are refused
+     * with every other number that is not one.
+     */
+    public double radiusArg(int index, double fallback) {
         if (index >= positional.size()) {
             return fallback;
         }
-        int size = intArg(index);
+        double radius = doubleArg(index);
+        checkRadius(radius);
+        return radius;
+    }
+
+    private static void checkRadius(double radius) {
         int maximum = com.maxlananas.fawebim.core.platform.Config.get().maxRadius;
-        if (maximum > 0 && Math.abs((long) size) > maximum) {
+        if (maximum > 0 && Math.abs(radius) > maximum) {
             throw CommandRegistry.error("Maximum radius (in configuration): " + maximum);
         }
-        return size;
     }
 
     public boolean hasFlag(String flag) {

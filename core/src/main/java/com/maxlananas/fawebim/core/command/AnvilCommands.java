@@ -609,15 +609,15 @@ final class AnvilCommands {
         World world = ctx.world();
         Region region = ctx.selection();
         BlockStateRegistry registry = BlockState.registry();
-        Map<String, Long> counts = new LinkedHashMap<>();
-        for (BlockVector3 position : region) {
-            if (mask != null && !mask.test(position)) {
-                continue;
+        com.maxlananas.fawebim.core.util.StateCounts counts =
+                new com.maxlananas.fawebim.core.util.StateCounts(registry.stateCount());
+        region.forEachPosition((x, y, z) -> {
+            if (mask == null || mask.test(x, y, z)) {
+                counts.add(world.getBlock(x, y, z));
             }
-            int state = world.getBlock(position.x(), position.y(), position.z());
-            counts.merge(byState ? registry.describe(state) : registry.name(state), 1L, Long::sum);
-        }
-        return counts;
+            return false;
+        });
+        return counts.byName(byState ? registry::describe : registry::name);
     }
 
     private void distribution(Ctx ctx, Map<String, Long> counts) {

@@ -360,9 +360,8 @@ public final class EditSession implements Extent {
         return setBlock(x, y, z, stateId, true);
     }
 
-    /** Core write path; {@code record} controls whether history is recorded. */
     /**
-     * The write path.
+     * The write path; {@code recordChange} says whether the history records the write.
      *
      * <p>The state a write replaces is what the position holds for this edit:
      * the write still waiting in the buffer, else the world. A cell the edit

@@ -2,13 +2,13 @@ package com.maxlananas.fawebim.fabric;
 
 import com.maxlananas.fawebim.core.brush.Brush;
 import com.maxlananas.fawebim.core.brush.BrushFactory;
-import com.maxlananas.fawebim.core.command.CommandManager;
 import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.SelectorLimits;
 import com.maxlananas.fawebim.core.session.LocalSession;
+import com.maxlananas.fawebim.core.tool.SuperPickaxe;
 import com.maxlananas.fawebim.core.tool.Tool;
 import com.maxlananas.fawebim.core.tool.Tools;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -106,6 +106,9 @@ public final class FabricInteractions {
             return InteractionResult.PASS;
         }
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return InteractionResult.PASS;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
@@ -134,7 +137,7 @@ public final class FabricInteractions {
         }
 
         // 3. The selection wand: first corner.
-        if (held != null && held.equals(Config.get().wandItem)) {
+        if (held != null && held.equals(Config.get().wandItem) && session.isSelectionWandEnabled()) {
             session.setLastClickedPosition(FabricMessages.blockVector(pos));
             session.setLastClickedFace(FabricMessages.direction(face));
             session.getSelector(actor.world()).selectPrimary(FabricMessages.blockVector(pos),
@@ -157,6 +160,9 @@ public final class FabricInteractions {
      */
     public static boolean onLeftClickAir(ServerPlayer player) {
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return false;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
         Brush brush = BrushFactory.current(session);
@@ -177,6 +183,9 @@ public final class FabricInteractions {
             return InteractionResult.PASS;
         }
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return InteractionResult.PASS;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
@@ -198,7 +207,8 @@ public final class FabricInteractions {
         }
 
         // 3. Far wand: right-click extends the selection.
-        if (held != null && held.equals(Config.get().wandItem) && !player.isShiftKeyDown()) {
+        if (held != null && held.equals(Config.get().wandItem) && session.isSelectionWandEnabled()
+                && !player.isShiftKeyDown()) {
             session.setLastClickedPosition(FabricMessages.blockVector(pos));
             session.setLastClickedFace(FabricMessages.direction(face));
             session.getSelector(actor.world()).selectSecondary(FabricMessages.blockVector(pos),
@@ -220,6 +230,9 @@ public final class FabricInteractions {
             return InteractionResult.PASS;
         }
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return InteractionResult.PASS;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
@@ -326,36 +339,66 @@ public final class FabricInteractions {
                 || item.equals("minecraft:netherite_pickaxe"));
     }
 
-    /** FAWE's super-pickaxe: instant break of an area or a whole tree. */
+    /**
+     * The super pickaxe: breaks what {@link SuperPickaxe} plans for the click
+     * through an edit session, so {@code //undo} puts it back like any edit,
+     * and drops what it broke the way breaking the block would when the
+     * configuration asks for drops - {@code super-pickaxe-drop} for the single
+     * pick, {@code super-pickaxe-many-drop} for the other two, as WorldEdit
+     * reads them.
+     */
     private static boolean superPickaxe(FabricActor actor, BlockVector3 start) {
+        ServerPlayer player = actor.player();
         LocalSession session = actor.session();
-        if (session.getSuperPickaxeMode() == 2) {
-            // Recursive mode removes whole trees, like FAWE's recursive pickaxe.
-            return CommandManager.get().dispatch(actor, "//deltree");
+        int mode = session.getSuperPickaxeMode();
+        // The ceiling is read again at the click: it may have been lowered since
+        // the mode was chosen.
+        int ceiling = Math.min(Config.get().maxSuperPickaxeSize, SuperPickaxe.MAX_RANGE);
+        double range = Math.max(0, Math.min(session.getSuperPickaxeRange(), ceiling));
+        int[] targets = SuperPickaxe.targets(actor.world(), mode, range, start.x(), start.y(), start.z());
+        if (targets.length == 0 || player == null) {
+            return false;
         }
-        EditSession edit = new EditSession(actor.world(), session, "superpickaxe", false);
-        int radius = Math.max(0, session.getSuperPickaxeRadius());
+        ServerLevel level = (ServerLevel) player.level();
+        boolean drops = mode == SuperPickaxe.SINGLE ? Config.get().superPickaxeDrop
+                : Config.get().superPickaxeManyDrop;
+        int count = targets.length / 3;
+        net.minecraft.world.level.block.state.BlockState[] states =
+                new net.minecraft.world.level.block.state.BlockState[count];
+        net.minecraft.world.level.block.entity.BlockEntity[] blockEntities =
+                drops ? new net.minecraft.world.level.block.entity.BlockEntity[count] : null;
+        boolean[] broken = new boolean[count];
+        int air = BlockState.registry().air();
+        EditSession edit = new EditSession(actor.world(), session, "superpickaxe");
         try {
-            for (int x = -radius; x <= radius; x++) {
-                for (int y = -radius; y <= radius; y++) {
-                    for (int z = -radius; z <= radius; z++) {
-                        edit.setBlock(start.x() + x, start.y() + y, start.z() + z, BlockState.registry().air());
-                    }
+            for (int i = 0; i < count; i++) {
+                BlockPos pos = new BlockPos(targets[3 * i], targets[3 * i + 1], targets[3 * i + 2]);
+                // The block is read before its own write: the edit only buffers
+                // it, so the world still holds it and its block entity.
+                states[i] = level.getBlockState(pos);
+                if (drops) {
+                    blockEntities[i] = level.getBlockEntity(pos);
                 }
+                broken[i] = edit.setBlock(pos.getX(), pos.getY(), pos.getZ(), air);
             }
         } finally {
+            // A change limit reached halfway stops the loop: what was broken
+            // before it is written, and drops, and the limit is still reported.
             edit.close();
-        }
-        ServerPlayer player = actor.player();
-        // A single break drops what it broke; an area break only drops everything
-        // when many-drop-items is on, which is how WorldEdit reads the pair.
-        boolean drops = radius == 0 ? Config.get().superPickaxeDrop
-                : Config.get().superPickaxeDrop && Config.get().superPickaxeManyDrop;
-        if (drops && player != null) {
-            // Break particles/sound, exactly like a vanilla block break.
-            player.level().levelEvent(2001, new BlockPos(start.x(), start.y(), start.z()),
-                    net.minecraft.world.level.block.Block.getId(
-                            player.level().getBlockState(new BlockPos(start.x(), start.y(), start.z()))));
+            for (int i = 0; i < count; i++) {
+                if (!broken[i]) {
+                    continue;
+                }
+                BlockPos pos = new BlockPos(targets[3 * i], targets[3 * i + 1], targets[3 * i + 2]);
+                if (drops) {
+                    net.minecraft.world.level.block.Block.dropResources(states[i], level, pos, blockEntities[i]);
+                }
+                // The breaking particles and sound, for the clicked block only:
+                // one per block of an area would be a packet per block.
+                if (pos.getX() == start.x() && pos.getY() == start.y() && pos.getZ() == start.z()) {
+                    level.levelEvent(2001, pos, net.minecraft.world.level.block.Block.getId(states[i]));
+                }
+            }
         }
         return true;
     }
@@ -371,6 +414,9 @@ public final class FabricInteractions {
             return false;
         }
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return false;
+        }
         LocalSession session = actor.session();
         Brush brush = BrushFactory.current(session);
         if (brush == null || !bound(session, "brush-item", FabricMessages.heldItem(player))) {
@@ -388,7 +434,7 @@ public final class FabricInteractions {
     /** Used by {@code /brush command} and the tool bindings. */
     public static void tick(ServerPlayer player) {
         FabricActor actor = new FabricActor(player);
-        if (actor.session().isDrawSelection()) {
+        if (actor.mayEdit() && actor.session().isDrawSelection()) {
             SelectionPreview.refresh(actor);
         }
     }
