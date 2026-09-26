@@ -2225,11 +2225,15 @@ public final class Commands {
                             ctx.actor().message(Msg.result("Clipboard", "cleared"));
                         }
                         case "loadall" -> {
-                            String format = ctx.arg(1, com.maxlananas.fawebim.core.platform.Config.get()
-                                    .defaultSchematicFormat);
-                            String filter = ctx.arg(2, "*");
+                            // FAWE's //schem loadall [format] <filename>: one word is the
+                            // file, and the format only comes first when both are given.
+                            // The format is read from each file anyway.
+                            if (ctx.args().size() < 2) {
+                                throw CommandRegistry.error("Usage: //schem loadall [format] <filename>");
+                            }
+                            String filter = ctx.arg(ctx.args().size() > 2 ? 2 : 1);
                             java.util.List<com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard> loaded =
-                                    Schematics.loadAll(format, filter);
+                                    Schematics.loadAll(filter);
                             if (loaded.isEmpty()) {
                                 throw CommandRegistry.error("No schematic matched '" + filter + "'");
                             }

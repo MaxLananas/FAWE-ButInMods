@@ -61,6 +61,7 @@ final class SchematicFormatTests {
             sidesAreLimited();
             saveOverwritesWithTheForceSwitch();
             listingShowsWhatLoads();
+            loadAllTakesAFileAndAnOptionalFormat();
         } finally {
             Schematics.setDirectory(previous);
             try (Stream<Path> files = Files.walk(dir)) {
@@ -749,6 +750,34 @@ final class SchematicFormatTests {
                 matched.contains("listed-house.schem") && !matched.contains("listed-tower.schem"));
         checkEquals("and falls back to the names containing it", List.of("listed-tower.schem"),
                 Schematics.matching(List.of("listed-house.schem", "listed-tower.schem"), "tower"));
+    }
+
+    /**
+     * FAWE's {@code //schem loadall [format] <filename>}: one word is the file.
+     * It used to be read as the format, and the filter left at its default
+     * loaded every schematic of the folder.
+     */
+    private static void loadAllTakesAFileAndAnOptionalFormat() {
+        TestWorld world = new TestWorld("SchemLoadAll");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("SchemLoadAll", world, new BlockVector3(0, 71, 0));
+        actor.session().setClipboard(offsetClipboard());
+        CommandManager.get().dispatch(actor, "//schem save pool-oak");
+        CommandManager.get().dispatch(actor, "//schem save pool-birch");
+        CommandManager.get().dispatch(actor, "//schem save lonely-house");
+        String[][] cases = {
+                {"//schem loadall -o lonely-house", "Loaded 1 clipboard(s)"},
+                {"//schem loadall -o sponge lonely-house", "Loaded 1 clipboard(s)"},
+                {"//schem loadall -o pool-*", "Loaded 2 clipboard(s)"},
+                {"//schem loadall -o nothing-here", "No schematic named 'nothing-here'"},
+                {"//schem loadall", "Usage: //schem loadall [format] <filename>"},
+        };
+        for (String[] row : cases) {
+            actor.clearMessages();
+            CommandManager.get().dispatch(actor, row[0]);
+            String answer = String.join("\n", actor.messages()).replaceAll("\u00a7.", "");
+            check(row[0] + " answers " + row[1] + " (" + answer + ")", answer.contains(row[1]));
+        }
     }
 
     /** {@code -f} is the value flag of {@code //schem list}; under {@code save} it is WorldEdit's overwrite switch. */

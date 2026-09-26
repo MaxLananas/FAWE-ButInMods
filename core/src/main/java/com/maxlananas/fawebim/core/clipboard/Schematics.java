@@ -173,15 +173,16 @@ public final class Schematics {
     }
 
     /**
-     * Loads every schematic of the folder matching a glob, as {@code /schem loadall}
-     * does; the pool it fills is what {@code //paste} then picks from at random.
-     *
-     * @param format the format name the command was given, kept for the message
-     * @param glob   a file name pattern, {@code *} for everything
+     * The schematics {@code /schem loadall} puts in the pool {@code //paste}
+     * picks from at random: the one a name gives, as FAWE loads it, or every
+     * schematic of the folder a glob such as {@code tree*} matches.
      */
-    public static List<BlockArrayClipboard> loadAll(String format, String glob) {
+    public static List<BlockArrayClipboard> loadAll(String input) {
+        if (input.chars().noneMatch(c -> c == '*' || c == '?' || c == '[' || c == '{')) {
+            return List.of(load(input));
+        }
         java.nio.file.PathMatcher matcher = java.nio.file.FileSystems.getDefault()
-                .getPathMatcher("glob:" + (glob == null || glob.isBlank() ? "*" : glob));
+                .getPathMatcher("glob:" + input);
         List<BlockArrayClipboard> loaded = new ArrayList<>();
         for (String name : list()) {
             if (!matcher.matches(java.nio.file.Path.of(name))) {
