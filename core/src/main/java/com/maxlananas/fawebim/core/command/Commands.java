@@ -1454,6 +1454,30 @@ public final class Commands {
      * path, walked as a sphere at every step of it, so it answers to the
      * radius ceiling. WorldEdit refuses a negative one.
      */
+    /**
+     * What {@code //line} joins, as in WorldEdit: the vertices of a convex
+     * selection, or the two corners of a cuboid one in the order they were
+     * set, so the line runs between the corners the player clicked rather than
+     * always from the lowest to the highest.
+     */
+    private static List<BlockVector3> lineEnds(Ctx ctx) {
+        Region region = ctx.selection();
+        if (region instanceof com.maxlananas.fawebim.core.region.ConvexPolyhedralRegion convex) {
+            return convex.getVertices();
+        }
+        if (!(region instanceof com.maxlananas.fawebim.core.region.CuboidRegion)) {
+            throw CommandRegistry.error("//line only works with cuboid selections or convex polyhedral selections");
+        }
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        if (ctx.session().getSelector(ctx.world()) instanceof com.maxlananas.fawebim.core.region.Selectors.CuboidSelector cuboid
+                && cuboid.isDefined() && cuboid.getPos1().min(cuboid.getPos2()).equals(min)
+                && cuboid.getPos1().max(cuboid.getPos2()).equals(max)) {
+            return List.of(cuboid.getPos1(), cuboid.getPos2());
+        }
+        return List.of(min, max);
+    }
+
     private static double lineThickness(Ctx ctx) {
         double thickness = ctx.radiusArg(1, 0);
         if (thickness < 0) {
@@ -1476,18 +1500,15 @@ public final class Commands {
         e45.group = "generation";
         e45.requiresSelection = true;
         e45.booleanFlags.add("h");
-        e45.booleanFlags.add("s");
         e45.arguments.add("pattern");
         e45.arguments.add("[thickness]");
         e45.handler = ctx -> {
+                    List<BlockVector3> points = lineEnds(ctx);
+                    double thickness = lineThickness(ctx);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double thickness = lineThickness(ctx);
-                    BlockVector3 min = ctx.selection().getMinimumPoint();
-                    BlockVector3 max = ctx.selection().getMaximumPoint();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.line(session, min, max, pattern, thickness,
-                            ctx.hasFlag("h"));
+                    int changed = Operations.drawLine(session, points, thickness, !ctx.hasFlag("h"), pattern);
                     flush(ctx, session, "Drew", changed, "block(s)");
                 };
 

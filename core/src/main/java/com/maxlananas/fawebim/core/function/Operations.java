@@ -579,38 +579,45 @@ public final class Operations {
 
     // ------------------------------------------------------------- lines/curves
 
-    /** {@code //line}. */
-    public static int line(EditSession session, BlockVector3 from, BlockVector3 to, Pattern pattern, double thickness,
-                           boolean shell) {
-        int changed = 0;
-        Vector3 direction = new Vector3(to.x() - from.x(), to.y() - from.y(), to.z() - from.z());
-        double length = Math.max(1, direction.length());
-        Vector3 step = direction.divide(length);
-        int extra = (int) Math.ceil(thickness);
-        for (double t = 0; t <= length; t += 0.5) {
-            double x = from.x() + step.x() * t;
-            double y = from.y() + step.y() * t;
-            double z = from.z() + step.z() * t;
-            for (int dy = -extra; dy <= extra; dy++) {
-                for (int dz = -extra; dz <= extra; dz++) {
-                    for (int dx = -extra; dx <= extra; dx++) {
-                        if (thickness > 0 && Math.sqrt(dx * dx + dy * dy + dz * dz) > thickness) {
-                            continue;
-                        }
-                        if (thickness == 0 && (dx != 0 || dy != 0 || dz != 0)) {
-                            continue;
-                        }
-                        int bx = (int) Math.floor(x) + dx;
-                        int by = (int) Math.floor(y) + dy;
-                        int bz = (int) Math.floor(z) + dz;
-                        if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
-                            changed++;
-                        }
-                    }
-                }
+    /**
+     * Straight segments through the points, as WorldEdit's drawLine behind
+     * {@code //line}: each segment takes one block per step along its longest
+     * axis, the others rounded; each block becomes a ball of {@code radius},
+     * and without {@code filled} only the blocks of the result with a face
+     * outside it are kept. Each block is written once.
+     *
+     * <p>The line was sampled every half block with every block of the ball
+     * around each sample written again, some a hundred times over, which gave
+     * a random pattern that many draws per block; the shell switch was read and
+     * ignored.</p>
+     */
+    public static int drawLine(EditSession session, List<BlockVector3> points, double radius, boolean filled,
+                               Pattern pattern) {
+        ShapeCells tips = new ShapeCells("The line");
+        for (int i = 0; i + 1 < points.size(); i++) {
+            BlockVector3 from = points.get(i);
+            BlockVector3 to = points.get(i + 1);
+            int dx = Math.abs(to.x() - from.x());
+            int dy = Math.abs(to.y() - from.y());
+            int dz = Math.abs(to.z() - from.z());
+            int signX = to.x() > from.x() ? 1 : -1;
+            int signY = to.y() > from.y() ? 1 : -1;
+            int signZ = to.z() > from.z() ? 1 : -1;
+            int steps = Math.max(dx, Math.max(dy, dz));
+            if (steps == 0) {
+                tips.add(from.x(), from.y(), from.z());
+                continue;
+            }
+            for (int step = 0; step <= steps; step++) {
+                // WorldEdit rounds the coordinate itself, halves up, so a line
+                // and its reverse can differ by a block where a step falls on
+                // a half.
+                tips.add((int) Math.round(from.x() + (double) step * dx / steps * signX),
+                        (int) Math.round(from.y() + (double) step * dy / steps * signY),
+                        (int) Math.round(from.z() + (double) step * dz / steps * signZ));
             }
         }
-        return changed;
+        return tips.balloon(radius, "The line").write(session, pattern, !filled);
     }
 
     /**
@@ -635,7 +642,7 @@ public final class Operations {
         }
         KochanekBartels spline = new KochanekBartels(nodes, tension, bias, continuity);
         World world = session.getWorld();
-        SplineCells cells = new SplineCells("The spline");
+        ShapeCells cells = new ShapeCells("The spline");
         double step = 1D / spline.arcLength() / quality;
         int reach = (int) Math.ceil(Math.max(0, radius));
         double reachSquared = radius * radius;
@@ -657,20 +664,47 @@ public final class Operations {
     }
 
     /**
-     * The blocks of a spline, each once, in the order they were first reached.
-     * A curve is walked many times per block, so most of what it reaches it
-     * has reached before; the set is what writes each block once, and it holds
+     * The blocks of a line or a curve, each once, in the order they were first
+     * reached. A curve is walked many times per block and the balls around
+     * neighbouring blocks overlap, so most of what a shape reaches it has
+     * reached before; the set is what writes each block once, and it holds
      * packed longs rather than an object per block.
      */
-    private static final class SplineCells {
+    private static final class ShapeCells {
 
         private final String what;
         private final LongSet seen = new LongSet();
         private final LongQueue order = new LongQueue();
         private final long limit = Buffers.budget() / 24;
 
-        SplineCells(String what) {
+        ShapeCells(String what) {
             this.what = what;
+        }
+
+        /** The blocks within {@code radius} of one of these, as WorldEdit's getBallooned; empties this set. */
+        ShapeCells balloon(double radius, String name) {
+            int reach = (int) Math.ceil(Math.max(0, radius));
+            double reachSquared = radius * radius;
+            ShapeCells ballooned = new ShapeCells(name);
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int tipX = BlockArrayClipboard.keyX(key);
+                int tipY = BlockArrayClipboard.keyY(key);
+                int tipZ = BlockArrayClipboard.keyZ(key);
+                for (int x = tipX - reach; x <= tipX + reach; x++) {
+                    for (int y = tipY - reach; y <= tipY + reach; y++) {
+                        for (int z = tipZ - reach; z <= tipZ + reach; z++) {
+                            int dx = x - tipX;
+                            int dy = y - tipY;
+                            int dz = z - tipZ;
+                            if (dx * dx + dy * dy + dz * dz <= reachSquared) {
+                                ballooned.add(x, y, z);
+                            }
+                        }
+                    }
+                }
+            }
+            return ballooned;
         }
 
         void add(int x, int y, int z) {
@@ -731,34 +765,13 @@ public final class Operations {
             nodes.add(point.toVector3().add(0.5, 0.5, 0.5));
         }
         KochanekBartels spline = new KochanekBartels(nodes, tension, bias, continuity);
-        SplineCells tips = new SplineCells("The curve");
+        ShapeCells tips = new ShapeCells("The curve");
         double step = 1D / spline.arcLength() / quality;
         for (double position = 0; position <= 1; position += step) {
             Vector3 tip = spline.position(position);
             tips.add((int) Math.floor(tip.x()), (int) Math.floor(tip.y()), (int) Math.floor(tip.z()));
         }
-        int reach = (int) Math.ceil(Math.max(0, radius));
-        double reachSquared = radius * radius;
-        SplineCells tube = new SplineCells("The curve");
-        while (!tips.order.isEmpty()) {
-            long key = tips.order.poll();
-            int tipX = BlockArrayClipboard.keyX(key);
-            int tipY = BlockArrayClipboard.keyY(key);
-            int tipZ = BlockArrayClipboard.keyZ(key);
-            for (int x = tipX - reach; x <= tipX + reach; x++) {
-                for (int y = tipY - reach; y <= tipY + reach; y++) {
-                    for (int z = tipZ - reach; z <= tipZ + reach; z++) {
-                        int dx = x - tipX;
-                        int dy = y - tipY;
-                        int dz = z - tipZ;
-                        if (dx * dx + dy * dy + dz * dz <= reachSquared) {
-                            tube.add(x, y, z);
-                        }
-                    }
-                }
-            }
-        }
-        return tube.write(session, pattern, !filled);
+        return tips.balloon(radius, "The curve").write(session, pattern, !filled);
     }
 
     /** {@code /brush catenary} — a sagging rope between two points. */

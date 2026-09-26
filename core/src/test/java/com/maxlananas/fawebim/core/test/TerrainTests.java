@@ -48,6 +48,8 @@ final class TerrainTests {
         aCurveIsContinuousWhateverItsLength();
         aShellCurveKeepsTheSurfaceOfTheTube();
         curveNeedsAConvexSelection();
+        aLineJoinsTheCornersThePlayerSet();
+        aShellLineKeepsTheSurfaceOfTheTube();
     }
 
     private static TestActor actor(String name) {
@@ -311,6 +313,46 @@ final class TerrainTests {
                 actor.lastMessage().contains("convex polyhedral"));
         check("and draws nothing", actor.world().getBlock(0, 90, 0) != state("minecraft:gold_block")
                 && actor.world().getBlock(10, 95, 10) != state("minecraft:gold_block"));
+    }
+
+    private static void aLineJoinsTheCornersThePlayerSet() {
+        TestActor actor = actor("Line");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        CommandManager.get().dispatch(actor, "//pos1 0,90,10");
+        CommandManager.get().dispatch(actor, "//pos2 10,90,0");
+        CommandManager.get().dispatch(actor, "//line gold_block");
+        check("the line runs from the first corner to the second",
+                world.getBlock(0, 90, 10) == gold && world.getBlock(5, 90, 5) == gold
+                        && world.getBlock(10, 90, 0) == gold);
+        check("not between the lowest and the highest corner", world.getBlock(0, 90, 0) != gold
+                && world.getBlock(10, 90, 10) != gold);
+        EditSession edit = new EditSession(world, actor.session(), "line");
+        int changed;
+        try {
+            changed = Operations.drawLine(edit, java.util.List.of(new BlockVector3(0, 95, 0),
+                    new BlockVector3(10, 99, 3)), 0, true, new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold));
+        } finally {
+            edit.close();
+        }
+        checkEquals("one block per step along the longest axis", 11, changed);
+    }
+
+    private static void aShellLineKeepsTheSurfaceOfTheTube() {
+        TestActor actor = actor("LineShell");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        CommandManager.get().dispatch(actor, "//pos1 0,100,0");
+        CommandManager.get().dispatch(actor, "//pos2 20,100,0");
+        CommandManager.get().dispatch(actor, "//line gold_block 2 -h");
+        check("//line -h leaves the axis open", world.getBlock(10, 100, 0) != gold);
+        check("and keeps the surface", world.getBlock(10, 102, 0) == gold);
+        CommandManager.get().dispatch(actor, "//sel sphere");
+        CommandManager.get().dispatch(actor, "//pos1 0,110,0");
+        CommandManager.get().dispatch(actor, "//pos2 3,110,0");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//line gold_block");
+        check("//line on a sphere says which selections it takes", actor.lastMessage().contains("cuboid"));
     }
 
     private static void morphErodesAFloatingBlock() {

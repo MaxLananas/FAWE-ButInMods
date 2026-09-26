@@ -639,7 +639,7 @@ public final class Brushes {
                 from = start;
             }
             BlockVector3 end = flat ? position.withY(from.y()) : position;
-            int changed = Operations.line(session, from, end, fill, 0, shell);
+            int changed = Operations.drawLine(session, List.of(from, end), 0, !shell, fill);
             if (select) {
                 var selector = actor.session().getSelector(actor.world());
                 var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
