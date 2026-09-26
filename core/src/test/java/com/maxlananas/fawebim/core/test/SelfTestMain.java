@@ -800,6 +800,87 @@ public final class SelfTestMain {
         checkEquals("loop", 10.0, evaluate("s = 0; for (i = 1; i <= 4; i++) { s = s + i; } return s;"));
         checkEquals("while", 3.0, evaluate("i = 0; while (i < 3) { i = i + 1; } return i;"));
         check("noise", Math.abs(evaluate("sin(1)")) < 1);
+        expressionFunctionsAsInWorldEdit();
+    }
+
+    /**
+     * The functions take WorldEdit's arguments: min and max any number, the
+     * noises a seed first in their long forms; an unknown function or a wrong
+     * count is refused when the expression is read. Arguments go through a
+     * stack in the variables, so calls nest and allocate nothing.
+     */
+    private static void expressionFunctionsAsInWorldEdit() {
+        checkEquals("min takes any number of arguments", 1.0, evaluate("min(3, 1, 2)"));
+        checkEquals("and so does max", 5.0, evaluate("max(1, 5, 3)"));
+        checkEquals("calls nest, past the room the stack starts with", 12.0,
+                evaluate("max(1, 2, 3, 4, 5, 6, 7, min(9, 10), max(10, 11, abs(-12)))"));
+        checkEquals("rint rounds halves to even", 2.0, evaluate("rint(2.5)"));
+        checkEquals("ln is the natural logarithm", 1.0, evaluate("ln(e)"));
+        boolean unknown = false;
+        try {
+            Expression.compile("nosuch(1)");
+        } catch (Expression.ExpressionException expected) {
+            unknown = expected.getMessage().contains("nosuch");
+        }
+        check("an unknown function is refused when the expression is read", unknown);
+        boolean arity = false;
+        try {
+            Expression.compile("sin(1, 2)");
+        } catch (Expression.ExpressionException expected) {
+            arity = expected.getMessage().contains("takes 1");
+        }
+        check("so is a call with the wrong number of arguments", arity);
+        checkEquals("if() evaluates only the branch it takes", 0.0, evaluate("a = 0; b = if(1, 5, a = 3); return a;"));
+
+        Expression.Variables at = new Expression.Variables().set("x", 3.7).set("y", 1.2).set("z", -4.4);
+        double shortForm = Expression.compile("perlin(x, y, z)").evaluate(at);
+        double oneOctave = Expression.compile("perlin(0, x, y, z, 1, 1, 0.5)").evaluate(at);
+        checkEquals("WorldEdit's perlin of seed 0, frequency 1 and one octave is the short form", shortForm, oneOctave);
+        Expression fractal = Expression.compile("perlin(7, x, y, z, 0.1, 4, 0.5)");
+        double first = fractal.evaluate(at);
+        check("it gives the same value for the same seed and position", first == fractal.evaluate(at)
+                && Math.abs(first) <= 2);
+        check("and another for another seed", first != Expression.compile("perlin(8, x, y, z, 0.1, 4, 0.5)")
+                .evaluate(at));
+        boolean octaves = false;
+        try {
+            Expression.compile("perlin(0, x, y, z, 1, 40, 0.5)").evaluate(at);
+        } catch (Expression.ExpressionException expected) {
+            octaves = expected.getMessage().contains("octaves");
+        }
+        check("more than thirty octaves are refused, as in WorldEdit", octaves);
+        Expression ridged = Expression.compile("ridgedmulti(3, x, y, z, 0.2, 5)");
+        Expression cells = Expression.compile("voronoi(3, x, y, z, 0.25)");
+        double ridgedMin = Double.MAX_VALUE;
+        double ridgedMax = -Double.MAX_VALUE;
+        boolean below = false;
+        boolean above = false;
+        boolean bounded = true;
+        for (int x = 0; x < 40; x++) {
+            for (int z = 0; z < 40; z++) {
+                Expression.Variables point = new Expression.Variables().set("x", x).set("y", 5).set("z", z);
+                double value = ridged.evaluate(point);
+                ridgedMin = Math.min(ridgedMin, value);
+                ridgedMax = Math.max(ridgedMax, value);
+                double cell = cells.evaluate(point);
+                below |= cell < 0;
+                above |= cell > 0;
+                bounded &= Math.abs(cell) <= 1;
+            }
+        }
+        check("ridgedmulti stays from -1 to about 1 (" + ridgedMin + " to " + ridgedMax + ")",
+                ridgedMin >= -1 && ridgedMax <= 1.5 && ridgedMax > ridgedMin);
+        check("voronoi's long form gives cells from -1 to 1 on both sides of 0", below && above && bounded);
+        Expression.Variables near = new Expression.Variables().set("x", 10.5).set("y", 5).set("z", 10.5);
+        Expression.Variables nearer = new Expression.Variables().set("x", 10.51).set("y", 5).set("z", 10.5);
+        checkEquals("with one value over a cell", cells.evaluate(near), cells.evaluate(nearer));
+
+        TestWorld world = new TestWorld("expression-mask");
+        Masks.ExpressionMask counting = new Masks.ExpressionMask("a = a + 1; a == 1", world, new Random(1));
+        check("a mask's expression starts every block with its own variables",
+                counting.test(0, 64, 0) && counting.test(1, 64, 0) && counting.test(2, 64, 0));
+        Masks.ExpressionMask position = new Masks.ExpressionMask("x == 5 && bz == 3", world, new Random(1));
+        check("and reads the position of each", position.test(5, 64, 19) && !position.test(6, 64, 19));
     }
 
     private static double evaluate(String input) {

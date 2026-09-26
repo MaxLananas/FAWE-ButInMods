@@ -275,6 +275,38 @@ public abstract class Noise {
             return Math.sqrt(min);
         }
 
+        /**
+         * The value of the cell whose point is nearest, from -1 to 1: one
+         * number over the whole cell, unrelated from one cell to the next,
+         * which is what libnoise's Voronoi gives with distances off.
+         */
+        public double cellValue(double x, double y, double z) {
+            int xi = (int) Math.floor(x);
+            int yi = (int) Math.floor(y);
+            int zi = (int) Math.floor(z);
+            double min = Double.MAX_VALUE;
+            int nearestX = xi;
+            int nearestY = yi;
+            int nearestZ = zi;
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        double cx = xi + dx + hash(xi + dx, yi + dy, zi + dz);
+                        double cy = yi + dy + hash(xi + dx + 31, yi + dy + 17, zi + dz + 7);
+                        double cz = zi + dz + hash(xi + dx + 13, yi + dy + 5, zi + dz + 29);
+                        double d = (cx - x) * (cx - x) + (cy - y) * (cy - y) + (cz - z) * (cz - z);
+                        if (d < min) {
+                            min = d;
+                            nearestX = xi + dx;
+                            nearestY = yi + dy;
+                            nearestZ = zi + dz;
+                        }
+                    }
+                }
+            }
+            return hash(nearestX + 101, nearestY + 211, nearestZ + 307) * 2 - 1;
+        }
+
         /** Voronoi measures distances, so it is already a value in {@code [0, 1]}. */
         @Override
         public double unit(double x, double y, double z) {

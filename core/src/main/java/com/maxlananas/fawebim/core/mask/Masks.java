@@ -1069,9 +1069,25 @@ public final class Masks {
 
     public static final class ExpressionMask implements Mask {
 
+        /** The variables a test sets, in the order of their slots. */
+        private static final String[] INPUTS = {"x", "y", "z", "bx", "by", "bz", "block", "random"};
+
         private final com.maxlananas.fawebim.core.expression.Expression compiled;
         private final Extent extent;
         private final Random random;
+        /**
+         * The variables of one thread's tests, reused from block to block: a
+         * new set per test cost three allocations and a search per input.
+         * Whatever the expression assigns is forgotten before the next block,
+         * as it was with a new set.
+         */
+        private final ThreadLocal<Expression.Variables> variables = ThreadLocal.withInitial(() -> {
+            Expression.Variables vars = new Expression.Variables();
+            for (String input : INPUTS) {
+                vars.slot(input);
+            }
+            return vars;
+        });
 
         public ExpressionMask(String input, Extent extent, Random random) {
             this.extent = extent;
@@ -1083,12 +1099,16 @@ public final class Masks {
         public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             int blockId = ext == null ? 0 : ext.getBlock(x, y, z);
-            com.maxlananas.fawebim.core.expression.Expression.Variables vars = new com.maxlananas.fawebim.core.expression
-                    .Expression.Variables();
-            vars.set("x", x).set("y", y).set("z", z);
-            vars.set("bx", x & 15).set("by", y & 15).set("bz", z & 15);
-            vars.set("block", blockId);
-            vars.set("random", random.nextDouble());
+            Expression.Variables vars = variables.get();
+            vars.keepFirst(INPUTS.length);
+            vars.set(0, x);
+            vars.set(1, y);
+            vars.set(2, z);
+            vars.set(3, x & 15);
+            vars.set(4, y & 15);
+            vars.set(5, z & 15);
+            vars.set(6, blockId);
+            vars.set(7, random.nextDouble());
             return compiled.evaluate(vars) != 0;
         }
 

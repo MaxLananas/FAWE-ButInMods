@@ -495,6 +495,18 @@ public final class Patterns {
 
         private final Expression expression;
         private final String input;
+        /**
+         * One thread's variables, reused from block to block with x, y and z
+         * in the first three slots; what the expression assigns is forgotten
+         * before the next block, as with a new set.
+         */
+        private final ThreadLocal<Expression.Variables> variables = ThreadLocal.withInitial(() -> {
+            Expression.Variables vars = new Expression.Variables();
+            vars.slot("x");
+            vars.slot("y");
+            vars.slot("z");
+            return vars;
+        });
 
         public ExpressionPattern(String input) {
             this.input = input;
@@ -503,8 +515,11 @@ public final class Patterns {
 
         @Override
         public int apply(int x, int y, int z) {
-            Expression.Variables vars = new Expression.Variables();
-            vars.set("x", x).set("y", y).set("z", z);
+            Expression.Variables vars = variables.get();
+            vars.keepFirst(3);
+            vars.set(0, x);
+            vars.set(1, y);
+            vars.set(2, z);
             return (int) Math.floor(expression.evaluate(vars));
         }
 
