@@ -26,10 +26,20 @@ public final class Buffers {
      * @throws InputException when they do not
      */
     public static void checkInts(long cells, int arrays, String what) {
-        long budget = budget();
-        if (cells < 0 || cells > Integer.MAX_VALUE - 8 || cells * Integer.BYTES * arrays > budget) {
-            throw new InputException(what + " would hold " + Msg.formatNumber(cells)
-                    + " blocks in memory, more than the " + (budget >> 20) + " MiB an edit may use");
+        if (cells < 0 || cells > Integer.MAX_VALUE - 8 || cells * Integer.BYTES * arrays > budget()) {
+            throw tooLarge(cells, what);
         }
+    }
+
+    /** Checks that a bit per cell fits in the budget, and in one array of longs. */
+    public static void checkBits(long cells, String what) {
+        if (cells < 0 || cells > Integer.MAX_VALUE - 8 || cells / Byte.SIZE > budget()) {
+            throw tooLarge(cells, what);
+        }
+    }
+
+    private static InputException tooLarge(long cells, String what) {
+        return new InputException(what + " would hold " + Msg.formatNumber(cells)
+                + " blocks in memory, more than the " + (budget() >> 20) + " MiB an edit may use");
     }
 }

@@ -8,6 +8,7 @@ import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
+import com.maxlananas.fawebim.core.util.Buffers;
 import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
@@ -412,7 +413,13 @@ final class GenerationCommands {
             int pad = hollow ? 1 : 0;
             int padWidth = width + 2 * pad;
             int padLength = length + 2 * pad;
-            long[] inside = hollow ? new long[(padWidth * (height + 2) * padLength + 63) >>> 6] : null;
+            long[] inside = null;
+            if (hollow) {
+                // The bit index is an int, so the padded box has to fit one too.
+                long paddedCells = (long) padWidth * (height + 2) * padLength;
+                Buffers.checkBits(paddedCells, "A hollow shape in " + Msg.formatNumber(volume) + " blocks");
+                inside = new long[(int) ((paddedCells + 63) >>> 6)];
+            }
             Expression.Variables variables = new Expression.Variables();
             World world = ctx.world();
             variables.set("miny", world.minY());
@@ -450,7 +457,7 @@ final class GenerationCommands {
                         }
                         int state = expressionState(variables);
                         if (state < 0) {
-                            state = pattern.apply(new BlockVector3(x, y, z));
+                            state = pattern.apply(x, y, z);
                         }
                         if (session.setBlock(x, y, z, state)) {
                             changed++;

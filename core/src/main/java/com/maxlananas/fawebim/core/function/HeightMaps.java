@@ -6,6 +6,7 @@ import java.util.regex.Pattern;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.region.Region;
+import com.maxlananas.fawebim.core.util.Buffers;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.World;
@@ -41,6 +42,8 @@ public final class HeightMaps {
         int length = region.getLength();
         int minY = region.getMinimumPoint().y();
         int maxY = region.getMaximumPoint().y();
+        // A height, the blurred heights and a pass of the blur per column.
+        Buffers.checkInts((long) width * length, 3, "Smoothing " + width + "x" + length + " columns");
 
         int[] heights = new int[width * length];
         for (int z = 0; z < length; z++) {
@@ -93,6 +96,7 @@ public final class HeightMaps {
         int maxY = region.getMaximumPoint().y();
         int minX = region.getMinimumPoint().x();
         int minZ = region.getMinimumPoint().z();
+        Buffers.checkInts((long) width * length, 3, "Smoothing the snow of " + width + "x" + length + " columns");
 
         float[] heights = new float[width * length];
         for (int z = 0; z < length; z++) {

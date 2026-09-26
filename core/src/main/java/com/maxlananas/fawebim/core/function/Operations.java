@@ -1639,7 +1639,7 @@ public final class Operations {
                     double noise = amplitude * noiseGen.noise(seedX + x * distort,
                             seedZ + z * distort, seedZ + z * distort);
                     if (distance + distance * noise < r
-                            && session.setBlock(xx, yy, zz, pattern.apply(new BlockVector3(xx, yy, zz)))) {
+                            && session.setBlock(xx, yy, zz, pattern.apply(xx, yy, zz))) {
                         changed++;
                     }
                 }
