@@ -317,7 +317,16 @@ def write_brush_table(inventory: list[dict]) -> None:
             ann = parameter.get("ann") or {}
             kind = ann.get("kind")
             if kind == "Arg":
-                arguments.append([parameter["name"], ann.get("def", "")])
+                # An argument without a default is required and is written
+                # without "=": the binding lets an optional argument take its
+                # default when the line holds only enough for the required ones,
+                # as WorldEdit's parser does for /brush set <shape> [radius] <pattern>.
+                # A list (the commands of /brush command, the layers of /brush
+                # layer) ends in "...": it takes the rest of the line.
+                argument = parameter["name"]
+                if (parameter.get("type") or "").strip().startswith("List<"):
+                    argument += "..."
+                arguments.append([argument, ann.get("def")])
             elif kind == "ArgFlag":
                 # The value flag fills a parameter of its own; when upstream names
                 # that parameter differently from the switch letter the table has
@@ -372,9 +381,11 @@ def write_brush_table(inventory: list[dict]) -> None:
         " * brush declarations.",
         " *",
         " * <p>Each record is {@code name, aliases, arguments, switches, valueFlags,",
-        " * description}: {@code arguments} is a list of {@code name, default} pairs",
-        " * in the order FAWE declares them, {@code switches} are the {@code -x}",
-        " * flags and {@code valueFlags} are the {@code -x <value>} options.</p>",
+        " * description}: {@code arguments} lists the arguments in the order FAWE",
+        " * declares them, {@code name=default} for an optional one and {@code name}",
+        " * for a required one, with {@code ...} after the name of a list that takes",
+        " * the rest of the line; {@code switches} are the {@code -x} flags and",
+        " * {@code valueFlags} are the {@code -x <value>} options.</p>",
         " *",
         " * <p>Do not edit by hand: re-run the script after changing the command set.</p>",
         " */",
@@ -404,7 +415,7 @@ def write_brush_table(inventory: list[dict]) -> None:
         "    public static final String[][] BRUSHES = {",
     ]
     for row in rows:
-        arguments = "|".join(f"{n}={d}" for n, d in row["arguments"])
+        arguments = "|".join(n if d is None else f"{n}={d}" for n, d in row["arguments"])
         body.append("            {" + ", ".join([
             java_string(row["name"]),
             java_string(",".join(row["aliases"])),

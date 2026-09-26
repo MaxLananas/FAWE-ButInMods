@@ -419,6 +419,18 @@ public final class Operations {
      */
     public static int sphere(EditSession session, BlockVector3 center, double[] radii, Pattern pattern,
                              boolean hollow) {
+        return forEachInEllipsoid(center, radii, hollow, session.minY(), session.maxY(),
+                (x, y, z) -> session.setBlock(x, y, z, pattern.apply(x, y, z)));
+    }
+
+    /**
+     * The cells of {@link #sphere(EditSession, BlockVector3, double[], Pattern, boolean)}
+     * between two heights, for a caller that decides what a cell gets.
+     *
+     * @return how many cells the visitor answered true for
+     */
+    public static int forEachInEllipsoid(BlockVector3 center, double[] radii, boolean hollow, int minY, int maxY,
+                                         BlockVisitor visitor) {
         double radiusX = radii[0] + 0.5;
         double radiusY = radii[1] + 0.5;
         double radiusZ = radii[2] + 0.5;
@@ -428,8 +440,6 @@ public final class Operations {
         int ceilX = (int) Math.ceil(radiusX);
         int ceilY = (int) Math.ceil(radiusY);
         int ceilZ = (int) Math.ceil(radiusZ);
-        int minY = session.minY();
-        int maxY = session.maxY();
         int changed = 0;
         for (int x = -ceilX; x <= ceilX; x++) {
             double dx = square(x * invX);
@@ -455,9 +465,7 @@ public final class Operations {
                             && dx + square(y * invY) + square((Math.abs(z) + 1) * invZ) <= 1) {
                         continue;
                     }
-                    int blockX = center.x() + x;
-                    int blockZ = center.z() + z;
-                    if (session.setBlock(blockX, blockY, blockZ, pattern.apply(blockX, blockY, blockZ))) {
+                    if (visitor.visit(center.x() + x, blockY, center.z() + z)) {
                         changed++;
                     }
                 }

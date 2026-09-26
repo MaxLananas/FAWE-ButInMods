@@ -142,7 +142,11 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush sphere <pattern> [radius]}. */
+    /**
+     * {@code /brush sphere <pattern> [radius]}: WorldEdit's sphere, the one
+     * {@code //sphere} builds, whose radius grows by half a block before it is
+     * measured.
+     */
     public static class SphereBrush extends BaseBrush {
 
         public SphereBrush(double radius, Pattern fill, Mask mask) {
@@ -151,8 +155,35 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.forEachInSphere(position, (int) radius, hollow,
-                    (x, y, z) -> place(session, x, y, z));
+            return Operations.forEachInEllipsoid(position, new double[]{radius, radius, radius}, hollow,
+                    session.minY(), session.maxY(), (x, y, z) -> place(session, x, y, z));
+        }
+    }
+
+    /**
+     * {@code /brush set <shape> [radius] <pattern>}: the pattern in the shape the
+     * command names, built around the clicked block the way FAWE's region
+     * factories build it - a sphere, a disc one block high, a cube.
+     */
+    public static final class ShapeBrush extends BaseBrush {
+
+        private final String shape;
+
+        public ShapeBrush(double radius, Pattern fill, Mask mask, String shape) {
+            super(radius, fill, mask);
+            this.shape = shape;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            com.maxlananas.fawebim.core.region.Region region = com.maxlananas.fawebim.core.region.RegionFactories
+                    .parse(shape, session.minY(), session.maxY()).createCenteredAt(position, radius);
+            return (int) region.forEachPosition((x, y, z) -> place(session, x, y, z));
+        }
+
+        @Override
+        public String describe() {
+            return "shape=" + shape + " " + super.describe();
         }
     }
 
@@ -539,33 +570,151 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush layer [radius]}. */
+        /**
+     * {@code /brush layer <radius> <patterns>}: FAWE's layered skin. The solid
+     * blocks touching air that connect to the clicked one, diagonals included,
+     * within the radius, take the first entry of the list; each entry after it
+     * goes one block further in, where the layer before came straight in and
+     * never next to air.
+     *
+     * <p>As in FAWE, each entry is the block its pattern gives at the origin,
+     * taken once when the brush is bound.</p>
+     */
     public static final class LayerBrush extends BaseBrush {
 
-        public LayerBrush(double radius, Pattern fill, Mask mask) {
-            super(radius, fill, mask);
+        /** The faces of a block, in the order FAWE's search walks them. */
+        private static final int[][] FACES = {{0, -1, 0}, {0, 1, 0}, {-1, 0, 0}, {1, 0, 0}, {0, 0, -1}, {0, 0, 1}};
+
+        private final int[] layers;
+
+        public LayerBrush(double radius, int[] layers, Mask mask) {
+            super(radius, null, mask);
+            this.layers = layers.clone();
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            if (layers.length == 0) {
+                return 0;
+            }
             BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (int z = -(int) radius; z <= radius; z++) {
-                for (int x = -(int) radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    for (int y = position.y(); y >= position.y() - (int) radius; y--) {
-                        if (!registry.isAirLike(session.getBlock(position.x() + x, y, position.z() + z))) {
-                            if (place(session, position.x() + x, y, position.z() + z)) {
-                                changed++;
+            long reach = (long) (int) radius * (int) radius;
+            // The surface, connected to the click through all 26 neighbours.
+            LongSet visited = new LongSet();
+            LongQueue queue = new LongQueue();
+            long start = BlockArrayClipboard.positionKey(position.x(), position.y(), position.z());
+            visited.add(start);
+            queue.add(start);
+            java.util.List<Long> surface = new java.util.ArrayList<>();
+            while (!queue.isEmpty()) {
+                long current = queue.poll();
+                surface.add(current);
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            int nx = x + dx;
+                            int ny = y + dy;
+                            int nz = z + dz;
+                            if ((dx | dy | dz) == 0 || ny < session.minY() || ny > session.maxY()) {
+                                continue;
                             }
-                            break;
+                            long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                            long ox = nx - position.x();
+                            long oy = ny - position.y();
+                            long oz = nz - position.z();
+                            if (!visited.contains(next) && ox * ox + oy * oy + oz * oz <= reach
+                                    && registry.isSolid(session.getBlock(nx, ny, nz))
+                                    && touchesAir(session, registry, nx, ny, nz)) {
+                                visited.add(next);
+                                queue.add(next);
+                            }
                         }
                     }
                 }
             }
+            // The layers, one step in per entry of the list.
+            int changed = 0;
+            java.util.List<Long> current = surface;
+            for (int depth = 0; depth < layers.length && !current.isEmpty(); depth++) {
+                java.util.List<Long> inner = new java.util.ArrayList<>();
+                for (long key : current) {
+                    int x = BlockArrayClipboard.keyX(key);
+                    int y = BlockArrayClipboard.keyY(key);
+                    int z = BlockArrayClipboard.keyZ(key);
+                    if (test(x, y, z) && session.setBlock(x, y, z, layers[depth])) {
+                        changed++;
+                    }
+                    if (depth + 1 == layers.length) {
+                        continue;
+                    }
+                    for (int[] face : FACES) {
+                        int nx = x + face[0];
+                        int ny = y + face[1];
+                        int nz = z + face[2];
+                        if (ny < session.minY() || ny > session.maxY()) {
+                            continue;
+                        }
+                        long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (!visited.contains(next) && goesIn(session, registry, visited, nx, ny, nz, depth + 1)) {
+                            visited.add(next);
+                            inner.add(next);
+                        }
+                    }
+                }
+                current = inner;
+            }
             return changed;
+        }
+
+        /**
+         * FAWE's layer mask: a cell takes a layer past the second when the cell
+         * next to it holds the layer before and the one past that the layer
+         * before that, along the first face whose neighbour holds it; and it
+         * never touches air.
+         */
+        private boolean goesIn(EditSession session, BlockStateRegistry registry, LongSet visited,
+                               int x, int y, int z, int depth) {
+            if (depth > 1) {
+                boolean found = false;
+                for (int[] face : FACES) {
+                    int ax = x + face[0];
+                    int ay = y + face[1];
+                    int az = z + face[2];
+                    if (visited.contains(BlockArrayClipboard.positionKey(ax, ay, az))
+                            && session.getBlock(ax, ay, az) == layers[depth - 1]) {
+                        int bx = ax + face[0];
+                        int by = ay + face[1];
+                        int bz = az + face[2];
+                        if (visited.contains(BlockArrayClipboard.positionKey(bx, by, bz))
+                                && session.getBlock(bx, by, bz) == layers[depth - 2]) {
+                            found = true;
+                            break;
+                        }
+                        return false;
+                    }
+                }
+                if (!found) {
+                    return false;
+                }
+            }
+            return !touchesAir(session, registry, x, y, z);
+        }
+
+        private static boolean touchesAir(EditSession session, BlockStateRegistry registry, int x, int y, int z) {
+            for (int[] face : FACES) {
+                if (registry.isAirLike(session.getBlock(x + face[0], y + face[1], z + face[2]))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public String describe() {
+            return "radius=" + radius + " layers=" + layers.length;
         }
     }
 

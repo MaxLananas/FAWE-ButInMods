@@ -29,16 +29,18 @@ public final class BrushParameters {
 
     private final String name;
     private final Pattern pattern;
+    private final int[] layers;
     private final Mask mask;
     private final Map<String, Mask> masks;
     private final Map<String, String> values;
     private final BrushOptions options;
     private final BlockVector3 placement;
 
-    private BrushParameters(String name, Pattern pattern, Mask mask, Map<String, Mask> masks,
+    private BrushParameters(String name, Pattern pattern, int[] layers, Mask mask, Map<String, Mask> masks,
                             Map<String, String> values, BrushOptions options, BlockVector3 placement) {
         this.name = name;
         this.pattern = pattern;
+        this.layers = layers;
         this.mask = mask;
         this.masks = masks;
         this.values = values;
@@ -59,19 +61,42 @@ public final class BrushParameters {
         Map<String, String> values = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         List<String> names = new ArrayList<>();
         List<String> defaults = new ArrayList<>();
+        int required = 0;
+        boolean rest = false;
         for (String declaration : arguments(row)) {
             int split = declaration.indexOf('=');
-            String argument = split < 0 ? declaration : declaration.substring(0, split);
-            String fallback = split < 0 ? "" : declaration.substring(split + 1);
-            if (!isIdentifier(argument)) {
-                argument = "argument" + names.size();
+            // A list takes the rest of the line; only the last argument is one.
+            rest = (split < 0 ? declaration : declaration.substring(0, split)).endsWith("...");
+            names.add(parameterName(declaration, names.size()));
+            // A required argument is declared without a default at all.
+            defaults.add(split < 0 ? null : declaration.substring(split + 1));
+            if (split < 0) {
+                required++;
             }
-            names.add(argument);
-            defaults.add(fallback);
         }
+        // WorldEdit's parser: an optional argument takes a word only while the
+        // line holds more words than the required arguments still to fill, so
+        // /brush set cuboid stone leaves the radius at its default and hands
+        // stone to the pattern.
+        int given = options.argumentCount();
+        int next = 0;
         for (int index = 0; index < names.size(); index++) {
-            String value = options.argument(index);
-            values.put(names.get(index), value == null ? defaults.get(index) : value);
+            String fallback = defaults.get(index);
+            if (fallback == null) {
+                required--;
+            }
+            String value = null;
+            if (next < given && (fallback == null || given - next > required)) {
+                value = options.argument(next++);
+                if (rest && index == names.size() - 1) {
+                    StringBuilder line = new StringBuilder(value);
+                    while (next < given) {
+                        line.append(' ').append(options.argument(next++));
+                    }
+                    value = line.toString();
+                }
+            }
+            values.put(names.get(index), value != null ? value : fallback == null ? "" : fallback);
         }
         for (String flag : valueFlags(row)) {
             // A value flag carries the parameter it fills, e.g. -m <mask>.
@@ -86,6 +111,17 @@ public final class BrushParameters {
         Pattern pattern = null;
         if (ctx != null && patternArgument != null && !patternArgument.isEmpty()) {
             pattern = patternArgument.startsWith("#clipboard") ? null : Parsers.pattern(patternArgument, ctx);
+        }
+        // The layers of /brush layer: a comma separated list of patterns, each
+        // standing for the block it gives at the origin, as FAWE reads them.
+        int[] layers = new int[0];
+        String layerArgument = values.get("patternLayers");
+        if (ctx != null && layerArgument != null && !layerArgument.isBlank()) {
+            List<String> pieces = com.maxlananas.fawebim.core.util.Str.splitTopLevel(layerArgument, ',');
+            layers = new int[pieces.size()];
+            for (int i = 0; i < layers.length; i++) {
+                layers[i] = Parsers.pattern(pieces.get(i).trim(), ctx).apply(0, 0, 0);
+            }
         }
         Mask sessionMask = ctx == null ? null : ctx.session().getMask();
         // Mask-valued flags are parsed here, where the session is known: -m on the
@@ -103,7 +139,7 @@ public final class BrushParameters {
         }
         // -o counts from the placement position of the moment the brush is bound.
         BlockVector3 placement = ctx != null && options.switchOn("o") ? ctx.placement() : null;
-        return new BrushParameters(row[0], pattern, sessionMask, masks, values, options, placement);
+        return new BrushParameters(row[0], pattern, layers, sessionMask, masks, values, options, placement);
     }
 
     /** The parameters of a brush built without a command line, i.e. a preset. */
@@ -113,11 +149,7 @@ public final class BrushParameters {
         List<String> defaults = new ArrayList<>();
         for (String declaration : arguments(row)) {
             int split = declaration.indexOf('=');
-            String argument = split < 0 ? declaration : declaration.substring(0, split);
-            if (!isIdentifier(argument)) {
-                argument = "argument" + names.size();
-            }
-            names.add(argument);
+            names.add(parameterName(declaration, names.size()));
             defaults.add(split < 0 ? "" : declaration.substring(split + 1));
         }
         for (int index = 0; index < names.size(); index++) {
@@ -129,7 +161,7 @@ public final class BrushParameters {
             // are re-parsed from the command line when the brush is reloaded.
             values.put("pattern", "");
         }
-        return new BrushParameters(row[0], pattern, null, Map.of(), values, options, null);
+        return new BrushParameters(row[0], pattern, new int[0], null, Map.of(), values, options, null);
     }
 
     /** The name of the brush, as FAWE spells it. */
@@ -140,6 +172,11 @@ public final class BrushParameters {
     /** The fill pattern, or null for the clipboard brush. */
     public Pattern pattern() {
         return pattern;
+    }
+
+    /** The block states of the {@code patternLayers} argument, outermost first. */
+    public int[] layers() {
+        return layers.clone();
     }
 
     /** The mask of the session, applied by every brush. */
@@ -255,38 +292,54 @@ public final class BrushParameters {
     }
 
     public static List<String> arguments(String[] row) {
-        return splitList(row[2]);
+        return splitList(row[2], "\\s*\\|\\s*");
     }
 
     public static List<String> switches(String[] row) {
-        return splitList(row[3]);
+        return splitList(row[3], COMMA);
     }
 
     public static List<String> valueFlags(String[] row) {
-        return splitList(row[4]);
+        return splitList(row[4], COMMA);
     }
 
     public static List<String> aliases(String[] row) {
-        return splitList(row[1]);
+        return splitList(row[1], COMMA);
     }
+
+    private static final String COMMA = "\\s*,\\s*";
 
     /**
      * Splits a column of a brush signature: aliases, switches and value flags are
      * comma separated, while the arguments column separates its entries with a
      * pipe so an argument can keep a comma for a default such as {@code a,b}.
      */
-    private static List<String> splitList(String csv) {
+    private static List<String> splitList(String csv, String separator) {
         List<String> parts = new ArrayList<>();
         if (csv == null || csv.isEmpty()) {
             return parts;
         }
-        for (String part : csv.split("\\s*[|,]\\s*")) {
+        for (String part : csv.split(separator)) {
             String trimmed = part.trim().toLowerCase(Locale.ROOT);
             if (!trimmed.isEmpty()) {
                 parts.add(trimmed);
             }
         }
         return parts;
+    }
+
+    /**
+     * The name a declaration fills: what comes before its default and its
+     * list mark, or {@code argumentN} for the parameters the upstream extractor
+     * could not name.
+     */
+    private static String parameterName(String declaration, int index) {
+        int split = declaration.indexOf('=');
+        String argument = split < 0 ? declaration : declaration.substring(0, split);
+        if (argument.endsWith("...")) {
+            argument = argument.substring(0, argument.length() - 3);
+        }
+        return isIdentifier(argument) ? argument : "argument" + index;
     }
 
     private static boolean isIdentifier(String value) {

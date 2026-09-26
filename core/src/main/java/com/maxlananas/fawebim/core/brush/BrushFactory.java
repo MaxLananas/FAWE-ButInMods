@@ -99,7 +99,7 @@ public final class BrushFactory {
                     !parameters.string("filled", "false").equals("false"));
             case "raise", "lower" -> new Brushes.RaiseLowerBrush(parameters.radius(), parameters.pattern(),
                     key.equals("lower"), parameters.mask());
-            case "layer" -> new Brushes.LayerBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "layer" -> new Brushes.LayerBrush(parameters.radius(), parameters.layers(), parameters.mask());
             case "line" -> {
                 Brushes.LineBrush brush = new Brushes.LineBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask());
@@ -197,13 +197,8 @@ public final class BrushFactory {
             case "surface" -> new Brushes.SurfaceBrush(parameters.radius(), parameters.pattern(), parameters.mask());
             case "sweep" -> new Brushes.SweepBrush(parameters.radius(), parameters.pattern(), parameters.mask());
             case "deform" -> {
-                String shape = parameters.string("shape", "sphere");
-                if (RegionFactories.parse(shape, 0, 0) == null) {
-                    throw CommandRegistry.error("Unknown shape '" + shape + "'. Use one of "
-                            + String.join(", ", RegionFactories.SHAPES) + ".");
-                }
                 Brushes.DeformBrush brush = new Brushes.DeformBrush(parameters.radius(),
-                        parameters.string("expression", ""), shape);
+                        parameters.string("expression", ""), shape(parameters));
                 brush.setGameOrigin(parameters.flag("r"));
                 brush.setPlacement(parameters.flag("o") ? parameters.placement() : null);
                 yield brush;
@@ -237,10 +232,22 @@ public final class BrushFactory {
                 brush.setDepthFirst(parameters.flag("d"));
                 yield brush;
             }
-            case "set", "image" -> new Brushes.SphereBrush(parameters.radius(), parameters.pattern(),
+            case "set" -> new Brushes.ShapeBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
+                    shape(parameters));
+            case "image" -> new Brushes.SphereBrush(parameters.radius(), parameters.pattern(),
                     parameters.mask());
             default -> null;
         };
+    }
+
+    /** The shape argument of a brush, checked when the brush is bound rather than at the first click. */
+    private static String shape(BrushParameters parameters) {
+        String shape = parameters.string("shape", "sphere");
+        if (RegionFactories.parse(shape, 0, 0) == null) {
+            throw CommandRegistry.error("Unknown shape '" + shape + "'. Use one of "
+                    + String.join(", ", RegionFactories.SHAPES) + ".");
+        }
+        return shape;
     }
 
     /** {@code /brush height|cliff|flatten <radius> [image] [rotation] [yscale]}. */

@@ -675,13 +675,16 @@ public final class Commands {
         e20.group = "region";
         e20.requiresSelection = true;
         e20.booleanFlags.add("e");
-        e20.arguments.add("mask");
+        e20.arguments.add("[mask]");
         e20.arguments.add("pattern");
         e20.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    Pattern pattern = Parsers.pattern(ctx.joined(1), ctx);
+                    // As in WorldEdit, a line with one argument names the pattern
+                    // and replaces every block that is not air.
+                    boolean masked = ctx.args().size() > 1;
+                    Mask mask = masked ? Parsers.mask(ctx.arg(0), ctx) : new Masks.ExistingMask(session, true);
+                    Pattern pattern = Parsers.pattern(ctx.joined(masked ? 1 : 0), ctx);
                     fill(session, ctx.selection(), pattern, mask);
                     flush(ctx, session, "Replaced");
                 };
@@ -1088,14 +1091,15 @@ public final class Commands {
         e36.description = "Replace blocks near you";
         e36.group = "region";
         e36.arguments.add("size");
-        e36.arguments.add("mask");
+        e36.arguments.add("[mask]");
         e36.arguments.add("pattern");
         e36.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     int size = ctx.sizeArg(0, 0);
-                    Mask mask = Parsers.mask(ctx.arg(1), ctx);
-                    Pattern pattern = Parsers.pattern(ctx.joined(2), ctx);
+                    boolean masked = ctx.args().size() > 2;
+                    Mask mask = masked ? Parsers.mask(ctx.arg(1), ctx) : new Masks.ExistingMask(session, true);
+                    Pattern pattern = Parsers.pattern(ctx.joined(masked ? 2 : 1), ctx);
                     BlockVector3 origin = ctx.placement();
                     int changed = 0;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {

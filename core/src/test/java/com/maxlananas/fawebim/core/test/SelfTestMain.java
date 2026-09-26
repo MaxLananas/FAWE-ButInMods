@@ -157,6 +157,7 @@ public final class SelfTestMain {
         SelectionTests.run();
         MessageStyleTests.run();
         LayerTests.run();
+        BrushArgumentTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
