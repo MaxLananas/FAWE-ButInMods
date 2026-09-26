@@ -1501,20 +1501,16 @@ public final class Commands {
         e46.arguments.add("pattern");
         e46.arguments.add("[thickness]");
         e46.handler = ctx -> {
+                    if (!(ctx.selection() instanceof com.maxlananas.fawebim.core.region.ConvexPolyhedralRegion convex)) {
+                        throw CommandRegistry.error("//curve only works with convex polyhedral selections");
+                    }
+                    double thickness = lineThickness(ctx);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double thickness = lineThickness(ctx);
-                    Region region = ctx.selection();
-                    List<BlockVector3> points = region instanceof com.maxlananas.fawebim.core.region.ConvexPolyhedralRegion convex
-                            ? convex.getVertices() : List.of(region.getMinimumPoint(), region.getMaximumPoint());
-                    int changed = com.maxlananas.fawebim.core.function.Operations.spline(session, points, pattern,
-                            ctx.hasFlag("h") ? Math.max(0, thickness - 1) : thickness);
-                    if (ctx.hasFlag("h")) {
-                        // A shell keeps the outer layer of the tube only.
-                        changed = com.maxlananas.fawebim.core.function.Operations.splineShell(session, points, pattern,
-                                thickness);
-                    }
+                    // WorldEdit's curve: a Catmull-Rom spline walked ten times per block.
+                    int changed = Operations.drawSpline(session, convex.getVertices(), 0, 0, 0, 10, thickness,
+                            !ctx.hasFlag("h"), pattern);
                     flush(ctx, session, "Drew", changed, "block(s)");
                 };
 

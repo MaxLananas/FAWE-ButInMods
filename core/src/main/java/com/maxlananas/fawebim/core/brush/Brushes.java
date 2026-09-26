@@ -672,7 +672,8 @@ public final class Brushes {
             if (points.size() < 2) {
                 return 0;
             }
-            int changed = Operations.spline(session, List.of(points.get(points.size() - 2), target), fill, radius);
+            int changed = Operations.drawSpline(session, List.of(points.get(points.size() - 2), target), 0, 0, 0,
+                    10, radius, true, fill);
             if (points.size() > 64) {
                 points.remove(0);
             }
@@ -1581,7 +1582,8 @@ public final class Brushes {
             if (points.size() < 2) {
                 return 0;
             }
-            int changed = Operations.surfaceSpline(session, points, fill, tension, bias, continuity, quality);
+            int changed = Operations.surfaceSpline(session, points, fill, tension, bias, continuity, quality,
+                    radius);
             if (points.size() > 64) {
                 points.remove(0);
             }

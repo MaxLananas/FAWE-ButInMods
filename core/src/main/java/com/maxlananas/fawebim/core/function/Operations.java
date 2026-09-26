@@ -4,6 +4,7 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.math.KochanekBartels;
 import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.transform.Axis;
 import com.maxlananas.fawebim.core.transform.Transform;
@@ -613,141 +614,151 @@ public final class Operations {
     }
 
     /**
-     * A cubic Hermite spline with the tension, bias and continuity controls
-     * {@code /brush surfacespline} exposes, drawn on the surface below the path.
+     * {@code /brush surfacespline}, as FAWE's SurfaceSpline brush: a
+     * Kochanek-Bartels spline through the nodes, walked {@code quality} times
+     * per block of its length, with every column it passes and, for a radius,
+     * every column within that radius of it set on the surface. Each column is
+     * written once.
+     *
+     * <p>The curve was sampled {@code quality} times per segment whatever its
+     * length, so a long segment came out as a dotted line, and the radius was
+     * not used.</p>
      */
     public static int surfaceSpline(EditSession session, List<BlockVector3> points, Pattern pattern,
-                                    double tension, double bias, double continuity, int quality) {
-        if (points.size() < 2) {
+                                    double tension, double bias, double continuity, int quality, double radius) {
+        if (points.size() < 2 || quality <= 0) {
             return 0;
         }
-        int steps = Math.max(1, quality);
-        int changed = 0;
-        for (int i = 0; i < points.size() - 1; i++) {
-            BlockVector3 p0 = points.get(Math.max(0, i - 1));
-            BlockVector3 p1 = points.get(i);
-            BlockVector3 p2 = points.get(i + 1);
-            BlockVector3 p3 = points.get(Math.min(points.size() - 1, i + 2));
-            for (int step = 0; step < steps; step++) {
-                double t = (double) step / steps;
-                // Kochanek-Bartels: the tangent leaving p1 and the one entering
-                // p2 are scaled by tension, tilted by bias and mixed by
-                // continuity.
-                double mx1 = (1 - tension) * (1 + bias) * (1 + continuity) / 2 * (p2.x() - p1.x())
-                        + (1 - tension) * (1 - bias) * (1 - continuity) / 2 * (p1.x() - p0.x());
-                double mz1 = (1 - tension) * (1 + bias) * (1 + continuity) / 2 * (p2.z() - p1.z())
-                        + (1 - tension) * (1 - bias) * (1 - continuity) / 2 * (p1.z() - p0.z());
-                double mx2 = (1 - tension) * (1 + bias) * (1 - continuity) / 2 * (p2.x() - p1.x())
-                        + (1 - tension) * (1 - bias) * (1 + continuity) / 2 * (p3.x() - p2.x());
-                double mz2 = (1 - tension) * (1 + bias) * (1 - continuity) / 2 * (p2.z() - p1.z())
-                        + (1 - tension) * (1 - bias) * (1 + continuity) / 2 * (p3.z() - p2.z());
-                double t2 = t * t;
-                double t3 = t2 * t;
-                double h1 = 2 * t3 - 3 * t2 + 1;
-                double h2 = -2 * t3 + 3 * t2;
-                double h3 = t3 - 2 * t2 + t;
-                double h4 = t3 - t2;
-                int x = (int) Math.floor(h1 * p1.x() + h2 * p2.x() + h3 * mx1 + h4 * mx2);
-                int z = (int) Math.floor(h1 * p1.z() + h2 * p2.z() + h3 * mz1 + h4 * mz2);
-                int y = session.getWorld().getHighestBlockY(x, z);
+        List<Vector3> nodes = new ArrayList<>(points.size());
+        for (BlockVector3 point : points) {
+            nodes.add(point.toVector3());
+        }
+        KochanekBartels spline = new KochanekBartels(nodes, tension, bias, continuity);
+        World world = session.getWorld();
+        SplineCells cells = new SplineCells("The spline");
+        double step = 1D / spline.arcLength() / quality;
+        int reach = (int) Math.ceil(Math.max(0, radius));
+        double reachSquared = radius * radius;
+        for (double position = 0; position <= 1; position += step) {
+            Vector3 tip = spline.position(position);
+            int tipX = (int) Math.floor(tip.x() + 0.5);
+            int tipZ = (int) Math.floor(tip.z() + 0.5);
+            for (int x = tipX - reach; x <= tipX + reach; x++) {
+                for (int z = tipZ - reach; z <= tipZ + reach; z++) {
+                    int dx = x - tipX;
+                    int dz = z - tipZ;
+                    if (dx * dx + dz * dz <= reachSquared) {
+                        cells.add(x, world.getHighestBlockY(x, z), z);
+                    }
+                }
+            }
+        }
+        return cells.write(session, pattern, false);
+    }
+
+    /**
+     * The blocks of a spline, each once, in the order they were first reached.
+     * A curve is walked many times per block, so most of what it reaches it
+     * has reached before; the set is what writes each block once, and it holds
+     * packed longs rather than an object per block.
+     */
+    private static final class SplineCells {
+
+        private final String what;
+        private final LongSet seen = new LongSet();
+        private final LongQueue order = new LongQueue();
+        private final long limit = Buffers.budget() / 24;
+
+        SplineCells(String what) {
+            this.what = what;
+        }
+
+        void add(int x, int y, int z) {
+            long key = BlockArrayClipboard.positionKey(x, y, z);
+            if (seen.add(key)) {
+                order.add(key);
+                if (order.size() > limit) {
+                    throw new com.maxlananas.fawebim.core.util.InputException(what + " would hold more than "
+                            + Msg.formatNumber(limit) + " blocks in memory");
+                }
+            }
+        }
+
+        boolean contains(int x, int y, int z) {
+            return seen.contains(BlockArrayClipboard.positionKey(x, y, z));
+        }
+
+        /** Writes every block, or with {@code shell} those with a face outside the set. */
+        int write(EditSession session, Pattern pattern, boolean shell) {
+            int changed = 0;
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int x = BlockArrayClipboard.keyX(key);
+                int y = BlockArrayClipboard.keyY(key);
+                int z = BlockArrayClipboard.keyZ(key);
+                if (shell && contains(x + 1, y, z) && contains(x - 1, y, z) && contains(x, y + 1, z)
+                        && contains(x, y - 1, z) && contains(x, y, z + 1) && contains(x, y, z - 1)) {
+                    continue;
+                }
                 if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
                     changed++;
                 }
             }
+            return changed;
         }
-        return changed;
     }
 
     /**
-     * {@code //curve -h}: only the outer layer of the tube the path would fill is
-     * written, which is FAWE's shell mode.
+     * A spline through the nodes, as WorldEdit's drawSpline behind
+     * {@code //curve}: a Kochanek-Bartels curve through the centres of the
+     * nodes' blocks, walked {@code quality} times per block of its length; each
+     * block it passes becomes a ball of {@code radius}, and without
+     * {@code filled} only the blocks of the result with a face outside it are
+     * kept. Each block is written once.
+     *
+     * <p>The curve was sampled eight times per segment whatever its length, so
+     * a long one came out dotted, and {@code //curve -h} drew a solid tube along
+     * the curve and another along the straight lines between the nodes.</p>
      */
-    public static int splineShell(EditSession session, List<BlockVector3> points, Pattern pattern, double thickness) {
-        if (points.size() < 2 || thickness < 1) {
-            return spline(session, points, pattern, thickness);
-        }
-        List<BlockVector3> positions = new ArrayList<>();
-        for (int i = 0; i < points.size() - 1; i++) {
-            BlockVector3 from = points.get(i);
-            BlockVector3 to = points.get(i + 1);
-            int steps = (int) Math.max(1, from.distance(to));
-            for (int step = 0; step <= steps; step++) {
-                double t = (double) step / steps;
-                positions.add(new BlockVector3(
-                        (int) Math.floor(from.x() + (to.x() - from.x()) * t),
-                        (int) Math.floor(from.y() + (to.y() - from.y()) * t),
-                        (int) Math.floor(from.z() + (to.z() - from.z()) * t)));
-            }
-        }
-        // The tube of a path overlaps itself where the path bends, and a block
-        // that two spheres share must be written once. The positions live in a
-        // primitive set keyed by the world position, not in a set of objects.
-        com.maxlananas.fawebim.core.util.LongObjectMap<Boolean> written =
-                new com.maxlananas.fawebim.core.util.LongObjectMap<>();
-        int radius = (int) Math.ceil(thickness);
-        int[] shellCounter = {0};
-        for (BlockVector3 position : positions) {
-            forEachInSphere(position, radius, false, (x, y, z) -> {
-                long key = (((long) x & 0x3FFFFFF) << 38) | (((long) y & 0xFFF) << 26) | ((long) z & 0x3FFFFFF);
-                if (written.get(key) != null) {
-                    return false;
-                }
-                written.put(key, Boolean.TRUE);
-                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                    shellCounter[0]++;
-                }
-                return false;
-            });
-        }
-        return shellCounter[0];
-    }
-
-    /** {@code //curve} — Catmull-Rom spline through the given points. */
-    public static int spline(EditSession session, List<BlockVector3> points, Pattern pattern, double thickness) {
-        return spline(session, points, pattern, thickness, 8);
-    }
-
-    /**
-     * A Catmull-Rom spline through the given points. {@code subdivisions} is the
-     * number of blocks drawn between two control points, so FAWE's
-     * {@code quality} argument maps straight onto it.
-     */
-    public static int spline(EditSession session, List<BlockVector3> points, Pattern pattern, double thickness,
-                             int subdivisions) {
-        if (points.size() < 2) {
+    public static int drawSpline(EditSession session, List<BlockVector3> points, double tension, double bias,
+                                 double continuity, double quality, double radius, boolean filled,
+                                 Pattern pattern) {
+        if (points.isEmpty() || !(quality > 0)) {
             return 0;
         }
-        int steps = Math.max(1, subdivisions);
-        int changed = 0;
-        for (int i = 0; i < points.size() - 1; i++) {
-            BlockVector3 p0 = points.get(Math.max(0, i - 1));
-            BlockVector3 p1 = points.get(i);
-            BlockVector3 p2 = points.get(i + 1);
-            BlockVector3 p3 = points.get(Math.min(points.size() - 1, i + 2));
-            for (double t = 0; t < 1; t += 1.0 / steps) {
-                double t2 = t * t;
-                double t3 = t2 * t;
-                double x = 0.5 * ((2 * p1.x()) + (-p0.x() + p2.x()) * t
-                        + (2 * p0.x() - 5 * p1.x() + 4 * p2.x() - p3.x()) * t2
-                        + (-p0.x() + 3 * p1.x() - 3 * p2.x() + p3.x()) * t3);
-                double y = 0.5 * ((2 * p1.y()) + (-p0.y() + p2.y()) * t
-                        + (2 * p0.y() - 5 * p1.y() + 4 * p2.y() - p3.y()) * t2
-                        + (-p0.y() + 3 * p1.y() - 3 * p2.y() + p3.y()) * t3);
-                double z = 0.5 * ((2 * p1.z()) + (-p0.z() + p2.z()) * t
-                        + (2 * p0.z() - 5 * p1.z() + 4 * p2.z() - p3.z()) * t2
-                        + (-p0.z() + 3 * p1.z() - 3 * p2.z() + p3.z()) * t3);
-                int bx = (int) Math.floor(x);
-                int by = (int) Math.floor(y);
-                int bz = (int) Math.floor(z);
-                if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
-                    changed++;
-                }
-                if (thickness >= 1) {
-                    changed += sphere(session, new BlockVector3(bx, by, bz), thickness, pattern, false);
+        List<Vector3> nodes = new ArrayList<>(points.size());
+        for (BlockVector3 point : points) {
+            nodes.add(point.toVector3().add(0.5, 0.5, 0.5));
+        }
+        KochanekBartels spline = new KochanekBartels(nodes, tension, bias, continuity);
+        SplineCells tips = new SplineCells("The curve");
+        double step = 1D / spline.arcLength() / quality;
+        for (double position = 0; position <= 1; position += step) {
+            Vector3 tip = spline.position(position);
+            tips.add((int) Math.floor(tip.x()), (int) Math.floor(tip.y()), (int) Math.floor(tip.z()));
+        }
+        int reach = (int) Math.ceil(Math.max(0, radius));
+        double reachSquared = radius * radius;
+        SplineCells tube = new SplineCells("The curve");
+        while (!tips.order.isEmpty()) {
+            long key = tips.order.poll();
+            int tipX = BlockArrayClipboard.keyX(key);
+            int tipY = BlockArrayClipboard.keyY(key);
+            int tipZ = BlockArrayClipboard.keyZ(key);
+            for (int x = tipX - reach; x <= tipX + reach; x++) {
+                for (int y = tipY - reach; y <= tipY + reach; y++) {
+                    for (int z = tipZ - reach; z <= tipZ + reach; z++) {
+                        int dx = x - tipX;
+                        int dy = y - tipY;
+                        int dz = z - tipZ;
+                        if (dx * dx + dy * dy + dz * dz <= reachSquared) {
+                            tube.add(x, y, z);
+                        }
+                    }
                 }
             }
         }
-        return changed;
+        return tube.write(session, pattern, !filled);
     }
 
     /** {@code /brush catenary} — a sagging rope between two points. */

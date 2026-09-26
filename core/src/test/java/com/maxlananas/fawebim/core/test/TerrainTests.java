@@ -44,6 +44,10 @@ final class TerrainTests {
         theStylesDisagreeOnTheSurfaceOfTheBall();
         pullFillsTheOpenFacesAboveTheTerrain();
         morphErodesAFloatingBlock();
+        theSplineGoesThroughItsNodes();
+        aCurveIsContinuousWhateverItsLength();
+        aShellCurveKeepsTheSurfaceOfTheTube();
+        curveNeedsAConvexSelection();
     }
 
     private static TestActor actor(String name) {
@@ -242,6 +246,71 @@ final class TerrainTests {
         checkEquals("pull fills the open cells touching the terrain, one layer", 21, changed);
         check("with the block they touch", world.getBlock(0, 70, 0) == state("minecraft:grass_block")
                 && world.getBlock(0, 71, 0) == BlockState.registry().air());
+    }
+
+    private static void theSplineGoesThroughItsNodes() {
+        java.util.List<com.maxlananas.fawebim.core.math.Vector3> nodes = java.util.List.of(
+                new com.maxlananas.fawebim.core.math.Vector3(0, 0, 0),
+                new com.maxlananas.fawebim.core.math.Vector3(10, 0, 0),
+                new com.maxlananas.fawebim.core.math.Vector3(20, 0, 0));
+        com.maxlananas.fawebim.core.math.KochanekBartels spline =
+                new com.maxlananas.fawebim.core.math.KochanekBartels(nodes, 0, 0, 0);
+        checkEquals("the spline starts on its first node", nodes.get(0), spline.position(0));
+        checkEquals("passes its middle node half way", nodes.get(1), spline.position(0.5));
+        checkEquals("and ends on its last", nodes.get(2), spline.position(1));
+        check("nodes in a line give a straight line", Math.abs(spline.position(0.3).y()) < 1e-9
+                && Math.abs(spline.position(0.8).z()) < 1e-9);
+    }
+
+    private static void aCurveIsContinuousWhateverItsLength() {
+        TestActor actor = actor("Curve");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        EditSession edit = new EditSession(world, actor.session(), "curve");
+        int changed;
+        try {
+            changed = Operations.drawSpline(edit, java.util.List.of(new BlockVector3(0, 90, 0),
+                    new BlockVector3(40, 90, 0)), 0, 0, 0, 10, 0, true,
+                    new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold));
+        } finally {
+            edit.close();
+        }
+        boolean continuous = true;
+        for (int x = 0; x <= 40; x++) {
+            continuous &= world.getBlock(x, 90, 0) == gold;
+        }
+        check("a curve forty blocks long leaves no gap", continuous);
+        checkEquals("and sets each block once", 41, changed);
+    }
+
+    private static void aShellCurveKeepsTheSurfaceOfTheTube() {
+        TestActor actor = actor("CurveShell");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        java.util.List<BlockVector3> nodes = java.util.List.of(new BlockVector3(0, 100, 0),
+                new BlockVector3(20, 100, 0));
+        EditSession edit = new EditSession(world, actor.session(), "curve");
+        try {
+            Operations.drawSpline(edit, nodes, 0, 0, 0, 10, 2, false,
+                    new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold));
+        } finally {
+            edit.close();
+        }
+        check("a shell leaves the axis of the tube open", world.getBlock(10, 100, 0) != gold);
+        check("and keeps its surface", world.getBlock(10, 102, 0) == gold && world.getBlock(10, 100, 2) == gold);
+        check("without the solid tube along the straight line", world.getBlock(10, 101, 0) != gold);
+    }
+
+    private static void curveNeedsAConvexSelection() {
+        TestActor actor = actor("CurveCuboid");
+        CommandManager.get().dispatch(actor, "//pos1 0,90,0");
+        CommandManager.get().dispatch(actor, "//pos2 10,95,10");
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//curve gold_block");
+        check("//curve on a cuboid selection says it needs a convex one",
+                actor.lastMessage().contains("convex polyhedral"));
+        check("and draws nothing", actor.world().getBlock(0, 90, 0) != state("minecraft:gold_block")
+                && actor.world().getBlock(10, 95, 10) != state("minecraft:gold_block"));
     }
 
     private static void morphErodesAFloatingBlock() {
