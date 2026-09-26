@@ -89,6 +89,11 @@ jobs:
           python3 scripts/smoke_lint.py --java "$JAVA_HOME/bin/java" \
             --classpath core/build/classes/java/main:core/build/classes/java/selfTest
 
+      - name: Check the bench rows' expected answers against the engine
+        run: |
+          python3 scripts/rcon_bench.py --lint --java "$JAVA_HOME/bin/java" \
+            --classpath core/build/classes/java/main:core/build/classes/java/selfTest
+
       - name: Check every configuration setting is read
         run: python3 scripts/settings_audit.py
 
@@ -188,7 +193,13 @@ jobs:
       # edit runs on real chunk sections, with the real light engine and the real
       # client sync behind it, and it prints what each edit costs.
       - name: Time the large edits on the running server
-        run: python3 scripts/rcon_bench.py --wait 60
+        run: |
+          set +e
+          python3 scripts/rcon_bench.py --wait 60 > /tmp/bench.log 2>&1
+          status=$?
+          cat /tmp/bench.log
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/bench.log').read_text(errors='replace')[-7000:];print('::error title=rcon bench::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+          exit $status
 
       - name: Read what the mod wrote to the configuration file
         run: |

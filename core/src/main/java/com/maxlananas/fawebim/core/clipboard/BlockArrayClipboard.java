@@ -394,6 +394,36 @@ public final class BlockArrayClipboard implements Extent {
         return visited;
     }
 
+    /**
+     * How many cells the clipboard holds a block in.
+     *
+     * <p>The number of blocks a copy really stored, which is what the command
+     * answers with: a selection of air stores nothing, however large it is.</p>
+     */
+    public int filled(com.maxlananas.fawebim.core.world.BlockStateRegistry registry) {
+        int filled = 0;
+        for (int[] section : sections.values()) {
+            for (int state : section) {
+                if (state != 0 && !registry.isAirLike(state)) {
+                    filled++;
+                }
+            }
+        }
+        for (Partial part : partial.values()) {
+            for (int[] run : part.rows()) {
+                if (run == null) {
+                    continue;
+                }
+                for (int state : run) {
+                    if (state != 0 && !registry.isAirLike(state)) {
+                        filled++;
+                    }
+                }
+            }
+        }
+        return filled;
+    }
+
     /** True when the clipboard contains no non-air blocks (nothing to paste). */
     public boolean isEmpty(BlockStateRegistry registry) {
         for (int[] section : sections.values()) {

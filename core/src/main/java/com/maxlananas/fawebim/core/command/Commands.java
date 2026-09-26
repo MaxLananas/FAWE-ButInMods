@@ -1758,7 +1758,11 @@ public final class Commands {
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
                             ctx.selection(), session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, ctx.hasFlag("c"));
                     ctx.session().setClipboard(clipboard);
-                    StringBuilder detail = new StringBuilder(Msg.count(clipboard.volume()))
+                    // What the clipboard holds, not how big the selection was:
+                    // a copy of an empty region stores nothing, and the size in
+                    // brackets is the selection the player made either way.
+                    StringBuilder detail = new StringBuilder(Msg.count(
+                                    clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
                             .append("\u00a77 block(s) to your clipboard");
                     if (!clipboard.entities().isEmpty()) {
                         detail.append(", ").append(Msg.count(clipboard.entities().size()))
@@ -1767,9 +1771,9 @@ public final class Commands {
                     if (clipboard.hasBiomes()) {
                         detail.append(", \u00a77biomes");
                     }
-                    detail.append(" \u00a78(").append(clipboard.getWidth()).append('x')
-                            .append(clipboard.getHeight()).append('x').append(clipboard.getLength())
-                            .append(')');
+                    detail.append(" \u00a78(").append(ctx.selection().getWidth()).append('x')
+                            .append(ctx.selection().getHeight()).append('x')
+                            .append(ctx.selection().getLength()).append(')');
                     ctx.actor().message(Msg.result("Copied", detail.toString()));
                 };
 
@@ -1799,7 +1803,8 @@ public final class Commands {
                     // The queue is applied before the answer is written, so the
                     // time the line reports is the time the cut really took.
                     session.flushQueue();
-                    StringBuilder detail = new StringBuilder(Msg.count(clipboard.volume()))
+                    StringBuilder detail = new StringBuilder(Msg.count(
+                                    clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
                             .append("\u00a77 block(s) to your clipboard");
                     if (!clipboard.entities().isEmpty()) {
                         detail.append(", ").append(Msg.count(clipboard.entities().size()))
@@ -1809,8 +1814,8 @@ public final class Commands {
                         detail.append(", \u00a77biomes");
                     }
                     detail.append(" in \u00a7b").append(timer.phrase());
-                    detail.append(" \u00a78(").append(clipboard.getWidth()).append('x')
-                            .append(clipboard.getHeight()).append('x').append(clipboard.getLength())
+                    detail.append(" \u00a78(").append(region.getWidth()).append('x')
+                            .append(region.getHeight()).append('x').append(region.getLength())
                             .append(')');
                     ctx.actor().message(Msg.result("Cut", detail.toString()));
                 };
