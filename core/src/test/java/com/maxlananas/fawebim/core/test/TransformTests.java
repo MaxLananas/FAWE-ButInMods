@@ -33,6 +33,7 @@ final class TransformTests {
     static void run() {
         section("transforms");
         quarterTurnsAreExact();
+        globalTransformsApplyToEdits();
         BlockStateRegistry previous = BlockState.registry();
         PropertyTestRegistry registry = new PropertyTestRegistry();
         BlockState.setRegistry(registry);
@@ -44,6 +45,65 @@ final class TransformTests {
         } finally {
             BlockState.setRegistry(previous);
         }
+    }
+
+    /**
+     * //gtransform and the brush transform were stored and never applied: an
+     * edit ignored them. Every block an edit writes now goes through the
+     * transform, around the first block it writes, as in FAWE.
+     */
+    private static void globalTransformsApplyToEdits() {
+        TestWorld world = new TestWorld("GlobalTransform");
+        world.fillFlat(70);
+        TestActor actor = new TestActor("GlobalTransform", world, new BlockVector3(0, 71, 0));
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int air = BlockState.registry().air();
+        com.maxlananas.fawebim.core.command.CommandManager manager = com.maxlananas.fawebim.core.command.CommandManager.get();
+        manager.dispatch(actor, "//pos1 0,80,0");
+        manager.dispatch(actor, "//pos2 2,80,0");
+        manager.dispatch(actor, "//gtransform offset 0 5 0");
+        manager.dispatch(actor, "//set minecraft:stone");
+        check("//gtransform offset moves what //set writes", world.getBlock(1, 85, 0) == stone
+                && world.getBlock(1, 80, 0) == air);
+        manager.dispatch(actor, "//undo");
+        check("and //undo takes it back from where it went", world.getBlock(1, 85, 0) == air);
+
+        manager.dispatch(actor, "//gtransform rotate 90");
+        manager.dispatch(actor, "//set minecraft:stone");
+        check("//gtransform rotate turns the edit around the first block it writes (a row along x becomes one along z)",
+                world.getBlock(0, 80, 0) == stone && world.getBlock(0, 80, -2) == stone
+                        && world.getBlock(2, 80, 0) == air);
+        manager.dispatch(actor, "//undo");
+
+        manager.dispatch(actor, "//pos1 0,90,0");
+        manager.dispatch(actor, "//pos2 0,90,0");
+        manager.dispatch(actor, "//gtransform scale 2");
+        manager.dispatch(actor, "//set minecraft:stone");
+        int filled = 0;
+        for (int x = 0; x <= 1; x++) {
+            for (int y = 90; y <= 91; y++) {
+                for (int z = 0; z <= 1; z++) {
+                    filled += world.getBlock(x, y, z) == stone ? 1 : 0;
+                }
+            }
+        }
+        checkEquals("//gtransform scale 2 makes one block a 2x2x2 cube, with no gap", 8, filled);
+        manager.dispatch(actor, "//gtransform");
+        manager.dispatch(actor, "//pos1 5,95,5");
+        manager.dispatch(actor, "//pos2 5,95,5");
+        manager.dispatch(actor, "//set minecraft:stone");
+        check("//gtransform with nothing clears it", world.getBlock(5, 95, 5) == stone);
+
+        // A brush's transform turns around where the brush hits.
+        EditSession brush = new EditSession(world, actor.session(), "brush");
+        try {
+            brush.setTransform(Transforms.offset(0, 3, 0), new BlockVector3(10, 100, 10));
+            brush.setBlock(10, 100, 10, stone);
+        } finally {
+            brush.close();
+        }
+        check("a transform given an origin applies around it", world.getBlock(10, 103, 10) == stone
+                && world.getBlock(10, 100, 10) == air);
     }
 
     /** The eight turns and mirrors about Y a clipboard can take, and their inverses. */

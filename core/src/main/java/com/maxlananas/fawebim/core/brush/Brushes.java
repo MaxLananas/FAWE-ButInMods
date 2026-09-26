@@ -36,6 +36,11 @@ public final class Brushes {
     public static int apply(Brush brush, com.maxlananas.fawebim.core.extent.EditSession session,
                             com.maxlananas.fawebim.core.math.BlockVector3 position,
                             com.maxlananas.fawebim.core.actor.Actor actor) {
+        // /tool transform: what the brush places is transformed around where it hit.
+        Transform transform = brush.settings().getTransform();
+        if (transform != null && !transform.isIdentity()) {
+            session.setTransform(transform, position);
+        }
         com.maxlananas.fawebim.core.mask.Mask own = brush.settings().getSourceMask();
         if (own == null) {
             return brush.apply(session, position, actor);

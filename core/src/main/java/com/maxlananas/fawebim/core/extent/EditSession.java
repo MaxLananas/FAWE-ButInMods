@@ -68,6 +68,11 @@ public final class EditSession implements Extent {
 
     private Mask mask;
     private Transform transform = Transform.identity();
+    /** Whether writes go through {@link #transform}; off while one is being written through it. */
+    private boolean transforming;
+    private com.maxlananas.fawebim.core.math.BlockVector3 transformOrigin;
+    private com.maxlananas.fawebim.core.transform.BlockStateTransform transformStates;
+    private boolean fillsCells;
     private final TimeLimiter limiter;
     private int changeLimit;
     private long blocksChanged;
@@ -140,8 +145,11 @@ public final class EditSession implements Extent {
         this.limiter = new TimeLimiter(session.getTimeout() * 1000L);
         this.changeLimit = session.hasBlockChangeLimit() ? session.getMaxBlocksChanged() : -1;
         this.mask = session.getMask();
-        if (session.getTransformSet() != null && !session.getTransformSet().getTransforms().isEmpty()) {
-            this.transform = session.getTransformSet().getTransforms();
+        // //gtransform applies to what the player edits, never to an undo or a
+        // restore, which put back blocks where they were.
+        if (recordHistory && session.getTransformSet() != null
+                && !session.getTransformSet().getTransforms().isEmpty()) {
+            setTransform(session.getTransformSet().getTransforms());
         }
     }
 
@@ -182,12 +190,88 @@ public final class EditSession implements Extent {
         return mask;
     }
 
+    /**
+     * Transforms every block this edit writes around the first one it writes,
+     * which is FAWE's "initial position" for {@code //gtransform}.
+     */
     public void setTransform(Transform transform) {
+        setTransform(transform, null);
+    }
+
+    /**
+     * Transforms every block this edit writes around a position: its place,
+     * as the transform moves it relative to the origin, and its state, turned
+     * as the transform turns. A transform that scales up along the axes fills
+     * the whole cell a block becomes, as FAWE's scale transform does.
+     *
+     * @param origin what the transform turns around, or {@code null} for the
+     *               first block written, which a brush sets to where it hits
+     */
+    public void setTransform(Transform transform, com.maxlananas.fawebim.core.math.BlockVector3 origin) {
         this.transform = transform == null ? Transform.identity() : transform;
+        this.transforming = !this.transform.isIdentity();
+        this.transformOrigin = origin;
+        this.transformStates = transforming
+                ? com.maxlananas.fawebim.core.transform.BlockStateTransform.of(this.transform) : null;
+        this.fillsCells = transforming && scalesUpAlongAxes(this.transform);
     }
 
     public Transform getTransform() {
         return transform;
+    }
+
+    /** True when the transform only stretches along the axes, by more than one block on at least one. */
+    private static boolean scalesUpAlongAxes(Transform transform) {
+        com.maxlananas.fawebim.core.math.Vector3 x = transform.applyDirection(com.maxlananas.fawebim.core.math.Vector3.at(1, 0, 0));
+        com.maxlananas.fawebim.core.math.Vector3 y = transform.applyDirection(com.maxlananas.fawebim.core.math.Vector3.at(0, 1, 0));
+        com.maxlananas.fawebim.core.math.Vector3 z = transform.applyDirection(com.maxlananas.fawebim.core.math.Vector3.at(0, 0, 1));
+        boolean diagonal = Math.abs(x.y()) + Math.abs(x.z()) < 1e-9 && Math.abs(y.x()) + Math.abs(y.z()) < 1e-9
+                && Math.abs(z.x()) + Math.abs(z.y()) < 1e-9 && x.x() > 0 && y.y() > 0 && z.z() > 0;
+        return diagonal && (x.x() > 1 || y.y() > 1 || z.z() > 1);
+    }
+
+    /**
+     * Writes a block through the transform: where it lands relative to the
+     * origin, with its state turned, and across the whole cell when the
+     * transform scales up.
+     */
+    private boolean setTransformed(int x, int y, int z, int stateId, boolean recordChange) {
+        if (transformOrigin == null) {
+            transformOrigin = new com.maxlananas.fawebim.core.math.BlockVector3(x, y, z);
+        }
+        int ox = transformOrigin.x();
+        int oy = transformOrigin.y();
+        int oz = transformOrigin.z();
+        com.maxlananas.fawebim.core.math.Vector3 image =
+                transform.apply(com.maxlananas.fawebim.core.math.Vector3.at(x - ox, y - oy, z - oz));
+        int fromX = (int) Math.floor(image.x()) + ox;
+        int fromY = (int) Math.floor(image.y()) + oy;
+        int fromZ = (int) Math.floor(image.z()) + oz;
+        int toX = fromX;
+        int toY = fromY;
+        int toZ = fromZ;
+        if (fillsCells) {
+            com.maxlananas.fawebim.core.math.Vector3 far =
+                    transform.apply(com.maxlananas.fawebim.core.math.Vector3.at(x - ox + 1, y - oy + 1, z - oz + 1));
+            toX = Math.max(fromX, (int) Math.ceil(far.x()) + ox - 1);
+            toY = Math.max(fromY, (int) Math.ceil(far.y()) + oy - 1);
+            toZ = Math.max(fromZ, (int) Math.ceil(far.z()) + oz - 1);
+        }
+        int state = transformStates == null ? stateId : transformStates.apply(stateId);
+        boolean changed = false;
+        transforming = false;
+        try {
+            for (int ty = fromY; ty <= toY; ty++) {
+                for (int tz = fromZ; tz <= toZ; tz++) {
+                    for (int tx = fromX; tx <= toX; tx++) {
+                        changed |= setBlock(tx, ty, tz, state, recordChange);
+                    }
+                }
+            }
+        } finally {
+            transforming = true;
+        }
+        return changed;
     }
 
     public void setChangeLimit(int limit) {
@@ -375,6 +459,9 @@ public final class EditSession implements Extent {
         if (cancelled || stateId < 0) {
             return false;
         }
+        if (transforming) {
+            return setTransformed(x, y, z, stateId, recordChange);
+        }
         if (y < minY || y > maxY) {
             // There is no block outside the world: counting one here would put a
             // change that never happened into the block count and the history.
@@ -410,6 +497,10 @@ public final class EditSession implements Extent {
     public boolean setBlockKnown(int x, int y, int z, int previous, int stateId, boolean recordChange) {
         if (cancelled || stateId < 0) {
             return false;
+        }
+        if (transforming) {
+            // The block lands elsewhere, where what the caller read means nothing.
+            return setTransformed(x, y, z, stateId, recordChange);
         }
         if (y < minY || y > maxY) {
             return false;
@@ -681,6 +772,14 @@ public final class EditSession implements Extent {
      */
     public void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
         checkOpen();
+        if (transforming && transformOrigin != null) {
+            // The data follows its block to where the transform put it.
+            com.maxlananas.fawebim.core.math.Vector3 image = transform.apply(com.maxlananas.fawebim.core.math.Vector3.at(
+                    x - transformOrigin.x(), y - transformOrigin.y(), z - transformOrigin.z()));
+            x = (int) Math.floor(image.x()) + transformOrigin.x();
+            y = (int) Math.floor(image.y()) + transformOrigin.y();
+            z = (int) Math.floor(image.z()) + transformOrigin.z();
+        }
         if (nbt == null || cancelled || y < minY || y > maxY
                 || mask != null && !mask.isRegion() && !mask.test(x, y, z)) {
             return;

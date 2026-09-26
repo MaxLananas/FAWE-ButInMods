@@ -209,15 +209,11 @@ final class ToolUtilCommands {
             BrushSettings settings = targetBrush(ctx).settings();
             if (ctx.args().isEmpty()) {
                 settings.setTransform(null);
-                ctx.session().getTransformSet().clear();
                 ctx.actor().message(Msg.result("Brush transform", "cleared"));
                 return;
             }
-            Transform transform = parseTransform(ctx);
-            settings.setTransform(transform);
-            Transforms.Set set = new Transforms.Set();
-            set.add(transform);
-            ctx.session().getTransformSet().setTransforms(set);
+            // The brush's own transform: //gtransform is the one for every edit.
+            settings.setTransform(parseTransform(ctx));
             ctx.actor().message(Msg.result("Brush transform", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
     }
