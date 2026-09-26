@@ -22,8 +22,6 @@ placeholder commands.
 [![Switches](https://img.shields.io/badge/upstream%20switches-0%20missing-3fb950?style=flat-square)](scripts/flag_audit.py)
 [![Stubs](https://img.shields.io/badge/stubs-0-3fb950?style=flat-square)](.github/workflows/build.yml)
 
-[![Last commit](https://img.shields.io/github/last-commit/MaxLananas/FAWE-ButInMods?style=flat-square&label=last%20commit)](https://github.com/MaxLananas/FAWE-ButInMods/commits)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/MaxLananas/FAWE-ButInMods?style=flat-square&label=commits%2Fmonth)](https://github.com/MaxLananas/FAWE-ButInMods/commits)
 [![Issues](https://img.shields.io/github/issues/MaxLananas/FAWE-ButInMods?style=flat-square)](https://github.com/MaxLananas/FAWE-ButInMods/issues)
 [![Pull requests](https://img.shields.io/badge/PRs-welcome-8957e5?style=flat-square)](CONTRIBUTING.md)
 [![Stars](https://img.shields.io/github/stars/MaxLananas/FAWE-ButInMods?style=flat-square)](https://github.com/MaxLananas/FAWE-ButInMods/stargazers)
