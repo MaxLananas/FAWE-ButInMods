@@ -134,27 +134,88 @@ public final class BlockArrayClipboard implements Extent {
         return read;
     }
 
+    /**
+     * The biomes, one per cell of the game's 4x4x4 biome grid, keyed by
+     * {@link #positionKey(int, int, int)} of the cell. The game has nothing
+     * finer to copy, and a biome per block stored the same value up to
+     * sixty-four times.
+     */
     private final java.util.Map<Long, Integer> biomes = new java.util.HashMap<>();
+    /** Where the grid lies: position x is in cell {@code (x + biomeShiftX) >> 2}. */
+    private int biomeShiftX;
+    private int biomeShiftY;
+    private int biomeShiftZ;
 
-    /** Stores the biome of a position, filled by {@code //copy -b}. */
+    /**
+     * Lays the biome grid on this clipboard's positions: position {@code x} is
+     * in the cell of the world's position {@code x + worldX}. A copy keeps the
+     * world's coordinates and needs no call; a schematic loads with its lowest
+     * corner at 0 and says where that corner was. Only the remainder of the
+     * division by four matters.
+     */
+    public void setBiomeGrid(int worldX, int worldY, int worldZ) {
+        biomeShiftX = Math.floorMod(worldX, 4);
+        biomeShiftY = Math.floorMod(worldY, 4);
+        biomeShiftZ = Math.floorMod(worldZ, 4);
+    }
+
+    /** How far the biome grid is moved along each axis, as {@link #setBiomeGrid} left it. */
+    public int[] biomeGrid() {
+        return new int[]{biomeShiftX, biomeShiftY, biomeShiftZ};
+    }
+
+    /** Stores the biome of the cell holding a position, filled by {@code //copy -b}. */
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
-        biomes.put(positionKey(x, y, z), biomeId);
+        biomes.put(biomeCell(x, y, z), biomeId);
         return true;
     }
 
-    /** The stored biome of a position, or {@code -1} when there is none. */
+    /** The stored biome of the cell holding a position, or {@code -1} when there is none. */
     public int getBiome(int x, int y, int z) {
-        return biomes.getOrDefault(positionKey(x, y, z), -1);
+        return biomes.getOrDefault(biomeCell(x, y, z), -1);
+    }
+
+    private long biomeCell(int x, int y, int z) {
+        return positionKey((x + biomeShiftX) >> 2, (y + biomeShiftY) >> 2, (z + biomeShiftZ) >> 2);
     }
 
     public boolean hasBiomes() {
         return !biomes.isEmpty();
     }
 
-    /** Every stored biome, keyed by {@link #positionKey(int, int, int)}. */
-    public java.util.Set<java.util.Map.Entry<Long, Integer>> biomeEntries() {
-        return biomes.entrySet();
+    /** A stored biome and the part of the clipboard's box its cell covers, as {@link #forEachBiomeCell} gives it. */
+    @FunctionalInterface
+    public interface BiomeCell {
+        void accept(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, int biomeId);
+    }
+
+    /**
+     * Every stored biome with the positions of the box its cell covers, always
+     * in the same order, so that where several cells land in one cell of the
+     * world, every paste of the clipboard picks the same one.
+     */
+    public void forEachBiomeCell(BiomeCell action) {
+        long[] keys = new long[biomes.size()];
+        int count = 0;
+        for (long key : biomes.keySet()) {
+            keys[count++] = key;
+        }
+        java.util.Arrays.sort(keys);
+        for (long key : keys) {
+            int x = (keyX(key) << 2) - biomeShiftX;
+            int y = (keyY(key) << 2) - biomeShiftY;
+            int z = (keyZ(key) << 2) - biomeShiftZ;
+            int minX = Math.max(x, box.minX());
+            int minY = Math.max(y, box.minY());
+            int minZ = Math.max(z, box.minZ());
+            int maxX = Math.min(x + 3, box.maxX());
+            int maxY = Math.min(y + 3, box.maxY());
+            int maxZ = Math.min(z + 3, box.maxZ());
+            if (minX <= maxX && minY <= maxY && minZ <= maxZ) {
+                action.accept(minX, minY, minZ, maxX, maxY, maxZ, biomes.get(key));
+            }
+        }
     }
 
     /** Packs the coordinates of a biome cell the way Minecraft packs a block position. */

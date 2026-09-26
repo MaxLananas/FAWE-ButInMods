@@ -128,6 +128,17 @@ public class CuboidRegion implements Region {
     }
 
     @Override
+    public BlockVector3 firstInside(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        int x = Math.max(minX, this.minX);
+        int y = Math.max(minY, this.minY);
+        int z = Math.max(minZ, this.minZ);
+        if (x > Math.min(maxX, this.maxX) || y > Math.min(maxY, this.maxY) || z > Math.min(maxZ, this.maxZ)) {
+            return null;
+        }
+        return new BlockVector3(x, y, z);
+    }
+
+    @Override
     public boolean expand(BlockVector3 amount) {
         boolean changed = false;
         if (amount.x() < 0) {

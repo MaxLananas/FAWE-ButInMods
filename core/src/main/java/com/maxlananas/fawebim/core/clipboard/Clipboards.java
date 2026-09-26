@@ -10,6 +10,7 @@ import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.transform.EntityTransforms;
 import com.maxlananas.fawebim.core.transform.Transform;
+import com.maxlananas.fawebim.core.util.LongSet;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.EntityData;
@@ -448,23 +449,29 @@ public final class Clipboards {
     }
 
     /**
-     * Copies the biomes of a region into a clipboard.
+     * Copies the biomes of a region into a clipboard: one per cell of the
+     * game's 4x4x4 biome grid that the region reaches, which is all the game
+     * stores.
      *
-     * <p>Minecraft stores a biome per 4x4x4 cell, so one sample per cell is all
-     * there is to read: asking for the biome of every block of a selection read
-     * the same value sixty-four times and filled the clipboard with sixty-four
-     * entries for it.</p>
+     * <p>Stepping by four from the region's lowest corner read one position per
+     * cell only when that corner was on the grid. From anywhere else the steps
+     * stopped short of the last cell along an axis whenever the region ended
+     * early enough in it, and a paste left that cell as it was.</p>
      */
     public static void copyBiomes(World world, Region region, BlockArrayClipboard clipboard) {
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        for (int y = min.y(); y <= max.y(); y += 4) {
-            for (int z = min.z(); z <= max.z(); z += 4) {
-                for (int x = min.x(); x <= max.x(); x += 4) {
-                    if (!region.contains(x, y, z)) {
-                        continue;
+        for (int cellY = min.y() >> 2; cellY <= max.y() >> 2; cellY++) {
+            for (int cellZ = min.z() >> 2; cellZ <= max.z() >> 2; cellZ++) {
+                for (int cellX = min.x() >> 2; cellX <= max.x() >> 2; cellX++) {
+                    BlockVector3 inside = region.firstInside(Math.max(cellX << 2, min.x()),
+                            Math.max(cellY << 2, min.y()), Math.max(cellZ << 2, min.z()),
+                            Math.min((cellX << 2) + 3, max.x()), Math.min((cellY << 2) + 3, max.y()),
+                            Math.min((cellZ << 2) + 3, max.z()));
+                    if (inside != null) {
+                        clipboard.setBiome(inside.x(), inside.y(), inside.z(),
+                                world.getBiome(inside.x(), inside.y(), inside.z()));
                     }
-                    clipboard.setBiome(x, y, z, world.getBiome(x, y, z));
                 }
             }
         }
@@ -506,7 +513,7 @@ public final class Clipboards {
         // need to see those cells: pasting the clipboard's air is what carves the
         // box a player pasted.
         if (ignoreAir && identity && mask == null && !keepStructureVoid && !hasBlockEntities
-                && !pasteEntities && !removeEntities && clipboard.biomeEntries().isEmpty()) {
+                && !pasteEntities && !removeEntities && !clipboard.hasBiomes()) {
             return pasteStored(clipboard, destination, session);
         }
         // The block entities are looked up by their cell of the clipboard's box,
@@ -554,22 +561,7 @@ public final class Clipboards {
             return applied;
         });
         if (pasteBiomes && clipboard.hasBiomes()) {
-            for (java.util.Map.Entry<Long, Integer> biome : clipboard.biomeEntries()) {
-                long key = biome.getKey();
-                double x = BlockArrayClipboard.keyX(key);
-                double y = BlockArrayClipboard.keyY(key);
-                double z = BlockArrayClipboard.keyZ(key);
-                if (!identity) {
-                    // The biomes turn with the blocks they are under.
-                    var target = transform.apply(new com.maxlananas.fawebim.core.math.Vector3(x, y, z));
-                    x = target.x();
-                    y = target.y();
-                    z = target.z();
-                }
-                session.setBiome((int) Math.floor(x - originX + destination.x()),
-                        (int) Math.floor(y - originY + destination.y()),
-                        (int) Math.floor(z - originZ + destination.z()), biome.getValue());
-            }
+            pasteBiomes(clipboard, destination, session, identity ? null : transform);
         }
         if (removeEntities) {
             // The entities of the box the paste covers, through the session so
@@ -605,6 +597,45 @@ public final class Clipboards {
     }
 
     private static final Vector3 BLOCK_CENTRE = new Vector3(0.5, 0.5, 0.5);
+
+    /**
+     * Gives each cell of the world's biome grid the paste covers a biome of the
+     * clipboard.
+     *
+     * <p>A paste moved by a multiple of four puts each cell of the clipboard on
+     * one cell of the world; from anywhere else a clipboard cell lands across
+     * up to eight. The corners of what it covers, moved and turned the way its
+     * blocks are, reach every one of those, and a world cell reached by several
+     * takes the biome of the first in the clipboard's fixed order. Moving one
+     * position per clipboard cell reached one world cell per clipboard cell,
+     * and those along the far sides of the paste kept their biome.</p>
+     *
+     * @param transform the paste's transform, null for none
+     */
+    private static void pasteBiomes(BlockArrayClipboard clipboard, BlockVector3 destination, EditSession session,
+                                    Transform transform) {
+        BlockVector3 origin = clipboard.getOrigin();
+        LongSet reached = new LongSet();
+        clipboard.forEachBiomeCell((minX, minY, minZ, maxX, maxY, maxZ, biome) -> {
+            for (int corner = 0; corner < 8; corner++) {
+                double x = (corner & 1) == 0 ? minX : maxX;
+                double y = (corner & 2) == 0 ? minY : maxY;
+                double z = (corner & 4) == 0 ? minZ : maxZ;
+                if (transform != null) {
+                    Vector3 target = transform.apply(new Vector3(x, y, z));
+                    x = target.x();
+                    y = target.y();
+                    z = target.z();
+                }
+                int worldX = (int) Math.floor(x - origin.x() + destination.x());
+                int worldY = (int) Math.floor(y - origin.y() + destination.y());
+                int worldZ = (int) Math.floor(z - origin.z() + destination.z());
+                if (reached.add(BlockArrayClipboard.positionKey(worldX >> 2, worldY >> 2, worldZ >> 2))) {
+                    session.setBiome(worldX, worldY, worldZ, biome);
+                }
+            }
+        });
+    }
 
     /**
      * The data of an entity with the blocks it is tied to moved as the blocks

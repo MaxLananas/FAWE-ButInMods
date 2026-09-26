@@ -1082,7 +1082,9 @@ public final class SelfTestMain {
                 new BlockVector3(0, 64, 0), new BlockVector3(7, 71, 7));
         int sourceBiome = world.getBiome(0, 68, 0);
         BlockArrayClipboard biomeClipboard = Clipboards.copy(world, biomeRegion, edit, false, true, null, false);
-        checkEquals("a biome copy keeps one entry per cell", 8, biomeClipboard.biomeEntries().size());
+        int[] biomeCells = {0};
+        biomeClipboard.forEachBiomeCell((minX, minY, minZ, maxX, maxY, maxZ, biome) -> biomeCells[0]++);
+        checkEquals("a biome copy keeps one entry per cell", 8, biomeCells[0]);
         checkEquals("the copied biome is the one of the world", sourceBiome, biomeClipboard.getBiome(0, 68, 0));
         EditSession biomePaste = new EditSession(world, actor.session(), "paste biomes");
         Clipboards.paste(biomeClipboard, new BlockVector3(40, 100, 40), biomePaste,

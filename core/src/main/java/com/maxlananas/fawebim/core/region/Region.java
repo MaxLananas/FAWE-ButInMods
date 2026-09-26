@@ -41,6 +41,25 @@ public interface Region extends Iterable<BlockVector3> {
     Iterator<BlockVector3> iterator();
 
     /**
+     * The first position of the region inside a box, from the box's lowest
+     * corner in the order y, z, x, or {@code null} when the region has none
+     * there. Which cells of the game's 4x4x4 biome grid a region reaches, and
+     * where to read each one's biome, are this question.
+     */
+    default BlockVector3 firstInside(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        for (int y = minY; y <= maxY; y++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int x = minX; x <= maxX; x++) {
+                    if (contains(x, y, z)) {
+                        return new BlockVector3(x, y, z);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Receives one block of a region; returning true counts it, the way a
      * command counts the blocks it changed.
      */

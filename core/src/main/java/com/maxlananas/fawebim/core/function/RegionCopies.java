@@ -310,24 +310,9 @@ public final class RegionCopies {
      */
     private static BlockVector3 sourceOfCell(Region region, BlockVector3 offset, int cellX, int cellY, int cellZ,
                                              BlockVector3 min, BlockVector3 max) {
-        int fromX = Math.max(cellX << 2, min.x());
-        int fromY = Math.max(cellY << 2, min.y());
-        int fromZ = Math.max(cellZ << 2, min.z());
-        int toX = Math.min((cellX << 2) + 3, max.x());
-        int toY = Math.min((cellY << 2) + 3, max.y());
-        int toZ = Math.min((cellZ << 2) + 3, max.z());
-        for (int y = fromY; y <= toY; y++) {
-            for (int z = fromZ; z <= toZ; z++) {
-                for (int x = fromX; x <= toX; x++) {
-                    int sourceX = x - offset.x();
-                    int sourceY = y - offset.y();
-                    int sourceZ = z - offset.z();
-                    if (region.contains(sourceX, sourceY, sourceZ)) {
-                        return new BlockVector3(sourceX, sourceY, sourceZ);
-                    }
-                }
-            }
-        }
-        return null;
+        return region.firstInside(Math.max(cellX << 2, min.x()) - offset.x(),
+                Math.max(cellY << 2, min.y()) - offset.y(), Math.max(cellZ << 2, min.z()) - offset.z(),
+                Math.min((cellX << 2) + 3, max.x()) - offset.x(), Math.min((cellY << 2) + 3, max.y()) - offset.y(),
+                Math.min((cellZ << 2) + 3, max.z()) - offset.z());
     }
 }

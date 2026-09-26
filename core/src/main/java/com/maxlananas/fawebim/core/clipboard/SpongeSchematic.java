@@ -22,8 +22,11 @@ import java.util.Set;
  * {@code .schem} files of gzipped NBT.
  *
  * <p>Positions in the file are relative to the schematic's minimum corner.
- * Where a paste puts the clipboard travels in WorldEdit's metadata:
- * {@code Metadata.WEOffsetX/Y/Z} is the minimum corner minus the origin.</p>
+ * Where a paste puts the clipboard is written the way WorldEdit writes it. In
+ * v1 and v2, {@code Offset} is where the minimum corner was in the world and
+ * {@code Metadata.WEOffsetX/Y/Z} is that corner minus the origin. In v3,
+ * {@code Offset} is the corner minus the origin and
+ * {@code Metadata.WorldEdit.Origin} is where the origin was.</p>
  *
  * <p>Earlier builds of this mod wrote a layout of their own under the same
  * extension: the dimensions at the root, the v3 palette and data directly under
@@ -109,15 +112,31 @@ final class SpongeSchematic {
         body.putInt("Version", version);
         body.putInt("DataVersion", Config.DATA_VERSION);
         BlockVector3 origin = clipboard.getOrigin();
+        // A copy is in world coordinates; a loaded schematic is not, but its
+        // biome grid says where the world's was, which is what a reader needs
+        // to put biomes back on their cells.
+        int[] grid = clipboard.biomeGrid();
         NbtCompound metadata = new NbtCompound();
-        metadata.putInt("WEOffsetX", box.minX() - origin.x());
-        metadata.putInt("WEOffsetY", box.minY() - origin.y());
-        metadata.putInt("WEOffsetZ", box.minZ() - origin.z());
+        if (version >= 3) {
+            // WorldEdit and FAWE read a v3 file this way and ignore WEOffset:
+            // written the v2 way, a paste of this file there put the origin at
+            // the world's 0,0,0 and the build that far from the player.
+            NbtCompound worldEdit = new NbtCompound();
+            worldEdit.putIntArray("Origin", new int[]{origin.x() + grid[0], origin.y() + grid[1],
+                origin.z() + grid[2]});
+            metadata.put("WorldEdit", worldEdit);
+        } else {
+            metadata.putInt("WEOffsetX", box.minX() - origin.x());
+            metadata.putInt("WEOffsetY", box.minY() - origin.y());
+            metadata.putInt("WEOffsetZ", box.minZ() - origin.z());
+        }
         body.put("Metadata", metadata);
         body.putShort("Width", width);
         body.putShort("Height", height);
         body.putShort("Length", length);
-        body.putIntArray("Offset", new int[]{box.minX(), box.minY(), box.minZ()});
+        body.putIntArray("Offset", version >= 3
+                ? new int[]{box.minX() - origin.x(), box.minY() - origin.y(), box.minZ() - origin.z()}
+                : new int[]{box.minX() + grid[0], box.minY() + grid[1], box.minZ() + grid[2]});
 
         List<NbtCompound> blockEntities = blockEntities(clipboard, box, version);
         List<NbtCompound> entities = version >= 2 ? entities(clipboard, box, version) : List.of();
@@ -127,6 +146,9 @@ final class SpongeSchematic {
             blocks.putByteArray("Data", data.toByteArray());
             blocks.putList("BlockEntities", blockEntities);
             body.put("Blocks", blocks);
+            if (clipboard.hasBiomes()) {
+                writeBiomes(clipboard, box, version, body);
+            }
             if (!entities.isEmpty()) {
                 body.putList("Entities", entities);
             }
@@ -141,11 +163,101 @@ final class SpongeSchematic {
             body.putList("TileEntities", blockEntities);
         } else {
             body.putList("BlockEntities", blockEntities);
+            if (clipboard.hasBiomes()) {
+                writeBiomes(clipboard, box, version, body);
+            }
             if (!entities.isEmpty()) {
                 body.putList("Entities", entities);
             }
         }
         return body;
+    }
+
+    /**
+     * The clipboard's biomes, paletted as the blocks are: in v3 one per block
+     * under {@code Biomes}, in v2 one per column under {@code BiomePalette} and
+     * {@code BiomeData}, from the lowest cell of the column that has one. The
+     * format cannot leave a block out, so one whose cell the clipboard has no
+     * biome for - outside the region of a copy that was not a box - takes the
+     * biome the clipboard holds most.
+     */
+    private static void writeBiomes(BlockArrayClipboard clipboard, BlockBox box, int version, NbtCompound body) {
+        int[] grid = clipboard.biomeGrid();
+        int cellMinX = (box.minX() + grid[0]) >> 2;
+        int cellMinY = (box.minY() + grid[1]) >> 2;
+        int cellMinZ = (box.minZ() + grid[2]) >> 2;
+        int cellsX = ((box.maxX() + grid[0]) >> 2) - cellMinX + 1;
+        int cellsY = ((box.maxY() + grid[1]) >> 2) - cellMinY + 1;
+        int cellsZ = ((box.maxZ() + grid[2]) >> 2) - cellMinZ + 1;
+        // The palette index of each cell, found once per cell rather than once per block.
+        int[] cells = new int[cellsX * cellsY * cellsZ];
+        Map<Integer, Integer> indexOf = new java.util.LinkedHashMap<>();
+        Map<Integer, Integer> uses = new java.util.HashMap<>();
+        for (int cy = 0; cy < cellsY; cy++) {
+            for (int cz = 0; cz < cellsZ; cz++) {
+                for (int cx = 0; cx < cellsX; cx++) {
+                    int biome = clipboard.getBiome(((cellMinX + cx) << 2) - grid[0],
+                            ((cellMinY + cy) << 2) - grid[1], ((cellMinZ + cz) << 2) - grid[2]);
+                    int cell = (cy * cellsZ + cz) * cellsX + cx;
+                    if (biome < 0) {
+                        cells[cell] = -1;
+                        continue;
+                    }
+                    cells[cell] = indexOf.computeIfAbsent(biome, id -> indexOf.size());
+                    uses.merge(biome, 1, Integer::sum);
+                }
+            }
+        }
+        if (uses.isEmpty()) {
+            return;
+        }
+        int common = indexOf.get(uses.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow().getKey());
+        for (int i = 0; i < cells.length; i++) {
+            if (cells[i] < 0) {
+                cells[i] = common;
+            }
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        NbtCompound palette = new NbtCompound();
+        indexOf.forEach((biome, index) -> palette.putInt(registry.biomeName(biome), index));
+
+        if (version >= 3) {
+            VarIntBuffer data = new VarIntBuffer((int) box.volume());
+            for (int y = box.minY(); y <= box.maxY(); y++) {
+                int rowY = (((y + grid[1]) >> 2) - cellMinY) * cellsZ;
+                for (int z = box.minZ(); z <= box.maxZ(); z++) {
+                    int row = (rowY + ((z + grid[2]) >> 2) - cellMinZ) * cellsX - cellMinX;
+                    for (int x = box.minX(); x <= box.maxX(); x++) {
+                        data.write(cells[row + ((x + grid[0]) >> 2)]);
+                    }
+                }
+            }
+            NbtCompound biomes = new NbtCompound();
+            biomes.put("Palette", palette);
+            biomes.putByteArray("Data", data.toByteArray());
+            body.put("Biomes", biomes);
+            return;
+        }
+        VarIntBuffer data = new VarIntBuffer(box.width() * box.length());
+        for (int z = box.minZ(); z <= box.maxZ(); z++) {
+            int cz = ((z + grid[2]) >> 2) - cellMinZ;
+            for (int x = box.minX(); x <= box.maxX(); x++) {
+                int cx = ((x + grid[0]) >> 2) - cellMinX;
+                int index = common;
+                for (int cy = 0; cy < cellsY; cy++) {
+                    int cell = (cy * cellsZ + cz) * cellsX + cx;
+                    if (clipboard.getBiome(((cellMinX + cx) << 2) - grid[0], ((cellMinY + cy) << 2) - grid[1],
+                            ((cellMinZ + cz) << 2) - grid[2]) >= 0) {
+                        index = cells[cell];
+                        break;
+                    }
+                }
+                data.write(index);
+            }
+        }
+        body.put("BiomePalette", palette);
+        body.putInt("BiomePaletteMax", indexOf.size());
+        body.putByteArray("BiomeData", data.toByteArray());
     }
 
     private static List<NbtCompound> blockEntities(BlockArrayClipboard clipboard, BlockBox box, int version) {
@@ -298,13 +410,114 @@ final class SpongeSchematic {
         }
 
         NbtCompound metadata = sizes.getCompoundOrNull("Metadata");
+        int[] offset = SchematicData.intTriple(sizes.get("Offset"));
+        if (offset == null) {
+            offset = new int[3];
+        }
+        // Where the lowest corner was in the world, which puts the biomes back
+        // on the cells of the grid they were read from.
+        int[] corner = offset;
         if (metadata != null && metadata.contains("WEOffsetX")) {
+            // v1 and v2, and v3 as earlier builds of this mod wrote it.
             clipboard.setOrigin(new BlockVector3(-metadata.getInt("WEOffsetX", 0),
                     -metadata.getInt("WEOffsetY", 0), -metadata.getInt("WEOffsetZ", 0)));
+        } else if (version >= 3 && nestedData) {
+            // The offset of the lowest corner from the origin, and the origin in the world.
+            clipboard.setOrigin(new BlockVector3(-offset[0], -offset[1], -offset[2]));
+            NbtCompound worldEdit = metadata == null ? null : metadata.getCompoundOrNull("WorldEdit");
+            int[] origin = worldEdit == null ? null : SchematicData.intTriple(worldEdit.get("Origin"));
+            if (origin != null) {
+                corner = new int[]{offset[0] + origin[0], offset[1] + origin[1], offset[2] + origin[2]};
+            }
         } else {
             clipboard.normalize();
         }
+        clipboard.setBiomeGrid(corner[0], corner[1], corner[2]);
+        readBiomes(name, clipboard, extras, width, height, length);
         return clipboard;
+    }
+
+    /**
+     * Reads the biomes of a v3 file ({@code Biomes}, one per block) or of a v2
+     * one ({@code BiomePalette} and {@code BiomeData}, one per column). The
+     * clipboard keeps one per cell of the grid, the first position of each
+     * cell inside the schematic giving it. Biome data that does not match the
+     * size is left out with a warning: the blocks are still good.
+     */
+    private static void readBiomes(String name, BlockArrayClipboard clipboard, NbtCompound body, int width,
+                                   int height, int length) {
+        NbtCompound biomes = body.getCompoundOrNull("Biomes");
+        NbtCompound paletteTag = biomes != null ? biomes.getCompoundOrNull("Palette")
+                : body.getCompoundOrNull("BiomePalette");
+        Object payload = biomes != null ? biomes.get("Data") : body.get("BiomeData");
+        if (paletteTag == null || !(payload instanceof byte[] data)) {
+            return;
+        }
+        boolean perBlock = biomes != null;
+        long count = perBlock ? (long) width * height * length : (long) width * length;
+        if (!countVarInts(data, count)) {
+            Log.warn("Schematic '" + name + "' has biome data that does not match its size; loaded without biomes");
+            return;
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        int highest = -1;
+        for (String key : paletteTag.keySet()) {
+            highest = Math.max(highest, Math.min(paletteTag.getInt(key, -1), MAX_PALETTE_INDEX));
+        }
+        int[] ids = new int[highest + 1];
+        Arrays.fill(ids, -1);
+        Set<String> unknown = new LinkedHashSet<>();
+        for (String key : paletteTag.keySet()) {
+            int index = paletteTag.getInt(key, -1);
+            if (index < 0 || index > highest) {
+                continue;
+            }
+            ids[index] = registry.biome(key);
+            if (ids[index] < 0) {
+                unknown.add(key);
+            }
+        }
+        if (!unknown.isEmpty()) {
+            Log.warn("Schematic '" + name + "' names " + unknown.size() + " biome(s) this game does not have,"
+                    + " left out: " + String.join(", ", unknown.stream().limit(5).toList())
+                    + (unknown.size() > 5 ? ", ..." : ""));
+        }
+        int[] grid = clipboard.biomeGrid();
+        int layers = perBlock ? height : 1;
+        int cursor = 0;
+        for (int y = 0; y < layers; y++) {
+            boolean firstY = y == 0 || ((y + grid[1]) & 3) == 0;
+            for (int z = 0; z < length; z++) {
+                boolean firstZ = z == 0 || ((z + grid[2]) & 3) == 0;
+                for (int x = 0; x < width; x++) {
+                    int index = 0;
+                    int shift = 0;
+                    byte b;
+                    do {
+                        b = data[cursor++];
+                        index |= (b & 0x7F) << shift;
+                        shift += 7;
+                    } while (b < 0);
+                    if (!firstY || !firstZ || (x != 0 && ((x + grid[0]) & 3) != 0)) {
+                        continue;
+                    }
+                    int biome = index >= 0 && index < ids.length ? ids[index] : -1;
+                    if (biome < 0) {
+                        continue;
+                    }
+                    if (perBlock) {
+                        clipboard.setBiome(x, y, z, biome);
+                    } else {
+                        // A column's biome goes to every cell above it: the
+                        // first one ends where the grid does, the others are
+                        // four blocks high.
+                        for (int cellY = 0; cellY < height; cellY += cellY == 0 ? 4 - grid[1] : 4) {
+                            clipboard.setBiome(x, cellY, z, biome);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** Palette index to block state, {@code -1} where the palette has no entry. */

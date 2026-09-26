@@ -58,7 +58,7 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 | **Commands** | The full `//` and `/` namespaces: `//set`, `//copy`, `//paste`, `//brush`, `/tool`, `/schem`, `/snapshot`, `/we`, `/anvil`, and 255 of 255 upstream names |
 | **Selections** | Cuboid, extend, polygon, ellipsoid, sphere, cylinder, convex polyhedron, and FAWE's polyhedral and fuzzy (magic wand) — each answering the wand the way WorldEdit does, and drawn as its own shape |
 | **Masks & patterns** | `#`/`%`/`##`/`|`/`~`/`{`/`/` mask parsers, `#nx`/`*`/`$`/`#mask`/`#buffer` patterns, `//gmask`, `//gsmask`, angle and expression masks |
-| **Clipboards** | Sponge v1/v2/v3, MCEdit `.schematic`, structure `.nbt`; entities, biomes and structure voids survive a copy |
+| **Clipboards** | Sponge v1/v2/v3 as WorldEdit and FAWE write them, biomes included, MCEdit `.schematic`, structure `.nbt`; entities, biomes and structure voids survive a copy |
 | **Brushes** | 46 brushes with FAWE's arguments and switches, saved as presets, bound per hand |
 | **Tools** | Tools, super-pickaxe modes, feature/structure placers, mouse-wheel scroll bindings |
 | **Chunk tools** | `/anvil` reads the dimension's region files to decide what qualifies, then edits the chunks through the server |

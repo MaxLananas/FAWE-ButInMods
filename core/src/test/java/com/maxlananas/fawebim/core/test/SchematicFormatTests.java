@@ -53,6 +53,7 @@ final class SchematicFormatTests {
             readsWhatWorldEditWrites();
             readsVarIntsOfSeveralBytes();
             readsTheLayoutsEarlierBuildsWrote();
+            biomesTravelOnTheirGrid();
             blockEntitiesTravelWithoutChangingTheClipboard();
             refusesBrokenAndHostileFiles();
             nbtIsStrictAndBounded();
@@ -163,8 +164,8 @@ final class SchematicFormatTests {
         checkEquals("v3 DataVersion is the game's", Config.DATA_VERSION, body.get("DataVersion"));
         check("v3 sides are shorts", body.get("Width") instanceof Short && body.get("Height") instanceof Short
                 && body.get("Length") instanceof Short);
-        check("v3 Offset is an int array of the minimum corner",
-                java.util.Arrays.equals(new int[]{10, 64, 20}, (int[]) body.get("Offset")));
+        check("v3 Offset is an int array of the minimum corner minus the origin, as WorldEdit writes it",
+                java.util.Arrays.equals(new int[]{-2, -2, -2}, (int[]) body.get("Offset")));
         NbtCompound blocks = body.getCompoundOrNull("Blocks");
         check("v3 blocks are a compound of Palette, Data and BlockEntities", blocks != null
                 && blocks.get("Palette") instanceof NbtCompound && blocks.get("Data") instanceof byte[]
@@ -176,9 +177,10 @@ final class SchematicFormatTests {
                         && "minecraft:chest".equals(blockEntity.getString("Id", null))
                         && blockEntity.get("Data") instanceof NbtCompound);
         NbtCompound metadata = body.getCompoundOrNull("Metadata");
-        check("v3 metadata carries WorldEdit's offset from the origin to the corner", metadata != null
-                && metadata.getInt("WEOffsetX", 0) == -2 && metadata.getInt("WEOffsetY", 0) == -2
-                && metadata.getInt("WEOffsetZ", 0) == -2);
+        NbtCompound worldEdit = metadata == null ? null : metadata.getCompoundOrNull("WorldEdit");
+        check("v3 metadata names where the origin was under WorldEdit, and nothing WorldEdit's v3 does not read",
+                worldEdit != null && java.util.Arrays.equals(new int[]{12, 66, 22}, worldEdit.getIntArray("Origin"))
+                        && !metadata.contains("WEOffsetX"));
 
         Schematics.save(clipboard, "layout-v2", "sponge.2");
         Document v2 = document(dir.resolve("layout-v2.schem"));
@@ -188,6 +190,11 @@ final class SchematicFormatTests {
                 && v2.root().get("Palette") instanceof NbtCompound
                 && v2.root().getInt("PaletteMax", 0) == v2.root().getCompoundOrNull("Palette").size());
         check("v2 block entities are a list", v2.root().get("BlockEntities") instanceof List<?>);
+        NbtCompound v2Metadata = v2.root().getCompoundOrNull("Metadata");
+        check("v2 Offset is the minimum corner and WEOffset that corner minus the origin",
+                java.util.Arrays.equals(new int[]{10, 64, 20}, v2.root().getIntArray("Offset"))
+                        && v2Metadata != null && v2Metadata.getInt("WEOffsetX", 0) == -2
+                        && v2Metadata.getInt("WEOffsetY", 0) == -2 && v2Metadata.getInt("WEOffsetZ", 0) == -2);
 
         Schematics.save(clipboard, "layout-mcedit", "mcedit");
         Document mcedit = document(dir.resolve("layout-mcedit.schematic"));
@@ -244,11 +251,14 @@ final class SchematicFormatTests {
                 .putList("BlockEntities", List.of(chest));
         NbtCompound stand = new NbtCompound().putList("Pos", List.of(0.5, 1.0, 0.5))
                 .putString("Id", "minecraft:armor_stand").putCompound("Data", new NbtCompound().putByte("Invisible", 1));
+        // WorldEdit 7.3 and FAWE: the corner minus the origin in Offset, the
+        // origin in the world under Metadata.WorldEdit.
         NbtCompound body = new NbtCompound().putInt("Version", 3).putInt("DataVersion", 3953)
-                .putCompound("Metadata", new NbtCompound().putInt("WEOffsetX", -1).putInt("WEOffsetY", 0)
-                        .putInt("WEOffsetZ", -2))
+                .putCompound("Metadata", new NbtCompound().putLong("Date", 1_700_000_000_000L)
+                        .putCompound("WorldEdit", new NbtCompound().putString("Version", "7.3.17")
+                                .putIntArray("Origin", new int[]{101, 64, 202})))
                 .putShort("Width", 3).putShort("Height", 2).putShort("Length", 2)
-                .putIntArray("Offset", new int[]{100, 64, 200})
+                .putIntArray("Offset", new int[]{-1, 0, -2})
                 .putCompound("Blocks", blocks).putList("Entities", List.of(stand));
         return new NbtCompound().putCompound("Schematic", body);
     }
@@ -265,7 +275,7 @@ final class SchematicFormatTests {
         check("WorldEdit's v3 file: the chest keeps its data and type", chest != null
                 && "minecraft:chest".equals(chest.getString("id", null))
                 && chest.getCompoundList("Items").size() == 1 && !chest.contains("Pos"));
-        checkEquals("WorldEdit's v3 file: the origin is the corner minus WEOffset", new BlockVector3(1, 0, 2),
+        checkEquals("WorldEdit's v3 file: the origin is the corner minus Offset", new BlockVector3(1, 0, 2),
                 loaded.getOrigin());
         List<EntityData> entities = loaded.entities();
         check("WorldEdit's v3 file: the armor stand comes along", entities.size() == 1
@@ -330,6 +340,17 @@ final class SchematicFormatTests {
                 loaded.getBlockEntity(BlockVector3.ZERO) != null);
         checkEquals("its entity loads", 1, loaded.entities().size());
 
+        // The v3 files of earlier builds: the corner in the world in Offset,
+        // the corner minus the origin in WEOffset.
+        NbtCompound earlier = worldEditV3();
+        NbtCompound earlierBody = earlier.getCompoundOrNull("Schematic");
+        earlierBody.putIntArray("Offset", new int[]{100, 64, 200});
+        earlierBody.putCompound("Metadata", new NbtCompound().putInt("WEOffsetX", -1).putInt("WEOffsetY", 0)
+                .putInt("WEOffsetZ", -2));
+        writeFile("earlier-v3.schem", earlier, "");
+        checkEquals("an earlier build's v3 file still pastes around the origin it was saved with",
+                new BlockVector3(1, 0, 2), Schematics.load("earlier-v3.schem").getOrigin());
+
         NbtCompound shorts = new NbtCompound().putInt("Version", 2).putInt("Width", 2).putInt("Height", 1)
                 .putInt("Length", 1)
                 .putCompound("Palette", new NbtCompound().putInt("minecraft:air", 0).putInt("minecraft:stone", 1))
@@ -338,6 +359,84 @@ final class SchematicFormatTests {
         BlockArrayClipboard loadedShorts = Schematics.load("old-v2.schem");
         check("an earlier build's v2 file of shorts still loads", loadedShorts.getBlock(0, 0, 0) == stone
                 && loadedShorts.getBlock(1, 0, 0) == BlockState.registry().air());
+    }
+
+    /**
+     * Biomes go into v3 and v2 files the way WorldEdit writes them and come
+     * back on the cells they were read from. A copy from off the grid missed
+     * the last cell along an axis, and a paste off the grid the cells along
+     * its far sides; a v3 file saved no biome at all.
+     */
+    private static void biomesTravelOnTheirGrid() throws IOException {
+        TestWorld world = new TestWorld("biome-schematics");
+        world.fillFlat(70);
+        // One biome per cell, as the game keeps them.
+        for (int x = 0; x < 20; x++) {
+            for (int z = 0; z < 16; z++) {
+                world.setBiome(x, 64, z, 2 + ((x >> 2) + 2 * (z >> 2)) % 6);
+            }
+        }
+        com.maxlananas.fawebim.core.region.Region region = new com.maxlananas.fawebim.core.region.CuboidRegion(
+                new BlockVector3(2, 64, 2), new BlockVector3(13, 67, 9));
+        BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(world, region, null,
+                false, true, null, false);
+        int[] cells = {0};
+        clipboard.forEachBiomeCell((minX, minY, minZ, maxX, maxY, maxZ, biome) -> cells[0]++);
+        checkEquals("a copy from off the grid keeps every cell it reaches, the last ones too", 4 * 3, cells[0]);
+        checkEquals("each with the biome of the world there", 0, biomeMismatches(world, 2, 2, (x, z) ->
+                clipboard.getBiome(x, 64, z)));
+
+        for (String format : List.of("sponge.3", "sponge.2")) {
+            String name = "biomes-" + format.replace('.', '_');
+            Schematics.save(clipboard, name, format);
+            BlockArrayClipboard loaded = Schematics.load(fileOf(Schematics.directory(), name));
+            checkEquals(format + " keeps the biomes on the cells they were copied from", 0,
+                    biomeMismatches(world, 2, 2, (x, z) -> loaded.getBiome(x - 2, 0, z - 2)));
+            // Loaded with its corner at 0, the clipboard still knows where the
+            // world's grid was: pasted a multiple of four away, every cell
+            // lands whole on one.
+            TestActor actor = new TestActor("Biomes" + format, world, new BlockVector3(0, 71, 0));
+            com.maxlananas.fawebim.core.extent.EditSession session =
+                    new com.maxlananas.fawebim.core.extent.EditSession(world, actor.session(), "paste biomes");
+            int shift = format.equals("sponge.3") ? 100 : 200;
+            com.maxlananas.fawebim.core.clipboard.Clipboards.paste(loaded, new BlockVector3(2 + shift, 64, 2),
+                    session, com.maxlananas.fawebim.core.transform.Transform.identity(), true, null, false, true,
+                    false, false);
+            session.flushQueue();
+            checkEquals("and a paste of the loaded " + format + " puts each biome back on its cell", 0,
+                    biomeMismatches(world, 2, 2, (x, z) -> world.getBiome(x + shift, 64, z)));
+        }
+
+        TestActor actor = new TestActor("BiomesOffGrid", world, new BlockVector3(0, 71, 0));
+        com.maxlananas.fawebim.core.extent.EditSession session =
+                new com.maxlananas.fawebim.core.extent.EditSession(world, actor.session(), "paste biomes");
+        com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, new BlockVector3(41, 64, 81), session,
+                com.maxlananas.fawebim.core.transform.Transform.identity(), true, null, false, true, false, false);
+        session.flushQueue();
+        // The paste covers x 41 to 52 and z 81 to 88: cells 10 to 13 and 20 to 22.
+        int untouched = 0;
+        for (int x = 40; x < 56; x++) {
+            for (int z = 80; z < 92; z++) {
+                if (world.getBiome(x, 64, z) == 1) {
+                    untouched++;
+                }
+            }
+        }
+        checkEquals("a paste off the grid gives a biome to every cell it covers, the far ones too", 0, untouched);
+    }
+
+    /** How many columns of a 12x8 area from (x0, z0) disagree with the world's biome there. */
+    private static int biomeMismatches(TestWorld world, int x0, int z0,
+                                       java.util.function.IntBinaryOperator biomeAt) {
+        int wrong = 0;
+        for (int x = x0; x < x0 + 12; x++) {
+            for (int z = z0; z < z0 + 8; z++) {
+                if (biomeAt.applyAsInt(x, z) != world.getBiome(x, 64, z)) {
+                    wrong++;
+                }
+            }
+        }
+        return wrong;
     }
 
     /**
