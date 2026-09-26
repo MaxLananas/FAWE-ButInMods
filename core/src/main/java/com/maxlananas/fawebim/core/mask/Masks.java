@@ -87,7 +87,7 @@ public final class Masks {
                 } else {
                     int id = registry.parse(key);
                     if (id < 0) {
-                        throw new IllegalArgumentException("Unknown block '" + key + "'");
+                        throw new IllegalArgumentException("unknown block '" + key + "'");
                     }
                     states.add(id);
                     names.add(registry.name(id));

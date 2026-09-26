@@ -178,6 +178,25 @@ public final class Ctx {
         return index < positional.size() ? doubleArg(index) : fallback;
     }
 
+    /**
+     * The size argument of a command that works on the world around the player:
+     * the half-width of the block of world it walks. A size of two billion is a
+     * walk over four billion cells - the server never answers again - so it is
+     * refused above {@code limits.max-radius}, the ceiling every radius a
+     * generator takes already answers to, with the same line that reports it.
+     */
+    public int sizeArg(int index, int fallback) {
+        if (index >= positional.size()) {
+            return fallback;
+        }
+        int size = intArg(index);
+        int maximum = com.maxlananas.fawebim.core.platform.Config.get().maxRadius;
+        if (maximum > 0 && Math.abs((long) size) > maximum) {
+            throw CommandRegistry.error("Maximum radius (in configuration): " + maximum);
+        }
+        return size;
+    }
+
     public boolean hasFlag(String flag) {
         return flags.containsKey(flag);
     }
@@ -311,9 +330,15 @@ public final class Ctx {
         String[] split = input.split(",");
         if (split.length != 3) {
             if (Str.isInteger(input)) {
-                // Single number: the y coordinate for //up style commands.
+                // Single number: the y coordinate for //up style commands. The
+                // digits can still be past what an int holds, which is a position
+                // the world has no room for rather than a crash.
                 BlockVector3 base = placement();
-                return new BlockVector3(base.x(), Integer.parseInt(input), base.z());
+                try {
+                    return new BlockVector3(base.x(), Integer.parseInt(input), base.z());
+                } catch (NumberFormatException e) {
+                    throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+                }
             }
             throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
         }
@@ -321,7 +346,11 @@ public final class Ctx {
         Vector3 direction = actor.direction();
         double[] values = new double[3];
         for (int i = 0; i < 3; i++) {
-            values[i] = parseCoordinate(split[i].trim(), i, origin, direction);
+            try {
+                values[i] = parseCoordinate(split[i].trim(), i, origin, direction);
+            } catch (NumberFormatException e) {
+                throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+            }
         }
         return new BlockVector3((int) Math.floor(values[0]), (int) Math.floor(values[1]), (int) Math.floor(values[2]));
     }

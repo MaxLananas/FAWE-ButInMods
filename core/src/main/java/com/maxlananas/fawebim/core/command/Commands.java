@@ -22,6 +22,7 @@ import com.maxlananas.fawebim.core.transform.Transforms;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.world.BlockState;
+import com.maxlananas.fawebim.core.world.World;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.Direction;
 
@@ -62,6 +63,9 @@ public final class Commands {
             ctx.actor().message(session.result(label, changed, unit));
         }
     }
+
+    /** Minecraft's world border: no selection holds anything past it. */
+    private static final int WORLD_BORDER = 30_000_000;
 
     private static int air() {
         return BlockState.registry().air();
@@ -402,9 +406,12 @@ public final class Commands {
                     List<BlockVector3> directions = expandDirections(ctx,
                             ctx.args().size() > 2 ? ctx.joined(2) : "me");
                     for (BlockVector3 direction : directions) {
-                        region.expand(direction.multiply(amount));
+                        region.expand(direction.multiply(capped(region, amount,
+                                roomToGrow(region, direction.multiply(Integer.signum(amount)), ctx.world()))));
                         if (reverse != 0) {
-                            region.expand(direction.multiply(-reverse));
+                            BlockVector3 opposite = direction.multiply(-1);
+                            region.expand(opposite.multiply(capped(region, reverse,
+                                    roomToGrow(region, opposite.multiply(Integer.signum(reverse)), ctx.world()))));
                         }
                     }
                     ctx.actor().message(Msg.result("Region expanded", Msg.value(region.describe()).raw()));
@@ -425,9 +432,11 @@ public final class Commands {
                     List<BlockVector3> directions = expandDirections(ctx,
                             ctx.args().size() > 2 ? ctx.joined(2) : "me");
                     for (BlockVector3 direction : directions) {
-                        region.contract(direction.multiply(amount));
+                        region.contract(direction.multiply(capped(region, amount,
+                                roomToShrink(region, direction))));
                         if (reverse != 0) {
-                            region.contract(direction.multiply(-reverse));
+                            region.contract(direction.multiply(-1).multiply(capped(region, reverse,
+                                    roomToShrink(region, direction))));
                         }
                     }
                     ctx.actor().message(Msg.result("Region contracted", Msg.value(region.describe()).raw()));
@@ -446,7 +455,8 @@ public final class Commands {
                     List<BlockVector3> directions = expandDirections(ctx,
                             ctx.args().size() > 1 ? ctx.joined(1) : "me");
                     for (BlockVector3 direction : directions) {
-                        region.shift(direction.multiply(amount));
+                        region.shift(direction.multiply(capped(region, amount,
+                                roomToGrow(region, direction.multiply(Integer.signum(amount)), ctx.world()))));
                     }
                     ctx.actor().message(Msg.result("Region shifted", Msg.value(region.describe()).raw()));
                 };
@@ -468,6 +478,7 @@ public final class Commands {
                     if (horizontal && vertical) {
                         throw CommandRegistry.error("Specify either -h or -v, not both");
                     }
+                    amount = capped(region, amount, outsetRoom(region, amount, horizontal, vertical, ctx.world()));
                     if (horizontal) {
                         region.expand(new BlockVector3(amount, 0, amount));
                     } else if (vertical) {
@@ -494,6 +505,7 @@ public final class Commands {
                     if (horizontal && vertical) {
                         throw CommandRegistry.error("Specify either -h or -v, not both");
                     }
+                    amount = capped(region, amount, insetRoom(region, horizontal, vertical));
                     if (horizontal) {
                         region.contract(new BlockVector3(amount, 0, amount));
                     } else if (vertical) {
@@ -534,6 +546,84 @@ public final class Commands {
         } catch (NumberFormatException e) {
             throw CommandRegistry.error("'" + input + "' is not a valid duration");
         }
+    }
+
+    /**
+     * How far the selection can grow in one direction before it leaves the world.
+     *
+     * <p>The selection commands hand a region an amount straight from the command
+     * line, and an amount in the billions overflows the coordinates: the region
+     * comes back with its minimum point past its maximum - {@code //expand
+     * 2147483647} on a five block selection answers a size of -2,147,483,644 -
+     * and every command after it walks that as pure noise. The room the selection
+     * has left is what the amount is capped with.</p>
+     */
+    private static int roomToGrow(Region region, BlockVector3 direction, World world) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int room = Integer.MAX_VALUE;
+        if (direction.x() > 0) {
+            room = Math.min(room, WORLD_BORDER - max.x());
+        } else if (direction.x() < 0) {
+            room = Math.min(room, min.x() + WORLD_BORDER);
+        }
+        if (direction.y() > 0) {
+            room = Math.min(room, world.maxY() - max.y());
+        } else if (direction.y() < 0) {
+            room = Math.min(room, min.y() - world.minY());
+        }
+        if (direction.z() > 0) {
+            room = Math.min(room, WORLD_BORDER - max.z());
+        } else if (direction.z() < 0) {
+            room = Math.min(room, min.z() + WORLD_BORDER);
+        }
+        return Math.max(0, room);
+    }
+
+    /** How far the selection can shrink before one of its sides passes the other. */
+    private static int roomToShrink(Region region, BlockVector3 direction) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int room = Integer.MAX_VALUE;
+        if (direction.x() != 0) {
+            room = Math.min(room, max.x() - min.x());
+        }
+        if (direction.y() != 0) {
+            room = Math.min(room, max.y() - min.y());
+        }
+        if (direction.z() != 0) {
+            room = Math.min(room, max.z() - min.z());
+        }
+        return Math.max(0, room);
+    }
+
+    private static int outsetRoom(Region region, int amount, boolean horizontal, boolean vertical,
+                                  World world) {
+        int sign = Integer.signum(amount);
+        int room = Integer.MAX_VALUE;
+        if (!vertical) {
+            room = Math.min(room, roomToGrow(region, new BlockVector3(sign, 0, sign), world));
+        }
+        if (!horizontal) {
+            room = Math.min(room, roomToGrow(region, new BlockVector3(0, sign, 0), world));
+        }
+        return room == Integer.MAX_VALUE ? 0 : room;
+    }
+
+    private static int insetRoom(Region region, boolean horizontal, boolean vertical) {
+        int room = Integer.MAX_VALUE;
+        if (!vertical) {
+            room = Math.min(room, roomToShrink(region, new BlockVector3(1, 0, 1)));
+        }
+        if (!horizontal) {
+            room = Math.min(room, roomToShrink(region, new BlockVector3(0, 1, 0)));
+        }
+        return room == Integer.MAX_VALUE ? 0 : room;
+    }
+
+    /** An amount in the direction it will actually be applied in, capped by its room. */
+    private static int capped(Region region, int amount, int room) {
+        return amount > 0 ? Math.min(amount, room) : Math.max(amount, -room);
     }
 
     /**
@@ -892,7 +982,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = Math.max(1, ctx.doubleArg(1));
+                    double radius = Math.max(1, ctx.sizeArg(1, 1));
                     int depth = Math.max(1, ctx.intArg(2, 1));
                     BlockVector3 direction = ctx.args().size() < 4
                             ? new BlockVector3(0, -1, 0)
@@ -1039,7 +1129,7 @@ public final class Commands {
         e33.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
-                    int size = ctx.intArg(0, 0);
+                    int size = ctx.sizeArg(0, 0);
                     int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() + 1;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
                         for (int z = origin.z() - size; z <= origin.z() + size; z++) {
@@ -1060,7 +1150,7 @@ public final class Commands {
         e34.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
-                    int size = ctx.intArg(0, 0);
+                    int size = ctx.sizeArg(0, 0);
                     int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() - 1;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
                         for (int z = origin.z() - size; z <= origin.z() + size; z++) {
@@ -1107,7 +1197,7 @@ public final class Commands {
         e36.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    int size = ctx.intArg(0);
+                    int size = ctx.sizeArg(0, 0);
                     Mask mask = Parsers.mask(ctx.arg(1), ctx);
                     Pattern pattern = Parsers.pattern(ctx.joined(2), ctx);
                     BlockVector3 origin = ctx.placement();
@@ -1139,7 +1229,7 @@ public final class Commands {
         e37.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.doubleArg(0, 10));
+                    double size = Math.max(1, ctx.sizeArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.simulateSnow(
                             ctx.world(), session, ctx.placement(), size, height, ctx.hasFlag("s"));
@@ -1155,7 +1245,7 @@ public final class Commands {
         e38.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.doubleArg(0, 10));
+                    double size = Math.max(1, ctx.sizeArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.thaw(
                             ctx.world(), session, ctx.placement(), size, height);
@@ -1173,7 +1263,7 @@ public final class Commands {
         e39.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.doubleArg(0, 10));
+                    double size = Math.max(1, ctx.sizeArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.green(ctx.world(), session,
                             ctx.placement(), size, height, !ctx.hasFlag("f"));
@@ -2826,8 +2916,7 @@ public final class Commands {
                     }
                     com.maxlananas.fawebim.core.transform.Transforms.Set set =
                             new com.maxlananas.fawebim.core.transform.Transforms.Set();
-                    set.add(com.maxlananas.fawebim.core.transform.Transforms.rotate(BlockVector3.ZERO,
-                            Double.parseDouble(ctx.arg(0))));
+                    set.add(ToolUtilCommands.parseTransform(ctx));
                     ctx.session().getTransformSet().setTransforms(set);
                     ctx.actor().message(Msg.success("Global transform set"));
                 };

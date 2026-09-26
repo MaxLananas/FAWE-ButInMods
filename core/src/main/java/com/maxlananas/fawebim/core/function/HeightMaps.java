@@ -53,7 +53,15 @@ public final class HeightMaps {
         float[] smoothed = toFloats(heights);
         float[] kernel = gaussianKernel(5, 1.0);
         for (int iteration = 0; iteration < iterations; iteration++) {
-            smoothed = filter(smoothed, width, length, kernel, 0.5f);
+            float[] pass = filter(smoothed, width, length, kernel, 0.5f);
+            if (java.util.Arrays.equals(pass, smoothed)) {
+                // A blur that changed nothing keeps changing nothing, and the
+                // number of passes is an argument a player can ask a billion of:
+                // the walk stops when the work is done, whatever number the
+                // command was given.
+                break;
+            }
+            smoothed = pass;
         }
         return apply(world, session, region, heights, smoothed);
     }
@@ -107,7 +115,11 @@ public final class HeightMaps {
         float[] kernel = gaussianKernel(kernelRadius, 1.0);
         for (int iteration = 0; iteration < iterations; iteration++) {
             // The half layer offset keeps the layer count of a flat field stable.
-            smoothed = filter(smoothed, width, length, kernel, 0.0625f);
+            float[] pass = filter(smoothed, width, length, kernel, 0.0625f);
+            if (java.util.Arrays.equals(pass, smoothed)) {
+                break;
+            }
+            smoothed = pass;
         }
         return applySnow(world, session, region, heights, smoothed, layerBlocks);
     }

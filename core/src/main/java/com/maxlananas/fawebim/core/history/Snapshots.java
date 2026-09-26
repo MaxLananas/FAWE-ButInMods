@@ -36,7 +36,8 @@ public final class Snapshots {
 
     public static Path directory() {
         if (directory == null) {
-            throw new IllegalStateException("Snapshot directory not configured");
+            throw com.maxlananas.fawebim.core.command.CommandRegistry.error(
+                    "Snapshot directory not configured");
         }
         return directory;
     }

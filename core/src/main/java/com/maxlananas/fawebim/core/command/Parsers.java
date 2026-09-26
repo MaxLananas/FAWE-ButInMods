@@ -155,6 +155,14 @@ public final class Parsers {
 
     /** Parses a pattern: blocks, weighted lists, {@code #clipboard}, {@code ^} ... */
     public static Pattern pattern(String input, Ctx ctx) {
+        try {
+            return pattern0(input, ctx);
+        } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
+            throw CommandRegistry.error("Invalid pattern '" + input.trim() + "': " + e.getMessage());
+        }
+    }
+
+    private static Pattern pattern0(String input, Ctx ctx) {
         String trimmed = input.trim();
         if (trimmed.isEmpty()) {
             throw CommandRegistry.error("Empty pattern");
@@ -220,7 +228,7 @@ public final class Parsers {
         String lower = key.toLowerCase(Locale.ROOT);
         int bracket = lower.indexOf('[');
         String id = bracket < 0 ? lower : lower.substring(0, bracket);
-        String args = bracket < 0 ? "" : key.substring(bracket + 1, key.length() - 1);
+        String args = bracketArguments(key, bracket);
 
         Extent extent = ctx.hasSelection() ? extOf(ctx) : ctx.world();
         switch (id) {
@@ -385,6 +393,14 @@ public final class Parsers {
 
     /** Parses a mask expression: unions ({@code ,}), intersections ({@code &}) and {@code #id}s. */
     public static Mask mask(String input, Ctx ctx) {
+        try {
+            return mask0(input, ctx);
+        } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
+            throw CommandRegistry.error("Invalid mask '" + input.trim() + "': " + e.getMessage());
+        }
+    }
+
+    private static Mask mask0(String input, Ctx ctx) {
         String trimmed = input.trim();
         if (trimmed.isEmpty()) {
             throw CommandRegistry.error("Empty mask");
@@ -511,6 +527,19 @@ public final class Parsers {
         return (Double.parseDouble(value.trim()) - 50d) / 50d;
     }
 
+    /**
+     * The text inside the brackets of a rich input such as {@code #perlin[5][stone]}.
+     * An input that never closes its bracket has no arguments, which every parser
+     * below reports as the syntax error it is; slicing to the last character used
+     * to answer with a string index rather than a message.
+     */
+    private static String bracketArguments(String key, int bracket) {
+        if (bracket < 0 || key.length() <= bracket + 1 || !key.endsWith("]")) {
+            return "";
+        }
+        return key.substring(bracket + 1, key.length() - 1);
+    }
+
     private static double parseDouble(String value) {
         try {
             return Double.parseDouble(value);
@@ -531,7 +560,7 @@ public final class Parsers {
         String lower = key.toLowerCase(Locale.ROOT);
         int bracket = lower.indexOf('[');
         String id = bracket < 0 ? lower : lower.substring(0, bracket);
-        String args = bracket < 0 ? "" : key.substring(bracket + 1, key.length() - 1);
+        String args = bracketArguments(key, bracket);
         Extent extent = extOf(ctx);
         switch (id) {
             case "air" -> {

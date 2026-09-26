@@ -233,7 +233,8 @@ public final class Str {
                 continue;
             }
             if (!digits) {
-                throw new IllegalArgumentException("Expected a duration such as 8h5m12s, got '" + text + "'");
+                throw com.maxlananas.fawebim.core.command.CommandRegistry.error(
+                        "Expected a duration such as 8h5m12s, got '" + text + "'");
             }
             total += value * unitMillis(c, text);
             value = 0;

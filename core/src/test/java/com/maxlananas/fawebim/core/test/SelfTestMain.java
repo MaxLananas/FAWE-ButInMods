@@ -120,6 +120,7 @@ public final class SelfTestMain {
         testHelp();
         testCui();
         testSelectionBounds();
+        testHostileArguments();
         testEveryAnswerIsColoured();
         testEveryCommandAnswersInColour();
 
@@ -3612,6 +3613,59 @@ public final class SelfTestMain {
      * flat grey next to the rest, and this walks the whole corpus of the run -
      * every command the checks dispatch - to catch the ones that still do.
      */
+    /**
+     * Every command is asked what it does with arguments it cannot use. It may
+     * refuse them - that is the point - but it may not fail: "Command failed:"
+     * in the chat means a command reached a state it did not expect, and the
+     * player is looking at an edit that may be half done.
+     */
+    private static void testHostileArguments() {
+        section("hostile arguments");
+        TestWorld world = new TestWorld("hostile");
+        world.fillFlat(70);
+        String[][] shapes = {
+            {"2147483647"},
+            {"-2147483647", "minecraft:", "#perlin["},
+            {"%50", "-5", "0"},
+            {"stone,stone,stone", "1,2,3,4,5"},
+            {"nan", "1e400", "0,0,0"},
+        };
+        List<String> failed = new ArrayList<>();
+        int answers = 0;
+        int step = 0;
+        for (CommandRegistry.Entry entry : CommandManager.get().registry().all()) {
+            for (String[] shape : shapes) {
+                StringBuilder line = new StringBuilder(entry.name);
+                for (String argument : shape) {
+                    line.append(' ').append(argument);
+                }
+                // A session of its own per line: sessions are keyed by the actor's
+                // id, so one name would hand a selection made by //expand to the
+                // command after it, which is how a test turns into a grind.
+                TestActor actor = new TestActor("Hostile" + (step++), world, new BlockVector3(0, 71, 0));
+                int before = TestActor.receivedMessages().size();
+                try {
+                    CommandManager.get().dispatch(actor, line.toString());
+                } catch (Throwable failure) {
+                    failed.add(line + " threw " + failure);
+                    continue;
+                }
+                List<String> sent = TestActor.receivedMessages();
+                for (int i = before; i < sent.size(); i++) {
+                    answers++;
+                    if (sent.get(i).contains("Command failed")) {
+                        failed.add(line + " -> " + sent.get(i));
+                    }
+                }
+            }
+        }
+        System.out.println("    answers checked: " + answers);
+        check("no command fails on arguments it cannot use", failed.isEmpty());
+        for (String message : failed) {
+            System.out.println("      " + message);
+        }
+    }
+
     private static void testEveryAnswerIsColoured() {
         section("chat colour");
         List<String> plain = new ArrayList<>();

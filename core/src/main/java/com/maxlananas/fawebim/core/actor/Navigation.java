@@ -31,7 +31,7 @@ public final class Navigation {
         int y = Math.max(world.minY(), pos.y() + 1);
         int maxY = Math.min(world.maxY(), y + SEARCH_HEIGHT) + 2;
         while (y <= maxY) {
-            if (canStand(actor, x, y, z) && actor.teleport(x + 0.5, y, z + 0.5)) {
+            if (y > pos.y() && canStand(actor, x, y, z) && actor.teleport(x + 0.5, y, z + 0.5)) {
                 return true;
             }
             ++y;
@@ -48,7 +48,7 @@ public final class Navigation {
         int y = Math.max(world.minY(), pos.y() - 1);
         int minY = Math.min(world.minY() + 1, y - SEARCH_HEIGHT);
         while (y >= minY) {
-            if (canStand(actor, x, y, z) && actor.teleport(x + 0.5, y, z + 0.5)) {
+            if (y < pos.y() && canStand(actor, x, y, z) && actor.teleport(x + 0.5, y, z + 0.5)) {
                 return true;
             }
             --y;

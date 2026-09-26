@@ -69,7 +69,12 @@ final class UtilityExtras {
         entry.group = "utility";
         entry.arguments.add("expression");
         entry.handler = ctx -> {
-            Expression expression = Expression.compile(ctx.joined(0));
+            Expression expression;
+            try {
+                expression = Expression.compile(ctx.joined(0));
+            } catch (IllegalArgumentException e) {
+                throw CommandRegistry.error("Invalid expression: " + e.getMessage());
+            }
             Expression.Variables variables = new Expression.Variables();
             variables.set("pi", Math.PI);
             variables.set("e", Math.E);

@@ -278,6 +278,12 @@ public final class Operations {
         if (volume <= 0 || volume > MAX_HOLLOW_CELLS) {
             throw new IllegalArgumentException("A selection of " + volume + " blocks is too large to hollow");
         }
+        // A shell thicker than the selection is the selection: every layer of the
+        // growth is a layer further in, so once the growth has crossed the region
+        // there is nothing left for the next one to reach. Clamping here is what
+        // keeps //hollow with a thickness of a billion from looping a billion
+        // times over a selection of a few blocks.
+        thickness = Math.min(thickness, Math.max(width, Math.max(height, length)));
         // One bit per cell of the region padded by a block, so the neighbours of
         // the region's own cells have an index even when they are outside it.
         int padWidth = width + 2;
