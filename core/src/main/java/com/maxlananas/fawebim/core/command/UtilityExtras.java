@@ -10,6 +10,7 @@ import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.session.Placement;
 import com.maxlananas.fawebim.core.session.PlacementType;
 import com.maxlananas.fawebim.core.util.Msg;
+import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 
@@ -759,7 +760,7 @@ final class UtilityExtras {
     private List<EditLog.Entry> matches(Ctx ctx) {
         String user = ctx.hasFlag("u") ? ctx.flagValue("u", "") : null;
         long since = ctx.hasFlag("t")
-                ? System.currentTimeMillis() - Commands.parseDuration(ctx.flagValue("t", "")) : -1;
+                ? System.currentTimeMillis() - Str.parseDuration(ctx.flagValue("t", "")) : -1;
         double radius = ctx.hasFlag("r") ? ctx.flagDouble("r", -1) : -1;
         BlockVector3 origin = radius >= 0 ? ctx.placement() : null;
         return EditLog.find(user, ctx.world().name(), radius, since, origin);

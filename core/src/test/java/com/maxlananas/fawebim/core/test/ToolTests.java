@@ -41,6 +41,7 @@ final class ToolTests {
         jumpToLandsOnFreeSpaceAboveTheTarget();
         theTreeToolPlantsOnTheClickedBlock();
         keptMasksReadTheWorldThePlayerEdits();
+        theRecurseBrushFollowsItsMask();
         BlockStateRegistry previous = BlockState.registry();
         BlockState.setRegistry(new PropertyTestRegistry());
         try {
@@ -48,6 +49,76 @@ final class ToolTests {
         } finally {
             BlockState.setRegistry(previous);
         }
+    }
+
+    /**
+     * FAWE's recurse brush sets the blocks connected to the click through
+     * blocks its mask accepts: breadth first up to the radius in steps, depth
+     * first within the radius in blocks. It went through every block that was
+     * not air, whatever the mask, and stopped at 5000 changes.
+     */
+    private static void theRecurseBrushFollowsItsMask() {
+        TestActor actor = actor("RecurseBrush");
+        TestWorld world = (TestWorld) actor.world();
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int dirt = BlockState.registry().defaultState("minecraft:dirt");
+        int gold = BlockState.registry().defaultState("minecraft:gold_block");
+        int air = BlockState.registry().air();
+        // A row of stone along x at y 90, broken by a dirt block at x 5.
+        for (int x = 0; x <= 10; x++) {
+            world.setBlock(x, 90, 0, x == 5 ? dirt : stone);
+        }
+        com.maxlananas.fawebim.core.mask.Mask onlyStone =
+                new com.maxlananas.fawebim.core.mask.Masks.BlockMask(world, List.of("minecraft:stone"));
+        com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush brush =
+                new com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush(8,
+                        new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold), onlyStone);
+        EditSession edit = new EditSession(world, actor.session(), "brush");
+        int changed;
+        try {
+            changed = brush.apply(edit, new BlockVector3(0, 90, 0), actor);
+        } finally {
+            edit.close();
+        }
+        checkEquals("the brush sets the stone connected through stone, and stops at the dirt", 5, changed);
+        check("the stone past the dirt is not reached", world.getBlock(6, 90, 0) == stone
+                && world.getBlock(5, 90, 0) == dirt && world.getBlock(4, 90, 0) == gold);
+
+        for (int x = 0; x <= 10; x++) {
+            world.setBlock(x, 91, 0, stone);
+        }
+        brush = new com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush(3,
+                new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold), onlyStone);
+        edit = new EditSession(world, actor.session(), "brush");
+        try {
+            changed = brush.apply(edit, new BlockVector3(0, 91, 0), actor);
+        } finally {
+            edit.close();
+        }
+        checkEquals("breadth first, the radius counts steps from the click", 4, changed);
+
+        // Without a mask, the walk follows the clicked block's type.
+        for (int x = 0; x <= 10; x++) {
+            world.setBlock(x, 95, 0, x < 4 ? dirt : stone);
+        }
+        brush = new com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush(8,
+                new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold), null);
+        edit = new EditSession(world, actor.session(), "brush");
+        try {
+            changed = brush.apply(edit, new BlockVector3(0, 95, 0), actor);
+        } finally {
+            edit.close();
+        }
+        checkEquals("without a mask the brush follows the clicked block's type", 4, changed);
+        check("the air around is left", world.getBlock(0, 96, 0) == air && world.getBlock(4, 95, 0) == stone);
+
+        EditSession clicked = new EditSession(world, actor.session(), "brush");
+        try {
+            checkEquals("a click on air sets nothing", 0, brush.apply(clicked, new BlockVector3(0, 120, 0), actor));
+        } finally {
+            clicked.close();
+        }
+        check("and leaves the air", world.getBlock(0, 120, 0) == air);
     }
 
     private static TestActor actor(String name) {

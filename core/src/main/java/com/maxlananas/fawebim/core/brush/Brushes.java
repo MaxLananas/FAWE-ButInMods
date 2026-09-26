@@ -5,15 +5,20 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.region.CuboidRegion;
 import com.maxlananas.fawebim.core.function.HeightMaps;
+import com.maxlananas.fawebim.core.function.Morphology;
 import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.transform.Transforms;
+import com.maxlananas.fawebim.core.util.LongQueue;
+import com.maxlananas.fawebim.core.util.LongSet;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
+import com.maxlananas.fawebim.core.world.Direction;
 import com.maxlananas.fawebim.core.world.EntityData;
 import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
@@ -270,7 +275,7 @@ public final class Brushes {
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             Mask combined = limit == null || limit == mask ? mask
                     : mask == null ? limit
-                    : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(mask, limit));
+                    : new Masks.IntersectionMask(List.of(mask, limit));
             return Operations.blendBall(session, position, (int) radius, combined, onlyAir, minFreqDiff);
         }
     }
@@ -1028,48 +1033,6 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush pull} — pulls terrain towards the player. */
-    public static final class PullBrush extends BaseBrush {
-
-        private int fillFaces = 1;
-
-        public PullBrush(double radius, Pattern fill, Mask mask) {
-            super(radius, fill, mask);
-        }
-
-        /** {@code erodefaces} / {@code fillFaces}: how many neighbours a block needs to be moved or filled. */
-        public void setShape(int erodeFaces, int erodeRecursion, int fillFaces, int fillRecursion) {
-            this.fillFaces = Math.max(1, fillFaces);
-        }
-
-        @Override
-        public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                if (!test(x, y, z)) {
-                    return false;
-                }
-                int solidNeighbours = 0;
-                for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    BlockVector3 next = direction.toVector();
-                    if (registry.isSolid(session.getBlock(x + next.x(), y + next.y(), z + next.z()))) {
-                        solidNeighbours++;
-                    }
-                }
-                if (solidNeighbours < fillFaces) {
-                    return false;
-                }
-                int x0 = x + Integer.signum(position.x() - x);
-                int z0 = z + Integer.signum(position.z() - z);
-                int state = session.getBlock(x, y, z);
-                if (registry.isAirLike(state)) {
-                    return false;
-                }
-                return session.setBlock(x0, y, z0, state) && session.setBlock(x, y, z, registry.air());
-            });
-        }
-    }
-
     /** {@code /brush stencil} — draws a repeating pattern in a sphere. */
     /**
      * {@code /brush stencil <pattern> <radius> <image> [rotation] [yscale]} —
@@ -1645,26 +1608,37 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush deform} — applies an expression to the brush area. */
+    /**
+     * {@code /brush deform}: {@code //deform} on the shape around the click, as
+     * WorldEdit's Deform brush. The expression works in the unit cube of the
+     * shape, or with {@code -r} in the game's coordinates, or with {@code -o}
+     * in blocks from the placement position the brush was bound with.
+     */
     public static final class DeformBrush extends BaseBrush {
 
         private final String expression;
+        private final String shape;
         private boolean gameOrigin;
-        private boolean placementOrigin;
+        private BlockVector3 placement;
 
-        public DeformBrush(double radius, String expression) {
+        /** @param shape a name {@code RegionFactories} knows */
+        public DeformBrush(double radius, String expression, String shape) {
             super(radius, null, null);
             this.expression = expression == null ? "" : expression;
+            // Compiled here so a typo is reported when the brush is bound,
+            // not on every click.
+            com.maxlananas.fawebim.core.expression.Expression.compile(this.expression);
+            this.shape = shape;
         }
 
-        /** {@code -r}: evaluate the expression against the game's origin. */
+        /** {@code -r}: the game's coordinates. */
         public void setGameOrigin(boolean gameOrigin) {
             this.gameOrigin = gameOrigin;
         }
 
-        /** {@code -o}: evaluate the expression against the placement position. */
-        public void setPlacementOrigin(boolean placementOrigin) {
-            this.placementOrigin = placementOrigin;
+        /** {@code -o}: blocks counted from this position; null for the unit cube. */
+        public void setPlacement(BlockVector3 placement) {
+            this.placement = placement;
         }
 
         @Override
@@ -1672,47 +1646,68 @@ public final class Brushes {
             if (expression.isEmpty()) {
                 return 0;
             }
-            var region = com.maxlananas.fawebim.core.region.RegionFactories.parse("sphere",
-                    session.minY(), session.maxY()).createCenteredAt(position, radius);
-            if (placementOrigin && !gameOrigin) {
-                return Operations.deform(session.getWorld(), session, region, expression,
-                        position.x(), position.y(), position.z());
-            }
-            return Operations.deform(session.getWorld(), session, region, expression);
+            com.maxlananas.fawebim.core.region.Region region = com.maxlananas.fawebim.core.region.RegionFactories
+                    .parse(shape, session.minY(), session.maxY()).createCenteredAt(position, radius);
+            Operations.DeformFrame frame = gameOrigin ? Operations.DeformFrame.RAW
+                    : placement != null ? Operations.DeformFrame.offset(placement.toVector3())
+                    : Operations.DeformFrame.unitCube(region);
+            return Operations.deform(session.getWorld(), session, region, expression, frame);
         }
     }
 
-    /** {@code /brush erode}, {@code /brush dilate}, {@code /brush morph}. */
-    public static final class ErodeDilateBrush extends BaseBrush {
+    /**
+     * {@code /brush morph}, {@code /brush dilate}, {@code /brush erode} and
+     * {@code /brush pull}: erosion and filling in a ball, see
+     * {@link Morphology}. Morph and dilate are WorldEdit's, erode and pull
+     * FAWE's.
+     *
+     * <p>They used to be a single pass that read the blocks it had just
+     * written, so the result depended on the order of the walk; their face and
+     * iteration arguments were read and ignored, and pull moved blocks sideways
+     * towards the click where FAWE fills the open faces around the terrain.</p>
+     */
+    public static final class MorphBrush extends BaseBrush {
 
-        private final String mode;
+        private final Morphology.Style style;
+        private final Morphology.Passes passes;
 
-        public ErodeDilateBrush(double radius, String mode, Mask mask) {
+        public MorphBrush(double radius, Morphology.Style style, Morphology.Passes passes, Mask mask) {
             super(radius, null, mask);
-            this.mode = mode;
+            this.style = style;
+            this.passes = passes;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            return Morphology.apply(session, position, radius, style, passes, openStates(style), mask);
+        }
+
+        /** Which states the style counts as open, remembered per state for the walk of one click. */
+        private static java.util.function.IntPredicate openStates(Morphology.Style style) {
             BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                int solidNeighbours = 0;
-                for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    BlockVector3 next = direction.toVector();
-                    if (registry.isSolid(session.getBlock(x + next.x(), y + next.y(), z + next.z()))) {
-                        solidNeighbours++;
-                    }
+            byte[] known = new byte[Math.max(1, registry.stateCount())];
+            return state -> {
+                if (state < 0 || state >= known.length) {
+                    return isOpen(registry, state, style);
                 }
-                boolean solid = registry.isSolid(session.getBlock(x, y, z));
-                return switch (mode) {
-                    case "erode" -> solid && solidNeighbours < 3 && session.setBlock(x, y, z, registry.air());
-                    case "dilate" -> !solid && solidNeighbours >= 3 && fill != null && place(session, x, y, z);
-                    default ->
-                        // morph: swap solid and air inside the brush
-                        solid ? session.setBlock(x, y, z, registry.air())
-                                : fill != null && place(session, x, y, z);
-                };
-            });
+                if (known[state] == 0) {
+                    known[state] = (byte) (isOpen(registry, state, style) ? 1 : 2);
+                }
+                return known[state] == 1;
+            };
+        }
+
+        private static boolean isOpen(BlockStateRegistry registry, int state, Morphology.Style style) {
+            if (style == Morphology.Style.ERODE) {
+                return !registry.isSolid(state);
+            }
+            // WorldEdit's liquids are the water and lava blocks themselves: a
+            // waterlogged block or a kelp plant is a block.
+            if (registry.isAirLike(state)) {
+                return true;
+            }
+            String name = registry.name(state);
+            return "minecraft:water".equals(name) || "minecraft:lava".equals(name);
         }
     }
 
@@ -1871,7 +1866,19 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush recurse} — recursively applies the pattern to exposed blocks. */
+    /**
+     * {@code /brush recurse}: the blocks connected to the clicked one through
+     * blocks the mask accepts are set to the pattern, as in FAWE's
+     * RecurseBrush - breadth first up to {@code radius} steps from the click,
+     * or with {@code -d} depth first within {@code radius} blocks of it.
+     *
+     * <p>The mask is the brush's, and without one the clicked block's type, as
+     * FAWE binds the brush with an id mask that {@code /mask} replaces. The
+     * session's mask narrows the walk and stays out of the writes, as FAWE
+     * clears it for the brush. The walk used to go through every block that
+     * was not air whatever the mask, stopped at 5000 changes, and queued a
+     * position object for each of the six neighbours of every block it saw.</p>
+     */
     public static final class RecurseBrush extends BaseBrush {
 
         private boolean depthFirst;
@@ -1880,7 +1887,7 @@ public final class Brushes {
             super(radius, fill, mask);
         }
 
-        /** {@code -d}: walk depth first instead of nearest first. */
+        /** {@code -d}: walk depth first within the radius instead of breadth first. */
         public void setDepthFirst(boolean depthFirst) {
             this.depthFirst = depthFirst;
         }
@@ -1888,27 +1895,80 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
+            int clicked = session.getBlock(position.x(), position.y(), position.z());
+            if (registry.isAirLike(clicked)) {
+                return 0;
+            }
+            Mask previous = session.getMask();
+            Mask own = mask != null ? mask
+                    : new Masks.BlockMask(session, List.of(registry.name(clicked)));
+            Mask walk = previous == null ? own
+                    : new Masks.IntersectionMask(List.of(previous, own));
+            session.setMask(null);
+            try {
+                return walk(session, position, walk);
+            } finally {
+                session.setMask(previous);
+            }
+        }
+
+        private int walk(EditSession session, BlockVector3 start, Mask walk) {
+            World world = session.getWorld();
+            int steps = (int) radius;
+            double reach = radius * radius;
+            LongSet visited = new LongSet();
+            LongQueue queue = new LongQueue();
+            long first = BlockArrayClipboard.positionKey(start.x(), start.y(), start.z());
+            visited.add(first);
+            queue.add(first);
             int changed = 0;
-            java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-            java.util.Deque<BlockVector3> queue = new java.util.ArrayDeque<>();
-            queue.add(position);
-            while (!queue.isEmpty() && changed < 5000) {
-                BlockVector3 current = depthFirst ? queue.pollLast() : queue.poll();
-                if (!visited.add(current) || current.distance(position) > radius) {
-                    continue;
-                }
-                if (registry.isAirLike(session.getBlock(current.x(), current.y(), current.z()))) {
-                    continue;
-                }
-                if (place(session, current.x(), current.y(), current.z())) {
+            // Breadth first counts its steps a layer at a time.
+            int leftInLayer = 1;
+            int nextLayer = 0;
+            int depth = 0;
+            while (!queue.isEmpty()) {
+                long current = depthFirst ? queue.pollLast() : queue.poll();
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                int state = fill == null ? BlockState.registry().air() : fill.apply(x, y, z);
+                if (session.setBlock(x, y, z, state)) {
                     changed++;
                 }
-                for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    queue.add(current.add(direction.toVector()));
+                if (depthFirst || depth < steps) {
+                    for (Direction direction : DIRECTIONS) {
+                        int nx = x + direction.x();
+                        int ny = y + direction.y();
+                        int nz = z + direction.z();
+                        if (ny < world.minY() || ny > world.maxY()) {
+                            continue;
+                        }
+                        if (depthFirst) {
+                            double dx = nx - start.x();
+                            double dy = ny - start.y();
+                            double dz = nz - start.z();
+                            if (dx * dx + dy * dy + dz * dz > reach) {
+                                continue;
+                            }
+                        }
+                        long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (walk.test(nx, ny, nz) && visited.add(next)) {
+                            queue.add(next);
+                            nextLayer++;
+                        }
+                    }
+                }
+                if (!depthFirst && --leftInLayer == 0) {
+                    depth++;
+                    leftInLayer = nextLayer;
+                    nextLayer = 0;
                 }
             }
             return changed;
         }
+
+        private static final Direction[] DIRECTIONS = {
+                Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP, Direction.DOWN};
     }
 
     /** {@code /brush feature} and {@code /brush structure} — places a worldgen feature. */

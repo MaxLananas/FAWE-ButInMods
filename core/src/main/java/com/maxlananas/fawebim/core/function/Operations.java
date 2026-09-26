@@ -8,8 +8,10 @@ import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.transform.Axis;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.transform.Transforms;
+import com.maxlananas.fawebim.core.util.Buffers;
 import com.maxlananas.fawebim.core.util.LongQueue;
 import com.maxlananas.fawebim.core.util.LongSet;
+import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.noise.Noise;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.expression.Expression;
@@ -1105,62 +1107,77 @@ public final class Operations {
 
     // ------------------------------------------------------------- deform/generate
 
-    /** {@code //deform} — moves blocks according to an expression. */
-    public static int deform(World world, EditSession session, Region region, String expressionInput) {
-        return deform(world, session, region, expressionInput, 0, 0, 0);
+    /**
+     * The coordinates a deform expression works in: a block at {@code p} is
+     * given to it as {@code (p - zero) / unit}.
+     */
+    public record DeformFrame(Vector3 zero, Vector3 unit) {
+
+        /** The game's coordinates, {@code -r}. */
+        public static final DeformFrame RAW = new DeformFrame(Vector3.ZERO, Vector3.ONE);
+
+        /** Blocks counted from {@code zero}: {@code -o} from the placement, {@code -c} from the centre. */
+        public static DeformFrame offset(Vector3 zero) {
+            return new DeformFrame(zero, Vector3.ONE);
+        }
+
+        /**
+         * WorldEdit's default: the region spans -1 to 1 on each axis, and an
+         * axis only a block thick counts in blocks.
+         */
+        public static DeformFrame unitCube(Region region) {
+            Vector3 min = region.getMinimumPoint().toVector3();
+            Vector3 max = region.getMaximumPoint().toVector3();
+            Vector3 zero = max.add(min).multiply(0.5);
+            Vector3 unit = max.subtract(zero);
+            return new DeformFrame(zero, new Vector3(unit.x() == 0 ? 1 : unit.x(), unit.y() == 0 ? 1 : unit.y(),
+                    unit.z() == 0 ? 1 : unit.z()));
+        }
     }
 
     /**
-     * Deforms the region with an expression evaluated with {@code ox}, {@code oy}
-     * and {@code oz} as the origin, which is what the deform brush's {@code -o}
-     * switch asks for; the plain form uses the world origin.
+     * {@code //deform} and the deform brush, as WorldEdit's deformRegion: the
+     * expression is given each block of the region in the frame's coordinates,
+     * and the block becomes the one of the world at the position it leaves in
+     * x, y and z, brought back the same way and rounded to the nearest block.
+     * Every source is read before any block is written, so the result does not
+     * depend on the order of the walk. Variables the expression keeps carry
+     * from one block to the next, as in WorldEdit.
+     *
+     * <p>Blocks were pushed the other way before: each went to the position the
+     * expression gave, counted in blocks from the corner of the selection,
+     * after the whole region had been cleared to air, so {@code //deform
+     * y-=0.2} barely changed anything and a stretch left holes.</p>
      */
     public static int deform(World world, EditSession session, Region region, String expressionInput,
-                             int ox, int oy, int oz) {
+                             DeformFrame frame) {
         Expression expression = Expression.compile(expressionInput);
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        int width = max.x() - min.x() + 1;
-        int height = max.y() - min.y() + 1;
-        int length = max.z() - min.z() + 1;
-        int[] source = new int[width * height * length];
-        int index = 0;
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    source[index++] = world.getBlock(min.x() + x, min.y() + y, min.z() + z);
-                }
-            }
-        }
-        BlockStateRegistry registry = BlockState.registry();
-        for (BlockVector3 position : region) {
-            session.setBlock(position.x(), position.y(), position.z(), registry.air());
-        }
-        int changed = 0;
-        index = 0;
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    int state = source[index++];
-                    if (registry.isAirLike(state)) {
-                        continue;
-                    }
-                    Expression.Variables variables = new Expression.Variables();
-                    variables.set("x", x).set("y", y).set("z", z);
-                    variables.set("ox", min.x() + x - ox).set("oy", min.y() + y - oy).set("oz", min.z() + z - oz);
-                    variables.set("cx", width / 2.0).set("cy", height / 2.0).set("cz", length / 2.0);
-                    // The expression stores the displacement in x/y/z.
-                    expression.evaluate(variables);
-                    int tx = (int) Math.floor(min.x() + variables.get("x"));
-                    int ty = (int) Math.floor(min.y() + variables.get("y"));
-                    int tz = (int) Math.floor(min.z() + variables.get("z"));
-                    if (session.setBlock(tx, ty, tz, state)) {
-                        changed++;
-                    }
-                }
-            }
-        }
-        return changed;
+        long bounds = (long) (max.x() - min.x() + 1) * (max.y() - min.y() + 1) * (max.z() - min.z() + 1);
+        Buffers.checkInts(bounds, 1, "Deforming " + Msg.formatNumber(bounds) + " blocks");
+        int[] sources = new int[(int) region.forEachPosition((x, y, z) -> true)];
+        Vector3 zero = frame.zero();
+        Vector3 unit = frame.unit();
+        Expression.Variables variables = new Expression.Variables();
+        int[] cursor = {0};
+        region.forEachPosition((x, y, z) -> {
+            variables.set("x", (x - zero.x()) / unit.x());
+            variables.set("y", (y - zero.y()) / unit.y());
+            variables.set("z", (z - zero.z()) / unit.z());
+            expression.evaluate(variables);
+            sources[cursor[0]++] = world.getBlock(nearest(variables.get("x") * unit.x() + zero.x()),
+                    nearest(variables.get("y") * unit.y() + zero.y()),
+                    nearest(variables.get("z") * unit.z() + zero.z()));
+            return false;
+        });
+        cursor[0] = 0;
+        return (int) region.forEachPosition((x, y, z) -> session.setBlock(x, y, z, sources[cursor[0]++]));
+    }
+
+    /** The block a coordinate rounds to, halves up, as WorldEdit's expression environment does. */
+    private static int nearest(double coordinate) {
+        return (int) Math.floor(coordinate + 0.5);
     }
 
     /**

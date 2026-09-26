@@ -42,6 +42,15 @@ public final class LongQueue {
         return value;
     }
 
+    /** Takes the newest value, which makes the queue a stack; the queue must not be empty. */
+    public long pollLast() {
+        if (size == 0) {
+            throw new java.util.NoSuchElementException();
+        }
+        size--;
+        return values[(head + size) & (values.length - 1)];
+    }
+
     public boolean isEmpty() {
         return size == 0;
     }

@@ -526,8 +526,9 @@ public final class EditSession implements Extent {
         return write(chunk, x, y, z, previous, stateId, recordChange);
     }
 
-    /** The back half of the write path, shared by both entry points. */
     /**
+     * The back half of the write path, shared by both entry points.
+     *
      * @param chunk the buffer of the position's chunk, or {@code null} when the
      *              caller found none and it has to be created
      */

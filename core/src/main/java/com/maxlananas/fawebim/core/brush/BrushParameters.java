@@ -5,6 +5,7 @@ import com.maxlananas.fawebim.core.command.Ctx;
 import com.maxlananas.fawebim.core.command.Parsers;
 import com.maxlananas.fawebim.core.expression.Expression;
 import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 
@@ -32,15 +33,17 @@ public final class BrushParameters {
     private final Map<String, Mask> masks;
     private final Map<String, String> values;
     private final BrushOptions options;
+    private final BlockVector3 placement;
 
     private BrushParameters(String name, Pattern pattern, Mask mask, Map<String, Mask> masks,
-                            Map<String, String> values, BrushOptions options) {
+                            Map<String, String> values, BrushOptions options, BlockVector3 placement) {
         this.name = name;
         this.pattern = pattern;
         this.mask = mask;
         this.masks = masks;
         this.values = values;
         this.options = options;
+        this.placement = placement;
     }
 
     /**
@@ -98,7 +101,9 @@ public final class BrushParameters {
                 masks.put(parameter, Parsers.mask(value.getValue(), ctx));
             }
         }
-        return new BrushParameters(row[0], pattern, sessionMask, masks, values, options);
+        // -o counts from the placement position of the moment the brush is bound.
+        BlockVector3 placement = ctx != null && options.switchOn("o") ? ctx.placement() : null;
+        return new BrushParameters(row[0], pattern, sessionMask, masks, values, options, placement);
     }
 
     /** The parameters of a brush built without a command line, i.e. a preset. */
@@ -124,7 +129,7 @@ public final class BrushParameters {
             // are re-parsed from the command line when the brush is reloaded.
             values.put("pattern", "");
         }
-        return new BrushParameters(row[0], pattern, null, Map.of(), values, options);
+        return new BrushParameters(row[0], pattern, null, Map.of(), values, options, null);
     }
 
     /** The name of the brush, as FAWE spells it. */
@@ -171,6 +176,11 @@ public final class BrushParameters {
     /** The parsed command line flags. */
     public BrushOptions options() {
         return options;
+    }
+
+    /** The placement position when the brush was bound with {@code -o}, else null. */
+    public BlockVector3 placement() {
+        return placement;
     }
 
     /** True when the flag was written on the command line. */

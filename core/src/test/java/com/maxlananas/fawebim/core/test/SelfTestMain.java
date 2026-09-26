@@ -145,6 +145,7 @@ public final class SelfTestMain {
         TransformTests.run();
         EntityTests.run();
         ToolTests.run();
+        TerrainTests.run();
         MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
@@ -244,6 +245,21 @@ public final class SelfTestMain {
         });
         checkEquals("anvil visited chunks", 1, visited[0]);
         checkEquals("anvil duration", 8L * 3_600_000 + 5L * 60_000 + 12_000, Str.parseDuration("8h5m12s"));
+        checkEquals("a duration takes spaces between its groups", 36L * 3_600_000, Str.parseDuration("1d 12h"));
+        checkEquals("a duration takes a fraction", 90L * 60_000, Str.parseDuration("1.5h"));
+        checkEquals("a duration takes the names of the units", 2L * 604_800_000 + 3_000,
+                Str.parseDuration("2 weeks 3 seconds"));
+        checkEquals("a bare number counts seconds, as in FAWE", 30_000L, Str.parseDuration("30"));
+        for (String invalid : new String[] {"", "-5m", "5x", "1.2.3s", "m", "99999999999999999999y", "5m -3s"}) {
+            boolean refused;
+            try {
+                Str.parseDuration(invalid);
+                refused = false;
+            } catch (com.maxlananas.fawebim.core.util.InputException e) {
+                refused = true;
+            }
+            check("the duration '" + invalid + "' is refused", refused);
+        }
     }
 
     // ------------------------------------------------------------------ helpers

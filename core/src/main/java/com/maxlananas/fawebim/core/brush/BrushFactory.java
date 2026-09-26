@@ -2,8 +2,10 @@ package com.maxlananas.fawebim.core.brush;
 
 import com.maxlananas.fawebim.core.actor.Actor;
 import com.maxlananas.fawebim.core.command.CommandRegistry;
+import com.maxlananas.fawebim.core.function.Morphology;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
+import com.maxlananas.fawebim.core.region.RegionFactories;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -140,13 +142,10 @@ public final class BrushFactory {
                         parameters.number("amplitude", 50));
                 yield brush;
             }
-            case "pull" -> {
-                Brushes.PullBrush brush = new Brushes.PullBrush(parameters.radius(), parameters.pattern(),
-                        parameters.mask());
-                brush.setShape(parameters.integer("erodefaces", 6), parameters.integer("erodeRec", 0),
-                        parameters.integer("fillFaces", 1), parameters.integer("fillRec", 1));
-                yield brush;
-            }
+            case "pull" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.ERODE,
+                    new Morphology.Passes(parameters.integer("erodefaces", 6), parameters.integer("erodeRec", 0),
+                            parameters.integer("fillFaces", 1), parameters.integer("fillRec", 1)),
+                    parameters.mask());
             case "stencil" -> {
                 Brushes.StencilBrush brush = new Brushes.StencilBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask(), loadImage(parameters.string("image", "")),
@@ -198,14 +197,29 @@ public final class BrushFactory {
             case "surface" -> new Brushes.SurfaceBrush(parameters.radius(), parameters.pattern(), parameters.mask());
             case "sweep" -> new Brushes.SweepBrush(parameters.radius(), parameters.pattern(), parameters.mask());
             case "deform" -> {
+                String shape = parameters.string("shape", "sphere");
+                if (RegionFactories.parse(shape, 0, 0) == null) {
+                    throw CommandRegistry.error("Unknown shape '" + shape + "'. Use one of "
+                            + String.join(", ", RegionFactories.SHAPES) + ".");
+                }
                 Brushes.DeformBrush brush = new Brushes.DeformBrush(parameters.radius(),
-                        parameters.string("expression", ""));
+                        parameters.string("expression", ""), shape);
                 brush.setGameOrigin(parameters.flag("r"));
-                brush.setPlacementOrigin(parameters.flag("o"));
+                brush.setPlacement(parameters.flag("o") ? parameters.placement() : null);
                 yield brush;
             }
-            case "erode", "dilate", "morph" -> new Brushes.ErodeDilateBrush(parameters.radius(), key,
+            case "erode" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.ERODE,
+                    new Morphology.Passes(parameters.integer("erodefaces", 2), parameters.integer("erodeRec", 1),
+                            parameters.integer("fillFaces", 5), parameters.integer("fillRec", 1)),
                     parameters.mask());
+            case "morph" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.MORPH,
+                    new Morphology.Passes(parameters.integer("minErodeFaces", 3),
+                            parameters.integer("numErodeIterations", 1), parameters.integer("minDilateFaces", 3),
+                            parameters.integer("numDilateIterations", 1)),
+                    parameters.mask());
+            // WorldEdit's dilate preset of the morph brush.
+            case "dilate" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.MORPH,
+                    new Morphology.Passes(5, 1, 2, 1), parameters.mask());
             case "extinguish" -> new Brushes.ExtinguishBrush(parameters.radius());
             case "snow" -> {
                 Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), parameters.mask());

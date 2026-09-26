@@ -2,9 +2,8 @@ package com.maxlananas.fawebim.core.expression;
 
 import com.maxlananas.fawebim.core.util.noise.Noise;
 
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Random;
 
 /**
@@ -53,34 +52,67 @@ public final class Expression {
         return (int) Math.floor(evaluate(variables));
     }
 
-    /** Variables are case-insensitive. */
+    /**
+     * Variables are case-insensitive.
+     *
+     * <p>An expression is evaluated for every block of an edit and names a
+     * handful of variables: a linear search over them costs less than hashing,
+     * and the values stay unboxed. The map of boxed doubles this replaced
+     * allocated on every assignment of every block.</p>
+     */
     public static final class Variables {
 
-        private final Map<String, Double> values = new HashMap<>(16);
+        private String[] names = new String[8];
+        private double[] values = new double[8];
+        private int size;
 
         public Variables set(String name, double value) {
-            values.put(name.toLowerCase(Locale.ROOT), value);
+            String key = name.toLowerCase(Locale.ROOT);
+            int index = indexOf(key);
+            if (index < 0) {
+                if (size == names.length) {
+                    names = Arrays.copyOf(names, size * 2);
+                    values = Arrays.copyOf(values, size * 2);
+                }
+                index = size++;
+                names[index] = key;
+            }
+            values[index] = value;
             return this;
         }
 
         public double get(String name) {
-            Double value = values.get(name.toLowerCase(Locale.ROOT));
-            return value == null ? 0 : value;
+            int index = indexOf(name.toLowerCase(Locale.ROOT));
+            return index < 0 ? 0 : values[index];
         }
 
         /** Null when unset, so constants can take over. */
         public Double getOrNull(String name) {
-            return values.get(name.toLowerCase(Locale.ROOT));
+            int index = indexOf(name.toLowerCase(Locale.ROOT));
+            return index < 0 ? null : values[index];
         }
 
         public boolean has(String name) {
-            return values.containsKey(name.toLowerCase(Locale.ROOT));
+            return indexOf(name.toLowerCase(Locale.ROOT)) >= 0;
         }
 
         public Variables copy() {
             Variables copy = new Variables();
-            copy.values.putAll(values);
+            copy.names = names.clone();
+            copy.values = values.clone();
+            copy.size = size;
             return copy;
+        }
+
+        /** The slot of a lowercase name, or -1. */
+        private int indexOf(String key) {
+            for (int i = 0; i < size; i++) {
+                String name = names[i];
+                if (name == key || name.equals(key)) {
+                    return i;
+                }
+            }
+            return -1;
         }
     }
 
@@ -97,21 +129,26 @@ public final class Expression {
         }
     }
 
-    private record Variable(String name) implements Node {
-        @Override
-        public double eval(Variables vars) {
-            Double value = vars.getOrNull(name);
-            if (value != null) {
-                return value;
-            }
-            // Bare constants, so "pi" and "e" work like in FAWE's expressions.
-            return switch (name.toLowerCase(java.util.Locale.ROOT)) {
+    private static final class Variable implements Node {
+
+        private final String name;
+        /** What the name reads as when unset: bare constants, so "pi" and "e" work like in FAWE's expressions. */
+        private final double fallback;
+
+        Variable(String name) {
+            this.name = name.toLowerCase(Locale.ROOT);
+            this.fallback = switch (this.name) {
                 case "pi" -> Math.PI;
                 case "e" -> Math.E;
                 case "true" -> 1;
-                case "false" -> 0;
                 default -> 0;
             };
+        }
+
+        @Override
+        public double eval(Variables vars) {
+            int index = vars.indexOf(name);
+            return index < 0 ? fallback : vars.values[index];
         }
     }
 
@@ -263,7 +300,7 @@ public final class Expression {
     private static final Noise.Simplex SIMPLEX = new Noise.Simplex(0);
     private static final Noise.Voronoi VORONOI = new Noise.Voronoi(0);
 
-        private static double arg(double[] a, int index) {
+    private static double arg(double[] a, int index) {
         return index < a.length ? a[index] : 0;
     }
 

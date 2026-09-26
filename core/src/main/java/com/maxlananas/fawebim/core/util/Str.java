@@ -218,47 +218,71 @@ public final class Str {
     }
 
     /**
-     * Parses a {@code 8h5m12s} style duration into milliseconds; units are
-     * seconds, minutes, hours, days, weeks and years.
+     * Parses a duration into milliseconds: groups of a number and a unit such
+     * as {@code 30s}, {@code 1.5h}, {@code 8h5m12s} or {@code 2 weeks}, with
+     * spaces allowed around the units. The units are seconds, minutes, hours,
+     * days, weeks and years, by their letter or their name; a number without a
+     * unit counts seconds, as FAWE's time arguments do.
+     *
+     * <p>There were two parsers: this one read a bare number as milliseconds
+     * and took no fraction, the commands' own read it as minutes and took a
+     * single group.</p>
      */
     public static long parseDuration(String text) {
-        long total = 0;
-        long value = 0;
-        boolean digits = false;
-        try {
-            for (int i = 0; i < text.length(); i++) {
-                char c = text.charAt(i);
-                if (c >= '0' && c <= '9') {
-                    value = Math.addExact(Math.multiplyExact(value, 10), c - '0');
-                    digits = true;
-                    continue;
-                }
-                if (!digits) {
-                    throw new InputException("Expected a duration such as 8h5m12s, got '" + text + "'");
-                }
-                total = Math.addExact(total, Math.multiplyExact(value, unitMillis(c, text)));
-                value = 0;
-                digits = false;
+        String value = text.trim().toLowerCase(Locale.ROOT);
+        if (value.isEmpty()) {
+            throw new InputException("Expected a duration such as 8h5m12s, got nothing");
+        }
+        double total = 0;
+        int index = 0;
+        while (index < value.length()) {
+            int start = index;
+            while (index < value.length() && (isAsciiDigit(value.charAt(index)) || value.charAt(index) == '.')) {
+                index++;
             }
-            if (digits) {
-                total = Math.addExact(total, value);
+            if (start == index) {
+                throw new InputException("Expected a duration such as 8h5m12s, got '" + text + "'");
             }
-        } catch (ArithmeticException e) {
-            // Twenty digits wrapped round to a negative duration before.
+            double amount;
+            try {
+                amount = Double.parseDouble(value.substring(start, index));
+            } catch (NumberFormatException e) {
+                throw new InputException("Expected a duration such as 8h5m12s, got '" + text + "'");
+            }
+            while (index < value.length() && Character.isWhitespace(value.charAt(index))) {
+                index++;
+            }
+            int unitStart = index;
+            while (index < value.length() && value.charAt(index) >= 'a' && value.charAt(index) <= 'z') {
+                index++;
+            }
+            total += amount * unitMillis(value.substring(unitStart, index), text);
+            while (index < value.length() && Character.isWhitespace(value.charAt(index))) {
+                index++;
+            }
+        }
+        // A duration is subtracted from the clock: past half of what a long
+        // holds, it is a typo rather than a date.
+        if (!Double.isFinite(total) || total > Long.MAX_VALUE / 2.0) {
             throw new InputException("The duration '" + text + "' is too long");
         }
-        return total;
+        return Math.round(total);
     }
 
-    private static long unitMillis(char unit, String text) {
-        return switch (Character.toLowerCase(unit)) {
-            case 's' -> 1000L;
-            case 'm' -> 60_000L;
-            case 'h' -> 3_600_000L;
-            case 'd' -> 86_400_000L;
-            case 'w' -> 604_800_000L;
-            case 'y' -> 31_536_000_000L;
-            default -> throw new InputException("Unknown time unit '" + unit + "' in '" + text + "'");
+    private static boolean isAsciiDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+
+    private static long unitMillis(String unit, String text) {
+        return switch (unit) {
+            case "", "s", "sec", "secs", "second", "seconds" -> 1000L;
+            case "m", "min", "mins", "minute", "minutes" -> 60_000L;
+            case "h", "hr", "hrs", "hour", "hours" -> 3_600_000L;
+            case "d", "day", "days" -> 86_400_000L;
+            case "w", "wk", "wks", "week", "weeks" -> 604_800_000L;
+            case "y", "yr", "yrs", "year", "years" -> 31_536_000_000L;
+            default -> throw new InputException("Unknown time unit '" + unit + "' in '" + text
+                    + "'. Use s, m, h, d, w or y.");
         };
     }
 }

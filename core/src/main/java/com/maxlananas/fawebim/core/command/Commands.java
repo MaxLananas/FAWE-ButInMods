@@ -513,43 +513,6 @@ public final class Commands {
     }
 
     /**
-     * Parses FAWE's duration syntax: {@code 30s}, {@code 5m}, {@code 2h},
-     * {@code 1d}, {@code 1w} or a bare number of minutes. Returns milliseconds.
-     */
-    static long parseDuration(String input) {
-        String value = input.trim().toLowerCase(Locale.ROOT);
-        if (value.isEmpty()) {
-            throw CommandRegistry.error("Empty duration");
-        }
-        long multiplier = 60_000L;
-        char unit = value.charAt(value.length() - 1);
-        if (!Character.isDigit(unit)) {
-            multiplier = switch (unit) {
-                case 's' -> 1000L;
-                case 'm' -> 60_000L;
-                case 'h' -> 3_600_000L;
-                case 'd' -> 86_400_000L;
-                case 'w' -> 604_800_000L;
-                default -> throw CommandRegistry.error("Unknown time unit '" + unit + "'. Use s, m, h, d or w.");
-            };
-            value = value.substring(0, value.length() - 1);
-        }
-        double amount;
-        try {
-            amount = Double.parseDouble(value);
-        } catch (NumberFormatException e) {
-            throw CommandRegistry.error("'" + input + "' is not a valid duration");
-        }
-        double millis = amount * multiplier;
-        // NaN read as no time at all and a negative duration as one in the
-        // future; a duration past what a long holds is a typo, not a date.
-        if (!Double.isFinite(millis) || millis < 0 || millis > Long.MAX_VALUE / 2.0) {
-            throw CommandRegistry.error("'" + input + "' is not a valid duration");
-        }
-        return Math.round(millis);
-    }
-
-    /**
      * How far the selection can grow in one direction before it leaves the world.
      *
      * <p>The selection commands hand a region an amount straight from the command
@@ -1566,21 +1529,22 @@ public final class Commands {
         e48.booleanFlags.add("c");
         e48.arguments.add("expression");
         e48.handler = ctx -> {
-                    EditSession session = ctx.editSession();
                     String expression = ctx.joined(0);
                     Region deformRegion = ctx.selection();
-                    int originX = 0;
-                    int originZ = 0;
-                    if (ctx.hasFlag("c")) {
-                        originX = (deformRegion.getMinimumPoint().x() + deformRegion.getMaximumPoint().x()) / 2;
-                        originZ = (deformRegion.getMinimumPoint().z() + deformRegion.getMaximumPoint().z()) / 2;
-                    } else if (ctx.hasFlag("o") && !ctx.hasFlag("r")) {
-                        BlockVector3 placement = ctx.placement();
-                        originX = placement.x();
-                        originZ = placement.z();
+                    // WorldEdit's order: -r, then -o, then -c, else the unit cube.
+                    Operations.DeformFrame frame;
+                    if (ctx.hasFlag("r")) {
+                        frame = Operations.DeformFrame.RAW;
+                    } else if (ctx.hasFlag("o")) {
+                        frame = Operations.DeformFrame.offset(ctx.placement().toVector3());
+                    } else if (ctx.hasFlag("c")) {
+                        frame = Operations.DeformFrame.offset(deformRegion.getMinimumPoint().toVector3()
+                                .add(deformRegion.getMaximumPoint().toVector3()).multiply(0.5));
+                    } else {
+                        frame = Operations.DeformFrame.unitCube(deformRegion);
                     }
-                    int changed = com.maxlananas.fawebim.core.function.Operations.deform(ctx.world(), session,
-                            deformRegion, expression, originX, 0, originZ);
+                    EditSession session = ctx.editSession();
+                    int changed = Operations.deform(ctx.world(), session, deformRegion, expression, frame);
                     flush(ctx, session, "Deformed", changed, "block(s)");
                 };
 
@@ -2556,7 +2520,7 @@ public final class Commands {
         e74.valueFlags.add("o");
         e74.arguments.add("[-o <time>]");
         e74.handler = ctx -> {
-                    long before = ctx.hasFlag("o") ? parseDuration(ctx.flagValue("o", "")) : 0;
+                    long before = ctx.hasFlag("o") ? Str.parseDuration(ctx.flagValue("o", "")) : 0;
                     long threshold = before == 0 ? 0 : System.currentTimeMillis() - before;
                     java.util.List<BlockVector2> chunks = new java.util.ArrayList<>();
                     int skipped = 0;
