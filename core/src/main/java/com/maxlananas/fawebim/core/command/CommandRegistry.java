@@ -320,6 +320,7 @@ public final class CommandRegistry {
         Extent previous = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
         com.maxlananas.fawebim.core.session.LocalSession session = actor.session();
         session.enterCommand();
+        session.setActiveWorld(actor.world());
         Msg failure = null;
         long written = 0;
         try {
@@ -421,6 +422,7 @@ public final class CommandRegistry {
         Extent previous = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
         com.maxlananas.fawebim.core.session.LocalSession session = actor.session();
         session.enterCommand();
+        session.setActiveWorld(actor.world());
         try {
             return action.getAsBoolean();
         } catch (RuntimeException e) {

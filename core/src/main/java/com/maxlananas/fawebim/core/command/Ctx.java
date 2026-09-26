@@ -31,7 +31,6 @@ public final class Ctx {
     private final List<String> positional = new ArrayList<>();
     private final Map<String, List<String>> flags = new LinkedHashMap<>();
     private EditSession editSession;
-    private EditSession readSession;
     private Region selection;
 
     Ctx(CommandRegistry.Entry entry, Actor actor, List<String> tokens) {
@@ -269,19 +268,7 @@ public final class Ctx {
         return editSession;
     }
 
-    /**
-     * A session for the commands that only read blocks, such as {@code //count}
-     * and {@code //distr}. It carries the session's source mask so a mask parsed
-     * there sees the blocks the source mask lets through, and it records no
-     * history entry of its own.
-     */
-    public EditSession readSession() {
-        if (readSession == null) {
-            readSession = new EditSession(world(), session(), entry.name, false);
-        }
-        return readSession;
-    }
-
+    /** The edit of this command, opened on first use under the given description. */
     public EditSession editSession(String description) {
         if (editSession == null) {
             editSession = new EditSession(world(), session(), description);
@@ -305,23 +292,8 @@ public final class Ctx {
             // the next click builds on.
             session().getSelector(world()).learnChanges();
         }
-        RuntimeException failure = null;
-        for (EditSession opened : new EditSession[] {editSession, readSession}) {
-            if (opened == null) {
-                continue;
-            }
-            try {
-                opened.close();
-            } catch (RuntimeException e) {
-                if (failure == null) {
-                    failure = e;
-                } else {
-                    failure.addSuppressed(e);
-                }
-            }
-        }
-        if (failure != null) {
-            throw failure;
+        if (editSession != null) {
+            editSession.close();
         }
         return changed;
     }

@@ -49,6 +49,13 @@ public final class LocalSession {
     private String toolBindingName;
     private Mask sourceMask;
     /**
+     * Weak: the reference only matters while an edit of that world runs, and
+     * the edit holds the world itself; a session kept after its player left
+     * must not keep a dimension alive after the server unloaded it.
+     */
+    private java.lang.ref.WeakReference<World> activeWorld;
+    private WorldReader worldReader;
+    /**
      * Set by {@code /cancel} while a command of this session runs; read by the
      * edit on every checkpoint. Volatile because the flag is the one piece of
      * session state meant to be written while an edit is in progress.
@@ -164,6 +171,84 @@ public final class LocalSession {
 
     public void setSourceMask(Mask sourceMask) {
         this.sourceMask = sourceMask;
+    }
+
+    /**
+     * The world the player edits now: the one of the last command, click or
+     * edit started for this session. Server thread.
+     */
+    public World getActiveWorld() {
+        return activeWorld == null ? null : activeWorld.get();
+    }
+
+    public void setActiveWorld(World world) {
+        if (world != null && getActiveWorld() != world) {
+            this.activeWorld = new java.lang.ref.WeakReference<>(world);
+        }
+    }
+
+    /**
+     * What the masks and patterns parsed for this session read: the blocks of
+     * the {@linkplain #getActiveWorld() active world}, through the source mask
+     * - a block it rejects reads as air, as it does through an edit. A mask kept
+     * in the session, a brush or a tool therefore follows the player into
+     * another dimension instead of reading the one it was parsed in.
+     */
+    public com.maxlananas.fawebim.core.world.Extent worldReader() {
+        if (worldReader == null) {
+            worldReader = new WorldReader(this);
+        }
+        return worldReader;
+    }
+
+    private static final class WorldReader implements com.maxlananas.fawebim.core.world.Extent {
+
+        private final LocalSession session;
+        /** Set while the source mask runs, so its own reads are not masked again. */
+        private boolean applyingSourceMask;
+
+        WorldReader(LocalSession session) {
+            this.session = session;
+        }
+
+        @Override
+        public int getBlock(int x, int y, int z) {
+            Mask source = session.sourceMask;
+            if (source != null && !applyingSourceMask) {
+                applyingSourceMask = true;
+                boolean accepted;
+                try {
+                    accepted = source.test(x, y, z);
+                } finally {
+                    applyingSourceMask = false;
+                }
+                if (!accepted) {
+                    return com.maxlananas.fawebim.core.world.BlockState.registry().air();
+                }
+            }
+            return session.getActiveWorld().getBlock(x, y, z);
+        }
+
+        /** Masks and patterns only read. */
+        @Override
+        public boolean setBlock(int x, int y, int z, int stateId) {
+            return false;
+        }
+
+        @Override
+        public int getBiome(int x, int y, int z) {
+            return session.getActiveWorld().getBiome(x, y, z);
+        }
+
+        @Override
+        public int minY() {
+            return session.getActiveWorld().minY();
+        }
+
+        @Override
+        public int maxY() {
+            return session.getActiveWorld().maxY();
+        }
     }
 
     /**

@@ -2666,8 +2666,14 @@ public final class Commands {
                         throw CommandRegistry.error("No block in sight");
                     }
                     ctx.requirePosition();
-                    Navigation.setOnGround(ctx.actor(), target);
-                    ctx.actor().message(Msg.result("Jumped to", Msg.value(target).raw()));
+                    // WorldEdit's /jumpto: the first free space at or above the
+                    // target, or the target itself with -f.
+                    if (ctx.hasFlag("f")) {
+                        ctx.actor().teleport(target.x() + 0.5, target.y(), target.z() + 0.5);
+                    } else if (!Navigation.findFreePosition(ctx.actor(), target)) {
+                        throw CommandRegistry.error("No free space above " + Msg.value(target).raw());
+                    }
+                    ctx.actor().message(Msg.result("Jumped to", Msg.value(ctx.actor().position()).raw()));
                 };
 
 

@@ -146,12 +146,20 @@ public final class Navigation {
 
     /** {@code /unstuck}: the first column of two free blocks above the player. */
     public static boolean findFreePosition(Actor actor) {
+        return findFreePosition(actor, actor.position());
+    }
+
+    /**
+     * WorldEdit's {@code findFreePosition(Location)}: puts the player on the
+     * first two free blocks at or above {@code pos}, which is where
+     * {@code /jumpto} lands on the block in sight, never inside the ground
+     * above it. False when no such space exists below the search height.
+     */
+    public static boolean findFreePosition(Actor actor, BlockVector3 pos) {
         World world = actor.world();
-        BlockVector3 pos = actor.position();
         int x = pos.x();
         int z = pos.z();
         int y = Math.max(world.minY(), pos.y());
-        int originalY = y;
         int maxY = Math.min(world.maxY(), y + SEARCH_HEIGHT) + 2;
         int free = 0;
         while (y <= maxY) {
@@ -161,7 +169,11 @@ public final class Navigation {
                 free = 0;
             }
             if (free == 2) {
-                if (y - 1 == originalY || actor.teleport(x + 0.5, y - 1, z + 0.5)) {
+                // A player already standing there is not moved; anyone else is,
+                // including to a free spot given as the search position.
+                BlockVector3 current = actor.position();
+                boolean there = current.x() == x && current.y() == y - 1 && current.z() == z;
+                if (there || actor.teleport(x + 0.5, y - 1, z + 0.5)) {
                     return true;
                 }
             }

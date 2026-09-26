@@ -118,8 +118,8 @@ public final class FabricInteractions {
             return applyBrush(actor, brush, FabricMessages.blockVector(pos))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
-        Tool tool = Tools.current(session);
-        if (tool != null && bound(session, "tool-item", held)) {
+        Tool tool = Tools.forItem(session, held);
+        if (tool != null) {
             Tool.ToolContext context = new Tool.ToolContext(actor, FabricMessages.blockVector(pos),
                     FabricMessages.direction(face), null);
             if (CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onLeftClick(context))) {
@@ -169,9 +169,9 @@ public final class FabricInteractions {
         if (brush != null && brush.leftClick() && bound(session, "brush-item", held)) {
             return applyBrush(actor, brush, aimedBlock(player));
         }
-        Tool tool = Tools.current(session);
-        if (tool != null && bound(session, "tool-item", held)) {
-            Tool.ToolContext context = new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null);
+        Tool tool = Tools.forItem(session, held);
+        if (tool != null) {
+            Tool.ToolContext context = aimedContext(actor, player);
             return CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onSwing(context));
         }
         return false;
@@ -197,8 +197,8 @@ public final class FabricInteractions {
         }
 
         // 2. Tools.
-        Tool tool = Tools.current(session);
-        if (tool != null && bound(session, "tool-item", held)) {
+        Tool tool = Tools.forItem(session, held);
+        if (tool != null) {
             Tool.ToolContext context = new Tool.ToolContext(actor, FabricMessages.blockVector(pos),
                     FabricMessages.direction(face), null);
             if (CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onRightClick(context))) {
@@ -245,12 +245,12 @@ public final class FabricInteractions {
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
-        Tool tool = Tools.current(session);
-        if (tool == null || !bound(session, "tool-item", held)) {
+        Tool tool = Tools.forItem(session, held);
+        if (tool == null) {
             noteWaiting(actor, held);
             return InteractionResult.PASS;
         }
-        Tool.ToolContext context = new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null);
+        Tool.ToolContext context = aimedContext(actor, player);
         return CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onRightClick(context))
                 ? InteractionResult.SUCCESS : InteractionResult.PASS;
     }
@@ -278,6 +278,21 @@ public final class FabricInteractions {
                     .add(side.getStepX(), side.getStepY(), side.getStepZ());
         }
         return FabricMessages.blockVector(pos).add(face.getStepX(), face.getStepY(), face.getStepZ());
+    }
+
+    /**
+     * What a click in the air is about, for a tool: the block under the
+     * crosshair and the face of it the crosshair meets, or, with no block in
+     * reach, the end of the reach and no face.
+     */
+    private static Tool.ToolContext aimedContext(FabricActor actor, ServerPlayer player) {
+        double reach = Math.max(5.0, Config.get().maxBrushRange);
+        net.minecraft.world.phys.BlockHitResult aimed = aim(player, reach);
+        if (aimed != null && aimed.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+            return new Tool.ToolContext(actor, FabricMessages.blockVector(aimed.getBlockPos()),
+                    FabricMessages.direction(aimed.getDirection()), null);
+        }
+        return new Tool.ToolContext(actor, aimedBlock(player), null, null);
     }
 
     /** The block under the crosshair, never the one the player stands in. */

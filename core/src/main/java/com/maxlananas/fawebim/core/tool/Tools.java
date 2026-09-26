@@ -1,8 +1,10 @@
 package com.maxlananas.fawebim.core.tool;
 
 import com.maxlananas.fawebim.core.actor.Actor;
-import com.maxlananas.fawebim.core.command.BrushCommands;
+import com.maxlananas.fawebim.core.actor.Navigation;
+import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.command.Ctx;
+import com.maxlananas.fawebim.core.command.Parsers;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.math.BlockVector3;
@@ -36,41 +38,59 @@ public final class Tools {
      */
     public static final java.util.List<String> NAMES = java.util.List.of(
             "none", "tree", "repl", "cycler", "floodfill", "info", "farwand", "navwand", "lrbuild",
-            "stacker", "deltree", "brush", "selwand", "featureplacer", "structureplacer", "command",
-            "flood", "warwand");
+            "stacker", "deltree", "brush", "selwand", "featureplacer", "structureplacer", "flood", "warwand");
 
+    /**
+     * The tool {@code /tool <name> ...} binds, built from the arguments the
+     * tool takes - WorldEdit's: the pattern of {@code repl}, the two patterns
+     * of {@code lrbuild}, the range and mask of {@code stacker} - or null for a
+     * name that is not a tool. An argument that does not parse is refused
+     * here, before anything is bound.
+     */
     public static Tool create(String name, Ctx ctx) {
         String key = name.toLowerCase(Locale.ROOT);
         return switch (key) {
             // /tool tree <type> names the tree the tool plants.
             case "tree" -> new TreeTool(ctx.arg(1, "tree"));
-            case "repl", "replace" -> new ReplaceTool();
+            case "repl", "replace" -> new ReplaceTool(Parsers.pattern(required(ctx, 1, "repl <pattern>"), ctx));
             case "cycler" -> new CyclerTool();
             case "floodfill", "flood-fill", "flood" -> FloodFillTool.of(ctx);
             case "info", "inspect" -> new InfoTool();
             case "farwand", "warwand" -> new FarWandTool();
-            case "navwand", "navigation" -> new NavigationWandTool();
-            case "lrbuild", "lr-build" -> new LRBuildTool();
-            case "stacker" -> new StackerTool();
+            case "navwand", "navigation", "navigationwand" -> new NavigationWandTool();
+            case "lrbuild", "lr-build" -> new LRBuildTool(
+                    Parsers.pattern(required(ctx, 1, LRBuildTool.USAGE), ctx),
+                    Parsers.pattern(required(ctx, 2, LRBuildTool.USAGE), ctx));
+            case "stacker" -> StackerTool.of(ctx);
             case "deltree" -> new DelTreeTool();
             case "brush" -> new BrushTool();
-            case "selwand" -> new SelectWandTool(false);
-            case "navigationwand" -> new SelectWandTool(true);
-            case "featureplacer", "featuretool" -> new FeaturePlacerTool(null);
-            case "structureplacer", "structuretool" -> new StructurePlacerTool(null);
+            case "selwand" -> new SelectWandTool();
+            case "featureplacer", "featuretool" ->
+                    new FeaturePlacerTool(required(ctx, 1, "featureplacer <feature>"));
+            case "structureplacer", "structuretool" ->
+                    new StructurePlacerTool(required(ctx, 1, "structureplacer <structure>"));
             default -> null;
         };
     }
 
+    private static String required(Ctx ctx, int index, String usage) {
+        String value = ctx.arg(index, null);
+        if (value == null) {
+            throw CommandRegistry.error("Usage: /tool " + usage);
+        }
+        return value;
+    }
+
     /**
      * Where the item to bind to sits among the arguments of {@code /tool}: right
-     * after the type, or after the arguments of a tool that takes some - the
-     * type of tree, the pattern and range of the flood fill.
+     * after the arguments the tool takes, so {@code /tool repl stone} binds a
+     * stone replacer to the held item and {@code /tool repl stone stick} binds
+     * it to sticks.
      */
     public static int targetArgument(String name) {
         return switch (name.toLowerCase(Locale.ROOT)) {
-            case "tree" -> 2;
-            case "floodfill", "flood-fill", "flood" -> 3;
+            case "tree", "repl", "replace", "featureplacer", "featuretool", "structureplacer", "structuretool" -> 2;
+            case "floodfill", "flood-fill", "flood", "lrbuild", "lr-build", "stacker" -> 3;
             default -> 1;
         };
     }
@@ -90,6 +110,25 @@ public final class Tools {
         return tool instanceof Tool value ? value : null;
     }
 
+    private static final Tool NAVIGATION_WAND = new NavigationWandTool();
+
+    /**
+     * The tool a click with {@code item} uses: the one {@code /tool} bound to
+     * that item, else the navigation wand when the item is the configured
+     * navigation wand - WorldEdit's compass - else none.
+     */
+    public static Tool forItem(LocalSession session, String item) {
+        if (item == null) {
+            return null;
+        }
+        Tool tool = current(session);
+        if (tool != null && item.equals(session.getBindings().get("tool-item"))) {
+            return tool;
+        }
+        return item.equals(com.maxlananas.fawebim.core.platform.Config.get().navigationWandItem)
+                ? NAVIGATION_WAND : null;
+    }
+
     /** The pattern argument of a tool, defaulting to the global pattern. */
     static Pattern pattern(Actor actor, Pattern fallback) {
         Pattern global = actor.session().getPattern();
@@ -102,7 +141,10 @@ public final class Tools {
 
     // ------------------------------------------------------------------- tools
 
-    /** {@code /tool tree [tree-type]}. */
+    /**
+     * {@code /tool tree [type]}, WorldEdit's tree planter: a right click grows
+     * a tree on the clicked block, from the block above it.
+     */
     public static final class TreeTool implements Tool {
 
         private final String treeType;
@@ -118,11 +160,14 @@ public final class Tools {
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            boolean ok = context.actor.world().generateTree(
-                    context.position.add(context.face.toVector()), treeType, new Random());
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
+            }
+            boolean ok = context.actor.world().generateTree(context.position.add(0, 1, 0), treeType, new Random());
             context.message(ok ? Msg.success("Planted a " + treeType)
-                    : Msg.error("Could not place tree '" + treeType + "'"));
-            return ok;
+                    : Msg.error("A " + treeType + " does not fit there"));
+            return true;
         }
 
         @Override
@@ -149,12 +194,20 @@ public final class Tools {
         }
     }
 
-    /** {@code /tool repl [pattern]} — replaces the block you click. */
+    /**
+     * {@code /tool repl <pattern>}, WorldEdit's block replacer: a right click
+     * turns the clicked block into the pattern, a left click makes the clicked
+     * block the pattern, with its data - the items of a chest, the text of a
+     * sign - which every later right click writes again.
+     */
     public static final class ReplaceTool implements Tool {
 
         private Pattern pattern;
+        /** The picked block and its data; the data is written only where that block is. */
+        private int pickedState = -1;
+        private com.maxlananas.fawebim.core.util.NbtCompound pickedData;
 
-        public void setPattern(Pattern pattern) {
+        ReplaceTool(Pattern pattern) {
             this.pattern = pattern;
         }
 
@@ -165,11 +218,18 @@ public final class Tools {
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            Pattern fill = pattern != null ? pattern : pattern(context.actor, stonePattern());
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
+            }
+            BlockVector3 at = context.position;
+            int state = pattern.apply(at.x(), at.y(), at.z());
             EditSession session = open(context, "tool repl");
             try {
-                session.setBlock(context.position.x(), context.position.y(), context.position.z(),
-                        fill.apply(context.position.x(), context.position.y(), context.position.z()));
+                session.setBlock(at.x(), at.y(), at.z(), state);
+                if (pickedData != null && state == pickedState) {
+                    session.setBlockEntity(at.x(), at.y(), at.z(), pickedData.clone());
+                }
             } finally {
                 finish(context, session);
             }
@@ -177,13 +237,31 @@ public final class Tools {
         }
 
         @Override
+        public boolean onLeftClick(ToolContext context) {
+            BlockVector3 at = context.position;
+            com.maxlananas.fawebim.core.world.World world = context.actor.world();
+            pickedState = world.getBlock(at.x(), at.y(), at.z());
+            pickedData = world.getBlockEntity(at.x(), at.y(), at.z());
+            pattern = new Patterns.Single(pickedState);
+            context.message(Msg.result("Replacer", "now places "
+                    + Msg.value(BlockState.registry().describe(pickedState)).raw()));
+            return true;
+        }
+
+        @Override
         public String describe() {
-            return "replace with " + (pattern == null ? "stone" : pattern.getClass().getSimpleName());
+            return "replacer";
         }
     }
 
-    /** {@code /tool cycler} — cycles a block's properties. */
+    /**
+     * {@code /tool cycler}, WorldEdit's data cycler: a right click moves the
+     * clicked block's selected property to its next value, a left click
+     * selects the next property of the block.
+     */
     public static final class CyclerTool implements Tool {
+
+        private String property;
 
         @Override
         public String name() {
@@ -193,29 +271,48 @@ public final class Tools {
         @Override
         public boolean onRightClick(ToolContext context) {
             BlockStateRegistry registry = BlockState.registry();
-            int current = context.actor.world().getBlock(context.position.x(), context.position.y(), context.position.z());
-            var properties = registry.properties(current);
+            BlockVector3 at = context.position;
+            int current = context.actor.world().getBlock(at.x(), at.y(), at.z());
+            java.util.Map<String, String> properties = registry.properties(current);
             if (properties.isEmpty()) {
-                return false;
+                context.message(Msg.error("That block has no property to cycle"));
+                return true;
             }
-            String key = properties.keySet().iterator().next();
-            List<String> values = registry.propertyDefs(current).get(key);
+            if (property == null || !properties.containsKey(property)) {
+                property = properties.keySet().iterator().next();
+            }
+            List<String> values = registry.propertyDefs(current).get(property);
             if (values == null || values.isEmpty()) {
-                return false;
+                context.message(Msg.error("That block has no property to cycle"));
+                return true;
             }
-            String value = properties.get(key);
-            int index = (values.indexOf(value) + 1) % values.size();
-            int next = registry.withProperty(current, key, values.get(index));
+            String value = values.get((values.indexOf(properties.get(property)) + 1) % values.size());
+            int next = registry.withProperty(current, property, value);
             if (next < 0) {
-                return false;
+                context.message(Msg.error("That block has no property to cycle"));
+                return true;
             }
             EditSession session = open(context, "tool cycler");
             try {
-                session.setBlock(context.position.x(), context.position.y(), context.position.z(), next);
+                session.setBlock(at.x(), at.y(), at.z(), next);
             } finally {
                 finish(context, session);
             }
-            context.message(Msg.info(key + " = " + values.get(index)));
+            context.message(Msg.keyValue(property, value));
+            return true;
+        }
+
+        @Override
+        public boolean onLeftClick(ToolContext context) {
+            BlockVector3 at = context.position;
+            List<String> names = new java.util.ArrayList<>(BlockState.registry().properties(
+                    context.actor.world().getBlock(at.x(), at.y(), at.z())).keySet());
+            if (names.isEmpty()) {
+                context.message(Msg.error("That block has no property to cycle"));
+                return true;
+            }
+            property = names.get((names.indexOf(property) + 1) % names.size());
+            context.message(Msg.result("Cycler", "now cycles " + Msg.value(property).raw()));
             return true;
         }
 
@@ -319,7 +416,33 @@ public final class Tools {
         }
     }
 
-    /** {@code /tool farwand} — the wand with an extended reach. */
+    /**
+     * Sets a corner of the selection to the block a click is about, the way
+     * the selection wand does. A click with nothing in sight selects nothing.
+     */
+    private static boolean selectCorner(Tool.ToolContext context, boolean primary) {
+        if (!context.aimsAtBlock()) {
+            context.message(Msg.error("No block in sight"));
+            return true;
+        }
+        com.maxlananas.fawebim.core.region.RegionSelector selector =
+                context.actor.session().getSelector(context.actor.world());
+        if (primary) {
+            selector.selectPrimary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+        } else {
+            selector.selectSecondary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+        }
+        context.message(Msg.result(primary ? "Position 1" : "Position 2",
+                "set to " + Msg.value(context.position).raw()));
+        context.actor.updateSelectionOutline();
+        return true;
+    }
+
+    /**
+     * {@code /tool farwand}, WorldEdit's long range wand: the corners are the
+     * blocks in sight, as far as the brush range, a left click setting the
+     * first and a right click the second.
+     */
     public static final class FarWandTool implements Tool {
 
         @Override
@@ -329,18 +452,17 @@ public final class Tools {
 
         @Override
         public boolean onLeftClick(ToolContext context) {
-            context.actor.session().getSelector(context.actor.world())
-                    .selectPrimary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-            context.message(Msg.success("Position 1 set to " + context.position));
-            return true;
+            return selectCorner(context, true);
+        }
+
+        @Override
+        public boolean onSwing(ToolContext context) {
+            return selectCorner(context, true);
         }
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            context.actor.session().getSelector(context.actor.world())
-                    .selectSecondary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-            context.message(Msg.success("Position 2 set to " + context.position));
-            return true;
+            return selectCorner(context, false);
         }
 
         @Override
@@ -349,8 +471,14 @@ public final class Tools {
         }
     }
 
-    /** {@code /tool navwand} — jump to the clicked block. */
+    /**
+     * {@code /tool navwand}, WorldEdit's navigation wand: a left click is
+     * {@code /jumpto} on the block in sight, a right click is {@code /thru}.
+     */
     public static final class NavigationWandTool implements Tool {
+
+        /** WorldEdit's navigation wand passes through 40 blocks of wall. */
+        private static final int THRU_RANGE = 40;
 
         @Override
         public String name() {
@@ -358,9 +486,29 @@ public final class Tools {
         }
 
         @Override
+        public boolean onLeftClick(ToolContext context) {
+            return jump(context);
+        }
+
+        @Override
+        public boolean onSwing(ToolContext context) {
+            return jump(context);
+        }
+
+        private static boolean jump(ToolContext context) {
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+            } else if (!Navigation.findFreePosition(context.actor, context.position)) {
+                context.message(Msg.error("No free space above " + Msg.value(context.position).raw()));
+            }
+            return true;
+        }
+
+        @Override
         public boolean onRightClick(ToolContext context) {
-            context.actor.teleport(context.position.x() + 0.5, context.position.y() + 1,
-                    context.position.z() + 0.5);
+            if (!Navigation.passThroughForwardWall(context.actor, THRU_RANGE)) {
+                context.message(Msg.error("No free space through the wall in front of you"));
+            }
             return true;
         }
 
@@ -370,10 +518,22 @@ public final class Tools {
         }
     }
 
-    /** {@code /tool lrbuild} — left-click removes, right-click places. */
+    /**
+     * {@code /tool lrbuild <left> <right>}, WorldEdit's long range building
+     * tool: a click puts its pattern against the face of the block in sight,
+     * or, when the pattern gives air there, clears that block.
+     */
     public static final class LRBuildTool implements Tool {
 
-        private final java.util.Deque<BlockVector3> leftClicks = new java.util.ArrayDeque<>();
+        static final String USAGE = "lrbuild <left-click pattern> <right-click pattern>";
+
+        private final Pattern left;
+        private final Pattern right;
+
+        LRBuildTool(Pattern left, Pattern right) {
+            this.left = left;
+            this.right = right;
+        }
 
         @Override
         public String name() {
@@ -382,49 +542,65 @@ public final class Tools {
 
         @Override
         public boolean onLeftClick(ToolContext context) {
-            leftClicks.push(context.position);
-            if (leftClicks.size() > 2) {
-                leftClicks.removeLast();
-            }
-            context.message(Msg.info("Left click stored: " + context.position));
-            if (leftClicks.size() == 2) {
-                EditSession session = new EditSession(context.actor.world(), context.actor.session(), "tool lrbuild");
-                try {
-                    for (BlockVector3 position : com.maxlananas.fawebim.core.function.Operations.spherePositions(
-                            context.position, 3, false)) {
-                        session.setBlock(position.x(), position.y(), position.z(), BlockState.registry().air());
-                    }
-                } finally {
-                    session.close();
-                }
-            }
-            return true;
+            return build(context, left);
+        }
+
+        @Override
+        public boolean onSwing(ToolContext context) {
+            return build(context, left);
         }
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            Pattern fill = pattern(context.actor, stonePattern());
-            EditSession session = new EditSession(context.actor.world(), context.actor.session(), "tool lrbuild");
+            return build(context, right);
+        }
+
+        private static boolean build(ToolContext context, Pattern pattern) {
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
+            }
+            BlockVector3 target = context.position;
+            BlockVector3 at = BlockState.registry().isAir(pattern.apply(target.x(), target.y(), target.z()))
+                    ? target : target.add(context.face.toVector());
+            EditSession session = open(context, "tool lrbuild");
             try {
-                for (BlockVector3 position : com.maxlananas.fawebim.core.function.Operations.spherePositions(
-                        context.position, 3, false)) {
-                    session.setBlock(position.x(), position.y(), position.z(),
-                            fill.apply(position.x(), position.y(), position.z()));
-                }
+                session.setBlock(at.x(), at.y(), at.z(), pattern.apply(at.x(), at.y(), at.z()));
             } finally {
-                session.close();
+                finish(context, session);
             }
             return true;
         }
 
         @Override
         public String describe() {
-            return "left/right build";
+            return "long range builder";
         }
     }
 
-    /** {@code /tool stacker} — repeats the last selection's contents. */
+    /**
+     * {@code /tool stacker [range] [mask]}, WorldEdit's block stacker: a right
+     * click repeats the clicked block, its data included, away from the
+     * clicked face, as long as the next block matches the mask - by default
+     * while it is air - and at most {@code range} times.
+     */
     public static final class StackerTool implements Tool {
+
+        private final int range;
+        /** Null for WorldEdit's default, {@code !#existing}: stack into air only. */
+        private final Mask mask;
+
+        private StackerTool(int range, Mask mask) {
+            this.range = range;
+            this.mask = mask;
+        }
+
+        static StackerTool of(Ctx ctx) {
+            int range = ctx.intArg(1, 10, 1, com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange,
+                    "stack range");
+            Mask mask = ctx.args().size() > 2 ? Parsers.mask(ctx.arg(2), ctx) : null;
+            return new StackerTool(range, mask);
+        }
 
         @Override
         public String name() {
@@ -433,22 +609,37 @@ public final class Tools {
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            LocalSession session = context.actor.session();
-            if (!session.hasClipboard()) {
-                context.message(Msg.error("Copy something first with //copy"));
-                return false;
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
             }
-            var clipboard = session.getClipboard().getClipboard();
-            EditSession edit = new EditSession(context.actor.world(), session, "tool stacker");
-            int changed;
+            com.maxlananas.fawebim.core.world.World world = context.actor.world();
+            BlockVector3 from = context.position;
+            int state = world.getBlock(from.x(), from.y(), from.z());
+            com.maxlananas.fawebim.core.util.NbtCompound data = world.getBlockEntity(from.x(), from.y(), from.z());
+            BlockVector3 step = context.face.toVector();
+            int x = from.x();
+            int y = from.y();
+            int z = from.z();
+            EditSession session = open(context, "tool stacker");
             try {
-                changed = com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard,
-                        context.position.add(context.face.toVector()), edit,
-                        com.maxlananas.fawebim.core.transform.Transform.identity(), true, false, false);
+                for (int i = 0; i < range; i++) {
+                    x += step.x();
+                    y += step.y();
+                    z += step.z();
+                    boolean open = mask == null ? BlockState.registry().isAir(session.getBlock(x, y, z))
+                            : mask.test(x, y, z);
+                    if (!open) {
+                        break;
+                    }
+                    session.setBlock(x, y, z, state);
+                    if (data != null) {
+                        session.setBlockEntity(x, y, z, data.clone());
+                    }
+                }
             } finally {
-                edit.close();
+                finish(context, session);
             }
-            context.message(Msg.success("Pasted " + Msg.formatNumber(changed) + " block(s)"));
             return true;
         }
 
@@ -519,73 +710,27 @@ public final class Tools {
         }
     }
 
-    /** {@code /tool selwand} / {@code /tool navwand}. */
+    /** {@code /tool selwand}: the selection wand bound to another item. */
     public static final class SelectWandTool implements Tool {
-
-        private final boolean navigation;
-
-        public SelectWandTool(boolean navigation) {
-            this.navigation = navigation;
-        }
 
         @Override
         public String name() {
-            return navigation ? "navwand" : "selwand";
+            return "selwand";
         }
 
         @Override
         public boolean onLeftClick(ToolContext context) {
-            context.actor.session().getSelector(context.actor.world())
-                    .selectPrimary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-            context.message(Msg.success("Position 1 set to " + context.position));
-            return true;
+            return selectCorner(context, true);
         }
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            if (navigation) {
-                context.actor.teleport(context.position.x() + 0.5, context.position.y() + 1,
-                        context.position.z() + 0.5);
-                return true;
-            }
-            context.actor.session().getSelector(context.actor.world())
-                    .selectSecondary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-            context.message(Msg.success("Position 2 set to " + context.position));
-            return true;
+            return selectCorner(context, false);
         }
 
         @Override
         public String describe() {
-            return navigation ? "navigation wand" : "selection wand";
-        }
-    }
-
-    /** Runs a bound command when the tool is used ({@code /tool command}). */
-    public static final class CommandTool implements Tool {
-
-        private final String command;
-
-        public CommandTool(String command) {
-            this.command = command;
-        }
-
-        @Override
-        public String name() {
-            return "command";
-        }
-
-        @Override
-        public boolean onRightClick(ToolContext context) {
-            String parsed = command
-                    .replace("%x%", String.valueOf(context.position.x()))
-                    .replace("%y%", String.valueOf(context.position.y()))
-                    .replace("%z%", String.valueOf(context.position.z()));
-            return BrushCommands.run(context.actor, parsed);
-        }
-
-        @Override
-        public String describe() {
-            return "command";
+            return "selection wand";
         }
     }
 

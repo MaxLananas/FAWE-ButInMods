@@ -461,9 +461,14 @@ public final class Parsers {
         return new Patterns.Biome(biomeId, extOf(ctx));
     }
 
+    /**
+     * What a parsed mask or pattern reads: the extent of the operation that
+     * parses it when that operation set one, else the session's reader of the
+     * world the player edits, which a mask kept for later keeps following.
+     */
     private static Extent extOf(Ctx ctx) {
         Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
-        return extent == null ? ctx.readSession() : extent;
+        return extent == null ? ctx.session().worldReader() : extent;
     }
 
     // ------------------------------------------------------------------- masks

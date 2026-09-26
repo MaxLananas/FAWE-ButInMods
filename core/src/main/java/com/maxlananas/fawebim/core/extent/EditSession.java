@@ -145,6 +145,8 @@ public final class EditSession implements Extent {
         this.limiter = new TimeLimiter(session.getTimeout() * 1000L);
         this.changeLimit = session.hasBlockChangeLimit() ? session.getMaxBlocksChanged() : -1;
         this.mask = session.getMask();
+        // The masks and patterns of the session read the world its edit is in.
+        session.setActiveWorld(world);
         // //gtransform applies to what the player edits, never to an undo or a
         // restore, which put back blocks where they were.
         if (recordHistory && session.getTransformSet() != null
