@@ -243,7 +243,7 @@ public final class Commands {
                     if (ctx.actor().giveWand(item)) {
                         ctx.actor().message(Msg.result(
                                 ctx.hasFlag("n") ? "Navigation wand" : "Wand",
-                                Msg.value(item).raw() + "\u00a77 given"));
+                                Msg.value(item).raw() + " given"));
                     } else {
                         ctx.actor().message(Msg.error("Could not give you the wand"));
                     }
@@ -359,7 +359,7 @@ public final class Commands {
                         }
                     }
                     final long total = counts.values().stream().mapToLong(Integer::longValue).sum();
-                    ctx.actor().message(Msg.info("Block distribution (" + Msg.formatNumber(total) + " blocks)"));
+                    ctx.actor().message(Msg.title("Block distribution (" + Msg.formatNumber(total) + " blocks)"));
                     BlockStateRegistry blockRegistry = BlockState.registry();
                     // -d separates the states of a block, e.g. oak_log[axis=x].
                     boolean separate = ctx.hasFlag("d");
@@ -373,9 +373,9 @@ public final class Commands {
                     sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
                     Page page = Page.of(ctx, sorted.size());
                     for (java.util.Map.Entry<String, Integer> entry : sorted.subList(page.from(), page.to())) {
-                        ctx.actor().message(Msg.of("§7 - §f" + entry.getKey() + " §7= §b" + entry.getValue()
-                                + " §7(" + String.format(Locale.ROOT, "%.2f",
-                                entry.getValue() * 100.0 / Math.max(1, total)) + "%)"));
+                        ctx.actor().message(Msg.item(entry.getKey(), Msg.formatNumber(entry.getValue()) + " ("
+                                + String.format(Locale.ROOT, "%.2f", entry.getValue() * 100.0 / Math.max(1, total))
+                                + "%)"));
                     }
                     page.hint(ctx, "//distr");
 
@@ -1139,8 +1139,7 @@ public final class Commands {
                         editSession.flushQueue();
                     }
                     ctx.actor().message(Msg.result("Regenerated", Msg.count(regenerated)
-                            + "\u00a77 of " + Msg.count(region.getChunks().size())
-                            + "\u00a77 chunk(s) in \u00a7b" + timer.phrase()));
+                            + " of " + Msg.count(region.getChunkCount()) + " chunk(s) in " + timer.phrase()));
                 };
 
 
@@ -1397,7 +1396,7 @@ public final class Commands {
                     }
                     flush(ctx, session, "Moved", session.getBlocksChanged(), "block(s)");
                     ctx.actor().message(Msg.result("Selection", "moved by " + Msg.count(amount)
-                            + "\u00a77 block(s) towards \u00a7b" + direction.toLowerCase(Locale.ROOT)));
+                            + " block(s) towards " + Msg.value(direction.toLowerCase(Locale.ROOT)).raw()));
                 };
 
 
@@ -1913,17 +1912,15 @@ public final class Commands {
                     // brackets is the selection the player made either way.
                     StringBuilder detail = new StringBuilder(Msg.count(
                                     clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
-                            .append("\u00a77 block(s) to your clipboard");
+                            .append(" block(s) to your clipboard");
                     if (!clipboard.entities().isEmpty()) {
-                        detail.append(", ").append(Msg.count(clipboard.entities().size()))
-                                .append("\u00a77 entities");
+                        detail.append(", ").append(Msg.count(clipboard.entities().size())).append(" entities");
                     }
                     if (clipboard.hasBiomes()) {
-                        detail.append(", \u00a77biomes");
+                        detail.append(", biomes");
                     }
-                    detail.append(" \u00a78(").append(ctx.selection().getWidth()).append('x')
-                            .append(ctx.selection().getHeight()).append('x')
-                            .append(ctx.selection().getLength()).append(')');
+                    detail.append(" (").append(Msg.size(ctx.selection().getWidth(), ctx.selection().getHeight(),
+                            ctx.selection().getLength())).append(')');
                     ctx.actor().message(Msg.result("Copied", detail.toString()));
                 };
 
@@ -1955,17 +1952,15 @@ public final class Commands {
                     session.flushQueue();
                     StringBuilder detail = new StringBuilder(Msg.count(
                                     clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
-                            .append("\u00a77 block(s) to your clipboard");
+                            .append(" block(s) to your clipboard");
                     if (!clipboard.entities().isEmpty()) {
-                        detail.append(", ").append(Msg.count(clipboard.entities().size()))
-                                .append("\u00a77 entities");
+                        detail.append(", ").append(Msg.count(clipboard.entities().size())).append(" entities");
                     }
                     if (clipboard.hasBiomes()) {
-                        detail.append(", \u00a77biomes");
+                        detail.append(", biomes");
                     }
-                    detail.append(" in \u00a7b").append(timer.phrase());
-                    detail.append(" \u00a78(").append(region.getWidth()).append('x')
-                            .append(region.getHeight()).append('x').append(region.getLength())
+                    detail.append(" in ").append(timer.phrase());
+                    detail.append(" (").append(Msg.size(region.getWidth(), region.getHeight(), region.getLength()))
                             .append(')');
                     ctx.actor().message(Msg.result("Cut", detail.toString()));
                 };
@@ -2145,11 +2140,10 @@ public final class Commands {
                                         : Long.compare(Schematics.timeOf(b), Schematics.timeOf(a)));
                             }
                             Page page = Page.of(ctx, names.size());
-                            ctx.actor().message(Msg.info(Msg.title("Schematics") + "§7 (" + names.size() + ", page " + page.number()
-                                    + "/" + page.pages() + ", " + filter.describe() + "):"));
+                            ctx.actor().message(Msg.title("Schematics (" + names.size() + ", page " + page.number()
+                                    + "/" + page.pages() + ", " + filter.describe() + ")"));
                             for (String name : names.subList(page.from(), page.to())) {
-                                ctx.actor().message(Msg.of("§7 - §f" + name + " §7("
-                                        + Schematics.formatOf(name) + ")"));
+                                ctx.actor().message(Msg.item(name, Schematics.formatOf(name)));
                             }
                             page.hint(ctx, "//schem list");
                         }
@@ -2293,7 +2287,7 @@ public final class Commands {
                     if (undone == 0) {
                         ctx.actor().message(Msg.error("Nothing to undo" + who));
                     } else {
-                        ctx.actor().message(Msg.result("Undid", Msg.count(undone) + "\u00a77 block change(s)" + who));
+                        ctx.actor().message(Msg.result("Undid", Msg.count(undone) + " block change(s)" + who));
                     }
                 };
 
@@ -2311,7 +2305,7 @@ public final class Commands {
                     if (redone == 0) {
                         ctx.actor().message(Msg.error("Nothing to redo" + who));
                     } else {
-                        ctx.actor().message(Msg.result("Redid", Msg.count(redone) + "\u00a77 block change(s)" + who));
+                        ctx.actor().message(Msg.result("Redid", Msg.count(redone) + " block change(s)" + who));
                     }
                 };
 
@@ -2440,8 +2434,10 @@ public final class Commands {
         e70.handler = ctx -> {
                     List<String> biomes = BlockState.registry().biomeNames();
                     Page page = Page.of(ctx, biomes.size());
-                    ctx.actor().message(Msg.info(page.header("Biomes", biomes.size()) + " "
-                            + Str.limit(String.join(", ", biomes.subList(page.from(), page.to())), 2000)));
+                    ctx.actor().message(page.header("Biomes", biomes.size()));
+                    ctx.actor().message(Msg.hint(Str.limit(String.join(", ",
+                            biomes.subList(page.from(), page.to())), 2000)));
+                    page.hint(ctx, "//biomelist");
                 };
 
 
@@ -2488,11 +2484,13 @@ public final class Commands {
         e73.handler = ctx -> {
                     List<BlockVector2> chunks = ctx.selection().getChunks();
                     Page page = Page.of(ctx, chunks.size(), 40);
-                    StringBuilder sb = new StringBuilder(page.header("Chunks", chunks.size()) + " ");
+                    ctx.actor().message(page.header("Chunks", chunks.size()));
+                    StringBuilder sb = new StringBuilder();
                     for (int i = page.from(); i < page.to(); i++) {
                         sb.append(chunks.get(i).x()).append(',').append(chunks.get(i).z()).append(' ');
                     }
-                    ctx.actor().message(Msg.info(sb.toString()));
+                    ctx.actor().message(Msg.hint(sb.toString().trim()));
+                    page.hint(ctx, "//listchunks");
                 };
 
 
@@ -2518,8 +2516,8 @@ public final class Commands {
                             count++;
                         }
                     }
-                    ctx.actor().message(Msg.result("Deleted", Msg.count(count) + "\u00a77 chunk(s)"
-                            + (skipped > 0 ? ", kept " + Msg.count(skipped) + "\u00a77 recently changed"
+                    ctx.actor().message(Msg.result("Deleted", Msg.count(count) + " chunk(s)"
+                            + (skipped > 0 ? ", kept " + Msg.count(skipped) + " recently changed"
                                     : "")));
                 };
 
@@ -2642,7 +2640,7 @@ public final class Commands {
                     if (moved == 0) {
                         throw CommandRegistry.error("You would hit something above you");
                     }
-                    ctx.actor().message(Msg.result("Ascended", Msg.count(moved) + "\u00a77 level(s)"));
+                    ctx.actor().message(Msg.result("Ascended", Msg.count(moved) + " level(s)"));
                 };
 
 
@@ -2661,7 +2659,7 @@ public final class Commands {
                     if (moved == 0) {
                         throw CommandRegistry.error("You would hit something below you");
                     }
-                    ctx.actor().message(Msg.result("Descended", Msg.count(moved) + "\u00a77 level(s)"));
+                    ctx.actor().message(Msg.result("Descended", Msg.count(moved) + " level(s)"));
                 };
 
 
@@ -2749,7 +2747,7 @@ public final class Commands {
                     }
                     session.setFastMode(enabled);
                     ctx.actor().message(Msg.result("Fast mode", enabled
-                            ? "on \u00a77- lighting in the affected chunks may be wrong and/or you"
+                            ? "on - lighting in the affected chunks may be wrong and/or you"
                                     + " may need to rejoin to see changes"
                             : "off"));
                 };
@@ -2943,25 +2941,25 @@ public final class Commands {
         CommandRegistry.Entry e89 = registry.register("//masks");
         e89.description = "List the available masks";
         e89.group = "utility";
-        e89.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Masks") + "§7: #air #existing #solid #liquid #fullcube #wall #surface #angle #surfaceangle #roc #beside " + "#extrema #xaxis #yaxis #zaxis #true #false #exposed #biome #region #dregion #offset " + "#simplex #clipboard # =expr ! & ,"));
+        e89.handler = ctx -> ctx.actor().message(Msg.result("Masks", "#air #existing #solid #liquid #fullcube #wall #surface #angle #surfaceangle #roc #beside " + "#extrema #xaxis #yaxis #zaxis #true #false #exposed #biome #region #dregion #offset " + "#simplex #clipboard # =expr ! & ,"));
 
 
         CommandRegistry.Entry e90 = registry.register("//patterns");
         e90.description = "List the available patterns";
         e90.group = "utility";
-        e90.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Patterns") + "§7: block, 25%block, #clipboard #copy #existing #biome #offset #spread #solidspread " + "#surfacespread #l/#linear #l3d #l2d #color #lighten #darken #saturate #desaturate " + "#swaptype #simplex ##tag =expr ^"));
+        e90.handler = ctx -> ctx.actor().message(Msg.result("Patterns", "block, 25%block, #clipboard #copy #existing #biome #offset #spread #solidspread " + "#surfacespread #l/#linear #l3d #l2d #color #lighten #darken #saturate #desaturate " + "#swaptype #simplex ##tag =expr ^"));
 
 
         CommandRegistry.Entry e91 = registry.register("//transforms");
         e91.description = "List the available transforms";
         e91.group = "utility";
-        e91.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Transforms") + "§7: rotate <angle> [axis], flip [direction], scale <factor>, offset <x> <y> <z>"));
+        e91.handler = ctx -> ctx.actor().message(Msg.result("Transforms", "rotate <angle> [axis], flip [direction], scale <factor>, offset <x> <y> <z>"));
 
 
         CommandRegistry.Entry e92 = registry.register("//brushes");
         e92.description = "List the available brushes";
         e92.group = "utility";
-        e92.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Brushes") + "§7: sphere ball smooth blendball flatten height raise lower layer line spline catenary " + "scatter shatter splatter rock blob pull stencil gravity cylinder clipboard copypaste " + "biome butcher forest command populateschematic surface surfacespline sweep"));
+        e92.handler = ctx -> ctx.actor().message(Msg.result("Brushes", "sphere ball smooth blendball flatten height raise lower layer line spline catenary " + "scatter shatter splatter rock blob pull stencil gravity cylinder clipboard copypaste " + "biome butcher forest command populateschematic surface surfacespline sweep"));
 
 
         CommandRegistry.Entry e93 = registry.register("//desel", "//deselect");
@@ -3024,8 +3022,8 @@ public final class Commands {
         CommandRegistry.Entry e96 = registry.register("//version");
         e96.description = "Show the mod version";
         e96.group = "utility";
-        e96.handler = ctx -> ctx.actor().message(Msg.info(Msg.title("FAWE-BIM") + "§7 " + com.maxlananas.fawebim.core.platform.Config.VERSION
-                + " \u2014 " + registry.all().size() + " commands registered"));
+        e96.handler = ctx -> ctx.actor().message(Msg.result("FAWE-BIM "
+                + com.maxlananas.fawebim.core.platform.Config.VERSION, registry.all().size() + " commands registered"));
 
     }
 
@@ -3242,9 +3240,9 @@ public final class Commands {
                     return;
                 }
                 Page page = Page.of(ctx, presets.size(), 15);
-                ctx.actor().message(Msg.info(page.header("Brush presets", presets.size())));
+                ctx.actor().message(page.header("Brush presets", presets.size()));
                 for (String preset : presets.subList(page.from(), page.to())) {
-                    ctx.actor().message(Msg.of("\u00a77 - \u00a7f" + preset));
+                    ctx.actor().message(Msg.item(preset));
                 }
             };
         }

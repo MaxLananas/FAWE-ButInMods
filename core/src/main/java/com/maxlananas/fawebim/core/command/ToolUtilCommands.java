@@ -138,7 +138,7 @@ final class ToolUtilCommands {
                 throw CommandRegistry.error("Range must be between 1 and " + Config.get().maxBrushRange);
             }
             settings.setRange(range);
-            ctx.actor().message(Msg.result("Brush range", "set to " + Msg.count(range) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Brush range", "set to " + Msg.count(range) + " block(s)"));
         };
     }
 

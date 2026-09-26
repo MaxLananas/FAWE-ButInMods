@@ -57,8 +57,8 @@ final class ClipboardExtras {
             }
             ctx.session().setClipboard(clipboard);
             ctx.actor().message(Msg.result("Lazily copied", Msg.count(clipboard.volume())
-                    + "\u00a77 block(s) to the clipboard"
-                    + (ctx.hasFlag("e") ? "\u00a77 without entities" : "")));
+                    + " block(s) to the clipboard"
+                    + (ctx.hasFlag("e") ? " without entities" : "")));
         };
     }
 

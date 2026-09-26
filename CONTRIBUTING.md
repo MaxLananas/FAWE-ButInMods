@@ -166,9 +166,19 @@ in game (rendering, click handling, world access), say so explicitly in the pull
 * Prefer plain data structures and explicit code over layered abstraction; the engine is on the hot
   path of every edit.
 * Keep allocations out of per-block loops: reuse arrays, avoid boxing, prefer primitive maps.
-* Fail loudly for user errors (`CommandRegistry.error("...")`) and never swallow an exception
-  without a comment explaining why it is safe to ignore.
-* Command messages are short, in English, and use the same `§` colour codes the existing ones use.
+* Fail loudly for user errors (`CommandRegistry.error("...")`, or `InputException` below the command
+  layer) and never swallow an exception without a comment explaining why it is safe to ignore; an
+  unexpected one goes to `platform.Log`, which the platform connects to its logger.
+* Command messages are short and in English. A command says what kind of line it writes - `Msg.result`,
+  `Msg.title`, `Msg.info`, `Msg.success`, `Msg.warn`, `Msg.error`, and `Msg.keyValue`, `Msg.item`,
+  `Msg.hint` for the lines under them - and writes plain sentences: numbers, coordinates, quoted names,
+  switches and `#names` are coloured by the builder, and `Msg.value`, `Msg.count` and `Msg.size` put a
+  value in the middle of a sentence. The name in front of an answer, its gradient and every colour live
+  in `util/Theme.java`; no `§` code is written anywhere else. The message style test fails on a line
+  that does not follow this.
+* Whoever opens an `EditSession` closes it, in a `finally`: closing writes what is buffered and
+  publishes the history record. The dispatcher closes the sessions of a command; a tool or a brush
+  closes its own.
 
 ## Submitting
 

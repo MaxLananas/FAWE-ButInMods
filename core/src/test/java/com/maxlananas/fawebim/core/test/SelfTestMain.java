@@ -138,6 +138,7 @@ public final class SelfTestMain {
         HistoryIntegrityTests.run();
         DataStructureTests.run();
         RegionGeometryTests.run();
+        MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -1354,7 +1355,7 @@ public final class SelfTestMain {
         check("//smooth lowered the spike", world.getBlock(25, 74, 25) == air && world.getBlock(25, 72, 25) == air);
         check("//smooth kept a top block", world.getBlock(25, 70, 25) != air);
         check("//smooth reported the change", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Smoothed: ")
+                .anyMatch(message -> plain(message).contains("\u00bb Smoothed: ")
                         && plain(message).contains("block(s) affected in ")));
 
         // The optional second argument is the mask the height map is built from,
@@ -1368,7 +1369,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//smooth 1 stone");
         check("//smooth <mask> left the sand alone", world.getBlock(45, 74, 45) == sand);
         check("//smooth <mask> ran", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Smoothed: ")));
+                .anyMatch(message -> plain(message).contains("\u00bb Smoothed: ")));
 
         // //snowsmooth blurs the snow layer of every column instead of the terrain.
         for (int x = 20; x <= 30; x++) {
@@ -2134,7 +2135,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
         check("//snow runs at the placement", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Snowed: ") && plain(m).contains("49")));
+                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("49")));
     }
 
     private static void testSnapshotSelection() {
@@ -2174,7 +2175,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/snapshot sel 1");
         check("/snapshot sel takes an index",
-                plain(actor.lastMessage()).startsWith("\u00bb Snapshot: set to "));
+                plain(actor.lastMessage()).contains("\u00bb Snapshot: set to "));
         check("and it holds the newest snapshot", actor.session().getActiveSnapshot() != null);
 
         actor.clearMessages();
@@ -2389,16 +2390,16 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//green 6");
         check("//green converts the dirt of its cylinder", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Greened: ") && plain(m).contains("81")));
+                .anyMatch(m -> plain(m).contains("\u00bb Greened: ") && plain(m).contains("81")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
         check("//snow covers the disc around the player", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Snowed: ") && plain(m).contains("49")));
+                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("49")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//thaw 4");
         check("//thaw takes the snow back", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Thawed: ") && plain(m).contains("49")));
+                .anyMatch(m -> plain(m).contains("\u00bb Thawed: ") && plain(m).contains("49")));
 
         // Fire in the cube around the player, and nothing else, goes away.
         CommandManager.get().dispatch(actor, "//pos1 7,30,7");
@@ -2407,7 +2408,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//extinguish 2");
         check("//extinguish removes nearby fire", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Extinguished: ") && plain(m).contains("9")));
+                .anyMatch(m -> plain(m).contains("\u00bb Extinguished: ") && plain(m).contains("9")));
         CommandManager.get().dispatch(actor, "//count minecraft:fire");
         check("no fire is left", count(actor).equals("Count: 0"));
         // The command removes fire and nothing else, so the grass the fire sat on
@@ -2462,7 +2463,7 @@ public final class SelfTestMain {
         console.clearMessages();
         CommandManager.get().dispatch(console, "//hpyramid minecraft:stone 4");
         check("a shape still builds for a source without a player", console.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Created: ")
+                .anyMatch(message -> plain(message).contains("\u00bb Created: ")
                         && plain(message).contains("81")));
 
         // The same commands run for a player at the position they stand on.
@@ -2512,7 +2513,7 @@ public final class SelfTestMain {
 
     private static String countOf(TestActor actor, String block) {
         CommandManager.get().dispatch(actor, "//count " + block);
-        return actor.lastMessage().replaceAll("\u00a7.", "");
+        return actor.lastMessage().replaceAll("\u00a7.", "").trim();
     }
 
     private static void testSplitCommands() {
@@ -2699,7 +2700,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(planter, "//pos2 7,79,7");
         CommandManager.get().dispatch(planter, "//forestgen 5 mega_redwood 5");
         check("//forestgen takes a WorldEdit tree type",
-                plain(planter.lastMessage()).startsWith("\u00bb Planted: "));
+                plain(planter.lastMessage()).contains("\u00bb Planted: "));
         planter.clearMessages();
         CommandManager.get().dispatch(planter, "//forestgen 5 palm 5");
         check("//forestgen refuses an unknown tree type",
@@ -2914,7 +2915,7 @@ public final class SelfTestMain {
         simple.clearMessages();
         CommandManager.get().dispatch(simple, "//regen");
         check("//regen without a seed regenerates", simple.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Regenerated: ")));
+                .anyMatch(message -> plain(message).contains("\u00bb Regenerated: ")));
         check("//regen without a seed says nothing failed", simple.messages().stream()
                 .noneMatch(message -> message.contains("Command failed")));
     }
@@ -3012,7 +3013,8 @@ public final class SelfTestMain {
         check("a switch is highlighted", styled.contains("§e-h"));
         check("a pattern name is highlighted", styled.contains("§d#perlin"));
         check("a quoted name is highlighted", styled.contains("§f'my build'§7"));
-        check("the words are untouched", Msg.info(written).plain().equals(written));
+        check("the words are untouched", Msg.info(written).plain().equals(
+                com.maxlananas.fawebim.core.util.Theme.TAG + " \u00bb " + written));
 
         section("chat");
         String black = Msg.gradient("ab", 0x000000, 0xFFFFFF);
@@ -3020,9 +3022,11 @@ public final class SelfTestMain {
                 black.equals("\u00a7x\u00a70\u00a70\u00a70\u00a70\u00a70\u00a70a"
                         + "\u00a7x\u00a7f\u00a7f\u00a7f\u00a7f\u00a7f\u00a7fb"));
         check("a gradient still reads as its text", Msg.of(black).plain().equals("ab"));
-        check("a one character word is left alone", Msg.gradient("a", 0, 0xFFFFFF).equals("a"));
-        check("a title is a gradient with the marker", Msg.title("Settings").plain().equals("\u00bb Settings")
-                && Msg.title("Settings").raw().startsWith("\u00a78\u00bb \u00a7x"));
+        check("a one character word takes the first colour",
+                Msg.gradient("a", 0, 0xFFFFFF).equals(com.maxlananas.fawebim.core.util.Theme.hex(0) + "a"));
+        check("a title opens with the name in the gradient, then the marker",
+                Msg.title("Settings").plain().equals(com.maxlananas.fawebim.core.util.Theme.TAG + " \u00bb Settings")
+                && Msg.title("Settings").raw().startsWith("\u00a7x"));
 
         // The listings a player sees carry the heading, not just the helpers.
         TestWorld world = new TestWorld("chat");
@@ -3179,9 +3183,9 @@ public final class SelfTestMain {
         int pages = integerBetween(heading, "page 1/", ")");
         check("the command list runs over several pages", pages > 1);
         check("a page lists commands", first.stream().anyMatch(message ->
-                plain(message).startsWith("  ·")));
+                plain(message).startsWith("  - ")));
         check("the first page points at the next one", first.stream().anyMatch(message ->
-                plain(message).contains("next //help -p 2")));
+                plain(message).contains("next: //help -p 2")));
 
         // The count in the heading is the number of commands the listing covers:
         // walking every page has to come back with exactly that many rows.
@@ -3194,7 +3198,7 @@ public final class SelfTestMain {
             CommandManager.get().dispatch(actor, "//help -p " + number);
             for (String message : actor.messages()) {
                 String text = plain(message);
-                if (text.startsWith("  ·")) {
+                if (text.startsWith("  - ")) {
                     rows++;
                     listed.add(text);
                 }
@@ -3207,8 +3211,8 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//help -p 2");
         List<String> second = new ArrayList<>(actor.messages());
         check("page two is a page of its own", second.stream().map(SelfTestMain::plain)
-                .filter(message -> message.startsWith("  ·")).noneMatch(first.stream()
-                        .map(SelfTestMain::plain).filter(message -> message.startsWith("  ·"))
+                .filter(message -> message.startsWith("  - ")).noneMatch(first.stream()
+                        .map(SelfTestMain::plain).filter(message -> message.startsWith("  - "))
                         .collect(java.util.stream.Collectors.toSet())::contains));
         check("page two is called page two", second.stream().anyMatch(message ->
                 plain(message).contains("page 2/")));
@@ -3244,7 +3248,7 @@ public final class SelfTestMain {
         check("a sub-command listing names them", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("Sub-commands of tool")));
         check("a sub-command listing lists them", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("  · /tool")));
+                .anyMatch(message -> plain(message).startsWith("  - /tool")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//help zznotacommand");
@@ -3330,7 +3334,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cut");
         String answer = actor.messages().isEmpty() ? "" : plain(actor.messages().get(0));
-        check("//cut reports the blocks and the time", answer.startsWith("\u00bb Cut: ")
+        check("//cut reports the blocks and the time", answer.contains("\u00bb Cut: ")
                 && answer.contains("block(s) to your clipboard in "));
 
         int left = 0;
@@ -3577,7 +3581,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel sphere");
         check("//sel sphere sets it", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Selection type: ")
+                .anyMatch(message -> plain(message).contains("\u00bb Selection type: ")
                         && plain(message).contains("sphere")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel");

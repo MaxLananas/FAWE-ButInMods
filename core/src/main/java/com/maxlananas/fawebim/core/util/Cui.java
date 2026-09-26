@@ -16,15 +16,12 @@ public final class Cui {
     private Cui() {
     }
 
-    /** {@code » Selection 12x70x12 - 10,080 block(s)}. */
+    /** {@code FAWE » Selection: 12x70x12 (corners) - 10,080 block(s)}. */
     public static Msg size(Region region) {
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        return Msg.of(Msg.MARKER + "§7Selection "
-                + Msg.value(region.getWidth() + "x" + region.getHeight() + "x"
-                        + region.getLength()).raw()
-                + " §8(" + Msg.value(shortSize(min, max)).raw() + "§8)"
-                + " §8- " + Msg.count(volume(region)) + " §7block(s)");
+        return Msg.result("Selection", Msg.size(region.getWidth(), region.getHeight(), region.getLength())
+                + " (" + Msg.value(shortSize(min, max)).raw() + ") - " + Msg.count(volume(region)) + " block(s)");
     }
 
     /**

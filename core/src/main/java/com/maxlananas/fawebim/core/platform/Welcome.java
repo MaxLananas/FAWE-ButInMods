@@ -34,34 +34,31 @@ public final class Welcome {
             return new Line(text, null, null, null);
         }
 
-        static Line runsCommand(String text, String command, String hover) {
-            return new Line(Msg.of(text), command, null, hover);
+        static Line runsCommand(Msg text, String command, String hover) {
+            return new Line(text, command, null, hover);
         }
 
-        static Line opens(String text, String url) {
-            return new Line(Msg.of(text), null, url, "Open " + url);
+        static Line opens(Msg text, String url) {
+            return new Line(text, null, url, "Open " + url);
         }
     }
 
     /** A rule the vanilla font draws solid, to open and close the banner. */
-    private static final Msg RULE = Msg.of("\u00a78\u00a7m" + " ".repeat(52));
+    private static final Msg RULE = Msg.rule(52);
 
     /** The banner: what this is, how to see the commands, where to ask for help. */
     public static List<Line> lines() {
         return List.of(
                 Line.of(RULE),
-                Line.of(Msg.of(Msg.title("FAWE-BIM") + " \u00a78v" + Config.VERSION
-                        + " \u00a77- \u00a7fthanks for downloading the mod!")),
-                Line.of(Msg.of("\u00a78\u00bb \u00a77FastAsyncWorldEdit built into the game: every"
-                        + " command runs in single player, with no plugin and no server.")),
-                Line.runsCommand("\u00a78\u00bb \u00a77Run " + Msg.value("//help").raw()
-                                + " \u00a77for every command, or " + Msg.value("//help <word>").raw()
-                                + " \u00a77to search them. " + Msg.value("Click here").raw()
-                                + " \u00a77to run it.",
+                Line.of(Msg.result("FAWE-BIM v" + Config.VERSION, "thanks for downloading the mod!")),
+                Line.of(Msg.hint("FastAsyncWorldEdit built into the game: every command runs in single player,"
+                        + " with no plugin and no server.")),
+                Line.runsCommand(Msg.hint("Run " + Msg.value("//help").raw() + " for every command, or "
+                                + Msg.value("//help <word>").raw() + " to search them. " + Msg.value("Click here").raw()
+                                + " to run it."),
                         "//help", "Run //help"),
-                Line.opens("\u00a78\u00bb \u00a77Settings screen " + Msg.value("/fawebim").raw()
-                                + " \u00a78- \u00a77Discord " + Msg.value("/fawebim-discord").raw()
-                                + " \u00a78- \u00a77invite " + Msg.value(DISCORD_INVITE).raw(),
+                Line.opens(Msg.hint("Settings screen " + Msg.value("/fawebim").raw() + " - Discord "
+                                + Msg.value("/fawebim-discord").raw() + " - invite " + Msg.value(DISCORD_INVITE).raw()),
                         DISCORD_INVITE),
                 Line.of(RULE));
     }
@@ -70,10 +67,8 @@ public final class Welcome {
     public static List<Msg> discord() {
         return List.of(
                 Msg.title("FAWE-BIM on Discord"),
-                Msg.of("§8» §7Updates, help and bug reports:"),
-                Msg.of("§8» §7Discord server " + Msg.value("/fawebim-discord").raw()
-                        + " §8- §7invite below, click it or copy it:"),
-                Msg.of("§8» " + Msg.value(DISCORD_INVITE).raw()),
-                Msg.of("§8» §7The same invite is on the welcome banner, and in the README."));
+                Msg.hint("Updates, help and bug reports: the Discord server, invite below, click it or copy it:"),
+                Msg.hint(Msg.value(DISCORD_INVITE).raw()),
+                Msg.hint("The same invite is on the welcome banner, and in the README."));
     }
 }

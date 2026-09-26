@@ -21,20 +21,6 @@ final class Help {
     /** Rows one page holds: a header, a group line, eight commands and a footer. */
     private static final int PAGE_SIZE = 8;
 
-    /**
-     * One colour pair per group, so the same part of the command surface always
-     * reads in the same colour. A group is a handful of rows on a page, and the
-     * shift between two of them is what makes the shape of the page readable.
-     */
-    private static final int[][] GROUP_COLOURS = {
-            {0x8FE3FF, 0x6C9BFF},
-            {0xFFD98E, 0xFF9E6C},
-            {0xA8F5A0, 0x5FD9A0},
-            {0xF7A8E0, 0xB47BFF},
-            {0x9FE8FF, 0x74C6FF},
-            {0xFFE9A0, 0xE4C05F},
-    };
-
     private Help() {
     }
 
@@ -58,7 +44,7 @@ final class Help {
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
             if (!entry.group.equals(group)) {
                 group = entry.group;
-                ctx.actor().message(Msg.of("  " + groupTitle(group)));
+                ctx.actor().message(groupTitle(group));
             }
             ctx.actor().suggestLink(row(entry), entry.name,
                     "Put " + entry.name + " in the chat box");
@@ -90,7 +76,7 @@ final class Help {
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
             if (!entry.group.equals(group)) {
                 group = entry.group;
-                ctx.actor().message(Msg.of("  " + groupTitle(group)));
+                ctx.actor().message(groupTitle(group));
             }
             ctx.actor().suggestLink(row(entry), entry.name,
                     "Put " + entry.name + " in the chat box");
@@ -130,51 +116,34 @@ final class Help {
      */
     private static void footer(Ctx ctx, String command, Page page) {
         page.hint(ctx, command);
-        ctx.actor().commandLink(Msg.MARKER + "§7Search " + Msg.value("//help <word>").raw()
-                        + " §8- §7sub-commands " + Msg.value("//help -s <command>").raw()
-                        + " §8- §7pages " + Msg.value("-p <page>").raw(),
+        ctx.actor().commandLink(Msg.hint("Search " + Msg.value("//help <word>").raw()
+                        + " - sub-commands " + Msg.value("//help -s <command>").raw()
+                        + " - pages " + Msg.value("-p <page>").raw()).raw(),
                 "//help ", "Search the command list");
-        ctx.actor().commandLink(Msg.MARKER + "§7Settings " + Msg.value("/fawebim").raw()
-                        + " §8- §7Discord " + Msg.value("/fawebim-discord").raw()
-                        + " §8- §7click a command to put it in the chat box",
+        ctx.actor().commandLink(Msg.hint("Settings " + Msg.value("/fawebim").raw()
+                        + " - Discord " + Msg.value("/fawebim-discord").raw()
+                        + " - click a command to put it in the chat box").raw(),
                 "/fawebim", "Open the settings screen");
     }
 
     /** The heading of a page: the title, how many there are, and which page this is. */
     private static Msg header(String label, int total, Page page) {
-        return Msg.of(Msg.title(label).raw() + " §8(§b" + total + "§7 commands, page §b"
-                + page.number() + "§8/§b" + page.pages() + "§8) " + rule(30));
+        return Msg.title(label + " (" + total + " commands, page " + page.number() + "/" + page.pages() + ")");
     }
 
-    /** One command: its usage in the command colour, then what it does. */
+    /** One command: its name - sub-command included - its arguments, then what it does. */
     private static String row(CommandRegistry.Entry entry) {
-        return "  §8· §b" + usage(entry) + " §8- §7" + entry.description;
+        String usage = entry.usage();
+        String arguments = usage.startsWith(entry.name) ? usage.substring(entry.name.length()).trim() : "";
+        return Msg.usage(entry.name, arguments, entry.description).raw();
     }
 
     /**
-     * A usage line with its command name and its arguments in two colours, so the
-     * name the row is about reads first.
+     * The name of a group. Every group reads in the same colour: a page of the
+     * listing is a handful of groups, and a colour of their own for each made
+     * it a patchwork.
      */
-    private static String usage(CommandRegistry.Entry entry) {
-        String usage = entry.usage();
-        int space = usage.indexOf(' ');
-        if (space < 0) {
-            return usage;
-        }
-        return "§b" + usage.substring(0, space) + "§8" + usage.substring(space);
-    }
-
-    /** A dim rule, made of the struck-through spaces the vanilla font draws solid. */
-    private static String rule(int width) {
-        return "§8§m" + " ".repeat(width);
-    }
-
-    /** The name of a group, in that group's own colour. */
-    private static String groupTitle(String group) {
-        if (group == null || group.isEmpty()) {
-            return "§8» §7Other";
-        }
-        int[] colours = GROUP_COLOURS[Math.floorMod(group.hashCode(), GROUP_COLOURS.length)];
-        return "§8» §l" + Msg.gradient(group.toUpperCase(Locale.ROOT), colours[0], colours[1]);
+    private static Msg groupTitle(String group) {
+        return Msg.section(group == null || group.isEmpty() ? "OTHER" : group.toUpperCase(Locale.ROOT));
     }
 }

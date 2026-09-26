@@ -47,8 +47,8 @@ final class ConfigCommands {
             for (Msg line : com.maxlananas.fawebim.core.platform.Welcome.discord()) {
                 ctx.actor().message(line);
             }
-            ctx.actor().link("§8» §7Click to open: §b§n"
-                            + com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE,
+            ctx.actor().link(Msg.hint("Click to open: "
+                            + Msg.value(com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE).raw()).raw(),
                     com.maxlananas.fawebim.core.platform.Welcome.DISCORD_INVITE);
         };
     }
@@ -152,11 +152,10 @@ final class ConfigCommands {
             return;
         }
         Page page = Page.of(ctx, matches.size());
-        ctx.actor().message(Msg.info(Msg.title("Settings") + "\u00a77 (" + matches.size() + ", page " + page.number() + "/"
-                + page.pages() + "):"));
+        ctx.actor().message(page.header("Settings", matches.size()));
         for (Setting<?> setting : matches.subList(page.from(), page.to())) {
-            ctx.actor().message(Msg.of("\u00a77 - \u00a7f" + setting.key() + " \u00a77= \u00a7a" + setting.value()
-                    + " \u00a78(" + setting.path() + ")"));
+            ctx.actor().message(Msg.item(setting.key(), Msg.value(setting.value()).raw() + " (" + setting.path()
+                    + ")"));
         }
         page.hint(ctx, "/fawebim settings" + (filter.isEmpty() ? "" : " " + filter));
     }
@@ -164,9 +163,9 @@ final class ConfigCommands {
     /** One setting, with what it does and how it is spelled in the file. */
     private void describe(Ctx ctx, Setting<?> setting) {
         ctx.actor().message(Msg.keyValue(setting.key(), setting.value()));
-        ctx.actor().message(Msg.of("\u00a77  " + setting.description()));
-        ctx.actor().message(Msg.of("\u00a77  File path: \u00a7f" + setting.path()
-                + " \u00a77| Default: \u00a7f" + setting.defaultValue()));
+        ctx.actor().message(Msg.hint(setting.description()));
+        ctx.actor().message(Msg.hint("File path: '" + setting.path() + "', default: '" + setting.defaultValue()
+                + "'"));
     }
 
     /** {@code /fawebim set <key> <value>} — edits a value and writes the file. */
@@ -193,8 +192,8 @@ final class ConfigCommands {
         if (error != null) {
             throw CommandRegistry.error(error);
         }
-        ctx.actor().message(Msg.result(setting.key(), Msg.value(before).raw() + "\u00a77 -> "
-                + Msg.value(setting.value()).raw() + "\u00a77 (saved to config/fawebim.yml)"));
+        ctx.actor().message(Msg.result(setting.key(), Msg.value(before).raw() + " -> "
+                + Msg.value(setting.value()).raw() + " (saved to config/fawebim.yml)"));
     }
 
     /** {@code /fawebim reset <key>} — puts one value back to the shipped default. */
@@ -207,8 +206,8 @@ final class ConfigCommands {
         String before = setting.value();
         setting.reset();
         Config.get().save();
-        ctx.actor().message(Msg.result(setting.key(), Msg.value(before).raw() + "\u00a77 -> "
-                + Msg.value(setting.value()).raw() + "\u00a77 (default)"));
+        ctx.actor().message(Msg.result(setting.key(), Msg.value(before).raw() + " -> "
+                + Msg.value(setting.value()).raw() + " (default)"));
     }
 
     private void reload(Ctx ctx) {
@@ -225,7 +224,7 @@ final class ConfigCommands {
         java.nio.file.Path file = Config.get().configFile();
         ctx.actor().message(Msg.keyValue("Configuration file",
                 file == null ? "config/fawebim.yml" : file.toString()));
-        ctx.actor().message(Msg.of("\u00a77  " + Config.get().settings().size()
+        ctx.actor().message(Msg.hint(Config.get().settings().size()
                 + " settings, editable in /fawebim gui, here, or in the file"));
     }
 

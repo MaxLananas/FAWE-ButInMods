@@ -78,7 +78,7 @@ final class RegionCommands {
                 return session.setBlock(x, y, z, air.apply(x, y, z));
             });
             session.flushQueue();
-            ctx.actor().message(Msg.result("Set to air", Msg.count(changed) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Set to air", Msg.count(changed) + " block(s)"));
         };
     }
 
@@ -193,7 +193,7 @@ final class RegionCommands {
             }
             ctx.actor().message(Msg.info("NBT at " + target + ":"));
             for (var value : nbt.entries().entrySet()) {
-                ctx.actor().message(Msg.of("§7" + value.getKey() + "§r: §f" + value.getValue()));
+                ctx.actor().message(Msg.keyValue(value.getKey(), value.getValue()));
             }
         };
     }
@@ -228,7 +228,7 @@ final class RegionCommands {
                 return wrote;
             });
             session.flushQueue();
-            ctx.actor().message(Msg.result("Updated", Msg.count(changed) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Updated", Msg.count(changed) + " block(s)"));
         };
     }
 
@@ -442,7 +442,7 @@ final class RegionCommands {
                 removed++;
             }
             ctx.actor().message(Msg.result("Butcher", Msg.count(removed)
-                    + "\u00a77 entit(y/ies) have been marked for removal"));
+                    + " entit(y/ies) have been marked for removal"));
         };
     }
 
@@ -490,8 +490,8 @@ final class RegionCommands {
                 world.removeEntity(entity);
                 killed++;
             }
-            ctx.actor().message(Msg.result("Butcher", Msg.count(killed) + "\u00a77 entit(y/ies) removed"
-                    + " within " + Msg.count(radius) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Butcher", Msg.count(killed) + " entit(y/ies) removed"
+                    + " within " + Msg.count(radius) + " block(s)"));
         };
     }
 

@@ -785,8 +785,8 @@ public final class EditSession implements Extent {
      * machine, the size and the side effects they left on.</p>
      */
     public Msg result(String label, long changed, String unit) {
-        return Msg.result(label, Msg.count(changed) + "\u00a77 " + unit + " affected in "
-                + "\u00a7b" + com.maxlananas.fawebim.core.util.Timer.phrase(elapsed()));
+        return Msg.result(label, Msg.count(changed) + " " + unit + " affected in "
+                + Msg.value(com.maxlananas.fawebim.core.util.Timer.phrase(elapsed())).raw());
     }
 
     /** Convenience for messages: format the operation summary. */

@@ -89,7 +89,7 @@ final class UtilityExtras {
                 }
             }
             double value = expression.evaluate(variables);
-            ctx.actor().message(Msg.of("§b= §f" + format(value)));
+            ctx.actor().message(Msg.result("=", format(value)));
         };
     }
 
@@ -474,7 +474,7 @@ final class UtilityExtras {
             Page page = Page.of(ctx, matches.size());
             String title = query.isBlank() || query.equals("*") ? "Registry contents"
                     : "Search results for '" + query + "'";
-            ctx.actor().message(Msg.info(page.header(title, matches.size())));
+            ctx.actor().message(page.header(title, matches.size()));
             ctx.actor().message(Msg.info(String.join(", ", matches.subList(page.from(), page.to()))));
         };
     }
@@ -540,11 +540,10 @@ final class UtilityExtras {
                 ctx.actor().message(Msg.info("No block matches '" + query + "'"));
                 return;
             }
-            int page = Math.max(1, ctx.flagInt("p", 1));
-            int pages = (matches.size() + 19) / 20;
-            ctx.actor().message(Msg.info("Blocks matching '" + query + "' (page " + page + "/" + pages + "):"));
-            for (int i = (page - 1) * 20; i < Math.min(matches.size(), page * 20); i++) {
-                ctx.actor().message(Msg.of("§7 - §f" + matches.get(i)));
+            Page page = Page.of(ctx, matches.size());
+            ctx.actor().message(page.header("Blocks matching '" + query + "'", matches.size()));
+            for (String match : matches.subList(page.from(), page.to())) {
+                ctx.actor().message(Msg.item(match));
             }
         };
     }
@@ -656,10 +655,10 @@ final class UtilityExtras {
             return;
         }
         Page page = Page.of(ctx, entries.size());
-        ctx.actor().message(Msg.info(page.header("Edits", entries.size())));
+        ctx.actor().message(page.header("Edits", entries.size()));
         for (EditLog.Entry entry : entries.subList(page.from(), page.to())) {
-            ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
-                    + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+            ctx.actor().message(Msg.item(entry.actor, entry.record.description + " ("
+                    + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
         }
         page.hint(ctx, "//history list");
     }
@@ -681,10 +680,9 @@ final class UtilityExtras {
         List<Map.Entry<String, Integer>> sorted = new ArrayList<>(counts.entrySet());
         sorted.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
         Page page = Page.of(ctx, sorted.size());
-        ctx.actor().message(Msg.info(page.header("Blocks changed by the last edit (before state)",
-                sorted.size())));
+        ctx.actor().message(page.header("Blocks changed by the last edit (before state)", sorted.size()));
         for (Map.Entry<String, Integer> counted : sorted.subList(page.from(), page.to())) {
-            ctx.actor().message(Msg.of("§7" + counted.getKey() + "§r: §f" + counted.getValue()));
+            ctx.actor().message(Msg.item(counted.getKey(), Msg.formatNumber(counted.getValue())));
         }
         page.hint(ctx, "//history distr");
     }
@@ -697,10 +695,10 @@ final class UtilityExtras {
             return;
         }
         Page page = Page.of(ctx, matches.size());
-        ctx.actor().message(Msg.info(page.header("Matching edits", matches.size())));
+        ctx.actor().message(page.header("Matching edits", matches.size()));
         for (EditLog.Entry entry : matches.subList(page.from(), page.to())) {
-            ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
-                    + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+            ctx.actor().message(Msg.item(entry.actor, entry.record.description + " ("
+                    + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
         }
         page.hint(ctx, "//history find");
     }
@@ -731,7 +729,7 @@ final class UtilityExtras {
             session.close();
         }
         ctx.actor().message(Msg.result(undo ? "Rolled back" : "Restored", Msg.count(changed)
-                + "\u00a77 block change(s) from " + Msg.count(matches.size()) + "\u00a77 edit(s)"));
+                + " block change(s) from " + Msg.count(matches.size()) + " edit(s)"));
     }
 
     /** Applies the {@code -u}, {@code -t} and {@code -r} filters of the command line. */

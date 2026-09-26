@@ -3,9 +3,24 @@ package com.maxlananas.fawebim.core.util;
 import java.util.Locale;
 
 /**
- * A Minecraft-flavoured text component: plain text plus legacy {@code §} colour
- * codes. The engine formats everything into this form; the Fabric adapter turns
- * it into a chat component (and the CLI strips the codes).
+ * A line of chat: plain text plus legacy {@code §} colour codes. The engine
+ * formats everything into this form; the Fabric adapter turns it into a chat
+ * component and the console strips the codes.
+ *
+ * <p>Commands say what kind of line they write and this class draws it from
+ * the {@link Theme}:</p>
+ * <ul>
+ *   <li>{@link #result} - what a command did: {@code FAWE » Label: detail},</li>
+ *   <li>{@link #title} - the heading of a listing,</li>
+ *   <li>{@link #success}, {@link #info}, {@link #warn}, {@link #error} - a
+ *       sentence, coloured by what it tells,</li>
+ *   <li>{@link #keyValue}, {@link #item}, {@link #hint} - the lines under a
+ *       heading, indented and without the name in front, so a listing does not
+ *       repeat it on every line.</li>
+ * </ul>
+ * <p>Inside a line the parts a reader looks for are coloured the same way
+ * everywhere - numbers and coordinates, quoted names, switches and {@code #}
+ * names - by {@link #highlight}, so a command writes plain sentences.</p>
  */
 public final class Msg {
 
@@ -15,8 +30,25 @@ public final class Msg {
         this.text = text;
     }
 
+    /** The name in front of a line, in the brand gradient; drawn once. */
+    private static final String TAG = Theme.TAG.isEmpty() ? ""
+            : gradient(Theme.TAG, Theme.BRAND_FROM, Theme.BRAND_TO) + " ";
+
+    /** The start of a line: the name, then the marker in the colour of the kind of line. */
+    private static String prefix(String markerColour) {
+        return TAG + markerColour + Theme.MARKER + " ";
+    }
+
+    /** The start of an information line, for the few lines that are put together by hand. */
+    public static final String MARKER = prefix(Theme.MUTED);
+
+    /**
+     * A line written by hand. It keeps the colour it opens with, white when it
+     * has none, and gets the highlighting of every other line; it has no name
+     * in front, which is what a free-form line such as a banner wants.
+     */
     public static Msg of(String text) {
-        return new Msg(highlight(text, openingColour(text, "§f")));
+        return new Msg(highlight(text, openingColour(text, Theme.STRONG)));
     }
 
     /** The colour a line written by hand opens with, or a plain default. */
@@ -29,39 +61,90 @@ public final class Msg {
         return new Msg("");
     }
 
-    /** The colour a number, a coordinate or a count is written in. */
-    private static final String NUMBER = "§b";
-    /** The colour a name between quotes is written in. */
-    private static final String QUOTED = "§f";
-    /** The colour a switch is written in. */
-    private static final String FLAG = "§e";
-    /** The colour a {@code #} pattern, mask or category is written in. */
-    private static final String NAME = "§d";
+    /**
+     * The code a fragment ends with to hand the line its own colour back. A line
+     * builder replaces it with the colour of the line, so a value can sit in the
+     * middle of a sentence without the command knowing what colour the sentence
+     * is written in.
+     */
+    public static final String BACK = "\u00a7r";
 
-    /** Light grey, the colour FAWE uses for values. */
+    /** A value inside a line - a number, a size, a coordinate - in the value colour. */
     public static Msg value(Object value) {
-        return new Msg("§b" + highlight(String.valueOf(value), "§b"));
+        return new Msg(Theme.NUMBER + highlight(String.valueOf(value), Theme.NUMBER) + BACK);
+    }
+
+    /*
+     * A line is highlighted when it is built, and the fragments inside it were
+     * highlighted when they were: highlighting a line again leaves it as it is,
+     * which is what lets a built line pass through Msg.of on its way to a link.
+     */
+
+    /** {@code 12x5x9} - the three sizes of a box, as one value. */
+    public static String size(long width, long height, long length) {
+        return Theme.NUMBER + width + "x" + height + "x" + length + BACK;
     }
 
     public static Msg error(String text) {
-        return new Msg("§c" + highlight(text, "§c"));
+        return sentence(Theme.ERROR, Theme.ERROR, text);
     }
 
     public static Msg success(String text) {
-        return new Msg("§a" + highlight(text, "§a"));
+        return sentence(Theme.SUCCESS, Theme.SUCCESS, text);
     }
 
     public static Msg warn(String text) {
-        return new Msg("§e" + highlight(text, "§e"));
+        return sentence(Theme.WARNING, Theme.WARNING, text);
     }
 
     public static Msg info(String text) {
-        return new Msg("§7" + highlight(text, "§7"));
+        return sentence(Theme.MUTED, Theme.TEXT, text);
     }
 
-    /** {@code §bkey§7: §fvalue} style line. */
+    private static Msg sentence(String marker, String colour, String text) {
+        return new Msg(prefix(marker) + colour + highlight(text, colour));
+    }
+
+    /** {@code  key: value}, a line of a card under a heading. */
     public static Msg keyValue(String key, Object value) {
-        return new Msg("§b" + key + "§7: §f" + highlight(String.valueOf(value), "§f"));
+        return new Msg("  " + Theme.LABEL + key + Theme.MUTED + ": " + Theme.STRONG
+                + highlight(String.valueOf(value), Theme.STRONG));
+    }
+
+    /** {@code  - text}, an entry of a list under a heading. */
+    public static Msg item(String text) {
+        return new Msg("  " + Theme.MUTED + "- " + Theme.STRONG + highlight(text, Theme.STRONG));
+    }
+
+    /** {@code  - name: detail}, an entry of a list with something to say about it. */
+    public static Msg item(String name, String detail) {
+        return new Msg("  " + Theme.MUTED + "- " + Theme.STRONG + highlight(name, Theme.STRONG)
+                + Theme.MUTED + ": " + Theme.TEXT + highlight(detail, Theme.TEXT));
+    }
+
+    /** A heading inside a listing, such as the group of a page of commands. */
+    public static Msg section(String name) {
+        return new Msg("  " + Theme.LABEL + "\u00a7l" + name);
+    }
+
+    /**
+     * {@code  - //name <arguments> - what it does}: a command of a listing, its
+     * name first in the value colour, so the row is read by what it is about.
+     */
+    public static Msg usage(String name, String arguments, String description) {
+        return new Msg("  " + Theme.MUTED + "- " + Theme.NUMBER + name
+                + (arguments.isEmpty() ? "" : Theme.MUTED + " " + arguments)
+                + Theme.MUTED + " - " + Theme.TEXT + description);
+    }
+
+    /** An indented line of advice under a heading or a result: what to type next. */
+    public static Msg hint(String text) {
+        return new Msg("  " + Theme.TEXT + highlight(text, Theme.TEXT));
+    }
+
+    /** A horizontal rule, for a banner. */
+    public static Msg rule(int width) {
+        return new Msg(Theme.MUTED + "\u00a7m" + " ".repeat(Math.max(1, width)));
     }
 
     /**
@@ -78,7 +161,8 @@ public final class Msg {
         while (index < text.length()) {
             if (text.charAt(index) == '§') {
                 int length = codeLength(text, index);
-                current = text.substring(index, index + length);
+                // A fragment hands the line its colour back with BACK.
+                current = length == 2 && text.charAt(index + 1) == 'r' ? role : text.substring(index, index + length);
                 out.append(current);
                 index += length;
                 continue;
@@ -116,7 +200,7 @@ public final class Msg {
             if (c == '\'' || c == '"') {
                 int close = run.indexOf(c, index + 1);
                 if (close > index) {
-                    out.append(QUOTED).append(run, index, close + 1).append(colour);
+                    coloured(out, Theme.STRONG, run.substring(index, close + 1), colour);
                     index = close + 1;
                     continue;
                 }
@@ -127,7 +211,7 @@ public final class Msg {
             if (c == '(') {
                 int close = coordinateEnd(run, index);
                 if (close > index) {
-                    out.append(NUMBER).append(run, index, close + 1).append(colour);
+                    coloured(out, Theme.NUMBER, run.substring(index, close + 1), colour);
                     index = close + 1;
                     continue;
                 }
@@ -136,17 +220,54 @@ public final class Msg {
             while (end < run.length() && run.charAt(end) != ' ' && run.charAt(end) != '\t') {
                 end++;
             }
-            String token = run.substring(index, end);
-            String highlight = tokenColour(token);
-            if (highlight == null || highlight.equals(colour)) {
-                out.append(token);
-            } else {
-                // Whole tokens are coloured, so the sentence keeps the colour it
-                // was written in and a token is never split by a colour code.
-                out.append(highlight).append(token).append(colour);
-            }
+            highlightToken(run.substring(index, end), colour, out);
             index = end;
         }
+    }
+
+    /** Writes text in a colour and goes back to the line's, without codes that change nothing. */
+    private static void coloured(StringBuilder out, String highlight, String text, String colour) {
+        if (highlight.equals(colour)) {
+            out.append(text);
+        } else {
+            out.append(highlight).append(text).append(colour);
+        }
+    }
+
+    /**
+     * Colours the value inside a token. A number is coloured without the
+     * brackets and the punctuation around it - the {@code 12} of {@code (12,} -
+     * while a {@code #name} or a switch keeps its brackets, which are part of
+     * it, and only leaves the punctuation of the sentence out.
+     */
+    private static void highlightToken(String token, String colour, StringBuilder out) {
+        int start = 0;
+        while (start < token.length() && "([{".indexOf(token.charAt(start)) >= 0) {
+            start++;
+        }
+        int end = token.length();
+        while (end > start && ")]},.;:!?".indexOf(token.charAt(end - 1)) >= 0) {
+            end--;
+        }
+        String highlight = null;
+        if (end > start && isNumber(token.substring(start, end))) {
+            highlight = Theme.NUMBER;
+        } else {
+            start = 0;
+            end = token.length();
+            while (end > start && ",.;:!?".indexOf(token.charAt(end - 1)) >= 0) {
+                end--;
+            }
+            if (end > start) {
+                highlight = coreColour(token.substring(start, end));
+            }
+        }
+        if (highlight == null || highlight.equals(colour)) {
+            out.append(token);
+            return;
+        }
+        out.append(token, 0, start).append(highlight).append(token, start, end).append(colour)
+                .append(token, end, token.length());
     }
 
     /**
@@ -178,96 +299,82 @@ public final class Msg {
         return i < run.length() && run.charAt(i) == ')' ? i : -1;
     }
 
-    /** What colour a single token deserves, if any. */
-    private static String tokenColour(String token) {
-        int start = 0;
-        while (start < token.length() && "([{".indexOf(token.charAt(start)) >= 0) {
-            start++;
-        }
-        int end = token.length();
-        while (end > start && ")]},.;:!?".indexOf(token.charAt(end - 1)) >= 0) {
-            end--;
-        }
-        if (end <= start) {
-            return null;
-        }
-        String core = token.substring(start, end);
+    /** What colour a token deserves once its brackets and punctuation are off, if any. */
+    private static String coreColour(String core) {
         if (isNumber(core)) {
-            return NUMBER;
+            return Theme.NUMBER;
         }
         if (core.charAt(0) == '-' && core.length() > 1 && Character.isLetter(core.charAt(1))) {
-            return FLAG;
+            return Theme.FLAG;
         }
         if (core.charAt(0) == '#' && core.length() > 1) {
-            return NAME;
+            return Theme.NAME;
         }
         return null;
     }
 
-    /** A count, a coordinate, a percentage or a decimal, optionally signed. */
+    /**
+     * A count, a coordinate, a percentage or a decimal, optionally signed. A
+     * dash on its own is the separator of a sentence, not a number.
+     */
     private static boolean isNumber(String token) {
         char first = token.charAt(0);
         if (!Character.isDigit(first) && first != '-' && first != '+') {
             return false;
         }
+        boolean digit = Character.isDigit(first);
         for (int i = 1; i < token.length(); i++) {
             char c = token.charAt(i);
-            if (!Character.isDigit(c) && c != ',' && c != '.' && c != '%' && c != ':' && c != '-'
-                    && c != '+') {
+            if (Character.isDigit(c)) {
+                digit = true;
+            } else if (c != ',' && c != '.' && c != '%' && c != ':' && c != '-' && c != '+') {
                 return false;
             }
         }
-        return true;
+        return digit;
     }
 
-    /** The marker in front of a heading or a result line. */
-    public static final String MARKER = "\u00a78\u00bb ";
-
-    /** A heading: the mod's cyan-to-blue run, which every listing starts with. */
+    /** A heading: the heading every listing starts with, in the brand's colour. */
     public static Msg title(String text) {
-        return new Msg(MARKER + gradient(text, 0x8FE3FF, 0x6C9BFF));
+        return new Msg(prefix(Theme.MUTED) + Theme.LABEL + highlight(text, Theme.LABEL));
     }
 
     /**
-     * The one line a command answers with: the marker, what it did in the mod's
-     * gradient, then the detail, whose values already carry their own colour.
+     * The one line a command answers with: what it did, in the brand's colour,
+     * then the detail, whose values take their own colour.
      *
      * <p>Every command that touches the world or the session ends on one of
      * these, so an answer is recognisable at a glance - which edit it was, what
-     * it changed and how long it took - instead of a row of flat grey text.</p>
+     * it changed and how long it took.</p>
      */
     public static Msg result(String label, String detail) {
-        return new Msg(MARKER + gradient(label, 0x8FE3FF, 0x6C9BFF) + "\u00a77: " + detail);
+        return new Msg(prefix(Theme.MUTED) + Theme.LABEL + label + Theme.MUTED + ": " + Theme.TEXT
+                + highlight(detail, Theme.TEXT));
     }
 
-    /** A result with nothing to add: {@code » label}. */
+    /** A result with nothing to add: {@code FAWE » label}. */
     public static Msg result(String label) {
-        return new Msg(MARKER + gradient(label, 0x8FE3FF, 0x6C9BFF));
+        return new Msg(prefix(Theme.MUTED) + Theme.LABEL + label);
     }
 
-    /** {@code §b12} - a count, ready to sit inside a result line. */
+    /** {@code 1,024} in the value colour - a count, ready to sit inside a sentence. */
     public static String count(long value) {
-        return NUMBER + formatNumber(value);
+        return Theme.NUMBER + formatNumber(value) + BACK;
     }
 
     /**
      * A per-character colour ramp in the {@code §x} hex form the client reads
-     * since 1.16: a heading that shifts colour instead of sitting in one flat
-     * tone is what makes a listing look finished.
+     * since 1.16. The theme uses one, on the name in front of a line; it is here
+     * for that and for the rare banner that draws its own.
      */
     public static String gradient(String text, int from, int to) {
         if (text.length() < 2) {
-            return text;
+            return Theme.hex(from) + text;
         }
-        StringBuilder out = new StringBuilder(text.length() * 8);
+        StringBuilder out = new StringBuilder(text.length() * 15);
         int last = text.length() - 1;
         for (int i = 0; i <= last; i++) {
-            int colour = interpolate(from, to, i / (double) last);
-            out.append("§x");
-            for (int shift = 20; shift >= 0; shift -= 4) {
-                out.append('§').append(Character.forDigit((colour >> shift) & 0xF, 16));
-            }
-            out.append(text.charAt(i));
+            out.append(Theme.hex(interpolate(from, to, i / (double) last))).append(text.charAt(i));
         }
         return out.toString();
     }
@@ -292,11 +399,11 @@ public final class Msg {
     }
 
     public Msg gray() {
-        return new Msg("§7" + text);
+        return new Msg(Theme.TEXT + text);
     }
 
     public Msg gold() {
-        return new Msg("§6" + text);
+        return new Msg(Theme.WARNING + text);
     }
 
     public String raw() {

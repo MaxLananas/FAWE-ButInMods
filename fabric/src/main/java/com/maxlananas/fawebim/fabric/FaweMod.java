@@ -419,9 +419,11 @@ public final class FaweMod implements ModInitializer {
             }
             return 1;
         } catch (Throwable throwable) {
+            // The engine answers every exception of a command itself; what gets
+            // here is an Error, an out of memory or a stack overflow.
             LOGGER.error("Command '{}' failed", line, throwable);
-            source.sendFailure(net.minecraft.network.chat.Component.literal(
-                    "FAWE error: " + throwable.getMessage()));
+            source.sendFailure(FabricMessages.component(com.maxlananas.fawebim.core.util.Msg.error(
+                    "Command failed: " + throwable.getClass().getSimpleName() + ", see the server log")));
             return 0;
         }
     }

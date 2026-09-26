@@ -58,12 +58,11 @@ final class SnapshotCommands {
                 return;
             }
             Page page = Page.of(ctx, snapshots.size());
-            ctx.actor().message(Msg.info(page.header("Snapshots", snapshots.size())));
+            ctx.actor().message(page.header("Snapshots", snapshots.size()));
             for (Path path : snapshots.subList(page.from(), page.to())) {
                 long time = Snapshots.timestampOf(path);
-                ctx.actor().message(Msg.of("§7 - §f" + path.getFileName() + "§7 "
-                        + (time < 0 ? "?" : ZonedDateTime.ofInstant(Instant.ofEpochMilli(time),
-                        ctx.session().getTimezone()).format(DATE))));
+                ctx.actor().message(Msg.item(path.getFileName().toString(), time < 0 ? "?"
+                        : ZonedDateTime.ofInstant(Instant.ofEpochMilli(time), ctx.session().getTimezone()).format(DATE)));
             }
             page.hint(ctx, "/snapshot list");
         };
@@ -200,10 +199,10 @@ final class SnapshotCommands {
             int biomes = ctx.hasFlag("b") ? Snapshots.restoreBiomes(session, snapshot) : 0;
             int entities = ctx.hasFlag("e") ? Snapshots.restoreEntities(session, snapshot) : 0;
             session.flushQueue();
-            ctx.actor().message(Msg.result("Restored", Msg.count(restored) + "\u00a77 block(s) from "
+            ctx.actor().message(Msg.result("Restored", Msg.count(restored) + " block(s) from "
                     + Msg.value(path.getFileName()).raw()
-                    + (ctx.hasFlag("b") ? ", " + Msg.count(biomes) + "\u00a77 biome cell(s)" : "")
-                    + (ctx.hasFlag("e") ? ", " + Msg.count(entities) + "\u00a77 entit(ies)" : "")));
+                    + (ctx.hasFlag("b") ? ", " + Msg.count(biomes) + " biome cell(s)" : "")
+                    + (ctx.hasFlag("e") ? ", " + Msg.count(entities) + " entit(ies)" : "")));
         };
     }
 

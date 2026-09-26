@@ -98,7 +98,7 @@ final class AnvilCommands {
                     "deleteunclaimed, deleteallunclaimed — the same age test, without a claim provider",
                     "deletealloldregions <time> — drop region files untouched for that long",
                     "remapall, debugfixroads — legacy maintenance")) {
-                ctx.actor().message(Msg.of("§7 - §f" + line));
+                ctx.actor().message(Msg.item(line));
             }
         };
     }
@@ -117,8 +117,8 @@ final class AnvilCommands {
             EditSession session = ctx.editSession("anvil clear");
             List<int[]> chunks = selectionChunks(ctx);
             int cleared = clearChunks(session, ctx.world(), chunks);
-            flush(ctx, session, "Cleared", Msg.count(cleared) + "\u00a77 of "
-                    + Msg.count(chunks.size()) + "\u00a77 chunk(s)");
+            flush(ctx, session, "Cleared", Msg.count(cleared) + " of "
+                    + Msg.count(chunks.size()) + " chunk(s)");
         };
     }
 
@@ -171,7 +171,7 @@ final class AnvilCommands {
             EditSession session = ctx.editSession("anvil paste");
             int changed = Clipboards.paste(clipboard, destination, session,
                     com.maxlananas.fawebim.core.transform.Transform.identity(), false, false, false);
-            flush(ctx, session, "Pasted", Msg.count(changed) + "\u00a77 block(s) at "
+            flush(ctx, session, "Pasted", Msg.count(changed) + " block(s) at "
                     + Msg.value(destination).raw());
         };
     }
@@ -200,7 +200,7 @@ final class AnvilCommands {
                 distribution(ctx, counts);
                 return;
             }
-            ctx.actor().message(Msg.result("Matched", Msg.count(total) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Matched", Msg.count(total) + " block(s)"));
         };
     }
 
@@ -229,8 +229,8 @@ final class AnvilCommands {
                 return;
             }
             long total = counts.values().stream().mapToLong(Long::longValue).sum();
-            ctx.actor().message(Msg.result("Counted", Msg.count(chunks) + "\u00a77 chunk(s), "
-                    + Msg.count(total) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Counted", Msg.count(chunks) + " chunk(s), "
+                    + Msg.count(total) + " block(s)"));
         };
     }
 
@@ -321,7 +321,7 @@ final class AnvilCommands {
                 changed += session.setBlock(position.x(), position.y(), position.z(),
                         pattern.apply(position)) ? 1 : 0;
             }
-            flush(ctx, session, "Changed", Msg.count(changed) + "\u00a77 block(s)");
+            flush(ctx, session, "Changed", Msg.count(changed) + " block(s)");
         };
     }
 
@@ -362,7 +362,7 @@ final class AnvilCommands {
                     }
                 }
             }
-            flush(ctx, session, "Removed", Msg.count(changed) + "\u00a77 block(s)");
+            flush(ctx, session, "Removed", Msg.count(changed) + " block(s)");
         };
     }
 
@@ -384,7 +384,7 @@ final class AnvilCommands {
             }
             EditSession session = ctx.editSession("anvil trimallair");
             int cleared = clearChunks(session, ctx.world(), chunks);
-            flush(ctx, session, "Trimmed", Msg.count(cleared) + "\u00a77 empty chunk(s)");
+            flush(ctx, session, "Trimmed", Msg.count(cleared) + " empty chunk(s)");
         };
     }
 
@@ -574,7 +574,7 @@ final class AnvilCommands {
             changed += session.setBlock(position.x(), position.y(), position.z(),
                     target.apply(position)) ? 1 : 0;
         }
-        flush(ctx, session, "Replaced", Msg.count(changed) + "\u00a77 block(s)");
+        flush(ctx, session, "Replaced", Msg.count(changed) + " block(s)");
     }
 
     /**
@@ -625,13 +625,13 @@ final class AnvilCommands {
             throw CommandRegistry.error("No block found");
         }
         long total = counts.values().stream().mapToLong(Long::longValue).sum();
-        ctx.actor().message(Msg.info("Distribution (" + Msg.formatNumber(total) + " blocks):"));
+        ctx.actor().message(Msg.title("Distribution (" + Msg.formatNumber(total) + " blocks)"));
         List<Map.Entry<String, Long>> sorted = new ArrayList<>(counts.entrySet());
         sorted.sort(Comparator.comparingLong((Map.Entry<String, Long> entry) -> entry.getValue()).reversed());
         for (Map.Entry<String, Long> entry : sorted) {
             double share = 100.0 * entry.getValue() / total;
-            ctx.actor().message(Msg.of("§7 - §f" + entry.getKey() + "§7: "
-                    + Msg.formatNumber(entry.getValue()) + " (" + String.format(Locale.ROOT, "%.2f", share) + "%)"));
+            ctx.actor().message(Msg.item(entry.getKey(), Msg.formatNumber(entry.getValue()) + " ("
+                    + String.format(Locale.ROOT, "%.2f", share) + "%)"));
         }
     }
 
@@ -663,7 +663,7 @@ final class AnvilCommands {
         }
         EditSession session = ctx.editSession("anvil delete");
         int cleared = clearChunks(session, ctx.world(), chunks);
-        flush(ctx, session, "Deleted", Msg.count(cleared) + "\u00a77 chunk(s) \u00a78(" + reason + "\u00a78)");
+        flush(ctx, session, "Deleted", Msg.count(cleared) + " chunk(s) (" + reason + ")");
     }
 
     /**

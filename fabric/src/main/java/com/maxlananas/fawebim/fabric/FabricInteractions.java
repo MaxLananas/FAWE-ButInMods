@@ -139,7 +139,7 @@ public final class FabricInteractions {
             session.setLastClickedFace(FabricMessages.direction(face));
             session.getSelector(actor.world()).selectPrimary(FabricMessages.blockVector(pos),
                     SelectorLimits.unlimited());
-            actor.message(Msg.success("Position 1: ").append(Msg.value(FabricMessages.blockVector(pos))));
+            actor.message(Msg.result("Position 1", "set to " + Msg.value(FabricMessages.blockVector(pos)).raw()));
             actor.updateSelectionOutline();
             return handled(player);
         }
@@ -203,7 +203,7 @@ public final class FabricInteractions {
             session.setLastClickedFace(FabricMessages.direction(face));
             session.getSelector(actor.world()).selectSecondary(FabricMessages.blockVector(pos),
                     SelectorLimits.unlimited());
-            actor.message(Msg.success("Position 2: ").append(Msg.value(FabricMessages.blockVector(pos))));
+            actor.message(Msg.result("Position 2", "set to " + Msg.value(FabricMessages.blockVector(pos)).raw()));
             actor.updateSelectionOutline();
             return handled(player);
         }
@@ -308,13 +308,12 @@ public final class FabricInteractions {
             markHandled(actor.player());
         }
         if (changed > 0) {
-            actor.message(Msg.success("Brush changed ")
-                    .append(Msg.value(Msg.formatNumber(changed) + " block(s)"))
-                    .append(" around ").append(Msg.value(position)));
+            actor.message(Msg.result("Brush", Msg.count(changed) + " block(s) changed around "
+                    + Msg.value(position).raw()));
         } else {
             // A brush that ran and changed nothing used to be completely silent,
             // which is indistinguishable from a click that never arrived.
-            actor.message(Msg.warn("The brush changed no block around ").append(Msg.value(position)));
+            actor.message(Msg.warn("The brush changed no block around " + Msg.value(position).raw()));
         }
         return changed > 0;
     }

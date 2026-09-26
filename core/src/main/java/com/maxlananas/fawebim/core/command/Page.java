@@ -53,10 +53,9 @@ final class Page {
         return to;
     }
 
-    /** The header of a paginated listing: the title, the total, the page. */
-    String header(String label, int total) {
-        return Msg.title(label).raw() + " §8(§b" + total + "§7, page §b"
-                + number + "§8/§b" + pages + "§8)";
+    /** The heading of a paginated listing: the title, the total, the page. */
+    Msg header(String label, int total) {
+        return Msg.title(label + " (" + Msg.formatNumber(total) + ", page " + number + "/" + pages + ")");
     }
 
     /**
@@ -69,20 +68,19 @@ final class Page {
         }
         boolean forward = number < pages;
         int target = forward ? number + 1 : number - 1;
-        StringBuilder line = new StringBuilder(Msg.MARKER);
-        line.append("§7Page §b").append(number).append("§8/§b").append(pages);
+        StringBuilder line = new StringBuilder("Page ").append(number).append('/').append(pages);
         if (forward) {
-            line.append(" §8- §7next §b").append(command).append(" -p ").append(target);
+            line.append(" - next: ").append(command).append(" -p ").append(target);
         } else {
-            line.append(" §8- §7back to page §b").append(target);
+            line.append(" - back to page ").append(target);
         }
         if (number > 1 && forward) {
-            line.append(" §8- §7back to page §b").append(number - 1);
+            line.append(" - back to page ").append(number - 1);
         }
         // Clicking the line runs the command it prints, which is what makes a
         // listing longer than the chat readable. The tooltip names the page the
         // click really opens.
-        ctx.actor().commandLink(line.toString(), command + " -p " + target,
+        ctx.actor().commandLink(Msg.hint(line.toString()).raw(), command + " -p " + target,
                 forward ? "Go to page " + target : "Go back to page " + target);
     }
 }
