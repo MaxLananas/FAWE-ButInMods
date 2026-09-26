@@ -43,7 +43,7 @@ final class StructureSchematic {
         Arrays.fill(paletteIndex, -1);
         List<NbtCompound> palette = new ArrayList<>();
         List<NbtCompound> blocks = new ArrayList<>();
-        Map<BlockVector3, NbtCompound> blockEntities = clipboard.blockEntities();
+        Map<BlockVector3, NbtCompound> blockEntities = clipboard.readBlockEntities();
         for (int y = box.minY(); y <= box.maxY(); y++) {
             for (int z = box.minZ(); z <= box.maxZ(); z++) {
                 for (int x = box.minX(); x <= box.maxX(); x++) {

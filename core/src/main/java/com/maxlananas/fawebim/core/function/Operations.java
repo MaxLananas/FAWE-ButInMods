@@ -889,10 +889,6 @@ public final class Operations {
                 continue;
             }
             clipboard.setBlock(x, y, z, state);
-            com.maxlananas.fawebim.core.util.NbtCompound nbt = world.getBlockEntity(x, y, z);
-            if (nbt != null) {
-                clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
-            }
             session.limiter().check(1);
             for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
                 long next = BlockArrayClipboard.positionKey(x + direction.x(), y + direction.y(), z + direction.z());
@@ -901,6 +897,7 @@ public final class Operations {
                 }
             }
         }
+        com.maxlananas.fawebim.core.clipboard.Clipboards.copyBlockEntities(world, clipboard);
         return clipboard;
     }
 

@@ -3,6 +3,8 @@ package com.maxlananas.fawebim.core.history;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.NbtIo;
+import com.maxlananas.fawebim.core.world.BlockState;
+import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -12,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.IntUnaryOperator;
 import java.util.stream.Stream;
 
 /**
@@ -158,6 +161,7 @@ public final class Snapshots {
      */
     public static int restore(EditSession session, NbtCompound snapshot) {
         int restored = 0;
+        IntUnaryOperator states = blockPalette(snapshot);
         List<NbtCompound> sections = snapshot.getCompoundList("sections");
         for (int s = sections.size() - 1; s >= 0; s--) {
             NbtCompound section = sections.get(s);
@@ -166,20 +170,61 @@ public final class Snapshots {
             int sectionY = section.getInt("y", 0);
             int[] indices = section.getIntArray("i");
             int[] before = section.getIntArray("b");
-            if (indices == null || before == null) {
-                continue;
-            }
             for (int i = Math.min(indices.length, before.length) - 1; i >= 0; i--) {
                 int index = indices[i];
                 int x = (chunkX << 4) + (index & 15);
                 int z = (chunkZ << 4) + ((index >> 4) & 15);
                 int y = (sectionY << 4) + ((index >> 8) & 15);
-                if (session.setBlock(x, y, z, before[i])) {
+                if (session.setBlock(x, y, z, states.applyAsInt(before[i]))) {
                     restored++;
                 }
             }
         }
+        // The data of the block entities goes back after their blocks, last change first.
+        List<NbtCompound> blockEntities = snapshot.getCompoundList("blockEntities");
+        for (int i = blockEntities.size() - 1; i >= 0; i--) {
+            NbtCompound change = blockEntities.get(i);
+            NbtCompound before = change.getCompoundOrNull("b");
+            if (before != null) {
+                session.setBlockEntity(change.getInt("x", 0), change.getInt("y", 0), change.getInt("z", 0), before);
+            }
+        }
         return restored;
+    }
+
+    /**
+     * How the block states of a snapshot read back. A snapshot names its states
+     * in a palette, so it restores the same blocks after the game or its mods
+     * change the numbering; one written before the palette holds this server's
+     * numbers, which only mean the same blocks on the same game.
+     */
+    private static IntUnaryOperator blockPalette(NbtCompound snapshot) {
+        List<Object> names = snapshot.get("palette") instanceof List<?> list ? new ArrayList<>(list) : null;
+        if (names == null) {
+            return IntUnaryOperator.identity();
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        int air = registry.air();
+        int[] states = new int[names.size()];
+        for (int i = 0; i < states.length; i++) {
+            int state = names.get(i) instanceof String name ? registry.parse(name) : -1;
+            states[i] = state < 0 ? air : state;
+        }
+        return index -> index >= 0 && index < states.length ? states[index] : air;
+    }
+
+    /** The same for biomes: {@code biomePalette} names them, older snapshots number them. */
+    private static IntUnaryOperator biomePalette(NbtCompound snapshot) {
+        List<Object> names = snapshot.get("biomePalette") instanceof List<?> list ? new ArrayList<>(list) : null;
+        if (names == null) {
+            return IntUnaryOperator.identity();
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        int[] biomes = new int[names.size()];
+        for (int i = 0; i < biomes.length; i++) {
+            biomes[i] = names.get(i) instanceof String name ? registry.biome(name) : -1;
+        }
+        return index -> index >= 0 && index < biomes.length ? biomes[index] : -1;
     }
 
     /**
@@ -190,6 +235,7 @@ public final class Snapshots {
      */
     public static int restoreBiomes(EditSession session, NbtCompound snapshot) {
         int restored = 0;
+        IntUnaryOperator biomes = biomePalette(snapshot);
         List<NbtCompound> sections = snapshot.getCompoundList("biomes");
         for (int s = sections.size() - 1; s >= 0; s--) {
             NbtCompound section = sections.get(s);
@@ -202,7 +248,10 @@ public final class Snapshots {
                 continue;
             }
             for (int i = 0; i < cells.length && i < before.length; i++) {
-                set.restore(cells[i], before[i]);
+                int biome = biomes.applyAsInt(before[i]);
+                if (biome >= 0) {
+                    set.restore(cells[i], biome);
+                }
             }
             restored += session.applyBiomeChangeSet(set, true);
         }
@@ -243,6 +292,8 @@ public final class Snapshots {
     /** Turns a snapshot back into a history record, for {@code /history import}. */
     public static History.Record toRecord(NbtCompound snapshot) {
         History.Record record = new History.Record(snapshot.getString("description", "imported snapshot"));
+        IntUnaryOperator states = blockPalette(snapshot);
+        IntUnaryOperator biomes = biomePalette(snapshot);
         for (NbtCompound section : snapshot.getCompoundList("sections")) {
             int chunkX = section.getInt("x", 0);
             int chunkZ = section.getInt("z", 0);
@@ -258,8 +309,8 @@ public final class Snapshots {
                 int x = (chunkX << 4) + (index & 15);
                 int z = (chunkZ << 4) + ((index >> 4) & 15);
                 int y = (sectionY << 4) + ((index >> 8) & 15);
-                int previous = before != null && i < before.length ? before[i] : 0;
-                int current = after != null && i < after.length ? after[i] : previous;
+                int previous = i < before.length ? states.applyAsInt(before[i]) : BlockState.registry().air();
+                int current = i < after.length ? states.applyAsInt(after[i]) : previous;
                 record.addChange(x, y, z, previous, current);
             }
         }
@@ -278,10 +329,16 @@ public final class Snapshots {
                 int x = (chunkX << 4) + ((cell & 3) << 2);
                 int y = (sectionY << 4) + (((cell >> 4) & 3) << 2);
                 int z = (chunkZ << 4) + (((cell >> 2) & 3) << 2);
-                int previous = before != null && i < before.length ? before[i] : 0;
-                int current = after != null && i < after.length ? after[i] : previous;
-                record.addBiome(x, y, z, previous, current);
+                int previous = i < before.length ? biomes.applyAsInt(before[i]) : -1;
+                int current = i < after.length ? biomes.applyAsInt(after[i]) : previous;
+                if (previous >= 0 && current >= 0) {
+                    record.addBiome(x, y, z, previous, current);
+                }
             }
+        }
+        for (NbtCompound change : snapshot.getCompoundList("blockEntities")) {
+            record.addBlockEntity(change.getInt("x", 0), change.getInt("y", 0), change.getInt("z", 0),
+                    change.getCompoundOrNull("b"), change.getCompoundOrNull("a"));
         }
         return record;
     }
@@ -293,6 +350,9 @@ public final class Snapshots {
 
     /** Serialises a record with the timestamp of the edit, not of the write. */
     public static NbtCompound of(History.Record record, String owner, long time) {
+        BlockStateRegistry registry = BlockState.registry();
+        Palette blocks = new Palette(registry::describe);
+        Palette biomeNames = new Palette(registry::biomeName);
         List<NbtCompound> sections = new ArrayList<>();
         int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] max = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
@@ -303,8 +363,8 @@ public final class Snapshots {
                 section.putInt("z", set.chunkZ());
                 section.putInt("y", set.sectionY());
                 section.putIntArray("i", set.cells());
-                section.putIntArray("b", set.beforeStates());
-                section.putIntArray("a", set.afterStates());
+                section.putIntArray("b", blocks.indices(set.beforeStates()));
+                section.putIntArray("a", blocks.indices(set.afterStates()));
                 sections.add(section);
                 for (int i = 0; i < set.size(); i++) {
                     int index = set.cellAt(i);
@@ -336,8 +396,8 @@ public final class Snapshots {
                 section.putInt("z", set.chunkZ());
                 section.putInt("y", set.sectionY());
                 section.putIntArray("i", shrink(set.cells(), set.size()));
-                section.putIntArray("b", shrink(set.before(), set.size()));
-                section.putIntArray("a", shrink(set.after(), set.size()));
+                section.putIntArray("b", biomeNames.indices(shrink(set.before(), set.size()).clone()));
+                section.putIntArray("a", biomeNames.indices(shrink(set.after(), set.size()).clone()));
                 biomes.add(section);
             }
         }
@@ -346,6 +406,23 @@ public final class Snapshots {
         if (!biomes.isEmpty()) {
             root.putList("biomes", biomes);
             root.putInt("biomeChanges", record.biomeChangeCount());
+            root.putList("biomePalette", biomeNames.names());
+        }
+        root.putList("palette", blocks.names());
+        List<NbtCompound> blockEntities = new ArrayList<>();
+        for (History.BlockEntityChange change : record.blockEntities()) {
+            NbtCompound entry = new NbtCompound().putInt("x", change.x()).putInt("y", change.y())
+                    .putInt("z", change.z());
+            if (change.before() != null) {
+                entry.putCompound("b", change.before());
+            }
+            if (change.after() != null) {
+                entry.putCompound("a", change.after());
+            }
+            blockEntities.add(entry);
+        }
+        if (!blockEntities.isEmpty()) {
+            root.putList("blockEntities", blockEntities);
         }
         List<NbtCompound> entities = new ArrayList<>();
         for (History.EntityChange change : record.entities()) {
@@ -364,6 +441,37 @@ public final class Snapshots {
             root.putList("entities", entities);
         }
         return root;
+    }
+
+    /** Numbers the states or biomes a snapshot uses in the order it meets them, and names them. */
+    private static final class Palette {
+
+        private final java.util.function.IntFunction<String> namer;
+        private final com.maxlananas.fawebim.core.util.LongObjectMap<Integer> indexOf =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>();
+        private final List<String> names = new ArrayList<>();
+
+        Palette(java.util.function.IntFunction<String> namer) {
+            this.namer = namer;
+        }
+
+        /** Replaces every id of the array, which the caller owns, by its palette index. */
+        int[] indices(int[] ids) {
+            for (int i = 0; i < ids.length; i++) {
+                Integer index = indexOf.get(ids[i]);
+                if (index == null) {
+                    index = names.size();
+                    indexOf.put(ids[i], index);
+                    names.add(namer.apply(ids[i]));
+                }
+                ids[i] = index;
+            }
+            return ids;
+        }
+
+        List<String> names() {
+            return names;
+        }
     }
 
     private static int[] shrink(int[] source, int size) {

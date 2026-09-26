@@ -113,6 +113,27 @@ public final class BlockArrayClipboard implements Extent {
         return blockEntities;
     }
 
+    /**
+     * The block entities a paste or a save uses: the stored ones, or for a lazy
+     * clipboard the ones its region holds now, read from the world like its
+     * blocks are. On the server thread, as every read of a lazy clipboard.
+     */
+    public java.util.Map<BlockVector3, com.maxlananas.fawebim.core.util.NbtCompound> readBlockEntities() {
+        World world = lazyWorld;
+        if (world == null) {
+            return blockEntities;
+        }
+        java.util.Map<BlockVector3, com.maxlananas.fawebim.core.util.NbtCompound> read = new java.util.HashMap<>();
+        world.forEachBlockEntity(box.minX(), box.minY(), box.minZ(), box.maxX(), box.maxY(), box.maxZ(),
+                (x, y, z) -> {
+                    com.maxlananas.fawebim.core.util.NbtCompound nbt = world.getBlockEntity(x, y, z);
+                    if (nbt != null) {
+                        read.put(new BlockVector3(x, y, z), nbt);
+                    }
+                });
+        return read;
+    }
+
     // ------------------------------------------------------------------ biomes
 
     private final java.util.Map<Long, Integer> biomes = new java.util.HashMap<>();

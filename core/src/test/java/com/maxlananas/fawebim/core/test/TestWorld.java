@@ -31,6 +31,7 @@ public final class TestWorld implements World {
     /** The state a section holds, or -1 once it holds more than one. */
     private final Map<Long, Integer> sectionUniform = new HashMap<>();
     private final Map<Long, NbtCompound> blockEntities = new LinkedHashMap<>();
+    private int blockEntityReads;
     private final List<EntityData> entities = new ArrayList<>();
     private final java.util.Set<Long> loadedChunks = new java.util.HashSet<>();
     private final java.util.Set<BlockVector2> relit = new java.util.LinkedHashSet<>();
@@ -224,10 +225,12 @@ public final class TestWorld implements World {
                         if (state == -1) {
                             continue;
                         }
+                        int before = getBlock(worldX, worldY, worldZ);
                         Integer previous = blocks.put(key(worldX, worldY, worldZ), state);
                         countSection(worldX, worldY, worldZ, air(previous == null ? -1 : previous),
                                 air(state));
                         trackUniform(worldX, worldY, worldZ, state);
+                        keepBlockEntity(worldX, worldY, worldZ, before, state);
                         applied++;
                     }
                 }
@@ -251,15 +254,46 @@ public final class TestWorld implements World {
             }
         }
         for (ChunkSet.BlockEntity entity : set.blockEntities()) {
-            setBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
+            applyBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
         }
         setCount += applied;
         return applied;
     }
 
+    /**
+     * What the game does with the block entity of a block it sets, and what
+     * {@link com.maxlananas.fawebim.core.world.World#applyChunk} promises: a
+     * block without one loses it, a block of another type gets a new one, a
+     * block that keeps its type keeps its data.
+     */
+    private void keepBlockEntity(int x, int y, int z, int before, int after) {
+        String type = blockEntityType(after);
+        long key = key(x, y, z);
+        if (type == null) {
+            blockEntities.remove(key);
+        } else if (!type.equals(blockEntityType(before)) || !blockEntities.containsKey(key)) {
+            blockEntities.put(key, new NbtCompound().putString("id", type));
+        }
+    }
+
+    /** The blocks of the test world that hold a block entity, as a chest and a furnace do in the game. */
+    static String blockEntityType(int state) {
+        if (state < 0) {
+            return null;
+        }
+        String name = BlockState.registry().name(state);
+        return name.equals("minecraft:chest") || name.equals("minecraft:furnace") ? name : null;
+    }
+
+    /** Loads data into the block entity of a position, and does nothing where the block has none. */
     @Override
     public void applyBlockEntity(int x, int y, int z, NbtCompound nbt) {
-        setBlockEntity(x, y, z, nbt);
+        String type = blockEntityType(getBlock(x, y, z));
+        if (type != null) {
+            NbtCompound data = nbt.clone();
+            data.putString("id", type);
+            blockEntities.put(key(x, y, z), data);
+        }
     }
 
     private static int minYSection(ChunkSet set) {
@@ -355,18 +389,28 @@ public final class TestWorld implements World {
     }
 
     @Override
-    public void setBlockEntity(int x, int y, int z, NbtCompound nbt) {
-        blockEntities.put(key(x, y, z), nbt);
-    }
-
-    @Override
     public NbtCompound getBlockEntity(int x, int y, int z) {
-        return blockEntities.get(key(x, y, z));
+        blockEntityReads++;
+        NbtCompound nbt = blockEntities.get(key(x, y, z));
+        return nbt == null ? null : nbt.clone();
+    }
+
+    /** How many times the engine asked for the data of a position, to tell a per-block walk from a per-chunk one. */
+    public int blockEntityReads() {
+        return blockEntityReads;
     }
 
     @Override
-    public void removeBlockEntity(int x, int y, int z) {
-        blockEntities.remove(key(x, y, z));
+    public void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                   BlockEntityVisitor visitor) {
+        for (long key : new ArrayList<>(blockEntities.keySet())) {
+            int x = (int) (key >> 38);
+            int y = (int) (key << 26 >> 52);
+            int z = (int) (key << 38 >> 38);
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ) {
+                visitor.visit(x, y, z);
+            }
+        }
     }
 
     public java.util.Set<BlockVector2> relitChunks() {

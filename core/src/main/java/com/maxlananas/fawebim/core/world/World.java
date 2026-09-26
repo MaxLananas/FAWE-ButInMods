@@ -126,6 +126,11 @@ public interface World extends Extent {
      * this data into it; one that keeps block entities as data replaces what it
      * holds. It is called after the blocks of the chunk are written, never
      * before, because the block entity only exists once its block does.</p>
+     *
+     * <p>{@link #applyChunk} keeps the block entities in step with the blocks
+     * it writes, as the game does for a block it sets: a block that no longer
+     * has one loses it, one that gains one gets a new, empty one, and one that
+     * keeps its type keeps its data.</p>
      */
     default void applyBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
     }
@@ -220,15 +225,31 @@ public interface World extends Extent {
         return getEntities(new Region3i(-30_000_000, minY(), -30_000_000, 30_000_000, maxY(), 30_000_000));
     }
 
-    /** Called before an edit that may insert/remove block entities. */
-    default void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
-    }
-
+    /**
+     * The data of the block entity at a position, or {@code null} when there is
+     * none: the compound the game saves for it, its type under {@code id} and
+     * without its position. A new compound on every call; a live world answers
+     * on its server thread only.
+     */
     default com.maxlananas.fawebim.core.util.NbtCompound getBlockEntity(int x, int y, int z) {
         return null;
     }
 
-    default void removeBlockEntity(int x, int y, int z) {
+    /** Receives the position of a block entity. */
+    @FunctionalInterface
+    interface BlockEntityVisitor {
+
+        void visit(int x, int y, int z);
+    }
+
+    /**
+     * Visits the position of every block entity inside a box, loading the
+     * chunks it covers. Asking the chunks for the few block entities they hold
+     * is what keeps a copy or an edit from asking every one of its blocks. A
+     * live world answers on its server thread only.
+     */
+    default void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                    BlockEntityVisitor visitor) {
     }
 
     /** Schedules work on the platform's main thread. */

@@ -546,6 +546,7 @@ public final class EditSession implements Extent {
         for (ChunkSet chunk : pending) {
             if (!chunk.isEmpty()) {
                 world.loadChunk(chunk.chunkX(), chunk.chunkZ());
+                recordBlockEntities(chunk);
                 world.applyChunk(chunk, sideEffects);
                 dirtyChunks.add(new BlockVector2(chunk.chunkX(), chunk.chunkZ()));
             }
@@ -556,6 +557,49 @@ public final class EditSession implements Extent {
             }
             dirtyChunks.clear();
         }
+    }
+
+    /**
+     * Records the block entities a buffered chunk is about to change, while the
+     * world still holds them: the data of each one whose block the buffer
+     * writes or whose data it replaces, with what the buffer gives it.
+     *
+     * <p>The world is asked for the block entities of the chunk, which are few,
+     * rather than about every position the buffer writes.</p>
+     */
+    private void recordBlockEntities(ChunkSet chunk) {
+        if (record == null) {
+            return;
+        }
+        int minX = chunk.chunkX() << 4;
+        int minZ = chunk.chunkZ() << 4;
+        List<ChunkSet.BlockEntity> queued = chunk.blockEntities();
+        com.maxlananas.fawebim.core.util.LongObjectMap<com.maxlananas.fawebim.core.util.NbtCompound> incoming =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>(queued.size());
+        for (ChunkSet.BlockEntity entity : queued) {
+            // A position queued twice ends with the later data, as the world applies them in order.
+            incoming.put(cellOf(entity.x, entity.y, entity.z), entity.nbt);
+        }
+        com.maxlananas.fawebim.core.util.LongSet recorded = new com.maxlananas.fawebim.core.util.LongSet();
+        world.forEachBlockEntity(minX, minY, minZ, minX + 15, maxY, minZ + 15, (x, y, z) -> {
+            long cell = cellOf(x, y, z);
+            com.maxlananas.fawebim.core.util.NbtCompound after = incoming.get(cell);
+            if (after != null || chunk.isSet(x, y, z)) {
+                record.addBlockEntity(x, y, z, world.getBlockEntity(x, y, z), after);
+                recorded.add(cell);
+            }
+        });
+        for (long cell : incoming.keys()) {
+            if (!recorded.contains(cell)) {
+                record.addBlockEntity(minX + (int) (cell & 15), minY + (int) (cell >> 8), minZ + (int) ((cell >> 4) & 15),
+                        null, incoming.get(cell));
+            }
+        }
+    }
+
+    /** A position inside its chunk column, as a key: the height above the bottom, then z, then x. */
+    private long cellOf(int x, int y, int z) {
+        return ((long) (y - minY) << 8) | ((z & 15) << 4) | (x & 15);
     }
 
     @Override
@@ -594,11 +638,14 @@ public final class EditSession implements Extent {
 
     /**
      * Queues the data of a block entity, to be written when the blocks of its
-     * chunk are: the platform applies both together, in that order.
+     * chunk are: the platform applies both together, in that order. A position
+     * the session's mask or the world's height keeps a block from is kept from
+     * the data as well.
      */
     public void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
         checkOpen();
-        if (nbt == null) {
+        if (nbt == null || cancelled || y < minY || y > maxY
+                || mask != null && !mask.isRegion() && !mask.test(x, y, z)) {
             return;
         }
         ChunkSet chunk = chunkFor(x, z, true);
@@ -675,6 +722,18 @@ public final class EditSession implements Extent {
                 for (com.maxlananas.fawebim.core.history.BiomeChangeSet set : sets) {
                     changed += applyBiomeChangeSet(set, false);
                 }
+            }
+        }
+        // The data goes back after the blocks, which the queue writes first: a
+        // chest the undo puts back gets its items, a block the undo takes away
+        // takes its block entity with it. Replayed in the order that ends on
+        // the right data, as the block changes are.
+        List<History.BlockEntityChange> blockEntities = record.blockEntities();
+        for (int i = 0; i < blockEntities.size(); i++) {
+            History.BlockEntityChange change = blockEntities.get(undo ? blockEntities.size() - 1 - i : i);
+            com.maxlananas.fawebim.core.util.NbtCompound data = undo ? change.before() : change.after();
+            if (data != null) {
+                setBlockEntity(change.x(), change.y(), change.z(), data);
             }
         }
         return changed;

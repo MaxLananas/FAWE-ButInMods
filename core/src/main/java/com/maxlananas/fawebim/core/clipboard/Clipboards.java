@@ -1,6 +1,7 @@
 package com.maxlananas.fawebim.core.clipboard;
 
 import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.math.BlockBox;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.pattern.Pattern;
@@ -50,8 +51,9 @@ public final class Clipboards {
         // A box with no mask to test is copied a section at a time: the world
         // hands a whole section over in one call, which is how a large //copy
         // stays off the per-block path.
+        copyBlockEntities(world, region, mask, clipboard);
         if (mask == null && region instanceof com.maxlananas.fawebim.core.region.CuboidRegion) {
-            copyBox(world, min, max, clipboard, withEntities);
+            copyBox(world, min, max, clipboard);
             if (withBiomes) {
                 copyBiomes(world, region, clipboard);
             }
@@ -79,13 +81,6 @@ public final class Clipboards {
                 return false;
             }
             clipboard.setBlock(x, y, z, state);
-            // Block entities travel with the clipboard, like FAWE's NBT copy.
-            if (withEntities) {
-                NbtCompound nbt = world.getBlockEntity(x, y, z);
-                if (nbt != null) {
-                    clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
-                }
-            }
             return true;
         });
         if (withBiomes) {
@@ -134,6 +129,8 @@ public final class Clipboards {
         // then folds into the same read the copy already did.
         int constant = leave instanceof com.maxlananas.fawebim.core.pattern.Patterns.Single single
                 ? single.stateId() : -1;
+        // Read while the world still holds them: the cut is about to clear them.
+        copyBlockEntities(world, region, mask, clipboard);
         // A cuboid selection - what //cut is used on - is walked a section at a
         // time, so a section the world reports as all air costs one check
         // instead of 4096 reads and 4096 no-op writes. That only holds when the
@@ -141,7 +138,7 @@ public final class Clipboards {
         // something to write even where the region is empty.
         if (session != null && region instanceof com.maxlananas.fawebim.core.region.CuboidRegion
                 && constant == BlockStateHolder.air()) {
-            return cutBox(world, region, min, max, clipboard, session, mask, withEntities, withBiomes);
+            return cutBox(world, region, min, max, clipboard, session, mask, withBiomes);
         }
         // Every other shape walks itself: the traversal of a polyhedron is not
         // a box, and the selections it is used on are not the million-block ones.
@@ -149,13 +146,6 @@ public final class Clipboards {
             int state = world.getBlock(x, y, z);
             if (state != BlockStateHolder.air() && (mask == null || mask.test(x, y, z))) {
                 clipboard.setBlock(x, y, z, state);
-                // Block entities travel with the clipboard, like FAWE's NBT copy.
-                if (withEntities) {
-                    NbtCompound nbt = world.getBlockEntity(x, y, z);
-                    if (nbt != null) {
-                        clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
-                    }
-                }
             }
             if (session == null) {
                 return true;
@@ -197,8 +187,7 @@ public final class Clipboards {
      */
     private static BlockArrayClipboard cutBox(World world, Region region, BlockVector3 min,
                                               BlockVector3 max, BlockArrayClipboard clipboard,
-                                              EditSession session, Mask mask, boolean withEntities,
-                                              boolean withBiomes) {
+                                              EditSession session, Mask mask, boolean withBiomes) {
         int air = BlockStateHolder.air();
         int[] sectionBlocks = new int[4096];
         for (int chunkX = min.x() >> 4; chunkX <= max.x() >> 4; chunkX++) {
@@ -223,7 +212,7 @@ public final class Clipboards {
                     // handful of cells rather than all 4096 of them.
                     boolean read = world.readSection(chunkX, sectionY, chunkZ, sectionBlocks,
                             fromX, fromY, fromZ, toX, toY, toZ);
-                    if (read && whole && mask == null && !withEntities) {
+                    if (read && whole && mask == null) {
                         clearSection(session, sectionBlocks, chunkX << 4, sectionY << 4, chunkZ << 4);
                         clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
                         sectionBlocks = new int[4096];
@@ -238,12 +227,6 @@ public final class Clipboards {
                                         : world.getBlock(x, y, z);
                                 if (state != air && (mask == null || mask.test(x, y, z))) {
                                     clipboard.setBlock(x, y, z, state);
-                                    if (withEntities) {
-                                        NbtCompound nbt = world.getBlockEntity(x, y, z);
-                                        if (nbt != null) {
-                                            clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
-                                        }
-                                    }
                                     // What the mask keeps out of the clipboard
                                     // stays in the world: a masked cut leaves
                                     // the blocks it does not match.
@@ -275,7 +258,7 @@ public final class Clipboards {
      * chunk behind it is looked up once rather than once per block.</p>
      */
     private static void copyBox(World world, BlockVector3 min, BlockVector3 max,
-                                BlockArrayClipboard clipboard, boolean withEntities) {
+                                BlockArrayClipboard clipboard) {
         int air = BlockStateHolder.air();
         int[] sectionBlocks = new int[4096];
         for (int chunkX = min.x() >> 4; chunkX <= max.x() >> 4; chunkX++) {
@@ -293,7 +276,7 @@ public final class Clipboards {
                     boolean whole = fromX == (chunkX << 4) && toX == (chunkX << 4) + 15
                             && fromY == (sectionY << 4) && toY == (sectionY << 4) + 15
                             && fromZ == (chunkZ << 4) && toZ == (chunkZ << 4) + 15;
-                    if (whole && !withEntities && world.readSection(chunkX, sectionY, chunkZ,
+                    if (whole && world.readSection(chunkX, sectionY, chunkZ,
                             sectionBlocks, fromX, fromY, fromZ, toX, toY, toZ)) {
                         clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
                         sectionBlocks = new int[4096];
@@ -311,41 +294,23 @@ public final class Clipboards {
                         for (int y = fromY; y <= toY; y++) {
                             for (int z = fromZ; z <= toZ; z++) {
                                 for (int x = fromX; x <= toX; x++) {
-                                    copyCell(world, clipboard, x, y, z, withEntities, air);
+                                    copyCell(world, clipboard, x, y, z, air);
                                 }
                             }
                         }
                         continue;
                     }
-                    if (whole && !withEntities) {
+                    if (whole) {
                         clipboard.adoptSection(chunkX, sectionY, chunkZ, sectionBlocks);
                         sectionBlocks = new int[4096];
                         continue;
                     }
-                    if (!withEntities) {
-                        // The array holds the box at the section's own indices,
-                        // so the stride of a row is the width of the box and
-                        // each row starts where the read put it.
-                        clipboard.adoptBox(chunkX, sectionY, chunkZ, sectionBlocks,
-                                fromX, fromY, fromZ, toX, toY, toZ);
-                        sectionBlocks = new int[4096];
-                        continue;
-                    }
-                    for (int y = fromY; y <= toY; y++) {
-                        for (int z = fromZ; z <= toZ; z++) {
-                            for (int x = fromX; x <= toX; x++) {
-                                int state = sectionBlocks[(y & 15) << 8 | (z & 15) << 4 | (x & 15)];
-                                if (state == air) {
-                                    continue;
-                                }
-                                clipboard.setBlock(x, y, z, state);
-                                NbtCompound nbt = world.getBlockEntity(x, y, z);
-                                if (nbt != null) {
-                                    clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
-                                }
-                            }
-                        }
-                    }
+                    // The array holds the box at the section's own indices, so
+                    // the stride of a row is the width of the box and each row
+                    // starts where the read put it.
+                    clipboard.adoptBox(chunkX, sectionY, chunkZ, sectionBlocks,
+                            fromX, fromY, fromZ, toX, toY, toZ);
+                    sectionBlocks = new int[4096];
                 }
             }
         }
@@ -389,19 +354,47 @@ public final class Clipboards {
     }
 
     /** Copies one position, the way a shape that is not a box is copied. */
-    private static void copyCell(World world, BlockArrayClipboard clipboard, int x, int y, int z,
-                                 boolean withEntities, int air) {
+    private static void copyCell(World world, BlockArrayClipboard clipboard, int x, int y, int z, int air) {
         int state = world.getBlock(x, y, z);
-        if (state == air) {
-            return;
+        if (state != air) {
+            clipboard.setBlock(x, y, z, state);
         }
-        clipboard.setBlock(x, y, z, state);
-        if (withEntities) {
-            NbtCompound nbt = world.getBlockEntity(x, y, z);
-            if (nbt != null) {
-                clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
+    }
+
+    /**
+     * Copies the block entities of every position a clipboard holds a block
+     * at, for a copy that walked something other than a region.
+     */
+    public static void copyBlockEntities(World world, BlockArrayClipboard clipboard) {
+        BlockBox box = clipboard.getBox();
+        world.forEachBlockEntity(box.minX(), box.minY(), box.minZ(), box.maxX(), box.maxY(), box.maxZ(),
+                (x, y, z) -> {
+                    if (clipboard.getBlock(x, y, z) != 0) {
+                        NbtCompound nbt = world.getBlockEntity(x, y, z);
+                        if (nbt != null) {
+                            clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Copies the block entities of a region - a chest's items, a sign's text -
+     * which WorldEdit and FAWE copy with every block, whatever the flags. The
+     * chunks are asked for the few they hold, rather than every position of the
+     * region for one.
+     */
+    private static void copyBlockEntities(World world, Region region, Mask mask, BlockArrayClipboard clipboard) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        world.forEachBlockEntity(min.x(), min.y(), min.z(), max.x(), max.y(), max.z(), (x, y, z) -> {
+            if (region.contains(x, y, z) && (mask == null || mask.test(x, y, z))) {
+                NbtCompound nbt = world.getBlockEntity(x, y, z);
+                if (nbt != null) {
+                    clipboard.addBlockEntity(new BlockVector3(x, y, z), nbt);
+                }
             }
-        }
+        });
     }
 
     /** Empties a whole section the caller has already read out of the world. */
@@ -480,7 +473,8 @@ public final class Clipboards {
         // position object, and the transform is only asked when there is one:
         // without /transform the destination is an integer offset.
         boolean identity = transform.isIdentity();
-        boolean hasBlockEntities = !clipboard.blockEntities().isEmpty();
+        java.util.Map<BlockVector3, NbtCompound> stored = clipboard.readBlockEntities();
+        boolean hasBlockEntities = !stored.isEmpty();
         // A paste that skips air - {@code //paste -a}, and the tool that stacks a
         // clipboard - only writes the cells the clipboard holds a block in, so it
         // never has to visit the air. The walk below stays for the flags that
@@ -489,6 +483,17 @@ public final class Clipboards {
         if (ignoreAir && identity && mask == null && !keepStructureVoid && !hasBlockEntities
                 && !pasteEntities && !removeEntities && clipboard.biomeEntries().isEmpty()) {
             return pasteStored(clipboard, destination, session);
+        }
+        // The block entities are looked up by their cell of the clipboard's box,
+        // so the walk asks a primitive map instead of building a position per block.
+        BlockBox box = clipboard.getBox();
+        com.maxlananas.fawebim.core.util.LongObjectMap<NbtCompound> blockEntities =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>(stored.size());
+        for (java.util.Map.Entry<BlockVector3, NbtCompound> entry : stored.entrySet()) {
+            BlockVector3 at = entry.getKey();
+            if (box.contains(at)) {
+                blockEntities.put(cellOf(box, at.x(), at.y(), at.z()), entry.getValue());
+            }
         }
         int changed = clipboard.forEachPosition((x, y, z, state) -> {
             if (state == air && ignoreAir) {
@@ -515,7 +520,8 @@ public final class Clipboards {
             }
             boolean applied = session.setBlock(targetX, targetY, targetZ, state);
             if (hasBlockEntities) {
-                NbtCompound nbt = clipboard.getBlockEntity(new BlockVector3(x, y, z));
+                // Even onto the same block: a chest pasted over a chest brings its items.
+                NbtCompound nbt = blockEntities.get(cellOf(box, x, y, z));
                 if (nbt != null) {
                     session.setBlockEntity(targetX, targetY, targetZ, nbt);
                 }
@@ -553,6 +559,11 @@ public final class Clipboards {
         }
         session.flushQueue();
         return changed;
+    }
+
+    /** The index of a position of a box, counted x first, then z, then y. */
+    private static long cellOf(BlockBox box, int x, int y, int z) {
+        return ((long) (y - box.minY()) * box.length() + (z - box.minZ())) * box.width() + (x - box.minX());
     }
 
     /** Summary line used by the copy/paste feedback. */

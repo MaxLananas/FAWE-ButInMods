@@ -70,6 +70,7 @@ public final class History {
         final com.maxlananas.fawebim.core.util.LongObjectMap<List<BiomeChangeSet>> biomes =
                 new com.maxlananas.fawebim.core.util.LongObjectMap<>();
         final List<EntityChange> entities = new ArrayList<>();
+        final List<BlockEntityChange> blockEntities = new ArrayList<>();
         int changeCount;
         int biomeChangeCount;
         /**
@@ -143,6 +144,21 @@ public final class History {
             entities.add(change);
         }
 
+        /**
+         * Records what the block entity of a position held before a write and
+         * what the write put there; either is {@code null} when there was or
+         * is none. The block change itself is recorded apart, like any other.
+         */
+        public void addBlockEntity(int x, int y, int z, NbtCompound before, NbtCompound after) {
+            checkOpen();
+            blockEntities.add(new BlockEntityChange(x, y, z, before, after));
+        }
+
+        /** The block entity changes, in the order the edit made them. */
+        public List<BlockEntityChange> blockEntities() {
+            return blockEntities;
+        }
+
         /** Records one biome change, creating the section's set on demand. */
         public void addBiome(int x, int y, int z, int previous, int current) {
             checkOpen();
@@ -197,7 +213,7 @@ public final class History {
         }
 
         public boolean isEmpty() {
-            return changeCount == 0 && biomeChangeCount == 0 && entities.isEmpty();
+            return changeCount == 0 && biomeChangeCount == 0 && entities.isEmpty() && blockEntities.isEmpty();
         }
 
         /**
@@ -232,6 +248,14 @@ public final class History {
             }
             return box;
         }
+    }
+
+    /**
+     * The data a write took from a block entity and the data it gave it: the
+     * undo puts {@code before} back, the redo {@code after}. The compounds are
+     * never changed once recorded.
+     */
+    public record BlockEntityChange(int x, int y, int z, NbtCompound before, NbtCompound after) {
     }
 
     /** A removed (undo) or added (redo) entity. */

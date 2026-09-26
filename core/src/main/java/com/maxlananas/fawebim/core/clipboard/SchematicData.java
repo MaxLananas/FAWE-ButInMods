@@ -35,7 +35,7 @@ final class SchematicData {
 
     /** The clipboard's block entities in the order their blocks are written, so a file does not depend on hashing. */
     static List<Map.Entry<BlockVector3, NbtCompound>> sortedBlockEntities(BlockArrayClipboard clipboard) {
-        List<Map.Entry<BlockVector3, NbtCompound>> entries = new ArrayList<>(clipboard.blockEntities().entrySet());
+        List<Map.Entry<BlockVector3, NbtCompound>> entries = new ArrayList<>(clipboard.readBlockEntities().entrySet());
         entries.sort(BLOCK_ORDER);
         return entries;
     }

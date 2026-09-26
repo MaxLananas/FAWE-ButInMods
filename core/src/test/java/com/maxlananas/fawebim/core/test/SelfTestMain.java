@@ -141,6 +141,7 @@ public final class SelfTestMain {
         CommandLimitTests.run();
         SecurityTests.run();
         SchematicFormatTests.run();
+        BlockEntityTests.run();
         MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
@@ -904,7 +905,9 @@ public final class SelfTestMain {
         // block entity and biome
         NbtCompound nbt = new NbtCompound();
         nbt.putString("id", "minecraft:chest");
+        nbt.putString("CustomName", "\"Stored\"");
         EditSession nbtSession = new EditSession(world, session, "nbt");
+        nbtSession.setBlock(1, 71, 1, BlockState.registry().defaultState("minecraft:chest"));
         nbtSession.setBlockEntity(1, 71, 1, nbt);
         // The data waits for the flush, so that it is written once the block it
         // belongs to is in the world.
@@ -912,7 +915,8 @@ public final class SelfTestMain {
         nbtSession.flushQueue();
         check("block entity stored", world.getBlockEntity(1, 71, 1) != null);
         check("block entity keeps its data", "minecraft:chest".equals(
-                world.getBlockEntity(1, 71, 1).getString("id", "")));
+                world.getBlockEntity(1, 71, 1).getString("id", ""))
+                && "\"Stored\"".equals(world.getBlockEntity(1, 71, 1).getString("CustomName", "")));
         EditSession biomeSession = new EditSession(world, session, "biome");
         check("biome set", biomeSession.setBiome(4, 68, 4, 5));
         biomeSession.flushQueue();

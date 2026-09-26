@@ -77,6 +77,13 @@ public final class FabricWorld implements World {
     private int[] changedX = new int[0];
     private int[] changedY = new int[0];
     private int[] changedZ = new int[0];
+    /**
+     * The changes of a flush whose block entity has to follow the block: the
+     * index of the change in {@link #changedX}, and the state it replaced.
+     */
+    private int[] blockEntitySlots = new int[16];
+    private int[] blockEntityBefore = new int[16];
+    private int blockEntityCount;
     /** One position object for a whole flush: nothing keeps what it is handed. */
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
     private int cachedChunkX = Integer.MIN_VALUE;
@@ -404,6 +411,7 @@ public final class FabricWorld implements World {
         int[] changedYs = changedY;
         int[] changedZs = changedZ;
         int[] slot = {0};
+        blockEntityCount = 0;
         boolean perBlockNotify = !resend && (notify || neighbors);
         BlockState[] before = perBlockNotify ? new BlockState[count] : null;
         BlockState[] after = perBlockNotify ? new BlockState[count] : null;
@@ -454,6 +462,9 @@ public final class FabricWorld implements World {
                     after[at] = now;
                 }
                 section.setBlockState(localX, localY, localZ, now, false);
+                if (was != now && (was.hasBlockEntity() || now.hasBlockEntity())) {
+                    rememberBlockEntity(at, was);
+                }
                 motionBlocking.update(localX, y, localZ, now);
                 motionBlockingNoLeaves.update(localX, y, localZ, now);
                 oceanFloor.update(localX, y, localZ, now);
@@ -474,6 +485,34 @@ public final class FabricWorld implements World {
                     chunkSource.onSectionEmptinessChanged(
                             set.chunkX(), sectionY >> 4, set.chunkZ(), isEmpty);
                 }
+            }
+        }
+
+        // 2b. The block entities of the blocks that changed, kept as the game
+        //     keeps them when it sets a block: one whose block became another
+        //     block goes, one whose block only changed state stays with its
+        //     data, and a block that needs one gets a new one, registered with
+        //     its ticker. The bulk write went past the chunk's own bookkeeping,
+        //     which used to leave the old block entity in place - a chest's
+        //     items under the stone that replaced it, saved with the chunk - and
+        //     a new chest or furnace without one until something asked for it.
+        //     Nothing is dropped: an edit does not spill what it replaces.
+        for (int i = 0; i < blockEntityCount; i++) {
+            int at = blockEntitySlots[i];
+            BlockPos pos = new BlockPos(changedXs[at], changedYs[at], changedZs[at]);
+            BlockState was = Block.stateById(blockEntityBefore[i]);
+            BlockState now = chunk.getBlockState(pos);
+            var existing = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.CHECK);
+            if (existing != null) {
+                if (now.is(was.getBlock()) && existing.isValidBlockState(now)) {
+                    existing.setBlockState(now);
+                    chunk.updateBlockEntityTicker(existing);
+                    continue;
+                }
+                chunk.removeBlockEntity(pos);
+            }
+            if (now.hasBlockEntity()) {
+                chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
             }
         }
 
@@ -522,6 +561,17 @@ public final class FabricWorld implements World {
             sendChunk(chunk, lightEngine);
         }
         return applied;
+    }
+
+    /** Remembers a change whose block entity has to follow its block, see step 2b of {@link #applyChunk}. */
+    private void rememberBlockEntity(int slot, BlockState was) {
+        if (blockEntityCount == blockEntitySlots.length) {
+            blockEntitySlots = java.util.Arrays.copyOf(blockEntitySlots, blockEntityCount * 2);
+            blockEntityBefore = java.util.Arrays.copyOf(blockEntityBefore, blockEntityCount * 2);
+        }
+        blockEntitySlots[blockEntityCount] = slot;
+        blockEntityBefore[blockEntityCount] = Block.getId(was);
+        blockEntityCount++;
     }
 
     /** Sends a whole chunk, with its light data, to everyone who can see it. */
@@ -723,12 +773,19 @@ public final class FabricWorld implements World {
     public void applyBlockEntity(int x, int y, int z, NbtCompound nbt) {
         LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
         BlockPos pos = new BlockPos(x, y, z);
-        // A chest that was just written does not have its block entity yet: the
-        // game creates it when the block itself changes, which the bulk write did
-        // without going through the level. Asking for it here is what creates it.
+        // The flush created the block entity of every block it wrote; IMMEDIATE
+        // also covers data queued for a block the flush did not write.
         var blockEntity = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
         if (blockEntity == null) {
             FaweMod.LOGGER.debug("No block entity to hold the data at {},{},{}", x, y, z);
+            return;
+        }
+        // The data of a chest is not loaded into the furnace that stands where
+        // the chest was meant to go.
+        String id = nbt.getString("id", null);
+        ResourceLocation type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
+        if (id != null && type != null && !type.equals(ResourceLocation.tryParse(id))) {
+            FaweMod.LOGGER.debug("The data at {},{},{} is for {}, the block entity there is {}", x, y, z, id, type);
             return;
         }
         try {
@@ -742,6 +799,60 @@ public final class FabricWorld implements World {
         } catch (Throwable throwable) {
             FaweMod.LOGGER.warn("Could not load the data of the block entity at {},{},{}", x, y, z, throwable);
         }
+    }
+
+    /**
+     * The data of a block entity, saved the way the game saves it into a chunk.
+     * Server thread only: the chunk's block entities are not safe to read from
+     * another.
+     */
+    @Override
+    public NbtCompound getBlockEntity(int x, int y, int z) {
+        LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
+        var blockEntity = chunk.getBlockEntity(new BlockPos(x, y, z), LevelChunk.EntityCreationType.CHECK);
+        if (blockEntity == null) {
+            return null;
+        }
+        try {
+            net.minecraft.world.level.storage.TagValueOutput output =
+                    net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                            ProblemReporter.DISCARDING, level.registryAccess());
+            blockEntity.saveWithId(output);
+            return fromTag(output.buildResult());
+        } catch (IOException | RuntimeException exception) {
+            FaweMod.LOGGER.warn("Could not save the data of the block entity at {},{},{}", x, y, z, exception);
+            return null;
+        }
+    }
+
+    /**
+     * The positions of the block entities of a box, from the chunks' own maps.
+     * Server thread only, like every chunk read.
+     */
+    @Override
+    public void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                   BlockEntityVisitor visitor) {
+        for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
+            for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
+                // A copy of the positions, the pending ones included: reading a
+                // pending block entity makes the chunk promote it.
+                for (BlockPos pos : level.getChunk(chunkX, chunkZ).getBlockEntitiesPos()) {
+                    int x = pos.getX();
+                    int y = pos.getY();
+                    int z = pos.getZ();
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ) {
+                        visitor.visit(x, y, z);
+                    }
+                }
+            }
+        }
+    }
+
+    /** The game's tag as the engine's compound, through the binary form both of them read and write. */
+    private static NbtCompound fromTag(CompoundTag tag) throws IOException {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        net.minecraft.nbt.NbtIo.write(tag, new java.io.DataOutputStream(bytes));
+        return com.maxlananas.fawebim.core.util.NbtIo.read(bytes.toByteArray());
     }
 
     /** The engine's compound as the game's tag. */

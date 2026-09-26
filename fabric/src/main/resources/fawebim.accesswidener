@@ -14,3 +14,8 @@ accessible field net/minecraft/commands/CommandSourceStack source Lnet/minecraft
 # work back to the server thread.
 accessible class net/minecraft/server/level/ServerChunkCache$MainThreadExecutor
 accessible field net/minecraft/server/level/ServerChunkCache mainThreadProcessor Lnet/minecraft/server/level/ServerChunkCache$MainThreadExecutor;
+
+# LevelChunk#setBlockState rebinds the ticker of a block entity whose block
+# only changed state. The bulk write keeps the block entities itself, so it
+# needs the same method.
+accessible method net/minecraft/world/level/chunk/LevelChunk updateBlockEntityTicker (Lnet/minecraft/world/level/block/entity/BlockEntity;)V
