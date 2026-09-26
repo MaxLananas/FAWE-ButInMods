@@ -73,6 +73,15 @@ public class ConvexPolyhedralRegion implements Region {
         return faces.size();
     }
 
+    /** The faces of the hull, each as its three vertices, counter-clockwise seen from outside. */
+    public List<BlockVector3[]> getTriangles() {
+        List<BlockVector3[]> triangles = new ArrayList<>(faces.size());
+        for (Face face : faces) {
+            triangles.add(new BlockVector3[]{face.a, face.b, face.c});
+        }
+        return triangles;
+    }
+
     /** True once the hull has faces, i.e. three vertices that are not on a line. */
     public boolean isDefined() {
         return !faces.isEmpty();

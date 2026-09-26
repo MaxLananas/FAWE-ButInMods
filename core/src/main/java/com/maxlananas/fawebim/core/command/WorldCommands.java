@@ -276,7 +276,7 @@ final class WorldCommands {
                         + Msg.value("//pos2").raw() + " to see the outline."));
             } else {
                 ctx.actor().status(com.maxlananas.fawebim.core.util.Cui.size(
-                        session.getSelection(ctx.world())));
+                        session.getSelector(ctx.world())));
             }
         };
     }

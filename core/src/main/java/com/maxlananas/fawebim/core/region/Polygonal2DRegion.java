@@ -80,6 +80,18 @@ public class Polygonal2DRegion implements Region {
         normalizeY();
     }
 
+    /**
+     * Sets both ends of the height at once. Setting them one after the other
+     * goes through a range upside down whenever the new one lies above the old
+     * one, and the swap that puts it right side up kept the old bottom: the
+     * first polygon of a session ran down to the bottom of the world.
+     */
+    public void setYRange(int minY, int maxY) {
+        this.minY = Math.min(minY, maxY);
+        this.maxY = Math.max(minY, maxY);
+        volume = -1;
+    }
+
     /** Grows the Y range so it holds {@code y}, the way a click extends it. */
     public void expandY(int y) {
         minY = Math.min(minY, y);

@@ -1,144 +1,113 @@
 package com.maxlananas.fawebim.fabric;
 
 import com.maxlananas.fawebim.core.math.BlockVector3;
-import com.maxlananas.fawebim.core.region.Region;
+import com.maxlananas.fawebim.core.region.RegionSelector;
+import com.maxlananas.fawebim.core.util.Cui;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.List;
 
 /**
- * Draws the selection outline with particles.
+ * Draws the selection with particles.
  *
- * <p>WorldEdit asks a client mod to draw the selection; in single player there
- * is no client mod, so this mod draws it in the world instead. The box is one
- * packet per edge - the count and the spread of a particle packet paint a whole
- * line - so a hundred-block selection costs the same as a small one, and the
- * two corners the player picked are marked in their own colour, the way a CUI
- * client shows them: red for position 1, blue for position 2.</p>
+ * <p>WorldEdit asks a client mod to draw the selection; a vanilla client has
+ * none, so the outline is drawn in the world instead: the engine works out the
+ * edges of the shape ({@link Cui#outline}) and each one is dotted with
+ * particles, one exact point per particle. The points the player clicked are
+ * marked in their own colour, the way a CUI client shows them: red for the
+ * first, blue for the others.</p>
+ *
+ * <p>A particle is a packet, so the dots of one drawing are spread over the
+ * whole outline and capped: a large selection gets wider gaps rather than more
+ * packets.</p>
+ *
+ * <p>Server thread only: it reads the player's session and sends packets.</p>
  */
 public final class SelectionPreview {
 
-    /**
-     * Particles one edge is worth. Two per block makes a line that reads as a
-     * line rather than as dots, and the cap keeps a thousand-block edge from
-     * putting a thousand particles in one packet.
-     */
-    private static final int SAMPLES_PER_BLOCK = 2;
-    private static final int MIN_SAMPLES = 6;
-    private static final int MAX_SAMPLES = 64;
+    /** The most particles one drawing of the outline sends, marks excluded. */
+    private static final int PARTICLE_BUDGET = 320;
+    /** The closest two dots of an edge may be. */
+    private static final double MIN_SPACING = 0.5;
 
-    /** The colour of the outline, its corners, and the two picked positions. */
     private static final int EDGE_COLOUR = 0x6CC6FF;
     private static final int VERTICAL_COLOUR = 0x3F8CFF;
-    private static final int CORNER_COLOUR = 0xB6EAFF;
     private static final int POSITION_1_COLOUR = 0xFF5555;
     private static final int POSITION_2_COLOUR = 0x5599FF;
-    private static final float MARK_SIZE = 0.9F;
-    private static final float CORNER_SIZE = 0.35F;
+    private static final float MARK_SIZE = 0.3F;
+
+    private static final ParticleOptions EDGE = new DustParticleOptions(EDGE_COLOUR, 1.0F);
+    private static final ParticleOptions VERTICAL = new DustParticleOptions(VERTICAL_COLOUR, 1.0F);
+    private static final ParticleOptions POSITION_1 = new DustParticleOptions(POSITION_1_COLOUR, 1.5F);
+    private static final ParticleOptions POSITION_2 = new DustParticleOptions(POSITION_2_COLOUR, 1.5F);
 
     private SelectionPreview() {
     }
 
-    /** Redraws the outline of the actor's selection, when it has one and wants it. */
+    /** Redraws the actor's selection, when the preview is on. */
     public static void refresh(FabricActor actor) {
-        if (!actor.isPlayer()) {
+        if (!actor.isPlayer() || !actor.session().isDrawSelection()) {
             return;
         }
-        ServerPlayer player = actor.player();
-        var session = actor.session();
-        if (!session.isDrawSelection()) {
-            return;
-        }
-        Region region = session.isSelectionDefined(actor.world()) ? session.getSelection(actor.world()) : null;
-        if (region == null) {
-            return;
-        }
-        draw(player, region);
+        draw(actor.player(), actor.session().getSelector(actor.world()));
     }
 
-    /** Sends the outline of a region to one player. */
-    public static void draw(ServerPlayer player, Region region) {
-        BlockVector3 min = region.getMinimumPoint();
-        // The far corner of the last block, so the line runs along the outside of
-        // the selection rather than through its middle.
-        BlockVector3 max = region.getMaximumPoint().add(1, 1, 1);
-        ParticleOptions edge = dust(EDGE_COLOUR);
-        ParticleOptions vertical = dust(VERTICAL_COLOUR);
-
-        for (int axis = 0; axis < 3; axis++) {
-            for (int[] corner : corners(axis)) {
-                // The edge starts at the corner and runs along one axis.
-                double x = corner[0] == 0 ? min.x() : max.x();
-                double y = corner[1] == 0 ? min.y() : max.y();
-                double z = corner[2] == 0 ? min.z() : max.z();
-                int length = axis == 0 ? max.x() - min.x() : axis == 1 ? max.y() - min.y() : max.z() - min.z();
-                if (length <= 0) {
-                    continue;
-                }
-                double dx = axis == 0 ? max.x() - min.x() : 0;
-                double dy = axis == 1 ? max.y() - min.y() : 0;
-                double dz = axis == 2 ? max.z() - min.z() : 0;
-                int samples = Math.max(MIN_SAMPLES,
-                        Math.min(MAX_SAMPLES, length * SAMPLES_PER_BLOCK));
-                // The four uprights run a tone deeper, which is what makes the box
-                // read as a box rather than as a square seen from an angle.
-                level(player).sendParticles(player, axis == 1 ? vertical : edge, true, false,
-                        x + dx / 2, y + dy / 2, z + dz / 2, samples, dx, dy, dz, 0);
+    /** Sends the outline of a selector's shape to one player. */
+    public static void draw(ServerPlayer player, RegionSelector selector) {
+        Cui.Outline outline = Cui.outline(selector);
+        if (outline.isEmpty()) {
+            return;
+        }
+        ServerLevel level = (ServerLevel) player.level();
+        double spacing = Math.max(MIN_SPACING, outline.length() / PARTICLE_BUDGET);
+        double[] segments = outline.segments();
+        for (int i = 0; i < segments.length; i += 6) {
+            double x0 = segments[i];
+            double y0 = segments[i + 1];
+            double z0 = segments[i + 2];
+            double dx = segments[i + 3] - x0;
+            double dy = segments[i + 4] - y0;
+            double dz = segments[i + 5] - z0;
+            double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            // The uprights of a box or a polygon run a tone deeper, which is
+            // what makes the shape read as a volume rather than a flat outline.
+            ParticleOptions colour = dx == 0 && dz == 0 && dy != 0 ? VERTICAL : EDGE;
+            int dots = Math.max(1, (int) Math.round(length / spacing));
+            for (int dot = 0; dot <= dots; dot++) {
+                double t = dot / (double) dots;
+                level.sendParticles(player, colour, true, false, x0 + dx * t, y0 + dy * t, z0 + dz * t,
+                        1, 0, 0, 0, 0);
             }
         }
-        for (int corner = 0; corner < 8; corner++) {
-            mark(player,
-                    new BlockVector3((corner & 1) == 0 ? min.x() : max.x(),
-                            (corner & 2) == 0 ? min.y() : max.y(),
-                            (corner & 4) == 0 ? min.z() : max.z()),
-                    CORNER_COLOUR);
+        mark(level, player, outline.primary(), POSITION_1);
+        mark(level, player, outline.secondary(), POSITION_2);
+    }
+
+    /** A small cloud in the middle of each clicked block, in one packet each. */
+    private static void mark(ServerLevel level, ServerPlayer player, List<BlockVector3> points,
+                             ParticleOptions colour) {
+        for (BlockVector3 point : points) {
+            level.sendParticles(player, colour, true, false, point.x() + 0.5, point.y() + 0.5, point.z() + 0.5,
+                    4, MARK_SIZE, MARK_SIZE, MARK_SIZE, 0);
         }
-        mark(player, min, POSITION_1_COLOUR);
-        mark(player, region.getMaximumPoint(), POSITION_2_COLOUR);
     }
 
     /**
-     * The size of the selection, on the line above the hotbar.
+     * The shape and size of the selection, on the line above the hotbar.
      *
      * <p>This is what the client half of the CUI shows while a selection is
-     * dragged out: the three dimensions and how many blocks they hold. The engine
-     * writes it, so the same line is covered by the engine tests.</p>
+     * dragged out. The engine writes the line, so the engine tests cover it.</p>
      */
     public static void size(FabricActor actor) {
         if (!actor.isPlayer()) {
             return;
         }
-        var session = actor.session();
-        Region region = session.isSelectionDefined(actor.world()) ? session.getSelection(actor.world()) : null;
-        if (region == null) {
-            return;
+        RegionSelector selector = actor.session().getSelector(actor.world());
+        if (selector.isDefined()) {
+            actor.status(Cui.size(selector));
         }
-        actor.status(com.maxlananas.fawebim.core.util.Cui.size(region));
-    }
-
-    /** The four corners an edge of the given axis can start from. */
-    private static List<int[]> corners(int axis) {
-        return switch (axis) {
-            case 0 -> List.of(new int[]{0, 0, 0}, new int[]{0, 0, 1}, new int[]{0, 1, 0}, new int[]{0, 1, 1});
-            case 1 -> List.of(new int[]{0, 0, 0}, new int[]{0, 0, 1}, new int[]{1, 0, 0}, new int[]{1, 0, 1});
-            default -> List.of(new int[]{0, 0, 0}, new int[]{0, 1, 0}, new int[]{1, 0, 0}, new int[]{1, 1, 0});
-        };
-    }
-
-    /** A small cloud of the corner's own colour, in one packet. */
-    private static void mark(ServerPlayer player, BlockVector3 corner, int colour) {
-        level(player).sendParticles(player, dust(colour), true, false,
-                corner.x() + 0.5, corner.y() + 0.5, corner.z() + 0.5, 8,
-                MARK_SIZE, MARK_SIZE, MARK_SIZE, 0);
-    }
-
-    private static ParticleOptions dust(int colour) {
-        return new DustParticleOptions(colour, 1.0F);
-    }
-
-    private static net.minecraft.server.level.ServerLevel level(ServerPlayer player) {
-        return (net.minecraft.server.level.ServerLevel) player.level();
     }
 }

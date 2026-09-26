@@ -191,8 +191,10 @@ public final class FaweMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (server.getTickCount() % 5 != 0) {
-                // The selection preview only needs a few updates per second.
+            if (server.getTickCount() % 10 != 0) {
+                // The selection preview is drawn twice a second: a dust particle
+                // lasts about that long, so the outline stays up without doubling
+                // the packets.
                 return;
             }
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {

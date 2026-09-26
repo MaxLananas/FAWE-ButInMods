@@ -369,19 +369,9 @@ public final class LocalSession {
         this.selector = selector;
     }
 
+    /** A new, empty selector of a type {@code //sel} knows, or {@code null} for an unknown name. */
     public static RegionSelector newSelectors(World world, String type) {
-        int minY = world == null ? -64 : world.minY();
-        int maxY = world == null ? 319 : world.maxY();
-        return switch (type.toLowerCase(java.util.Locale.ROOT)) {
-            case "cuboid" -> new Selectors.CuboidSelector(minY, maxY);
-            case "extend" -> new Selectors.ExtendingCuboidSelector(minY, maxY);
-            case "poly" -> new Selectors.Polygonal2DSelector(minY, maxY);
-            case "ellipsoid" -> new Selectors.EllipsoidSelector(minY, maxY, false);
-            case "sphere" -> new Selectors.EllipsoidSelector(minY, maxY, true);
-            case "cyl", "cylinder" -> new Selectors.CylinderSelector(minY, maxY);
-            case "convex" -> new Selectors.ConvexSelector(minY, maxY);
-            default -> null;
-        };
+        return Selectors.create(type, world, null);
     }
 
     public Region getSelection(World world) {

@@ -114,9 +114,7 @@ public final class Commands {
         e1.arguments.add("[coordinates]");
         e1.handler = ctx -> {
                     BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
-                    RegionSelector selector = ctx.session().getSelector(ctx.world());
-                    selector.selectPrimary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 1", "set to " + Msg.value(pos).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), pos, true, true);
                 };
 
 
@@ -126,9 +124,7 @@ public final class Commands {
         e2.arguments.add("[coordinates]");
         e2.handler = ctx -> {
                     BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
-                    RegionSelector selector = ctx.session().getSelector(ctx.world());
-                    selector.selectSecondary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 2", "set to " + Msg.value(pos).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), pos, false, true);
                 };
 
 
@@ -138,9 +134,7 @@ public final class Commands {
         e3.requiresPlayer = true;
         e3.handler = ctx -> {
                     BlockVector3 target = ctx.targetBlock(100);
-                    ctx.session().getSelector(ctx.world()).selectPrimary(target,
-                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 1", "set to " + Msg.value(target).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), target, true, true);
                 };
 
 
@@ -150,9 +144,7 @@ public final class Commands {
         e4.requiresPlayer = true;
         e4.handler = ctx -> {
                     BlockVector3 target = ctx.targetBlock(100);
-                    ctx.session().getSelector(ctx.world()).selectSecondary(target,
-                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 2", "set to " + Msg.value(target).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), target, false, true);
                 };
 
 
@@ -192,37 +184,43 @@ public final class Commands {
         // ";" is the spelling WorldEdit gives this command: the client sends the
         // line without its leading slashes, so //; and /; reach it.
         CommandRegistry.Entry e6 = registry.register("//sel", ";");
-        e6.description = "Choose the selection type: cuboid, extend, poly, ellipsoid, sphere, cyl, convex";
+        e6.description = "Choose a region selector";
         e6.group = "selection";
-        e6.arguments.add("[type]");
+        e6.arguments.add("[selector]");
         // -d remembers the selector as the default for new sessions.
         e6.booleanFlags.add("d");
         e6.handler = ctx -> {
-                    if (ctx.args().isEmpty()) {
-                        ctx.actor().message(Msg.info("Selection type: ").append(Msg.value(
-                                ctx.session().getSelector(ctx.world()).getTypeName())));
-                        ctx.actor().message(Msg.info("Types: cuboid, extend, poly, ellipsoid, sphere, cyl, convex"));
+                    RegionSelector current = ctx.session().getSelector(ctx.world());
+                    // Nothing after //sel clears the selection, as in WorldEdit.
+                    if (ctx.args().isEmpty() || ctx.arg(0).equalsIgnoreCase("none")) {
+                        current.clear();
+                        ctx.actor().updateSelectionOutline();
+                        ctx.actor().message(Msg.result("Selection", "cleared"));
                         return;
                     }
-                    String type = ctx.arg(0).toLowerCase(Locale.ROOT);
-                    if (type.equals("none")) {
-                        ctx.session().getSelector(ctx.world()).clear();
-                        ctx.actor().message(Msg.info("Selection cleared"));
+                    String type = ctx.arg(0);
+                    if (type.equalsIgnoreCase("list")) {
+                        listSelectors(ctx, current);
                         return;
                     }
-                    RegionSelector selector = LocalSession.newSelectors(ctx.world(), type);
+                    RegionSelector selector = com.maxlananas.fawebim.core.region.Selectors.create(type, ctx.world(),
+                            current);
                     if (selector == null) {
-                        throw CommandRegistry.error("Unknown selection type '" + type
-                                + "'. Try cuboid, extend, poly, ellipsoid, sphere, cyl, convex.");
+                        throw CommandRegistry.error("Unknown selection type '" + type + "'. Try "
+                                + String.join(", ", com.maxlananas.fawebim.core.region.Selectors.NAMES)
+                                + ", or //sel list");
                     }
                     ctx.session().setSelector(selector);
                     if (ctx.hasFlag("d")) {
                         ctx.session().setDefaultSelectorType(selector.getTypeName());
                         ctx.actor().message(Msg.success("Default selection type set to " + selector.getTypeName()));
-                        return;
                     }
                     ctx.actor().message(Msg.result("Selection type", "set to "
                             + Msg.value(selector.getTypeName()).raw()));
+                    ctx.actor().message(Msg.hint(selector.usage() + (limitsVertices(selector)
+                            ? " (" + (com.maxlananas.fawebim.core.region.SelectorLimits.PLAYER_VERTEX_LIMIT + 1)
+                            + " points at most)" : "")));
+                    ctx.actor().updateSelectionOutline();
                 };
 
 
@@ -1415,6 +1413,24 @@ public final class Commands {
             return Math.max(0, (max - low) / -step);
         }
         return Long.MAX_VALUE;
+    }
+
+    /** {@code //sel list}: every selection type, each a line that switches to it when clicked. */
+    private static void listSelectors(Ctx ctx, RegionSelector current) {
+        ctx.actor().message(Msg.title("Selection types"));
+        for (String name : com.maxlananas.fawebim.core.region.Selectors.NAMES) {
+            String description = com.maxlananas.fawebim.core.region.Selectors.description(name);
+            Msg line = name.equals(current.getTypeName()) ? Msg.item(name + " (in use)", description)
+                    : Msg.item(name, description);
+            ctx.actor().commandLink(line.raw(), "//sel " + name, "Switch to " + name);
+        }
+    }
+
+    /** Whether the shape counts its clicks against WorldEdit's vertex limit. */
+    private static boolean limitsVertices(RegionSelector selector) {
+        return selector instanceof com.maxlananas.fawebim.core.region.Selectors.Polygonal2DSelector
+                || selector instanceof com.maxlananas.fawebim.core.region.Selectors.ConvexSelector
+                || selector instanceof com.maxlananas.fawebim.core.region.Selectors.PolyhedralSelector;
     }
 
     /**

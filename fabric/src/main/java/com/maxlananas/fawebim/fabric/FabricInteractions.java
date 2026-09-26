@@ -6,14 +6,12 @@ import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
-import com.maxlananas.fawebim.core.region.SelectorLimits;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.tool.SuperPickaxe;
 import com.maxlananas.fawebim.core.tool.Tool;
 import com.maxlananas.fawebim.core.tool.Tools;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
-import com.maxlananas.fawebim.core.world.Direction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -136,14 +134,11 @@ public final class FabricInteractions {
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
-        // 3. The selection wand: first corner.
+        // 3. The selection wand: the primary position of the shape.
         if (held != null && held.equals(Config.get().wandItem) && session.isSelectionWandEnabled()) {
             session.setLastClickedPosition(FabricMessages.blockVector(pos));
             session.setLastClickedFace(FabricMessages.direction(face));
-            session.getSelector(actor.world()).selectPrimary(FabricMessages.blockVector(pos),
-                    SelectorLimits.unlimited());
-            actor.message(Msg.result("Position 1", "set to " + Msg.value(FabricMessages.blockVector(pos)).raw()));
-            actor.updateSelectionOutline();
+            Tools.select(actor, FabricMessages.blockVector(pos), true, false);
             return handled(player);
         }
         // Anything else falls through to the arm swing, exactly like WorldEdit's
@@ -211,10 +206,7 @@ public final class FabricInteractions {
                 && !player.isShiftKeyDown()) {
             session.setLastClickedPosition(FabricMessages.blockVector(pos));
             session.setLastClickedFace(FabricMessages.direction(face));
-            session.getSelector(actor.world()).selectSecondary(FabricMessages.blockVector(pos),
-                    SelectorLimits.unlimited());
-            actor.message(Msg.result("Position 2", "set to " + Msg.value(FabricMessages.blockVector(pos)).raw()));
-            actor.updateSelectionOutline();
+            Tools.select(actor, FabricMessages.blockVector(pos), false, false);
             return handled(player);
         }
 

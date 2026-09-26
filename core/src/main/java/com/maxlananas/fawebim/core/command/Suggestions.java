@@ -72,6 +72,9 @@ public final class Suggestions {
         if (name.contains("direction") || name.contains("dir")) {
             return filtered(Directions.SUGGESTIONS, prefix);
         }
+        if (name.equals("selector")) {
+            return filtered(com.maxlananas.fawebim.core.region.Selectors.NAMES, prefix);
+        }
         if (name.contains("shape") || name.contains("region") || name.contains("type")) {
             return filtered(SHAPES, prefix);
         }

@@ -148,6 +148,7 @@ public final class SelfTestMain {
         TerrainTests.run();
         ClipboardSectionTests.run();
         RegionCopyTests.run();
+        SelectionTests.run();
         MessageStyleTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
@@ -3175,11 +3176,13 @@ public final class SelfTestMain {
         TestActor actor = new TestActor("Preview", world, new BlockVector3(0, 71, 0));
         CommandManager.get().dispatch(actor, "//pos1 1,2,3");
         CommandManager.get().dispatch(actor, "//pos2 12,71,14");
-        Msg size = com.maxlananas.fawebim.core.util.Cui.size(actor.session().getSelection(world));
+        Msg size = com.maxlananas.fawebim.core.util.Cui.size(actor.session().getSelector(world));
         check("the size line shows the three dimensions", size.plain().contains("12x70x12"));
-        check("the size line counts the blocks", size.plain().contains("10,080"));
-        check("the size line names both corners", size.plain().contains("1, 2, 3")
-                && size.plain().contains("12, 71, 14"));
+        check("the size line counts the blocks", size.plain().contains("10,080 blocks"));
+        check("the size line names the shape", size.plain().contains("Cuboid"));
+        // The line sits above the hotbar: it says what the selection is, not
+        // where both corners are, which made it run off the screen.
+        check("the size line is short", size.plain().length() <= 40);
         check("the size line is coloured", size.raw().contains("\u00a7"));
 
         actor.clearMessages();
@@ -3606,9 +3609,9 @@ public final class SelfTestMain {
 
 
     /**
-     * {@code //sel} picks the selector and, with no argument, reports the one in
-     * use; {@code ;} is the spelling WorldEdit gives it, so {@code //;} has to be
-     * the same command.
+     * {@code //sel} picks the selector, {@code //sel list} lists them and, with
+     * no argument, it clears the selection, as in WorldEdit; {@code ;} is the
+     * spelling WorldEdit gives it, so {@code //;} has to be the same command.
      */
     private static void testSelectionTypes() {
         section("selection types");
@@ -3616,25 +3619,35 @@ public final class SelfTestMain {
         world.fillFlat(70);
         TestActor actor = new TestActor("Sel", world, new BlockVector3(0, 71, 0));
 
+        CommandManager.get().dispatch(actor, "//pos1 0,70,0");
+        CommandManager.get().dispatch(actor, "//pos2 3,72,3");
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel");
-        check("//sel with no type reports the one in use", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("Selection type: cuboid")));
+        check("//sel with no type clears the selection", !actor.session().isSelectionDefined(world));
+        check("and says so", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Selection: cleared")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sel list");
+        for (String type : List.of("cuboid", "extend", "poly", "ellipsoid", "sphere", "cyl", "convex",
+                "polyhedral", "fuzzy")) {
+            check("//sel list names " + type, actor.messages().stream()
+                    .anyMatch(message -> plain(message).contains("- " + type)));
+        }
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel sphere");
         check("//sel sphere sets it", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("\u00bb Selection type: ")
                         && plain(message).contains("sphere")));
-        actor.clearMessages();
-        CommandManager.get().dispatch(actor, "//sel");
-        check("//sel reports the new type", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("Selection type: sphere")));
+        check("and says how the wand works for it", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("right click to set the radius")));
+        check("the session holds a sphere selector",
+                actor.session().getSelector(world).getTypeName().equals("sphere"));
 
         actor.clearMessages();
-        CommandManager.get().dispatch(actor, "//;");
-        check("//; is the same command", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("Selection type: sphere")));
+        CommandManager.get().dispatch(actor, "//; poly");
+        check("//; is the same command", actor.session().getSelector(world).getTypeName().equals("poly"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, ";");
         check("; is answered as a command", !actor.messages().isEmpty() && actor.messages().stream()
@@ -3644,6 +3657,14 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//sel nope");
         check("an unknown type lists the ones that exist", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("Unknown selection type 'nope'")));
+
+        // The aliases WorldEdit and FAWE give the types.
+        CommandManager.get().dispatch(actor, "//sel hull");
+        checkEquals("hull is the convex selector", "convex", actor.session().getSelector(world).getTypeName());
+        CommandManager.get().dispatch(actor, "//sel cylinder");
+        checkEquals("cylinder is the cyl selector", "cyl", actor.session().getSelector(world).getTypeName());
+        CommandManager.get().dispatch(actor, "//sel magic");
+        checkEquals("magic is the fuzzy selector", "fuzzy", actor.session().getSelector(world).getTypeName());
 
         // -d remembers the pick for new sessions, like WorldEdit's //sel -d.
         actor.clearMessages();

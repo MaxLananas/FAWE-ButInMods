@@ -139,8 +139,6 @@ public final class Tools {
         return new Patterns.Single(BlockState.registry().defaultState("minecraft:stone"));
     }
 
-    // ------------------------------------------------------------------- tools
-
     /**
      * {@code /tool tree [type]}, WorldEdit's tree planter: a right click grows
      * a tree on the clicked block, from the block above it.
@@ -425,17 +423,48 @@ public final class Tools {
             context.message(Msg.error("No block in sight"));
             return true;
         }
-        com.maxlananas.fawebim.core.region.RegionSelector selector =
-                context.actor.session().getSelector(context.actor.world());
-        if (primary) {
-            selector.selectPrimary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-        } else {
-            selector.selectSecondary(context.position, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-        }
-        context.message(Msg.result(primary ? "Position 1" : "Position 2",
-                "set to " + Msg.value(context.position).raw()));
-        context.actor.updateSelectionOutline();
+        select(context.actor, context.position, primary, false);
         return true;
+    }
+
+    /**
+     * Gives a position to the selection, as the wand, {@code //pos1} and
+     * {@code //pos2} do: the primary one for a left click, the secondary for a
+     * right one, answered with the line the shape has for it - the corner of a
+     * cuboid, the centre or the radius of a sphere, the point of a polygon.
+     *
+     * <p>A position that changes nothing is answered only when a command asked
+     * for it, as in WorldEdit: clicking the same block twice with the wand says
+     * nothing.</p>
+     *
+     * @return whether the selection changed
+     */
+    public static boolean select(Actor actor, BlockVector3 position, boolean primary, boolean command) {
+        com.maxlananas.fawebim.core.region.RegionSelector selector = actor.session().getSelector(actor.world());
+        com.maxlananas.fawebim.core.region.SelectorLimits limits =
+                com.maxlananas.fawebim.core.region.SelectorLimits.player();
+        boolean changed = primary ? selector.selectPrimary(position, limits)
+                : selector.selectSecondary(position, limits);
+        if (changed) {
+            actor.message(primary ? selector.explainPrimary(position) : selector.explainSecondary(position));
+            actor.updateSelectionOutline();
+        } else if (command) {
+            actor.message(Msg.warn(unchanged(selector, primary)));
+        }
+        return changed;
+    }
+
+    /** Why a position changed nothing. */
+    private static String unchanged(com.maxlananas.fawebim.core.region.RegionSelector selector, boolean primary) {
+        boolean centred = selector instanceof com.maxlananas.fawebim.core.region.Selectors.EllipsoidSelector
+                || selector instanceof com.maxlananas.fawebim.core.region.Selectors.CylinderSelector;
+        if (!primary && centred && selector.primaryPoints().isEmpty()) {
+            return "Select the center with a left click or //pos1 first";
+        }
+        if (!primary && selector.vertexCount() > com.maxlananas.fawebim.core.region.SelectorLimits.PLAYER_VERTEX_LIMIT) {
+            return "The selection already has the most points it may have";
+        }
+        return "Position already set";
     }
 
     /**

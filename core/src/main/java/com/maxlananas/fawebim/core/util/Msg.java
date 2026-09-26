@@ -362,6 +362,11 @@ public final class Msg {
         return Theme.NUMBER + formatNumber(value) + BACK;
     }
 
+    /** {@code 1 block}, {@code 1,024 blocks}: a count of blocks, the count in the value colour. */
+    public static String blocks(long value) {
+        return count(value) + (value == 1 ? " block" : " blocks");
+    }
+
     /**
      * A per-character colour ramp in the {@code §x} hex form the client reads
      * since 1.16. The theme uses one, on the name in front of a line; it is here

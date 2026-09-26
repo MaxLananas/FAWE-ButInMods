@@ -67,6 +67,21 @@ public final class LongSet {
         return size;
     }
 
+    /** The values of the set, in no particular order. */
+    public long[] toArray() {
+        long[] values = new long[size];
+        int at = 0;
+        if (containsZero) {
+            values[at++] = 0;
+        }
+        for (long key : keys) {
+            if (key != 0) {
+                values[at++] = key;
+            }
+        }
+        return values;
+    }
+
     private boolean insert(long value) {
         int mask = keys.length - 1;
         int slot = spread(value) & mask;
