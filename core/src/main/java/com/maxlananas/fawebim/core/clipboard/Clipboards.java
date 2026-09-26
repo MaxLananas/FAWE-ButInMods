@@ -3,6 +3,7 @@ package com.maxlananas.fawebim.core.clipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockBox;
 import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.platform.Config;
@@ -584,18 +585,66 @@ public final class Clipboards {
         // item frame finds its wall, and each is a new entity with an identity
         // of its own: the ones copied are still where they were.
         if (pasteEntities) {
+            BlockVector3 origin = clipboard.getOrigin();
             for (EntityData entity : clipboard.getEntitiesCopy()) {
-                var target = transform.apply(entity.position());
+                // Blocks turn as points around the origin; an entity turns
+                // around the centre of the origin's block, as in WorldEdit, so
+                // one standing on a block still stands on it once both have
+                // turned. Turned around the corner, it landed a block away.
+                Vector3 target = identity ? entity.position()
+                        : transform.apply(entity.position().subtract(BLOCK_CENTRE)).add(BLOCK_CENTRE);
+                NbtCompound nbt = identity ? entity.nbt() : EntityTransforms.turn(entity.nbt(), transform);
                 EntityData placed = new EntityData(entity.type(),
-                        identity ? entity.nbt() : EntityTransforms.turn(entity.nbt(), transform),
-                        new com.maxlananas.fawebim.core.math.Vector3(
-                                target.x() - clipboard.getOrigin().x() + destination.x(),
-                                target.y() - clipboard.getOrigin().y() + destination.y(),
-                                target.z() - clipboard.getOrigin().z() + destination.z()));
+                        attachedTo(nbt, identity ? null : transform, origin, destination),
+                        new Vector3(target.x() - origin.x() + destination.x(), target.y() - origin.y() + destination.y(),
+                                target.z() - origin.z() + destination.z()));
                 session.addEntity(placed);
             }
         }
         return changed;
+    }
+
+    private static final Vector3 BLOCK_CENTRE = new Vector3(0.5, 0.5, 0.5);
+
+    /**
+     * The data of a painting, an item frame or a leash knot with the block it
+     * hangs from moved as the blocks move. The game places such an entity by
+     * that block and not by its position, so a paste that moved only the
+     * position left the entity where it was copied from. The {@code TileX},
+     * {@code TileY} and {@code TileZ} of older data become the {@code
+     * block_pos} the game reads now.
+     *
+     * @param transform the paste's transform, null for none
+     * @return the data, a copy of it when it changed
+     */
+    public static NbtCompound attachedTo(NbtCompound nbt, Transform transform, BlockVector3 origin,
+                                  BlockVector3 destination) {
+        if (nbt == null) {
+            return null;
+        }
+        int[] block = null;
+        if (nbt.get("block_pos") instanceof int[] position && position.length == 3) {
+            block = position;
+        } else if (nbt.get("TileX") instanceof Number x && nbt.get("TileY") instanceof Number y
+                && nbt.get("TileZ") instanceof Number z) {
+            block = new int[]{x.intValue(), y.intValue(), z.intValue()};
+        }
+        if (block == null) {
+            return nbt;
+        }
+        Vector3 target = new Vector3(block[0], block[1], block[2]);
+        if (transform != null) {
+            target = transform.apply(target);
+        }
+        NbtCompound moved = nbt.clone();
+        moved.remove("TileX");
+        moved.remove("TileY");
+        moved.remove("TileZ");
+        moved.putIntArray("block_pos", new int[]{
+            (int) Math.floor(target.x() - origin.x() + destination.x()),
+            (int) Math.floor(target.y() - origin.y() + destination.y()),
+            (int) Math.floor(target.z() - origin.z() + destination.z())});
+        return moved;
     }
 
     /**

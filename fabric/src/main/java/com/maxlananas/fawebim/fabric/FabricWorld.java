@@ -815,9 +815,16 @@ public final class FabricWorld implements World {
         withoutIdentity(tag);
         tag.putString("id", data.type());
         Vector3 at = data.position();
+        boolean hangs = tag.contains("block_pos");
         Entity created = net.minecraft.world.entity.EntityType.loadEntityRecursive(tag, level,
                 net.minecraft.world.entity.EntitySpawnReason.COMMAND, loaded -> {
-                    loaded.absSnapTo(at.x(), at.y(), at.z(), loaded.getYRot(), loaded.getXRot());
+                    // A painting, an item frame or a leash knot sits where its
+                    // block_pos puts it. Moving it to a position takes the block
+                    // that contains the position instead, which for a painting
+                    // two blocks high is the one above its own.
+                    if (!(hangs && loaded instanceof net.minecraft.world.entity.decoration.BlockAttachedEntity)) {
+                        loaded.absSnapTo(at.x(), at.y(), at.z(), loaded.getYRot(), loaded.getXRot());
+                    }
                     return loaded;
                 });
         if (created == null) {

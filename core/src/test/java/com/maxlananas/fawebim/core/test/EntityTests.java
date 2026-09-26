@@ -33,6 +33,8 @@ final class EntityTests {
         removeAllLeavesTheMobs();
         cutTakesTheEntitiesAlong();
         turnedPastesTurnTheEntities();
+        turnedPastesKeepEntitiesOnTheirBlocks();
+        hangingEntitiesMoveWithTheirWall();
         passengersTravelInTheirVehicle();
     }
 
@@ -127,6 +129,75 @@ final class EntityTests {
                 Math.abs((Float) rotation.get(0) - 90f) < 1e-3 && (Float) rotation.get(1) == 10f);
         checkEquals("an item frame on a north wall hangs on an east one", (byte) 5, turned.get("Facing"));
         check("the data the paste started from is left as it was", looking.get("Facing").equals((byte) 2));
+    }
+
+    /**
+     * Blocks turn as points around the origin, so an entity turned around the
+     * same corner landed a block away from the block it stood on.
+     */
+    private static void turnedPastesKeepEntitiesOnTheirBlocks() {
+        TestActor actor = actor("EntityTurn");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = com.maxlananas.fawebim.core.world.BlockState.registry().defaultState("minecraft:gold_block");
+        world.setBlock(1, 69, 1, gold);
+        world.addEntity(pig(1.5, 70, 1.5, "Turn"));
+        run(actor, "//pos1 0,69,0");
+        run(actor, "//pos2 3,72,3");
+        run(actor, "//copy -e");
+        boolean onTheirBlock = true;
+        StringBuilder seen = new StringBuilder();
+        for (int turn = 1; turn <= 3; turn++) {
+            run(actor, "//rotate 90");
+            int base = 40 * turn;
+            run(actor, "//paste -e " + base + ",69," + base);
+            int goldX = Integer.MIN_VALUE;
+            int goldZ = Integer.MIN_VALUE;
+            for (int x = base - 6; x <= base + 6; x++) {
+                for (int z = base - 6; z <= base + 6; z++) {
+                    if (world.getBlock(x, 69, z) == gold) {
+                        goldX = x;
+                        goldZ = z;
+                    }
+                }
+            }
+            List<EntityData> pasted = world.getEntities(new Extent.Region3i(base - 8, 60, base - 8, base + 8, 80,
+                    base + 8));
+            seen.append(" gold ").append(goldX).append(',').append(goldZ).append(" pig ")
+                    .append(pasted.isEmpty() ? "none" : pasted.get(0).position());
+            onTheirBlock &= pasted.size() == 1 && Math.floor(pasted.get(0).position().x()) == goldX
+                    && Math.floor(pasted.get(0).position().z()) == goldZ;
+        }
+        check("a pig pasted a quarter, a half and three quarters round still stands on its block" + seen,
+                onTheirBlock);
+    }
+
+    /**
+     * The game places a painting or an item frame by the block it hangs from,
+     * which a paste has to move with the blocks; older data names that block
+     * with TileX, TileY and TileZ.
+     */
+    private static void hangingEntitiesMoveWithTheirWall() {
+        NbtCompound frame = new NbtCompound().putIntArray("block_pos", new int[]{1, 71, 0}).putByte("Facing", 3);
+        NbtCompound moved = com.maxlananas.fawebim.core.clipboard.Clipboards.attachedTo(frame, null,
+                new BlockVector3(0, 70, 0), new BlockVector3(20, 70, 20));
+        check("a paste moves the block an item frame hangs from",
+                java.util.Arrays.equals(new int[]{21, 71, 20}, moved.getIntArray("block_pos")));
+        check("without touching the clipboard's copy", java.util.Arrays.equals(new int[]{1, 71, 0},
+                frame.getIntArray("block_pos")));
+        NbtCompound turned = com.maxlananas.fawebim.core.clipboard.Clipboards.attachedTo(frame,
+                Transforms.rotate(BlockVector3.ZERO, Axis.Y, 90), BlockVector3.ZERO, BlockVector3.ZERO);
+        BlockVector3 expected = Transforms.rotate(BlockVector3.ZERO, Axis.Y, 90).apply(new Vector3(1, 71, 0))
+                .toBlockPoint();
+        check("and turns it as it turns the blocks", java.util.Arrays.equals(
+                new int[]{expected.x(), expected.y(), expected.z()}, turned.getIntArray("block_pos")));
+        NbtCompound legacy = new NbtCompound().putInt("TileX", 5).putInt("TileY", 64).putInt("TileZ", -3);
+        NbtCompound upgraded = com.maxlananas.fawebim.core.clipboard.Clipboards.attachedTo(legacy, null,
+                BlockVector3.ZERO, new BlockVector3(1, 0, 0));
+        check("TileX, TileY and TileZ become the block_pos the game reads", java.util.Arrays.equals(
+                new int[]{6, 64, -3}, upgraded.getIntArray("block_pos")) && !upgraded.contains("TileX"));
+        NbtCompound pig = new NbtCompound().putString("CustomName", "Babe");
+        check("an entity that hangs from nothing keeps its data", com.maxlananas.fawebim.core.clipboard
+                .Clipboards.attachedTo(pig, null, BlockVector3.ZERO, BlockVector3.ONE) == pig);
     }
 
     /** A passenger is saved in its vehicle's data, so a copy of both takes the vehicle. */
