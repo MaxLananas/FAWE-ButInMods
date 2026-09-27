@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 
 import java.lang.reflect.InvocationHandler;
@@ -43,8 +44,11 @@ import java.util.function.Predicate;
  * a position, a predicate on either - by the type it tests - a block written
  * at a position, and a block removed or destroyed, which leaves air. A default
  * method runs its own body on this level, so isEmptyBlock and the like read
- * through it too. Everything else - the heights, the random source, the
- * registries - is the level's own.</p>
+ * through it too. The height of a column is the edit's as well: the level's
+ * heightmaps know nothing of the edit, keep no world generation heightmap up
+ * to date, and a chunk that is not loaded has none, where a placed feature on
+ * the world surface found no height and grew nowhere. Everything else - the
+ * random source, the registries, the bounds - is the level's own.</p>
  *
  * <p>A block written with a block entity gets one of its own here, which is
  * the one the generator is handed when it asks for it: a structure fills its
@@ -81,6 +85,21 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
 
     private BlockState read(BlockPos pos) {
         return Block.stateById(session.getBlock(pos.getX(), pos.getY(), pos.getZ()));
+    }
+
+    /**
+     * One above the highest block of a column the heightmap counts, as the edit
+     * sees the column, or the bottom of the world when it counts none: what
+     * {@code getHeight} answers for a loaded chunk whose heightmap is current.
+     */
+    private int height(Heightmap.Types type, int x, int z) {
+        Predicate<BlockState> counted = type.isOpaque();
+        for (int y = level.getMaxY(); y >= level.getMinY(); y--) {
+            if (counted.test(Block.stateById(session.getBlock(x, y, z)))) {
+                return y + 1;
+            }
+        }
+        return level.getMinY();
     }
 
     private boolean write(BlockPos pos, BlockState state) {
@@ -125,6 +144,13 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         Class<?>[] types = method.getParameterTypes();
         Class<?> result = method.getReturnType();
+        if (types.length == 3 && types[0] == Heightmap.Types.class && result == int.class) {
+            return height((Heightmap.Types) args[0], (Integer) args[1], (Integer) args[2]);
+        }
+        if (types.length == 2 && types[0] == Heightmap.Types.class && result == BlockPos.class) {
+            BlockPos pos = (BlockPos) args[1];
+            return new BlockPos(pos.getX(), height((Heightmap.Types) args[0], pos.getX(), pos.getZ()), pos.getZ());
+        }
         if (types.length > 0 && types[0] == BlockPos.class) {
             BlockPos pos = (BlockPos) args[0];
             if (types.length == 1 && result == BlockState.class) {
