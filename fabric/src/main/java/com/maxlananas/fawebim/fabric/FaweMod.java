@@ -371,10 +371,14 @@ public final class FaweMod implements ModInitializer {
      * computes from the text typed so far, which is where the setting keys of
      * {@code /fawebim} come from.
      */
-    private static CompletableFuture<Suggestions> suggest(CommandRegistry.Entry entry, SuggestionsBuilder builder) {
+    private static CompletableFuture<Suggestions> suggest(CommandRegistry.Entry entry, SuggestionsBuilder whole) {
         // Depending on where the cursor is Brigadier hands back the text from
         // the argument's start, which may still carry the separating space.
-        String remaining = builder.getRemaining();
+        String remaining = whole.getRemaining();
+        // Every completion is for the word being typed, and replaces that word
+        // only: offered on the builder of the whole tail, completing the second
+        // word of "//replace stone di" put "dirt" in place of "stone di".
+        SuggestionsBuilder builder = whole.createOffset(whole.getStart() + remaining.lastIndexOf(' ') + 1);
         if (remaining.startsWith(" ")) {
             remaining = remaining.substring(1);
         }

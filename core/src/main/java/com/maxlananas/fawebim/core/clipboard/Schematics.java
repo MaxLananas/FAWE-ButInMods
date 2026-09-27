@@ -67,6 +67,60 @@ public final class Schematics {
     }
 
     /**
+     * What a folder of the schematic folder holds, as {@code //schem list}
+     * shows it: its sub-folders first, each ending in a slash, then its
+     * schematics, every name given from the schematic folder - trees/oak.schem
+     * - so that it loads as it is listed. The empty name is the schematic
+     * folder itself.
+     */
+    public static List<String> entries(String folder) {
+        Path dir = folder.isEmpty() ? directory() : resolve(folder);
+        String prefix = folder.isEmpty() ? "" : folder + "/";
+        List<String> folders = new ArrayList<>();
+        List<String> files = new ArrayList<>();
+        if (Files.isDirectory(dir)) {
+            boolean links = Config.get().allowSymlinks;
+            try (Stream<Path> children = Files.list(dir)) {
+                children.forEach(child -> {
+                    String name = child.getFileName().toString();
+                    if (!links && Files.isSymbolicLink(child)) {
+                        return;
+                    }
+                    if (Files.isDirectory(child)) {
+                        folders.add(prefix + name + "/");
+                    } else if (Files.isRegularFile(child) && isSchematic(name)) {
+                        files.add(prefix + name);
+                    }
+                });
+            } catch (IOException e) {
+                // An unreadable directory simply lists nothing.
+            }
+        }
+        folders.sort(String::compareToIgnoreCase);
+        files.sort(String::compareToIgnoreCase);
+        folders.addAll(files);
+        return folders;
+    }
+
+    /** True when the name is a folder inside the schematic folder. */
+    public static boolean isFolder(String name) {
+        return Files.isDirectory(resolve(name));
+    }
+
+    /** A file of the schematic folder named as a command takes it: trees/oak.schem. */
+    public static String displayName(Path file) {
+        Path relative = directory().toAbsolutePath().normalize().relativize(file.toAbsolutePath().normalize());
+        StringBuilder name = new StringBuilder();
+        for (Path part : relative) {
+            if (name.length() > 0) {
+                name.append('/');
+            }
+            name.append(part);
+        }
+        return name.toString();
+    }
+
+    /**
      * The names FAWE's list keeps for a word that is not a filter name: those
      * that start with it, else those that contain it, ignoring case.
      */
@@ -75,7 +129,9 @@ public final class Schematics {
         List<String> starting = new ArrayList<>();
         List<String> containing = new ArrayList<>();
         for (String name : names) {
-            String candidate = name.toLowerCase(java.util.Locale.ROOT);
+            // A name listed from a sub-folder is matched by its own part.
+            String trimmed = name.endsWith("/") ? name.substring(0, name.length() - 1) : name;
+            String candidate = trimmed.substring(trimmed.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
             if (candidate.startsWith(lower)) {
                 starting.add(name);
             } else if (candidate.contains(lower)) {
@@ -103,16 +159,19 @@ public final class Schematics {
     /** True when a schematic of that name already exists in the directory. */
     public static boolean exists(String name, String format) {
         // The name is checked first, so the answer never tells about a file outside the folder.
-        resolve(name);
-        Path folder = directory();
-        for (String candidate : List.of(name, name + suffixOf(format))) {
+        Path file = resolve(name);
+        Path folder = file.getParent();
+        String leaf = file.getFileName().toString();
+        for (String candidate : List.of(leaf, leaf + suffixOf(format))) {
             if (Files.isRegularFile(folder.resolve(candidate))) {
                 return true;
             }
         }
-        for (String listed : list()) {
-            if (listed.equalsIgnoreCase(name) || listed.toLowerCase(java.util.Locale.ROOT)
-                    .startsWith(name.toLowerCase(java.util.Locale.ROOT) + ".")) {
+        List<String> listed = new ArrayList<>();
+        collect(folder, listed);
+        for (String other : listed) {
+            if (other.equalsIgnoreCase(leaf) || other.toLowerCase(java.util.Locale.ROOT)
+                    .startsWith(leaf.toLowerCase(java.util.Locale.ROOT) + ".")) {
                 return true;
             }
         }
@@ -181,15 +240,26 @@ public final class Schematics {
         if (input.chars().noneMatch(c -> c == '*' || c == '?' || c == '[' || c == '{')) {
             return List.of(load(input));
         }
+        // trees/oak* looks in trees: the folder part is a path, only the last
+        // part is a glob.
+        int slash = input.lastIndexOf('/');
+        String folder = slash < 0 ? "" : input.substring(0, slash);
+        if (folder.chars().anyMatch(c -> c == '*' || c == '?' || c == '[' || c == '{')) {
+            throw new com.maxlananas.fawebim.core.util.InputException("Only the last part of '" + input
+                    + "' may hold a wildcard");
+        }
         java.nio.file.PathMatcher matcher = java.nio.file.FileSystems.getDefault()
-                .getPathMatcher("glob:" + input);
+                .getPathMatcher("glob:" + input.substring(slash + 1));
         List<BlockArrayClipboard> loaded = new ArrayList<>();
-        for (String name : list()) {
+        List<String> names = new ArrayList<>();
+        collect(folder.isEmpty() ? directory() : resolve(folder), names);
+        names.sort(String::compareToIgnoreCase);
+        for (String name : names) {
             if (!matcher.matches(java.nio.file.Path.of(name))) {
                 continue;
             }
             try {
-                loaded.add(load(name));
+                loaded.add(load(folder.isEmpty() ? name : folder + "/" + name));
             } catch (RuntimeException e) {
                 // A file that is not a readable schematic is skipped, like FAWE does.
             }
@@ -197,9 +267,18 @@ public final class Schematics {
         return loaded;
     }
 
+    /**
+     * Deletes a schematic. A name that is not one - no such file, or a folder -
+     * is refused, where it used to be answered as deleted.
+     */
     public static void delete(String name) {
+        Path file = resolveExisting(name);
+        if (!Files.isRegularFile(file)) {
+            throw new com.maxlananas.fawebim.core.util.InputException(Files.isDirectory(file)
+                    ? "'" + name + "' is a folder, not a schematic" : "No schematic named '" + name + "'");
+        }
         try {
-            Files.deleteIfExists(resolveExisting(name));
+            Files.delete(file);
         } catch (IOException e) {
             throw new java.io.UncheckedIOException("Could not delete schematic '" + name + "'", e);
         }
@@ -218,9 +297,10 @@ public final class Schematics {
         if (Files.isRegularFile(exact)) {
             return exact;
         }
-        Path folder = directory();
+        Path folder = exact.getParent();
+        String leaf = exact.getFileName().toString();
         for (String extension : FILE_EXTENSIONS) {
-            Path candidate = folder.resolve(name + extension);
+            Path candidate = folder.resolve(leaf + extension);
             if (Files.isRegularFile(candidate)) {
                 return candidate;
             }
@@ -232,16 +312,42 @@ public final class Schematics {
     private static final List<String> FILE_EXTENSIONS =
             List.of(".schem", ".schematic", ".nbt");
 
+    /**
+     * The file a name stands for in the schematic folder. As in FAWE the name
+     * may go through sub-folders - trees/oak - but it never leads out of the
+     * folder: an empty part, a {@code .} or {@code ..}, a backslash or a drive
+     * letter is refused, and so is a symbolic link on the way, unless
+     * {@code files.allow-symbolic-links} allows them.
+     */
     private static Path resolve(String name) {
-        Path path = directory().resolve(name);
-        if (!path.getFileName().toString().equals(name)) {
-            throw new com.maxlananas.fawebim.core.util.InputException("Invalid schematic name '" + name + "'");
+        if (name.isEmpty() || name.indexOf('\\') >= 0 || name.indexOf(':') >= 0 || name.indexOf('\0') >= 0) {
+            throw invalidName(name);
         }
-        if (!com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks && Files.isSymbolicLink(path)) {
-            throw new com.maxlananas.fawebim.core.util.InputException("Symbolic links are disabled"
-                    + " (files.allow-symbolic-links in config/fawebim.yml)");
+        Path root = directory();
+        Path path = root;
+        boolean links = com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks;
+        try {
+            for (String part : name.split("/", -1)) {
+                if (part.isEmpty() || part.equals(".") || part.equals("..")) {
+                    throw invalidName(name);
+                }
+                path = path.resolve(part);
+                if (!links && Files.isSymbolicLink(path)) {
+                    throw new com.maxlananas.fawebim.core.util.InputException("Symbolic links are disabled"
+                            + " (files.allow-symbolic-links in config/fawebim.yml)");
+                }
+            }
+        } catch (java.nio.file.InvalidPathException e) {
+            throw invalidName(name);
+        }
+        if (!path.normalize().startsWith(root.normalize())) {
+            throw invalidName(name);
         }
         return path;
+    }
+
+    private static com.maxlananas.fawebim.core.util.InputException invalidName(String name) {
+        return new com.maxlananas.fawebim.core.util.InputException("Invalid schematic name '" + name + "'");
     }
 
     /**
@@ -316,7 +422,10 @@ public final class Schematics {
      */
     private static Path write(Serialized data) {
         try {
-            return com.maxlananas.fawebim.core.util.AtomicFiles.write(resolve(data.fileName()), data.data());
+            Path target = resolve(data.fileName());
+            // trees/oak makes the trees folder, as FAWE's save does.
+            Files.createDirectories(target.getParent());
+            return com.maxlananas.fawebim.core.util.AtomicFiles.write(target, data.data());
         } catch (IOException e) {
             throw new java.io.UncheckedIOException("Could not save schematic '" + data.fileName() + "'", e);
         }

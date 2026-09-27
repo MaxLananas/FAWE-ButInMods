@@ -1316,6 +1316,40 @@ public final class Commands {
         return names;
     }
 
+    /**
+     * Tab completion of //schem: the schematics and folders after load,
+     * delete and loadall, the folders after list, each from the folder the
+     * word typed so far points into.
+     */
+    private static List<String> schematicCompletions(String remaining) {
+        String[] words = remaining.stripLeading().split(" ", -1);
+        if (words.length != 2) {
+            return List.of();
+        }
+        String action = words[0].toLowerCase(Locale.ROOT);
+        boolean foldersOnly = action.equals("list") || action.equals("ls") || action.equals("all");
+        if (!foldersOnly && !java.util.Set.of("load", "delete", "d", "loadall").contains(action)) {
+            return List.of();
+        }
+        String typed = words[1];
+        int slash = typed.lastIndexOf('/');
+        List<String> completions = new ArrayList<>();
+        try {
+            for (String entry : Schematics.entries(slash < 0 ? "" : typed.substring(0, slash))) {
+                if ((!foldersOnly || entry.endsWith("/"))
+                        && entry.regionMatches(true, 0, typed, 0, typed.length())) {
+                    completions.add(entry);
+                    if (completions.size() == 80) {
+                        break;
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            // A folder that is not there completes nothing.
+        }
+        return completions;
+    }
+
     static BlockVector3 copyOrigin(Ctx ctx, BlockArrayClipboard clipboard) {
         return ctx.placementOr(clipboard.getOrigin());
     }
@@ -2114,6 +2148,7 @@ public final class Commands {
         e65.arguments.add("[name]");
         e65.arguments.add("[format]");
         e65.arguments.add("[-p <page>]");
+        e65.suggestions = Commands::schematicCompletions;
         e65.handler = ctx -> {
                     String action = ctx.arg(0).toLowerCase(Locale.ROOT);
                     if (action.equals("ls") || action.equals("all")) {
@@ -2121,17 +2156,31 @@ public final class Commands {
                     }
                     switch (action) {
                         case "list" -> {
-                            // A filter name picks between the shared folder and the
-                            // player's own, which only exists with FAWE's per-player
-                            // schematics: every schematic is shared here. Another word
-                            // keeps the names it starts, as in FAWE.
-                            List<String> names = Schematics.list();
-                            String word = ctx.arg(1, "");
-                            if (!word.isEmpty() && com.maxlananas.fawebim.core.clipboard.ListFilter.parse(word) == null) {
+                            // FAWE's list: a word ending in a slash is a folder to
+                            // look in - trees/ - and another word keeps the names it
+                            // starts. A filter name picks between the shared folder
+                            // and the player's own, which only exists with FAWE's
+                            // per-player schematics: every schematic is shared here.
+                            StringBuilder path = new StringBuilder();
+                            String word = "";
+                            for (String argument : ctx.args().subList(1, ctx.args().size())) {
+                                if (argument.endsWith("/")) {
+                                    path.append(argument);
+                                } else if (com.maxlananas.fawebim.core.clipboard.ListFilter.parse(argument) == null) {
+                                    word = argument;
+                                }
+                            }
+                            String folder = path.length() == 0 ? "" : path.substring(0, path.length() - 1);
+                            if (!folder.isEmpty() && !Schematics.isFolder(folder)) {
+                                throw CommandRegistry.error("No folder named '" + folder + "' among the schematics");
+                            }
+                            List<String> names = Schematics.entries(folder);
+                            if (!word.isEmpty()) {
                                 names = Schematics.matching(names, word);
                             }
-                            // -f <format> keeps one format, -d and -n sort by
-                            // write time instead of by name.
+                            // -f <format> keeps one format, as FAWE's does, which
+                            // leaves the folders out; -d and -n sort the files by
+                            // write time instead of by name, under the folders.
                             String format = ctx.hasFlag("f")
                                     ? ctx.flagValue("f", "").toLowerCase(Locale.ROOT) : null;
                             if (format != null) {
@@ -2145,17 +2194,34 @@ public final class Commands {
                             }
                             if (ctx.hasFlag("d") || ctx.hasFlag("n")) {
                                 boolean oldestFirst = ctx.hasFlag("d");
-                                names.sort((a, b) -> oldestFirst
-                                        ? Long.compare(Schematics.timeOf(a), Schematics.timeOf(b))
-                                        : Long.compare(Schematics.timeOf(b), Schematics.timeOf(a)));
+                                names = new ArrayList<>(names);
+                                names.sort((a, b) -> {
+                                    if (a.endsWith("/") != b.endsWith("/")) {
+                                        return a.endsWith("/") ? -1 : 1;
+                                    }
+                                    return oldestFirst ? Long.compare(Schematics.timeOf(a), Schematics.timeOf(b))
+                                            : Long.compare(Schematics.timeOf(b), Schematics.timeOf(a));
+                                });
                             }
                             Page page = Page.of(ctx, names.size());
-                            ctx.actor().message(Msg.title("Schematics (" + names.size() + ", page " + page.number()
-                                    + "/" + page.pages() + ")"));
-                            for (String name : names.subList(page.from(), page.to())) {
-                                ctx.actor().message(Msg.item(name, Schematics.formatOf(name)));
+                            ctx.actor().message(Msg.title((folder.isEmpty() ? "Schematics" : "Schematics in " + folder + "/")
+                                    + " (" + names.size() + (page.pages() > 1 ? ", page " + page.number() + "/" + page.pages() : "")
+                                    + ")"));
+                            if (names.isEmpty()) {
+                                ctx.actor().message(Msg.hint("None yet: //schem save <name> writes your clipboard"));
                             }
-                            page.hint(ctx, "//schem list");
+                            // A folder lists itself when clicked, a schematic puts its
+                            // load command in the chat box, as in FAWE.
+                            for (String name : names.subList(page.from(), page.to())) {
+                                if (name.endsWith("/")) {
+                                    ctx.actor().commandLink(Msg.item(name, "folder").raw(), "//schem list " + name,
+                                            "List " + name);
+                                } else {
+                                    ctx.actor().suggestLink(Msg.item(name, Schematics.formatOf(name)).raw(),
+                                            "//schem load " + name, "Load " + name);
+                                }
+                            }
+                            page.hint(ctx, "//schem list" + (folder.isEmpty() ? "" : " " + folder + "/"));
                         }
                         case "save" -> {
                             if (!ctx.session().hasClipboard()) {
@@ -2195,12 +2261,12 @@ public final class Commands {
                                                         ctx.actor(), "//schem save"));
                                             } else {
                                                 ctx.actor().message(Msg.success("Saved schematic '"
-                                                        + file.getFileName() + "'"));
+                                                        + Schematics.displayName(file) + "'"));
                                             }
                                         }));
                             } else {
                                 java.nio.file.Path file = Schematics.save(saving, name, format);
-                                ctx.actor().message(Msg.success("Saved schematic '" + file.getFileName() + "'"));
+                                ctx.actor().message(Msg.success("Saved schematic '" + Schematics.displayName(file) + "'"));
                             }
                         }
                         case "load" -> {
