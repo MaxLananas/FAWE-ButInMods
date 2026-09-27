@@ -743,7 +743,7 @@ public final class Clipboards {
 
     /** Summary line used by the copy/paste feedback. */
     public static Msg describe(BlockArrayClipboard clipboard) {
-        return Msg.info(Msg.formatNumber(clipboard.volume()) + " blocks ("
+        return Msg.info(Msg.blocks(clipboard.volume()) + " ("
                 + clipboard.getWidth() + "x" + clipboard.getHeight() + "x" + clipboard.getLength() + ")");
     }
 

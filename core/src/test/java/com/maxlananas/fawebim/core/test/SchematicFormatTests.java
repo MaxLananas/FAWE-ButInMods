@@ -766,9 +766,9 @@ final class SchematicFormatTests {
         CommandManager.get().dispatch(actor, "//schem save pool-birch");
         CommandManager.get().dispatch(actor, "//schem save lonely-house");
         String[][] cases = {
-                {"//schem loadall -o lonely-house", "Loaded 1 clipboard(s)"},
-                {"//schem loadall -o sponge lonely-house", "Loaded 1 clipboard(s)"},
-                {"//schem loadall -o pool-*", "Loaded 2 clipboard(s)"},
+                {"//schem loadall -o lonely-house", "Loaded 1 clipboard"},
+                {"//schem loadall -o sponge lonely-house", "Loaded 1 clipboard"},
+                {"//schem loadall -o pool-*", "Loaded 2 clipboards"},
                 {"//schem loadall -o nothing-here", "No schematic named 'nothing-here'"},
                 {"//schem loadall", "Usage: //schem loadall [format] <filename>"},
         };

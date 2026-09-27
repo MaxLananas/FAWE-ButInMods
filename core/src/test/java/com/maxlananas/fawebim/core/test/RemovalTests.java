@@ -47,7 +47,7 @@ final class RemovalTests {
         TestActor actor = new TestActor("RemoveAbove", world, new BlockVector3(0, 64, 0));
         String answer = answer(actor, "//removeabove 2 3");
         check("//removeabove 2 3 clears a square three blocks wide, four levels high (" + answer + ")",
-                answer.contains("Removed: 36 block(s)"));
+                answer.contains("Removed: 36 blocks"));
         check("from the player's level", world.getBlock(-1, 64, 1) == air && world.getBlock(1, 67, -1) == air);
         checkEquals("up to the height given", stone, world.getBlock(0, 68, 0));
         checkEquals("and not below the player", stone, world.getBlock(0, 63, 0));
@@ -70,7 +70,7 @@ final class RemovalTests {
         TestActor actor = new TestActor("RemoveBelow", world, new BlockVector3(0, 70, 0));
         String answer = answer(actor, "//removebelow 2 3");
         check("//removebelow 2 3 clears four levels down from the player's (" + answer + ")",
-                answer.contains("Removed: 36 block(s)"));
+                answer.contains("Removed: 36 blocks"));
         check("from the player's level down", world.getBlock(1, 70, 1) == air && world.getBlock(-1, 67, 0) == air);
         checkEquals("down to the height given", stone, world.getBlock(0, 66, 0));
         checkEquals("and not above the player", stone, world.getBlock(0, 71, 0));

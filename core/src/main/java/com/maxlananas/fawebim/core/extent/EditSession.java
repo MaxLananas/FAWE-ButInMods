@@ -315,7 +315,7 @@ public final class EditSession implements Extent {
         }
         if (traceCount > traceLog.size()) {
             actor.message(com.maxlananas.fawebim.core.util.Msg.info("Trace: "
-                    + Msg.formatNumber(traceCount - traceLog.size()) + " more action(s)"));
+                    + Msg.count(traceCount - traceLog.size(), "more action", "more actions")));
         }
     }
 
@@ -910,7 +910,7 @@ public final class EditSession implements Extent {
 
     /** Statistics string used by command feedback. */
     public String statistics() {
-        return Msg.formatNumber(blocksChanged) + " block(s) changed";
+        return Msg.blocks(blocksChanged) + " changed";
     }
 
     public TimeLimiter limiter() {
@@ -977,15 +977,18 @@ public final class EditSession implements Extent {
      * <p>The time is what tells a player whether a selection is one they can
      * work with: a million blocks is a second or a minute depending on the
      * machine, the size and the side effects they left on.</p>
+     *
+     * @param unit what was counted, in the singular: {@code block},
+     *             {@code tree}; an s makes it plural
      */
     public Msg result(String label, long changed, String unit) {
-        return Msg.result(label, Msg.count(changed) + " " + unit + " affected in "
+        return Msg.result(label, Msg.count(changed, unit, unit + "s") + " affected in "
                 + Msg.value(com.maxlananas.fawebim.core.util.Timer.phrase(elapsed())).raw());
     }
 
     /** Convenience for messages: format the operation summary. */
     public Msg summary() {
-        return result("Operation completed", blocksChanged, "block(s)");
+        return result("Operation completed", blocksChanged, "block");
     }
 
     /** How long this session has been open, in seconds. */

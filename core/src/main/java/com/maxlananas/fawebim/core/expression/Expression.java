@@ -988,7 +988,7 @@ public final class Expression {
         private Node call(String name, java.util.List<Node> args) {
             if (name.equals("if")) {
                 if (args.size() != 3) {
-                    throw new ExpressionException("'if' takes 3 argument(s), not " + args.size());
+                    throw new ExpressionException("'if' takes 3 arguments, not " + args.size());
                 }
                 return new IfNode(args.get(0), args.get(1), args.get(2));
             }
@@ -1000,7 +1000,8 @@ public final class Expression {
                 String takes = definition.fewest() == definition.most() ? String.valueOf(definition.fewest())
                         : definition.most() == Integer.MAX_VALUE ? "at least " + definition.fewest()
                         : definition.fewest() + " to " + definition.most();
-                throw new ExpressionException("'" + name + "' takes " + takes + " argument(s), not " + args.size());
+                throw new ExpressionException("'" + name + "' takes " + takes
+                        + ("1".equals(takes) ? " argument" : " arguments") + ", not " + args.size());
             }
             return new FunctionCall(definition.make().get(), args.toArray(new Node[0]));
         }

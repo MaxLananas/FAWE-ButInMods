@@ -56,8 +56,8 @@ final class ClipboardExtras {
             }
             clipboard.setOrigin(Commands.copyOrigin(ctx, clipboard));
             ctx.session().setClipboard(clipboard);
-            ctx.actor().message(Msg.result("Lazily copied", Msg.count(clipboard.volume())
-                    + " block(s) to the clipboard"
+            ctx.actor().message(Msg.result("Lazily copied", Msg.blocks(clipboard.volume())
+                    + " to the clipboard"
                     + (ctx.hasFlag("e") ? " without entities" : "")));
         };
     }
@@ -162,7 +162,7 @@ final class ClipboardExtras {
             if (onlySelect) {
                 ctx.actor().message(Msg.success("Selected the clipboard region at " + destination));
             } else {
-                ctx.actor().message(Msg.success("Placed " + changed + " block(s) at " + destination));
+                ctx.actor().message(Msg.success("Placed " + Msg.blocks(changed) + " at " + destination));
             }
         };
     }

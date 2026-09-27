@@ -78,7 +78,7 @@ final class RegionCommands {
                 return session.setBlock(x, y, z, air.apply(x, y, z));
             });
             session.flushQueue();
-            ctx.actor().message(Msg.result("Set to air", Msg.count(changed) + " block(s)"));
+            ctx.actor().message(Msg.result("Set to air", Msg.blocks(changed)));
         };
     }
 
@@ -111,7 +111,7 @@ final class RegionCommands {
         entry.handler = ctx -> {
             List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
             ctx.world().relight(chunks);
-            ctx.actor().message(Msg.result("Lighting propagated", Msg.count(chunks.size()) + " chunk(s)"));
+            ctx.actor().message(Msg.result("Lighting propagated", Msg.count(chunks.size(), "chunk", "chunks")));
         };
     }
 
@@ -131,7 +131,7 @@ final class RegionCommands {
         entry.handler = ctx -> {
             List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
             ctx.world().removeLight(chunks);
-            ctx.actor().message(Msg.result("Lighting removed", Msg.count(chunks.size()) + " chunk(s)"));
+            ctx.actor().message(Msg.result("Lighting removed", Msg.count(chunks.size(), "chunk", "chunks")));
         };
     }
 
@@ -241,7 +241,7 @@ final class RegionCommands {
                 return wrote;
             });
             session.flushQueue();
-            ctx.actor().message(Msg.result("Updated", Msg.count(changed) + " block(s)"));
+            ctx.actor().message(Msg.result("Updated", Msg.blocks(changed)));
         };
     }
 
@@ -344,7 +344,7 @@ final class RegionCommands {
             EditSession session = ctx.editSession("snowsmooth");
             int changed = HeightMaps.snowSmooth(ctx.world(), session, region, iterations, layerBlocks, heightMask);
             session.flushQueue();
-            ctx.actor().message(Msg.success("Smoothed " + changed + " snow block(s)"));
+            ctx.actor().message(Msg.success("Smoothed " + Msg.count(changed, "snow block", "snow blocks")));
         };
     }
 
@@ -527,7 +527,7 @@ final class RegionCommands {
             int changed = Operations.makeBlob(ctx.world(), session, position, pattern, size,
                     frequency, amplitude, radius.divide(max), sphericity);
             session.flushQueue();
-            ctx.actor().message(Msg.success("Blob: " + changed + " block(s) created"));
+            ctx.actor().message(Msg.success("Blob: " + Msg.blocks(changed) + " created"));
         };
     }
 }

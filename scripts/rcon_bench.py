@@ -49,21 +49,21 @@ STEPS = [
     ("select", "//pos1 -32,100,-32", "position 1: set"),
     ("select", "//pos2 31,131,31", "position 2: set"),
     ("size", "//size", "131,072"),
-    ("clear the box", "//set minecraft:air", "block(s) affected"),
+    ("clear the box", "//set minecraft:air", "blocks affected"),
     ("select the paste box", "//pos1 -32,160,-32", "position 1: set"),
     ("select the paste box", "//pos2 31,191,31", "position 2: set"),
-    ("clear the paste box", "//set minecraft:air", "block(s) affected"),
+    ("clear the paste box", "//set minecraft:air", "blocks affected"),
     ("select", "//pos1 -32,100,-32", "position 1: set"),
     ("select", "//pos2 31,131,31", "position 2: set"),
     ("count of an empty box", "//count minecraft:stone", "counted: 0"),
     # A copy of a box that holds nothing stores nothing, however large it is.
-    ("copy of an empty box", "//copy", "copied: 0 block(s)"),
-    ("set (fills the box)", "//set minecraft:stone", "131,072 block(s) affected"),
+    ("copy of an empty box", "//copy", "copied: 0 blocks"),
+    ("set (fills the box)", "//set minecraft:stone", "131,072 blocks affected"),
     ("count", "//count minecraft:stone", "counted: 131,072"),
-    ("copy of a solid box", "//copy", "copied: 131,072 block(s)"),
-    ("cut of a solid box", "//cut", "cut: 131,072 block(s)"),
+    ("copy of a solid box", "//copy", "copied: 131,072 blocks"),
+    ("cut of a solid box", "//cut", "cut: 131,072 blocks"),
     ("count after the cut", "//count minecraft:stone", "counted: 0"),
-    ("undo (puts the box back)", "//undo", "undid: 131,072 block change(s)"),
+    ("undo (puts the box back)", "//undo", "undid: 131,072 block changes"),
     ("count", "//count minecraft:stone", "counted: 131,072"),
     # The second undo takes the first //set back, which changed as many blocks as
     # the box had room for: that count belongs to the world, not to this list.
@@ -71,11 +71,11 @@ STEPS = [
     # The clipboard holds the box that was cut, pasted into the empty box above
     # it. -a is the switch that skips the clipboard's air, so the paste has
     # nothing to carve and writes exactly the blocks it holds.
-    ("paste of a large box", "//paste -a -32,160,-32", "pasted: 131,072 block(s)"),
+    ("paste of a large box", "//paste -a -32,160,-32", "pasted: 131,072 blocks"),
     ("select what was pasted", "//pos1 -32,160,-32", "position 1: set"),
     ("select what was pasted", "//pos2 31,191,31", "position 2: set"),
     ("count what the paste wrote", "//count minecraft:stone", "counted: 131,072"),
-    ("copy of what was pasted", "//copy", "copied: 131,072 block(s)"),
+    ("copy of what was pasted", "//copy", "copied: 131,072 blocks"),
 ]
 
 

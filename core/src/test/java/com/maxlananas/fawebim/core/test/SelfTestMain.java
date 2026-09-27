@@ -1289,7 +1289,7 @@ public final class SelfTestMain {
 
         // Upstream's recipe is #perlin[scale][blocks], the noise picking the block.
         CommandManager.get().dispatch(builder, "//set #perlin[9][dirt,stone]");
-        check("//set #perlin[9][dirt,stone] runs", builder.lastMessage().contains("block(s) affected"));
+        check("//set #perlin[9][dirt,stone] runs", builder.lastMessage().contains("blocks affected"));
         int dirt = BlockState.registry().defaultState("minecraft:dirt");
         int stone = BlockState.registry().defaultState("minecraft:stone");
         int dirtSeen = 0;
@@ -1523,7 +1523,7 @@ public final class SelfTestMain {
         check("//smooth kept a top block", world.getBlock(25, 70, 25) != air);
         check("//smooth reported the change", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("\u00bb Smoothed: ")
-                        && plain(message).contains("block(s) affected in ")));
+                        && plain(message).contains("blocks affected in ")));
 
         // The optional second argument is the mask the height map is built from,
         // so a stone height map does not see a sand spike at all.
@@ -2477,13 +2477,13 @@ public final class SelfTestMain {
                 java.util.Set.of(new BlockVector2(-1, 0), new BlockVector2(0, 0), new BlockVector2(1, 0)),
                 world.relitChunks());
         check("//fixlighting counts them", plain(actor.lastMessage()).contains("Lighting propagated")
-                && plain(actor.lastMessage()).contains("3 chunk(s)"));
+                && plain(actor.lastMessage()).contains("3 chunks"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//removelight");
         checkEquals("//removelighting zeroes the light of the same chunks", world.relitChunks(),
                 world.darkenedChunks());
         check("//removelighting counts them", plain(actor.lastMessage()).contains("Lighting removed")
-                && plain(actor.lastMessage()).contains("3 chunk(s)"));
+                && plain(actor.lastMessage()).contains("3 chunks"));
         for (String command : new String[] {"//setblocklight", "//setlight", "//setskylight"}) {
             world.relitChunks().clear();
             int before = world.setCount();
@@ -2737,7 +2737,7 @@ public final class SelfTestMain {
     /** The block count the last command reported, or -1 when it said nothing. */
     private static long actorBlockCount(TestActor actor) {
         java.util.regex.Matcher matcher =
-                java.util.regex.Pattern.compile("([0-9,]+) block\\(s\\) affected").matcher(
+                java.util.regex.Pattern.compile("([0-9,]+) blocks? affected").matcher(
                         actor.lastMessage() == null ? "" : actor.lastMessage().replaceAll("\u00a7.", ""));
         return matcher.find() ? Long.parseLong(matcher.group(1).replace(",", "")) : -1;
     }
@@ -2950,7 +2950,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(sweeper, "//set stone");
         CommandManager.get().dispatch(sweeper, "//air");
         check("//air clears the selection",
-                plain(sweeper.lastMessage()).contains("Set to air: 16 block(s)"));
+                plain(sweeper.lastMessage()).contains("Set to air: 16 blocks"));
         check("//air left the selection empty", count(sweeper).equals("Counted: 0"));
 
         // //ores plants vanilla's ore distribution where the mask allows it,
@@ -3021,7 +3021,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(miner, "//pos1 0,60,0");
         CommandManager.get().dispatch(miner, "//pos2 15,70,15");
         CommandManager.get().dispatch(miner, "/setbiome minecraft:plains");
-        check("/setbiome sets the selection", miner.lastMessage().contains("biome cell(s)"));
+        check("/setbiome sets the selection", miner.lastMessage().contains("biome cells"));
         miner.clearMessages();
         CommandManager.get().dispatch(miner, "/setbiome minecraft:desert -p");
         check("/setbiome -p sets the block the player stands in",
@@ -3259,7 +3259,7 @@ public final class SelfTestMain {
     private static void testChatFormatting() {
         // The highlight colours the values inside a line and leaves the words
         // alone, and a plain dump of the line is exactly what was written.
-        String written = "Cut 384 block(s) around 12, 70, -3 with 'my build' -h #perlin";
+        String written = "Cut 384 blocks around 12, 70, -3 with 'my build' -h #perlin";
         String styled = Msg.info(written).raw();
         check("the counts are highlighted", styled.contains("§b384"));
         check("the coordinates are highlighted", styled.contains("§b12") && styled.contains("§b-3"));
@@ -3586,13 +3586,13 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//set stone");
         check("an edit summary says how long the edit took",
                 actor.messages().stream().anyMatch(message -> plain(message)
-                        .contains("block(s) affected in ")));
+                        .contains("blocks affected in ")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cut");
         String answer = actor.messages().isEmpty() ? "" : plain(actor.messages().get(0));
         check("//cut reports the blocks and the time", answer.contains("\u00bb Cut: ")
-                && answer.contains("block(s) to your clipboard in "));
+                && answer.contains("blocks to your clipboard in "));
 
         int left = 0;
         for (int y = 64; y <= 69; y++) {

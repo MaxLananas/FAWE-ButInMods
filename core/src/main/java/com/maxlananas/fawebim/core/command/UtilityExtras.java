@@ -201,7 +201,7 @@ final class UtilityExtras {
                 }
                 executed++;
             }
-            ctx.actor().message(Msg.success("Ran " + executed + " command(s) from macro " + ctx.arg(0)));
+            ctx.actor().message(Msg.success("Ran " + Msg.count(executed, "command", "commands") + " from macro " + ctx.arg(0)));
         };
     }
 
@@ -632,7 +632,7 @@ final class UtilityExtras {
                     History.Record current = session.getHistory().getCurrent();
                     ctx.actor().message(current == null ? Msg.info("No edit recorded yet")
                             : Msg.info("Last edit: " + current.description
-                            + " (" + current.changeCount() + " block(s))"));
+                            + " (" + Msg.blocks(current.changeCount()) + ")"));
                 }
                 case "distr", "distribution" -> distribution(ctx);
                 case "find", "inspect", "search", "near" -> find(ctx);
@@ -678,7 +678,7 @@ final class UtilityExtras {
         ctx.actor().message(page.header("Edits", entries.size()));
         for (EditLog.Entry entry : entries.subList(page.from(), page.to())) {
             ctx.actor().message(Msg.item(entry.actor, entry.record.description + " ("
-                    + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+                    + Msg.blocks(entry.record.changeCount()) + ", " + time(ctx, entry) + ")"));
         }
         page.hint(ctx, "//history list");
     }
@@ -719,7 +719,7 @@ final class UtilityExtras {
         ctx.actor().message(page.header("Matching edits", matches.size()));
         for (EditLog.Entry entry : matches.subList(page.from(), page.to())) {
             ctx.actor().message(Msg.item(entry.actor, entry.record.description + " ("
-                    + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+                    + Msg.blocks(entry.record.changeCount()) + ", " + time(ctx, entry) + ")"));
         }
         page.hint(ctx, "//history find");
     }
@@ -751,8 +751,8 @@ final class UtilityExtras {
         } finally {
             session.close();
         }
-        ctx.actor().message(Msg.result(undo ? "Rolled back" : "Restored", Msg.count(changed)
-                + " block change(s) from " + Msg.count(matches.size()) + " edit(s)"));
+        ctx.actor().message(Msg.result(undo ? "Rolled back" : "Restored", Msg.count(changed, "block change",
+                "block changes") + " from " + Msg.count(matches.size(), "edit", "edits")));
     }
 
     /** Applies the {@code -u}, {@code -t} and {@code -r} filters of the command line. */

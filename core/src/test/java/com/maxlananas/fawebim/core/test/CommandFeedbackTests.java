@@ -123,6 +123,20 @@ final class CommandFeedbackTests {
         checkEquals("and no zero after them", "0.1", Msg.formatDouble(0.1));
         checkEquals("a whole number has none", "12", Msg.formatDouble(12));
         checkEquals("and a negative one keeps its sign", "-2.25", Msg.formatDouble(-2.25));
+
+        // A count takes the noun that goes with it, where it wrote "block(s)".
+        answer(actor, "//pos1 0,70,0");
+        answer(actor, "//pos2 0,70,0");
+        String one = answer(actor, "//set stone");
+        check("one block is a block (" + one + ")", one.contains("Set: 1 block affected in"));
+        check("and undone, one block change", answer(actor, "//undo").contains("Undid: 1 block change"));
+        answer(actor, "//pos2 1,70,0");
+        String two = answer(actor, "//set stone");
+        check("two are blocks (" + two + ")", two.contains("Set: 2 blocks affected in"));
+        String none = answer(actor, "//set stone");
+        check("and so is none (" + none + ")", none.contains("Set: 0 blocks affected in"));
+        String copied = answer(actor, "//copy");
+        check("//copy counts them the same way (" + copied + ")", copied.contains("Copied: 2 blocks to your clipboard"));
     }
 
     private static String answer(TestActor actor, String line) {

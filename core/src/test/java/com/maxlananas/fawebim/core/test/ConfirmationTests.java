@@ -90,7 +90,7 @@ final class ConfirmationTests {
         CommandManager.get().dispatch(actor, "//confirm");
         check("//confirm runs the command that asked", world.getBlock(0, 80, 0) == stone()
                 && world.getBlock(724, 80, 724) == stone() && world.getBlock(1, 80, 1) != stone());
-        check("the confirmed command answers for itself", last(actor).startsWith("FAWE » Walls: 2,896 block(s)"));
+        check("the confirmed command answers for itself", last(actor).startsWith("FAWE » Walls: 2,896 blocks"));
         checkEquals("//confirm answers with its own line and nothing else", 1, actor.messages().size());
         CommandManager.get().dispatch(actor, "//confirm");
         checkEquals("a second //confirm finds nothing left to run",

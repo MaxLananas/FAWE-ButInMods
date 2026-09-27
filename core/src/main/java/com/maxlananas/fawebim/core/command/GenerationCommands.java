@@ -93,7 +93,7 @@ final class GenerationCommands {
                     pocketChance, pocketMin, pocketMax, new Random());
             int changed = gen.generate(ctx.world(), session, region);
             session.flushQueue();
-            ctx.actor().message(Msg.result("Generated", Msg.count(changed) + " block(s) affected"));
+            ctx.actor().message(Msg.result("Generated", Msg.blocks(changed) + " affected"));
         };
     }
 
@@ -132,7 +132,7 @@ final class GenerationCommands {
             EditSession session = ctx.editSession("img");
             int changed = ImageGen.place(session, image, ctx.placement(), threshold, randomize);
             session.flushQueue();
-            ctx.actor().message(Msg.result("Image applied", Msg.count(changed) + " block(s) changed"));
+            ctx.actor().message(Msg.result("Image applied", Msg.blocks(changed) + " changed"));
         };
     }
 
@@ -216,7 +216,7 @@ final class GenerationCommands {
                 }
             }
             session.flushQueue();
-            ctx.actor().message(Msg.result("Biome set", "for " + Msg.count(changed) + " biome cell(s)"));
+            ctx.actor().message(Msg.result("Biome set", "for " + Msg.count(changed, "biome cell", "biome cells")));
         };
     }
 
@@ -294,8 +294,8 @@ final class GenerationCommands {
                     planted++;
                 }
             }
-            ctx.actor().message(Msg.result("Planted", Msg.count(planted) + " tree(s) out of "
-                    + Msg.count(attempts) + " attempt(s)"));
+            ctx.actor().message(Msg.result("Planted", Msg.count(planted, "tree", "trees") + " out of "
+                    + Msg.count(attempts, "attempt", "attempts")));
         };
     }
 
@@ -464,7 +464,7 @@ final class GenerationCommands {
                 }
             }
             session.flushQueue();
-            ctx.actor().message(Msg.result("Generated", Msg.count(changed) + " block(s)"));
+            ctx.actor().message(Msg.result("Generated", Msg.blocks(changed)));
         };
     }
 

@@ -31,8 +31,8 @@ final class MessageStyleTests {
 
     private static void builders() {
         String tag = Theme.TAG + " " + Theme.MARKER + " ";
-        checkEquals("a result reads name, marker, label, detail", tag + "Copied: 12 block(s)",
-                Msg.result("Copied", "12 block(s)").plain());
+        checkEquals("a result reads name, marker, label, detail", tag + "Copied: 12 blocks",
+                Msg.result("Copied", "12 blocks").plain());
         check("an error line is red after the marker",
                 Msg.error("No clipboard").raw().contains(Theme.ERROR + Theme.MARKER + " " + Theme.ERROR));
         check("a success line is green after the marker",

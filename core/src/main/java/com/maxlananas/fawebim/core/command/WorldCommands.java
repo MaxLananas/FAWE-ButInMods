@@ -91,7 +91,7 @@ final class WorldCommands {
                 alive++;
                 ctx.actor().message(Msg.item(thread.getName(), thread.getState().toString()));
             }
-            ctx.actor().message(Msg.info(alive + " live thread(s); "
+            ctx.actor().message(Msg.info(Msg.count(alive, "live thread", "live threads") + "; "
                     + ManagementFactory.getThreadMXBean().getThreadCount() + " total"));
         };
     }

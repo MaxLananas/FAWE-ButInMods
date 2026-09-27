@@ -411,8 +411,8 @@ public final class CommandRegistry {
             // history entry, so the player knows the world changed and how to
             // take it back.
             if (written > 0) {
-                actor.message(Msg.info(Msg.formatNumber(written)
-                        + " block(s) were changed before it stopped; //undo takes them back"));
+                actor.message(Msg.info(Msg.blocks(written) + (written == 1 ? " was" : " were")
+                        + " changed before it stopped; //undo takes them back"));
             }
         }
         return true;

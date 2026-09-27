@@ -58,7 +58,7 @@ final class LayerTests {
                 world.getBlock(1, 70, 1) == state("minecraft:gold_block")
                         && world.getBlock(1, 69, 1) == state("minecraft:grass_block"));
         check("//overlay answers with the blocks it put", SelfTestMain.plain(actor.lastMessage())
-                .contains("16 block(s)"));
+                .contains("16 blocks"));
     }
 
     private static void overlayReachesOneBlockAboveTheSelection() {
@@ -102,7 +102,7 @@ final class LayerTests {
         checkEquals("a block on the ground is the surface of its column", state("minecraft:gold_block"),
                 world.getBlock(2, 70, 2));
         check("//lay counts the columns, as FAWE does",
-                SelfTestMain.plain(actor.lastMessage()).contains("16 block(s)"));
+                SelfTestMain.plain(actor.lastMessage()).contains("16 blocks"));
     }
 
     private static void naturalizeOnlyTurnsGrassDirtAndStone() {

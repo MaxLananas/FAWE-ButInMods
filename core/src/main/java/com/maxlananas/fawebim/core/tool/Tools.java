@@ -382,7 +382,7 @@ public final class Tools {
             } finally {
                 finish(context, session);
             }
-            context.message(Msg.success("Filled " + Msg.formatNumber(changed) + " block(s)"));
+            context.message(Msg.success("Filled " + Msg.blocks(changed)));
             return true;
         }
 
@@ -701,7 +701,7 @@ public final class Tools {
             } finally {
                 session.close();
             }
-            context.message(Msg.success("Removed " + Msg.formatNumber(changed) + " block(s)"));
+            context.message(Msg.success("Removed " + Msg.blocks(changed)));
             return true;
         }
 
@@ -734,7 +734,7 @@ public final class Tools {
             } finally {
                 session.close();
             }
-            context.message(Msg.success("Brush changed " + Msg.formatNumber(changed) + " block(s)"));
+            context.message(Msg.success("Brush changed " + Msg.blocks(changed)));
             return true;
         }
 

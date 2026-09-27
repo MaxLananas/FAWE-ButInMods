@@ -59,7 +59,7 @@ final class ClipboardPasteTests {
         answer(actor, "//pos1 0,64,0");
         answer(actor, "//pos2 9,70,9");
         String copied = answer(actor, "//copy");
-        check("//copy counts the blocks it stored (" + copied + ")", copied.contains("Copied: 8 block(s)"));
+        check("//copy counts the blocks it stored (" + copied + ")", copied.contains("Copied: 8 blocks"));
         checkEquals("the clipboard is the selection", 700L,
                 actor.session().getClipboard().getClipboard().volume());
         String size = answer(actor, "//size -c");
@@ -97,7 +97,7 @@ final class ClipboardPasteTests {
         answer(actor, "//pos2 29,70,29");
         answer(actor, "//copy");
         String pasted = answer(actor, "//paste 100,64,100");
-        check("a copy of air pastes its whole box (" + pasted + ")", pasted.contains("Pasted: 700 block(s)"));
+        check("a copy of air pastes its whole box (" + pasted + ")", pasted.contains("Pasted: 700 blocks"));
         checkEquals("which leaves no dirt", 0, count(world, 100, 64, 100, 109, 70, 109, state("minecraft:dirt")));
     }
 

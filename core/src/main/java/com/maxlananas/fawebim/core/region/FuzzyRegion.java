@@ -205,6 +205,6 @@ public final class FuzzyRegion implements Region {
 
     @Override
     public String describe() {
-        return "fuzzy (" + blocks.size() + " blocks)";
+        return "fuzzy (" + blocks.size() + (blocks.size() == 1 ? " block)" : " blocks)");
     }
 }

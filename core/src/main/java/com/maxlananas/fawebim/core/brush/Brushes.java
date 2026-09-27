@@ -1387,7 +1387,7 @@ public final class Brushes {
                     return 0;
                 }
                 actor.session().setClipboard(copied);
-                actor.message(Msg.success("Copied " + Msg.formatNumber(copied.volume()) + " block(s)"));
+                actor.message(Msg.success("Copied " + Msg.blocks(copied.volume())));
                 return 0;
             }
             Transform transform = Transform.identity();

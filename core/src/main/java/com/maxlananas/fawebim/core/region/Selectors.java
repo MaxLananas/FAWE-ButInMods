@@ -1323,7 +1323,8 @@ public final class Selectors {
 
         @Override
         public String describe() {
-            return "fuzzy: " + region.getVolume() + " blocks";
+            long volume = region.getVolume();
+            return "fuzzy: " + volume + (volume == 1 ? " block" : " blocks");
         }
 
         @Override

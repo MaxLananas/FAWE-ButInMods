@@ -199,9 +199,9 @@ final class SnapshotCommands {
             int biomes = ctx.hasFlag("b") ? Snapshots.restoreBiomes(session, snapshot) : 0;
             int entities = ctx.hasFlag("e") ? Snapshots.restoreEntities(session, snapshot) : 0;
             session.flushQueue();
-            ctx.actor().message(Msg.result("Restored", Msg.count(restored) + " block(s) from "
+            ctx.actor().message(Msg.result("Restored", Msg.blocks(restored) + " from "
                     + Msg.value(path.getFileName()).raw()
-                    + (ctx.hasFlag("b") ? ", " + Msg.count(biomes) + " biome cell(s)" : "")
+                    + (ctx.hasFlag("b") ? ", " + Msg.count(biomes, "biome cell", "biome cells") : "")
                     + (ctx.hasFlag("e") ? ", " + Msg.count(entities) + " entit(ies)" : "")));
         };
     }

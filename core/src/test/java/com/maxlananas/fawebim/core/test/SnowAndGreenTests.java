@@ -77,7 +77,7 @@ final class SnowAndGreenTests {
         checkEquals("flowing water does not", parse("minecraft:water[level=3]"), world.getBlock(0, 60, -3));
         checkEquals("and gets no snow on it", air, world.getBlock(0, 61, -3));
         checkEquals("water by a light does not freeze", parse("minecraft:water[level=0]"), world.getBlock(0, 60, -4));
-        check("a second run finds nothing to do", answer(actor, "//snow 5").contains("Snowed: 0 block(s)"));
+        check("a second run finds nothing to do", answer(actor, "//snow 5").contains("Snowed: 0 blocks"));
         checkEquals("and puts no layer on the first", air, world.getBlock(-2, 62, -2));
     }
 
