@@ -32,7 +32,7 @@ CLASSPATH = "core/build/classes/java/main:core/build/classes/java/selfTest"
 SKIP = {"fawebim path", "//fawebim path"}
 # The game's own commands, which the smoke run uses to set a scene or to read
 # the world back, and which the engine alone does not have.
-VANILLA = ("weather ", "time ", "execute ", "forceload ")
+VANILLA = ("weather ", "time ", "execute ", "forceload ", "save-all ")
 
 
 def rows():

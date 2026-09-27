@@ -37,3 +37,8 @@ accessible class net/minecraft/server/level/ThreadedLevelLightEngine$TaskType
 accessible method net/minecraft/server/level/ThreadedLevelLightEngine addTask (IILnet/minecraft/server/level/ThreadedLevelLightEngine$TaskType;Ljava/lang/Runnable;)V
 accessible field net/minecraft/world/level/lighting/LevelLightEngine blockEngine Lnet/minecraft/world/level/lighting/LightEngine;
 accessible field net/minecraft/world/level/lighting/LevelLightEngine skyEngine Lnet/minecraft/world/level/lighting/LightEngine;
+
+# The saves of a chunk wait for the light work an edit queued for it, as they
+# wait for a chunk still being generated: the game takes the saved light back
+# when it loads the chunk (FabricWorld#lightPending).
+accessible method net/minecraft/server/level/ChunkHolder addSaveDependency (Ljava/util/concurrent/CompletableFuture;)V

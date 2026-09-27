@@ -80,15 +80,6 @@ public final class FabricWorld implements World {
     private int blockEntityCount;
     /** The positions of the section being written whose light has to be checked. */
     private final LightChecks lightChecks = new LightChecks();
-    /**
-     * Per chunk, the number of the last flush that queued light work for it,
-     * see {@link #lightPending}. Shared by every adapter of a level, since an
-     * adapter lives for one command; weak, so a chunk the game dropped leaves
-     * with its instance. Server thread only, like the flushes and the
-     * callbacks that read it.
-     */
-    private static final Map<LevelChunk, Integer> LIGHT_FLUSHES = new java.util.WeakHashMap<>();
-    private static int lightFlush;
     private int cachedChunkX = Integer.MIN_VALUE;
     private int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -606,29 +597,28 @@ public final class FabricWorld implements World {
     }
 
     /**
-     * Marks the light of a chunk as not computed until the light engine has run
-     * the work just queued for it, as the game's own {@code lightChunk} does.
+     * Holds every save of a chunk until the light engine has run the work just
+     * queued for it.
      *
-     * <p>A chunk nothing keeps loaded - an edit away from every player, a paste
-     * wider than the view distance - is unloaded and saved a tick or two after
-     * the edit loaded it, while the light thread may still be working on it.
-     * Saved as correct, the chunk came back with the light from before the
-     * edit: sky light under a new roof, dark where one was taken away. Saved as
-     * not correct, the game lights it again when it loads it, as it does a
-     * chunk from an older version. The flag comes back once the work is done,
-     * unless a later flush queued more; on a chunk unloaded meanwhile it lands
-     * on the instance the game dropped. Server thread only.</p>
+     * <p>The game saves the light of a chunk as its engine holds it, and takes
+     * the saved light back when it loads the chunk, even one saved as not lit:
+     * the lighting it then runs only adds light. A chunk nothing keeps loaded -
+     * an edit away from every player, a paste wider than the view distance - is
+     * unloaded and saved a tick or two after the edit loaded it, while the
+     * light thread may still be working on it, and it came back with the light
+     * from before the edit: sky light under a new roof. The unload, the
+     * autosave and a flushing save-all wait for the save dependencies of the
+     * chunk's holder, as they wait for a chunk still being generated; the
+     * future is the one the game hands the send dependencies to hold a chunk's
+     * packet until its light is done. Server thread only.</p>
      */
     private void lightPending(LevelChunk chunk, net.minecraft.server.level.ThreadedLevelLightEngine engine) {
-        int flush = ++lightFlush;
-        LIGHT_FLUSHES.put(chunk, flush);
-        chunk.setLightCorrect(false);
         ChunkPos pos = chunk.getPos();
-        engine.waitForPendingTasks(pos.x, pos.z).thenRunAsync(() -> {
-            if (LIGHT_FLUSHES.remove(chunk, flush)) {
-                chunk.setLightCorrect(true);
-            }
-        }, level.getServer());
+        net.minecraft.server.level.ChunkHolder holder =
+                level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(pos.toLong());
+        if (holder != null) {
+            holder.addSaveDependency(engine.waitForPendingTasks(pos.x, pos.z));
+        }
     }
 
     /** Whether a buffered state is one the villagers or the portal search keep track of. */

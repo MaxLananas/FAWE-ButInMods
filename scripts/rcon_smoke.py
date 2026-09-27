@@ -188,12 +188,14 @@ CHECKS = [
     ("forceload remove all", "force loaded"),
     # The same roof where nothing keeps the chunks loaded: the edit loads them,
     # the game unloads and saves them a tick or two later, while its light
-    # thread may still be darkening the air under the roof. Loaded again from
-    # the disk, the chunks must come back dark under it.
+    # thread may still be darkening the air under the roof, and takes the saved
+    # light back when it loads them again. The flushing save writes out what it
+    # saved; loaded again from the disk, the chunks must come back dark under
+    # the roof.
     ("//pos1 1000,80,1000", "position 1: set"),
     ("//pos2 1063,82,1063", "position 2: set"),
     ("//set minecraft:stone", "12,288 block(s) affected"),
-    ("execute unless loaded 1032 80 1032", "passed", 20),
+    ("save-all flush", "saved the game"),
     ("forceload add 1000 1000 1063 1063", "force loaded"),
     ('execute positioned 1032 79 1032 if predicate '
      '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed", 10),
