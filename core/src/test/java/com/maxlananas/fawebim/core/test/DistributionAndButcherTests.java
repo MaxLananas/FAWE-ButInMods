@@ -52,6 +52,18 @@ final class DistributionAndButcherTests {
         check("-p pages that count without counting again (" + paged + ")",
                 paged.contains("minecraft:stone: 32") && !paged.contains("dirt"));
         check("a new //distr counts again", answer(actor, "//distr").contains("minecraft:dirt: 32"));
+
+        // -c counts the clipboard the way the selection is counted, air
+        // included, as FAWE's does; it left the air out.
+        answer(actor, "//pos2 3,66,3");
+        String selected = answer(actor, "//distr");
+        answer(actor, "//copy");
+        String copied = answer(actor, "//distr -c");
+        check("//distr -c counts the air of the clipboard (" + copied + ")",
+                copied.contains("Block distribution (48 blocks)") && copied.contains("minecraft:air: 16 (33.33%)")
+                        && copied.contains("minecraft:dirt: 32 (66.67%)"));
+        check("as //distr counts the selection it came from (" + selected + ")",
+                selected.contains("minecraft:air: 16 (33.33%)") && selected.contains("minecraft:dirt: 32 (66.67%)"));
     }
 
     private static void butcherTakesACylinder() {

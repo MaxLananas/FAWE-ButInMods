@@ -1264,13 +1264,6 @@ public final class Commands {
     }
 
     /**
-     * The origin of a copy or a cut: where the player stands, or pos1 under
-     * {@code //toggleplace}, as in WorldEdit and FAWE, so that a paste puts the
-     * build where it was from the player. A source with no position - the
-     * console, rcon - keeps the lowest corner the clipboard starts with, so a
-     * paste at coordinates puts that corner there.
-     */
-    /**
      * Counts the blocks of the selection, or of the clipboard with {@code -c},
      * by block - by state with {@code -d}, e.g. oak_log[axis=x] - most first.
      */
@@ -1282,11 +1275,12 @@ public final class Commands {
             if (!ctx.session().hasClipboard()) {
                 throw CommandRegistry.error("No clipboard: use //copy first");
             }
+            // Every cell of the copy, air included, as FAWE counts the
+            // clipboard's region and as the selection is counted below: -c
+            // left the air out, so the same blocks read differently copied.
             BlockArrayClipboard clip = ctx.session().getClipboard().getClipboard();
             clip.forEachPosition((x, y, z, state) -> {
-                if (!blockRegistry.isAirLike(state)) {
-                    counts.add(state);
-                }
+                counts.add(state);
                 return false;
             });
         } else {
@@ -1484,6 +1478,13 @@ public final class Commands {
                 + Msg.count(rest.size(), "clipboard", "clipboards") + " left"));
     }
 
+    /**
+     * The origin of a copy or a cut: where the player stands, or pos1 under
+     * {@code //toggleplace}, as in WorldEdit and FAWE, so that a paste puts the
+     * build where it was from the player. A source with no position - the
+     * console, rcon - keeps the lowest corner the clipboard starts with, so a
+     * paste at coordinates puts that corner there.
+     */
     static BlockVector3 copyOrigin(Ctx ctx, BlockArrayClipboard clipboard) {
         return ctx.placementOr(clipboard.getOrigin());
     }
