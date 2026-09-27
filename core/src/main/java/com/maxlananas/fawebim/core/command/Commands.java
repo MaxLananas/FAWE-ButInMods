@@ -340,7 +340,7 @@ public final class Commands {
         e12.handler = ctx -> {
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
                     long count = ctx.selection().forEachPosition(mask::test);
-                    ctx.actor().message(Msg.keyValue("Count", Msg.formatNumber(count)));
+                    ctx.actor().message(Msg.result("Counted", Msg.count(count)));
                 };
 
 
@@ -355,34 +355,24 @@ public final class Commands {
         // asked for below when it is the one read.
         e13.requiresSelection = false;
         e13.handler = ctx -> {
-                    BlockStateRegistry blockRegistry = BlockState.registry();
-                    com.maxlananas.fawebim.core.util.StateCounts counts =
-                            new com.maxlananas.fawebim.core.util.StateCounts(blockRegistry.stateCount());
-                    if (ctx.hasFlag("c")) {
-                        if (!ctx.session().hasClipboard()) {
-                            throw CommandRegistry.error("No clipboard: use //copy first");
+                    // -p pages the distribution the last //distr counted, as in
+                    // FAWE: counting the selection again for every page made
+                    // each click through a large one as slow as the first, and
+                    // a page could belong to a different count than the one
+                    // before it.
+                    com.maxlananas.fawebim.core.session.LocalSession.Distribution distribution;
+                    if (ctx.hasFlag("p")) {
+                        distribution = ctx.session().getLastDistribution();
+                        if (distribution == null) {
+                            throw CommandRegistry.error("No previous distribution: run //distr first");
                         }
-                        BlockArrayClipboard clip = ctx.session().getClipboard().getClipboard();
-                        clip.forEachPosition((x, y, z, state) -> {
-                            if (!blockRegistry.isAirLike(state)) {
-                                counts.add(state);
-                            }
-                            return false;
-                        });
                     } else {
-                        World world = ctx.world();
-                        ctx.selection().forEachPosition((x, y, z) -> {
-                            counts.add(world.getBlock(x, y, z));
-                            return false;
-                        });
+                        distribution = distribution(ctx);
+                        ctx.session().setLastDistribution(distribution);
                     }
-                    long total = counts.total();
+                    long total = distribution.total();
+                    java.util.List<java.util.Map.Entry<String, Long>> sorted = distribution.entries();
                     ctx.actor().message(Msg.title("Block distribution (" + Msg.formatNumber(total) + " blocks)"));
-                    // -d separates the states of a block, e.g. oak_log[axis=x].
-                    java.util.Map<String, Long> named = counts.byName(ctx.hasFlag("d")
-                            ? blockRegistry::describe : blockRegistry::name);
-                    java.util.List<java.util.Map.Entry<String, Long>> sorted = new java.util.ArrayList<>(named.entrySet());
-                    sorted.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
                     Page page = Page.of(ctx, sorted.size());
                     for (java.util.Map.Entry<String, Long> entry : sorted.subList(page.from(), page.to())) {
                         ctx.actor().message(Msg.item(entry.getKey(), Msg.formatNumber(entry.getValue()) + " ("
@@ -1280,6 +1270,40 @@ public final class Commands {
      * console, rcon - keeps the lowest corner the clipboard starts with, so a
      * paste at coordinates puts that corner there.
      */
+    /**
+     * Counts the blocks of the selection, or of the clipboard with {@code -c},
+     * by block - by state with {@code -d}, e.g. oak_log[axis=x] - most first.
+     */
+    private static com.maxlananas.fawebim.core.session.LocalSession.Distribution distribution(Ctx ctx) {
+        BlockStateRegistry blockRegistry = BlockState.registry();
+        com.maxlananas.fawebim.core.util.StateCounts counts =
+                new com.maxlananas.fawebim.core.util.StateCounts(blockRegistry.stateCount());
+        if (ctx.hasFlag("c")) {
+            if (!ctx.session().hasClipboard()) {
+                throw CommandRegistry.error("No clipboard: use //copy first");
+            }
+            BlockArrayClipboard clip = ctx.session().getClipboard().getClipboard();
+            clip.forEachPosition((x, y, z, state) -> {
+                if (!blockRegistry.isAirLike(state)) {
+                    counts.add(state);
+                }
+                return false;
+            });
+        } else {
+            World world = ctx.world();
+            ctx.selection().forEachPosition((x, y, z) -> {
+                counts.add(world.getBlock(x, y, z));
+                return false;
+            });
+        }
+        java.util.Map<String, Long> named = counts.byName(ctx.hasFlag("d")
+                ? blockRegistry::describe : blockRegistry::name);
+        java.util.List<java.util.Map.Entry<String, Long>> sorted = new java.util.ArrayList<>(named.entrySet());
+        sorted.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+        return new com.maxlananas.fawebim.core.session.LocalSession.Distribution(java.util.List.copyOf(sorted),
+                counts.total());
+    }
+
     static BlockVector3 copyOrigin(Ctx ctx, BlockArrayClipboard clipboard) {
         return ctx.placementOr(clipboard.getOrigin());
     }

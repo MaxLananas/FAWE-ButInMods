@@ -279,6 +279,30 @@ public interface World extends Extent {
     }
 
     /**
+     * The entities within a radius of a block, as WorldEdit's
+     * {@code CylinderRegion.createRadius} holds them for {@code /remove},
+     * {@code //butcher} and the butcher brush: the block each one stands in
+     * lies within the radius and a half of the centre's column, at any height
+     * of the world.
+     */
+    default List<EntityData> getEntitiesWithin(BlockVector3 center, double radius) {
+        int reach = (int) Math.ceil(radius);
+        List<EntityData> box = getEntities(new Region3i(center.x() - reach, minY(), center.z() - reach,
+                center.x() + reach, maxY(), center.z() + reach));
+        // On the squared distance, so no square root is taken per entity.
+        double limit = (radius + 0.5) * (radius + 0.5);
+        List<EntityData> inside = new java.util.ArrayList<>(box.size());
+        for (EntityData entity : box) {
+            long dx = (long) Math.floor(entity.position().x()) - center.x();
+            long dz = (long) Math.floor(entity.position().z()) - center.z();
+            if (dx * dx + dz * dz <= limit) {
+                inside.add(entity);
+            }
+        }
+        return inside;
+    }
+
+    /**
      * The data of the block entity at a position, or {@code null} when there is
      * none: the compound the game saves for it, its type under {@code id} and
      * without its position. A new compound on every call; a live world answers

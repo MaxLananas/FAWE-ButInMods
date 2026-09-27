@@ -417,6 +417,26 @@ public final class LocalSession {
         poolDynamicRotation = false;
     }
 
+    /**
+     * What the last {@code //distr} counted, by block or state and most
+     * first, which {@code //distr -p} pages through.
+     *
+     * @param entries the name of each block or state and how many there were
+     * @param total   every block counted
+     */
+    public record Distribution(java.util.List<java.util.Map.Entry<String, Long>> entries, long total) {
+    }
+
+    private Distribution lastDistribution;
+
+    public Distribution getLastDistribution() {
+        return lastDistribution;
+    }
+
+    public void setLastDistribution(Distribution distribution) {
+        this.lastDistribution = distribution;
+    }
+
     /** Moves the clipboard to another of the {@code //schem loadall} ones, which stay loaded. */
     public void setClipboardFromPool(BlockArrayClipboard member) {
         this.clipboard = new ClipboardHolder(member);

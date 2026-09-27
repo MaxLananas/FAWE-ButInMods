@@ -55,16 +55,16 @@ STEPS = [
     ("clear the paste box", "//set minecraft:air", "block(s) affected"),
     ("select", "//pos1 -32,100,-32", "position 1: set"),
     ("select", "//pos2 31,131,31", "position 2: set"),
-    ("count of an empty box", "//count minecraft:stone", "count: 0"),
+    ("count of an empty box", "//count minecraft:stone", "counted: 0"),
     # A copy of a box that holds nothing stores nothing, however large it is.
     ("copy of an empty box", "//copy", "copied: 0 block(s)"),
     ("set (fills the box)", "//set minecraft:stone", "131,072 block(s) affected"),
-    ("count", "//count minecraft:stone", "count: 131,072"),
+    ("count", "//count minecraft:stone", "counted: 131,072"),
     ("copy of a solid box", "//copy", "copied: 131,072 block(s)"),
     ("cut of a solid box", "//cut", "cut: 131,072 block(s)"),
-    ("count after the cut", "//count minecraft:stone", "count: 0"),
+    ("count after the cut", "//count minecraft:stone", "counted: 0"),
     ("undo (puts the box back)", "//undo", "undid: 131,072 block change(s)"),
-    ("count", "//count minecraft:stone", "count: 131,072"),
+    ("count", "//count minecraft:stone", "counted: 131,072"),
     # The second undo takes the first //set back, which changed as many blocks as
     # the box had room for: that count belongs to the world, not to this list.
     ("undo (empties it again)", "//undo", "undid:"),
@@ -74,7 +74,7 @@ STEPS = [
     ("paste of a large box", "//paste -a -32,160,-32", "pasted: 131,072 block(s)"),
     ("select what was pasted", "//pos1 -32,160,-32", "position 1: set"),
     ("select what was pasted", "//pos2 31,191,31", "position 2: set"),
-    ("count what the paste wrote", "//count minecraft:stone", "count: 131,072"),
+    ("count what the paste wrote", "//count minecraft:stone", "counted: 131,072"),
     ("copy of what was pasted", "//copy", "copied: 131,072 block(s)"),
 ]
 

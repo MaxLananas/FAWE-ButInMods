@@ -420,8 +420,10 @@ public final class TestWorld implements World {
             double x = entity.position().x();
             double y = entity.position().y();
             double z = entity.position().z();
-            if (x >= box.minX() && x <= box.maxX() && y >= box.minY() && y <= box.maxY()
-                    && z >= box.minZ() && z <= box.maxZ()) {
+            // The box is of whole blocks, as the Fabric world reads it: an
+            // entity anywhere inside its last block is inside it.
+            if (x >= box.minX() && x < box.maxX() + 1 && y >= box.minY() && y < box.maxY() + 1
+                    && z >= box.minZ() && z < box.maxZ() + 1) {
                 found.add(entity);
             }
         }

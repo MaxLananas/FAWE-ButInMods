@@ -18,7 +18,6 @@ import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.EntityData;
-import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.util.LinkedHashSet;
@@ -423,54 +422,42 @@ final class RegionCommands {
             if (radius < -1) {
                 throw CommandRegistry.error("Use -1 to remove all entities in loaded chunks");
             }
-            World world = ctx.world();
             EditSession session = ctx.editSession();
-            List<EntityData> candidates;
-            double centerX = 0;
-            double centerZ = 0;
-            if (radius < 0) {
-                candidates = world.getEntities();
-            } else {
-                BlockVector3 center = ctx.placement();
-                centerX = center.x() + 0.5;
-                centerZ = center.z() + 0.5;
-                candidates = world.getEntities(new Extent.Region3i(
-                        (int) Math.floor(centerX - radius), world.minY(), (int) Math.floor(centerZ - radius),
-                        (int) Math.ceil(centerX + radius), world.maxY(), (int) Math.ceil(centerZ + radius)));
-            }
-            // The cylinder test runs on the squared distance so no square root is
-            // taken per entity, and it applies before the type test because most
-            // entities of a busy world sit outside the radius.
-            double radiusSq = (double) radius * radius;
             int removed = 0;
-            for (EntityData entity : candidates) {
+            for (EntityData entity : entitiesWithin(ctx, radius)) {
                 if (!entity.isSpawnable() || !type.matches(entity.type())) {
                     continue;
-                }
-                if (radius >= 0) {
-                    double dx = entity.position().x() - centerX;
-                    double dz = entity.position().z() - centerZ;
-                    if (dx * dx + dz * dz > radiusSq) {
-                        continue;
-                    }
                 }
                 // Through the edit session, so //undo brings the entity back.
                 session.removeEntity(entity);
                 removed++;
             }
-            ctx.actor().message(Msg.result("Butcher", Msg.count(removed)
-                    + " entit(y/ies) have been marked for removal"));
+            ctx.actor().message(Msg.result("Removed", Msg.count(removed, "entity", "entities")));
         };
     }
 
     /**
-     * {@code //butcher} — kills the entities matching the flags within a radius.
+     * The entities within a radius of the player's placement, or every entity
+     * of the loaded chunks for {@code -1}. The position is asked for only when
+     * a radius needs it, which lets the console run the command with -1.
+     */
+    private static List<EntityData> entitiesWithin(Ctx ctx, int radius) {
+        return radius < 0 ? ctx.world().getEntities() : ctx.world().getEntitiesWithin(ctx.placement(), radius);
+    }
+
+    /**
+     * {@code //butcher} - kills the entities matching the flags within a radius.
      *
      * <p>Without a flag only the hostile mobs are killed, which is the default
      * FAWE documents; {@code -p} adds pets, {@code -n} NPCs, {@code -g} golems,
      * {@code -a} animals, {@code -b} ambient mobs, {@code -t} named entities,
      * {@code -r} armor stands and {@code -w} water mobs. {@code -f} is the
      * shortcut for <code>-abgnpt</code>.</p>
+     *
+     * <p>The radius is FAWE's: a cylinder around the player by the height of
+     * the world, {@code -1} for every loaded chunk, and the configured maximum
+     * as a ceiling rather than a refusal. It was a square, whose corners reach
+     * a radius and a half away, and {@code -1} was read as no radius at all.</p>
      */
     private void butcher() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("butcher", "/butcher");
@@ -482,26 +469,22 @@ final class RegionCommands {
         entry.arguments.add("[radius]");
         entry.booleanFlags.addAll(List.of("p", "n", "g", "a", "b", "t", "f", "r", "w"));
         entry.handler = ctx -> {
-            int radius = ctx.args().isEmpty() || ctx.arg(0).startsWith("-")
-                    ? com.maxlananas.fawebim.core.platform.Config.get().butcherDefaultRadius
-                    : ctx.intArg(0, com.maxlananas.fawebim.core.platform.Config.get().butcherDefaultRadius);
-            if (radius > com.maxlananas.fawebim.core.platform.Config.get().butcherMaxRadius) {
-                throw CommandRegistry.error("Maximum butcher radius is "
-                        + com.maxlananas.fawebim.core.platform.Config.get().butcherMaxRadius);
+            com.maxlananas.fawebim.core.platform.Config config = com.maxlananas.fawebim.core.platform.Config.get();
+            int radius = ctx.intArg(0, config.butcherDefaultRadius);
+            if (radius < -1) {
+                throw CommandRegistry.error("Use -1 to remove all mobs in loaded chunks");
             }
-            BlockVector3 origin = ctx.arg(0, "").contains(",")
-                    ? ctx.blockVector(0) : ctx.placement();
-            World world = ctx.world();
-            Extent.Region3i box = new Extent.Region3i(
-                    origin.x() - radius, world.minY(), origin.z() - radius,
-                    origin.x() + radius, world.maxY(), origin.z() + radius);
+            int maximum = config.butcherMaxRadius;
+            if (maximum >= 0 && (radius < 0 || radius > maximum)) {
+                radius = maximum;
+            }
             java.util.Set<Creatures.Category> categories = ctx.hasFlag("f")
                     ? Creatures.of(true, true, true, true, true, true, ctx.hasFlag("r"), true)
                     : Creatures.of(ctx.hasFlag("p"), ctx.hasFlag("n"), ctx.hasFlag("g"), ctx.hasFlag("a"),
                     ctx.hasFlag("b"), ctx.hasFlag("t"), ctx.hasFlag("r"), ctx.hasFlag("w"));
             int killed = 0;
             EditSession session = ctx.editSession();
-            for (EntityData entity : world.getEntities(box)) {
+            for (EntityData entity : entitiesWithin(ctx, radius)) {
                 if (!entity.isSpawnable() || !Creatures.matches(entity, categories)) {
                     continue;
                 }
@@ -509,8 +492,8 @@ final class RegionCommands {
                 session.removeEntity(entity);
                 killed++;
             }
-            ctx.actor().message(Msg.result("Butcher", Msg.count(killed) + " entit(y/ies) removed"
-                    + " within " + Msg.count(radius) + " block(s)"));
+            ctx.actor().message(Msg.result("Killed", Msg.count(killed, "entity", "entities")
+                    + (radius < 0 ? " in the loaded chunks" : " within " + Msg.blocks(radius))));
         };
     }
 

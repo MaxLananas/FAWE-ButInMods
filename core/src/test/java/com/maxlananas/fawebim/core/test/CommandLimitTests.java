@@ -222,7 +222,7 @@ final class CommandLimitTests {
         // 10 x 20 x 10 of the flat world: stone up to y 67, dirt at 68, grass
         // at 69, air from 70.
         String count = answer(actor, "//count stone");
-        check("//count counts the stone of the selection (" + count + ")", count.contains("Count: 800"));
+        check("//count counts the stone of the selection (" + count + ")", count.contains("Counted: 800"));
         String distribution = answer(actor, "//distr");
         check("//distr totals the selection", distribution.contains("2,000 blocks"));
         check("//distr names the stone with its share", distribution.contains("minecraft:stone: 800 (40.00%)"));

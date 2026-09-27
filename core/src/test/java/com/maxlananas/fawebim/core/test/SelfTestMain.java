@@ -163,6 +163,7 @@ public final class SelfTestMain {
         RemovalTests.run();
         SnowAndGreenTests.run();
         ClipboardPasteTests.run();
+        DistributionAndButcherTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -2581,21 +2582,21 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove items");
         check("/remove items takes the drops around the player",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("2 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Removed: 2 entities")));
         checkEquals("the painting and the distant arrow stay", 2, world.getEntities().size());
 
         // A radius of -1 is every loaded entity, however far away it sits.
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove arrows -1");
         check("/remove arrows -1 reaches the whole world",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("1 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Removed: 1 entity")));
 
         // A radius the cylinder ignores: the arrow is out of reach at five blocks.
         world.addEntity(new EntityData("minecraft:arrow", new NbtCompound(), new Vector3(900.5, 40, 900.5)));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove arrows 5");
         check("/remove arrows 5 leaves distant entities alone",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("0 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Removed: 0 entities")));
         checkEquals("the distant arrow is still loaded", 2, world.getEntities().size());
 
         actor.clearMessages();
@@ -2639,13 +2640,13 @@ public final class SelfTestMain {
                 .anyMatch(m -> plain(m).contains("\u00bb Extinguished: ") && plain(m).contains("9")));
         CommandManager.get().dispatch(actor, "//pos1 7,30,7");
         CommandManager.get().dispatch(actor, "//count minecraft:fire");
-        check("no fire is left", count(actor).equals("Count: 0"));
+        check("no fire is left", count(actor).equals("Counted: 0"));
         // The command removes fire and nothing else, so the grass the fire sat on
         // is still there.
         CommandManager.get().dispatch(actor, "//pos1 4,29,4");
         CommandManager.get().dispatch(actor, "//pos2 12,29,12");
         check("the ground under the fire is untouched",
-                countOf(actor, "minecraft:grass_block").equals("Count: 81"));
+                countOf(actor, "minecraft:grass_block").equals("Counted: 81"));
     }
 
     private static void testSelectionTransforms() {
@@ -2716,14 +2717,14 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//pos1 0,70,0");
         CommandManager.get().dispatch(actor, "//pos2 3,70,3");
         CommandManager.get().dispatch(actor, "//set minecraft:stone");
-        check("the selection is stone", count(actor).equals("Count: 16"));
+        check("the selection is stone", count(actor).equals("Counted: 16"));
         CommandManager.get().dispatch(actor, "//gsmask minecraft:stone");
-        check("a source mask leaves the reads the blocks it accepts", count(actor).equals("Count: 16"));
+        check("a source mask leaves the reads the blocks it accepts", count(actor).equals("Counted: 16"));
         CommandManager.get().dispatch(actor, "//gsmask minecraft:dirt");
-        check("a source mask hides the blocks it rejects", count(actor).equals("Count: 0"));
+        check("a source mask hides the blocks it rejects", count(actor).equals("Counted: 0"));
         CommandManager.get().dispatch(actor, "//gsmask");
         CommandManager.get().dispatch(actor, "//count minecraft:stone");
-        check("clearing the source mask restores the reads", count(actor).equals("Count: 16"));
+        check("clearing the source mask restores the reads", count(actor).equals("Counted: 16"));
     }
 
     /** Counts the selection and answers without the chat colouring. */
@@ -2742,7 +2743,7 @@ public final class SelfTestMain {
 
     private static String countOf(TestActor actor, String block) {
         CommandManager.get().dispatch(actor, "//count " + block);
-        return actor.lastMessage().replaceAll("\u00a7.", "").trim();
+        return actor.lastMessage().replaceAll("\u00a7.", "").replaceFirst("^FAWE \u00bb ", "").trim();
     }
 
     private static void testSplitCommands() {
@@ -2949,7 +2950,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(sweeper, "//air");
         check("//air clears the selection",
                 plain(sweeper.lastMessage()).contains("Set to air: 16 block(s)"));
-        check("//air left the selection empty", count(sweeper).equals("Count: 0"));
+        check("//air left the selection empty", count(sweeper).equals("Counted: 0"));
 
         // //ores plants vanilla's ore distribution where the mask allows it,
         // which is FAWE's own ore command rather than the pattern form //ore is.

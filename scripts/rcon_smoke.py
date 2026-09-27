@@ -59,14 +59,14 @@ CHECKS = [
     ("//pos2 15,60,15", "position 2: set"),
     ("//size", "256"),
     ("//set minecraft:stone", "256 block(s) affected"),
-    ("//count minecraft:stone", "count: 256"),
+    ("//count minecraft:stone", "counted: 256"),
     ("//undo", "Undid: 256 block change(s)"),
-    ("//count minecraft:stone", "count: 0"),
+    ("//count minecraft:stone", "counted: 0"),
     ("//set minecraft:stone", "256 block(s) affected"),
     ("//replace minecraft:stone minecraft:dirt", "256 block(s) affected"),
-    ("//count minecraft:dirt", "count: 256"),
+    ("//count minecraft:dirt", "counted: 256"),
     ("//undo", "Undid: 256 block change(s)"),
-    ("//count minecraft:dirt", "count: 0"),
+    ("//count minecraft:dirt", "counted: 0"),
     # The clipboard and the schematic file, through a real save and load: the
     # region holds stone at this point, and it is cleared before the load so the
     # count afterwards can only come from the file.
@@ -74,11 +74,11 @@ CHECKS = [
     ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke.schem'"),
     ("//schem list", "fawebim-smoke"),
     ("//set minecraft:air", "256 block(s) affected"),
-    ("//count minecraft:stone", "count: 0"),
+    ("//count minecraft:stone", "counted: 0"),
     ("//schem unload", "Clipboard: unloaded"),
     ("//schem load fawebim-smoke", "loaded schematic 'fawebim-smoke'"),
     ("//paste 0,60,0", "pasted: 256 block(s)"),
-    ("//count minecraft:stone", "count: 256"),
+    ("//count minecraft:stone", "counted: 256"),
     ("//schem delete fawebim-smoke", "deleted schematic 'fawebim-smoke'"),
     # Shape commands, checked by their geometry rather than by their messages. The
     # margin selection is cleared first, so the 16x3x16 box is built in the air
@@ -95,16 +95,16 @@ CHECKS = [
     ("//pos2 15,62,15", "position 2: set"),
     ("//set minecraft:stone", "768 block(s) affected"),
     ("//outline minecraft:sand", "572 block(s) affected"),
-    ("//count minecraft:sand", "count: 572"),
-    ("//count minecraft:stone", "count: 196"),
+    ("//count minecraft:sand", "counted: 572"),
+    ("//count minecraft:stone", "counted: 196"),
     ("//undo", "Undid: 572 block change(s)"),
-    ("//count minecraft:stone", "count: 768"),
+    ("//count minecraft:stone", "counted: 768"),
     ("//pos1 -1,59,-1", "position 1: set"),
     ("//pos2 16,63,16", "position 2: set"),
     ("//hollow 1", "196 block(s) affected"),
-    ("//count minecraft:stone", "count: 572"),
+    ("//count minecraft:stone", "counted: 572"),
     ("//undo", "Undid: 196 block change(s)"),
-    ("//count minecraft:stone", "count: 768"),
+    ("//count minecraft:stone", "counted: 768"),
     # The commands that reach the surface under a name of their own, and the
     # spells WorldEdit gives names it declares with a slash. The box is cleared
     # first, so the formula below fills all 768 cells and //air takes them back;
@@ -113,9 +113,9 @@ CHECKS = [
     ("//pos1 0,60,0", "position 1: set"),
     ("//pos2 15,62,15", "position 2: set"),
     ("//air", "Set to air: 768 block(s)"),
-    ("//count minecraft:stone", "count: 0"),
+    ("//count minecraft:stone", "counted: 0"),
     ("//generate minecraft:stone 1", "generated: 768 block(s)"),
-    ("//count minecraft:stone", "count: 768"),
+    ("//count minecraft:stone", "counted: 768"),
     ("//air", "Set to air: 768 block(s)"),
     # The shapes are built around the selection for a source that has no
     # position, so the box has to hold the whole shape before the count below can
@@ -125,7 +125,7 @@ CHECKS = [
     ("//set minecraft:stone", "1,792 block(s) affected"),
     ("//air", "Set to air: 1,792 block(s)"),
     ("//hpyramid minecraft:stone 4", "created: 81 block(s)"),
-    ("//count minecraft:stone", "count: 81"),
+    ("//count minecraft:stone", "counted: 81"),
     ("//air", "Set to air: 81 block(s)"),
     ("//blob minecraft:stone 3", "Blob: "),
     ("//fillr minecraft:stone 3 3", "filled:"),
@@ -137,7 +137,7 @@ CHECKS = [
     ("//flora 5", "planted:"),
     ("//ores minecraft:stone", "block(s) affected"),
     ("//ore minecraft:stone minecraft:iron_ore 9 40 100 60 70", "block(s) affected"),
-    ("//count minecraft:iron_ore", "Count: "),
+    ("//count minecraft:iron_ore", "Counted: "),
     ("setbiome minecraft:plains", "biome cell(s)"),
     ("//hsphere minecraft:stone 4", "created:"),
     ("//hcyl minecraft:stone 4 5", "created:"),
@@ -156,11 +156,11 @@ CHECKS = [
     ("//pos2 40,60,40", "position 2: set"),
     ("//regen", "Regenerated: 1 block(s)"),
     ("//pos2 41,60,41", "position 2: set"),
-    ("//count minecraft:gold_block", "count: 3"),
+    ("//count minecraft:gold_block", "counted: 3"),
     ("//pos2 40,60,40", "position 2: set"),
     ("//undo", "Undid: "),
     ("//pos2 41,60,41", "position 2: set"),
-    ("//count minecraft:gold_block", "count: 4"),
+    ("//count minecraft:gold_block", "counted: 4"),
     ("//set minecraft:air", "4 block(s) affected"),
     # Light, as the game itself reads it. A 64x64 roof three blocks thick over
     # the open sky of the flat world - 768 blocks in each of its chunks - darkens

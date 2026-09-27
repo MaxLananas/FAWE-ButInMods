@@ -364,7 +364,12 @@ public final class Msg {
 
     /** {@code 1 block}, {@code 1,024 blocks}: a count of blocks, the count in the value colour. */
     public static String blocks(long value) {
-        return count(value) + (value == 1 ? " block" : " blocks");
+        return count(value, "block", "blocks");
+    }
+
+    /** {@code 1 entity}, {@code 12 entities}: a count and its noun, the count in the value colour. */
+    public static String count(long value, String one, String many) {
+        return count(value) + " " + (value == 1 ? one : many);
     }
 
     /**

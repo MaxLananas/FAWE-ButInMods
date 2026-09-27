@@ -20,7 +20,6 @@ import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.Direction;
 import com.maxlananas.fawebim.core.world.EntityData;
-import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.util.List;
@@ -1524,11 +1523,14 @@ public final class Brushes {
             this.categories = categories;
         }
 
+        /**
+         * FAWE's cylinder of the radius by the height of the world; a cube
+         * of the radius missed the mobs above and below it, and took them from
+         * its corners, half as far again.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int r = (int) radius;
-            var box = Extent.Region3i.of(position.add(-r, -r, -r), position.add(r, r, r));
-            List<EntityData> entities = session.getWorld().getEntities(box);
+            List<EntityData> entities = session.getWorld().getEntitiesWithin(position, radius);
             int removed = 0;
             for (EntityData entity : entities) {
                 if (entity.isSpawnable() && Creatures.matches(entity, categories)) {
