@@ -901,6 +901,12 @@ public final class FabricWorld implements World {
                 }
             }
             ConfiguredFeature<?, ?> configured = feature.feature().value();
+            java.util.List<BlockPos> diag = positions.toList();
+            FaweMod.LOGGER.info("DIAG placeFeature modifiers={} positions={} height0={} below0={} feature={}",
+                    feature.placement(), diag,
+                    target.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE_WG, pos.x(), pos.z()),
+                    diag.isEmpty() ? "-" : target.getBlockState(diag.get(0).below()), configured);
+            positions = diag.stream();
             // Every position is placed, in the order the game places them: a
             // reduction does not stop at the first success as a match would.
             return positions.map(at -> configured.place(target, generator, source, at))
