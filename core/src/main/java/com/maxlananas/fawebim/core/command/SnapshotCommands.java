@@ -202,7 +202,7 @@ final class SnapshotCommands {
             ctx.actor().message(Msg.result("Restored", Msg.blocks(restored) + " from "
                     + Msg.value(path.getFileName()).raw()
                     + (ctx.hasFlag("b") ? ", " + Msg.count(biomes, "biome cell", "biome cells") : "")
-                    + (ctx.hasFlag("e") ? ", " + Msg.count(entities) + " entit(ies)" : "")));
+                    + (ctx.hasFlag("e") ? ", " + Msg.count(entities, "entity", "entities") : "")));
         };
     }
 

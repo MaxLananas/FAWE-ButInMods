@@ -137,6 +137,11 @@ final class CommandFeedbackTests {
         check("and so is none (" + none + ")", none.contains("Set: 0 blocks affected in"));
         String copied = answer(actor, "//copy");
         check("//copy counts them the same way (" + copied + ")", copied.contains("Copied: 2 blocks to your clipboard"));
+        ((TestWorld) actor.world()).addEntity(new com.maxlananas.fawebim.core.world.EntityData("minecraft:pig",
+                new com.maxlananas.fawebim.core.util.NbtCompound(), new com.maxlananas.fawebim.core.math.Vector3(0.5, 70, 0.5)));
+        String entity = answer(actor, "//copy -e");
+        check("and its entities, where one read \"1 entities\" (" + entity + ")",
+                entity.contains("to your clipboard, 1 entity ("));
     }
 
     private static String answer(TestActor actor, String line) {

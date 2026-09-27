@@ -1464,7 +1464,7 @@ public final class Commands {
                         clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
                 .append(" to your clipboard");
         if (!clipboard.entities().isEmpty()) {
-            detail.append(", ").append(Msg.count(clipboard.entities().size())).append(" entities");
+            detail.append(", ").append(Msg.count(clipboard.entities().size(), "entity", "entities"));
         }
         if (clipboard.hasBiomes()) {
             detail.append(", biomes");
@@ -2056,7 +2056,7 @@ public final class Commands {
                                     clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
                             .append(" to your clipboard");
                     if (!clipboard.entities().isEmpty()) {
-                        detail.append(", ").append(Msg.count(clipboard.entities().size())).append(" entities");
+                        detail.append(", ").append(Msg.count(clipboard.entities().size(), "entity", "entities"));
                     }
                     if (clipboard.hasBiomes()) {
                         detail.append(", biomes");
