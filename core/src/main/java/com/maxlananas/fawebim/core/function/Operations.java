@@ -1638,33 +1638,76 @@ public final class Operations {
         return false;
     }
 
-    /** {@code //deltree} — removes a tree starting from its trunk. */
-    public static int removeTree(World world, EditSession session, BlockVector3 start) {
-        LongQueue queue = new LongQueue();
+    /** How far from the clicked block the floating tree remover walks, as WorldEdit's. */
+    private static final long FLOATING_TREE_RANGE_SQ = 100L * 100L;
+
+    /** The blocks WorldEdit's floating tree remover counts as tree besides leaves and logs. */
+    private static final java.util.Set<String> TREE_BLOCKS = java.util.Set.of(
+            "minecraft:red_mushroom_block", "minecraft:brown_mushroom_block", "minecraft:mushroom_stem",
+            "minecraft:vine", "minecraft:nether_wart_block", "minecraft:warped_wart_block",
+            "minecraft:crimson_stem", "minecraft:warped_stem");
+
+    /**
+     * Whether a block is part of a tree for the floating tree remover: leaves,
+     * logs, the blocks of a huge mushroom or fungus, and vines.
+     */
+    public static boolean isTreeBlock(int state) {
+        BlockStateRegistry registry = BlockState.registry();
+        return registry.hasTag(state, "minecraft:leaves") || registry.hasTag(state, "minecraft:logs")
+                || TREE_BLOCKS.contains(registry.name(state));
+    }
+
+    /**
+     * The positions of the floating tree a block belongs to, found as
+     * WorldEdit's {@code FloatingTreeRemover} finds them: the tree blocks
+     * joined to it face to face, no farther than 100 blocks from it, reached
+     * through air and snow. A log, a stem or a mushroom block of it that
+     * touches any other block stands on something, and the answer is null:
+     * that tree is not floating. Leaves and vines may touch other blocks.
+     *
+     * <p>The positions walked are all answered, air included, as upstream's;
+     * only the tree blocks among them are the tree.</p>
+     */
+    public static long[] floatingTree(World world, BlockVector3 origin) {
         LongSet visited = new LongSet();
-        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
-        int changed = 0;
-        int air = BlockState.registry().air();
+        LongQueue queue = new LongQueue();
+        long start = BlockArrayClipboard.positionKey(origin.x(), origin.y(), origin.z());
+        visited.add(start);
+        queue.add(start);
+        BlockStateRegistry registry = BlockState.registry();
         while (!queue.isEmpty()) {
             long current = queue.poll();
-            if (!visited.add(current) || visited.size() > 20000) {
-                continue;
-            }
             int x = BlockArrayClipboard.keyX(current);
             int y = BlockArrayClipboard.keyY(current);
             int z = BlockArrayClipboard.keyZ(current);
-            String name = BlockState.registry().name(world.getBlock(x, y, z));
-            if (!name.contains("log") && !name.contains("leaves") && !name.contains("wood")) {
-                continue;
-            }
-            if (session.setBlock(x, y, z, air)) {
-                changed++;
-            }
             for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
-                queue.add(BlockArrayClipboard.positionKey(x + direction.x(), y + direction.y(), z + direction.z()));
+                int nx = x + direction.x();
+                int ny = y + direction.y();
+                int nz = z + direction.z();
+                if (distanceSq(nx, ny, nz, origin) > FLOATING_TREE_RANGE_SQ) {
+                    continue;
+                }
+                long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                if (!visited.add(next)) {
+                    continue;
+                }
+                int state = world.getBlock(nx, ny, nz);
+                if (registry.isAirLike(state) || registry.name(state).equals("minecraft:snow")) {
+                    continue;
+                }
+                if (isTreeBlock(state)) {
+                    queue.add(next);
+                    continue;
+                }
+                // Something solid: the tree stands on it unless the block it
+                // was reached from is a leaf or a vine.
+                int from = world.getBlock(x, y, z);
+                if (!registry.hasTag(from, "minecraft:leaves") && !registry.name(from).equals("minecraft:vine")) {
+                    return null;
+                }
             }
         }
-        return changed;
+        return visited.toArray();
     }
 
     /**

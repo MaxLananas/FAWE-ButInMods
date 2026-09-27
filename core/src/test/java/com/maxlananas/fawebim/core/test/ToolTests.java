@@ -34,6 +34,7 @@ final class ToolTests {
         section("tools");
         everyListedToolCanBeBound();
         eachToolIsASubCommandOfItsOwn();
+        theFloatingTreeRemoverTakesOnlyAFloatingTree();
         theReplacerTakesItsPatternAndPicksWithItsData();
         theLongRangeBuilderPlacesAgainstTheFaceOrClears();
         theStackerRepeatsTheClickedBlockIntoAir();
@@ -189,6 +190,62 @@ final class ToolTests {
         answer(actor, "/brush sphere stone 2");
         check("a brush on the held item is said to be unbound",
                 answer(actor, "//unbind").endsWith("Brush unbound from your current item"));
+    }
+
+    /**
+     * WorldEdit's floating tree remover takes away a tree that stands on
+     * nothing, leaves a tree standing on the ground, and says nothing when it
+     * removed one. It took every log and leaf joined to the click, whatever
+     * they stood on, and //deltree did it at once instead of binding the tool.
+     */
+    private static void theFloatingTreeRemoverTakesOnlyAFloatingTree() {
+        TestActor actor = actor("FloatingTree");
+        TestWorld world = (TestWorld) actor.world();
+        int log = state("minecraft:oak_log");
+        int leaves = state("minecraft:oak_leaves");
+        int stone = state("minecraft:stone");
+        // A trunk of three logs in the air, with a crown of leaves, one of which
+        // touches a stone pillar: leaves may touch other blocks.
+        for (int y = 80; y <= 82; y++) {
+            world.setBlock(0, y, 0, log);
+        }
+        world.setBlock(0, 83, 0, leaves);
+        world.setBlock(1, 82, 0, leaves);
+        world.setBlock(2, 82, 0, stone);
+        // A tree of the same shape standing on the grass, the top of the ground at 69.
+        for (int y = 70; y <= 72; y++) {
+            world.setBlock(10, y, 10, log);
+        }
+        world.setBlock(10, 73, 10, leaves);
+
+        check("//deltree binds the tool, as FAWE's does",
+                answer(actor, "//deltree").endsWith("Floating tree remover tool bound to Wooden Axe"));
+        Tool tool = Tools.current(actor);
+        actor.clearMessages();
+        use(actor, () -> tool.onRightClick(click(actor, 0, 81, 0, Direction.UP)));
+        check("a floating tree is taken away", BlockState.registry().isAirLike(world.getBlock(0, 80, 0))
+                && BlockState.registry().isAirLike(world.getBlock(0, 82, 0))
+                && BlockState.registry().isAirLike(world.getBlock(0, 83, 0))
+                && BlockState.registry().isAirLike(world.getBlock(1, 82, 0)));
+        checkEquals("but not the block its leaves touched", stone, world.getBlock(2, 82, 0));
+        check("and nothing is said", actor.messages().isEmpty());
+        use(actor, () -> tool.onRightClick(click(actor, 10, 71, 10, Direction.UP)));
+        check("a tree on the ground is not floating", String.join(" ", actor.messages())
+                .contains("That's not a floating tree."));
+        checkEquals("and stays", log, world.getBlock(10, 71, 10));
+        checkEquals("its leaves too", leaves, world.getBlock(10, 73, 10));
+        actor.clearMessages();
+        use(actor, () -> tool.onRightClick(click(actor, 5, 69, 5, Direction.UP)));
+        check("the ground is not a tree", String.join(" ", actor.messages()).contains("That's not a tree."));
+        answer(actor, "//undo");
+        checkEquals("the removal is undone as an edit", log, world.getBlock(0, 81, 0));
+
+        answer(actor, "/tool floodfill gold_block 2");
+        Tool fill = Tools.current(actor);
+        actor.clearMessages();
+        use(actor, () -> fill.onRightClick(click(actor, 5, 69, 5, Direction.UP)));
+        checkEquals("the flood fill fills", state("minecraft:gold_block"), world.getBlock(5, 69, 5));
+        check("and says nothing, as upstream's", actor.messages().isEmpty());
     }
 
     /** The list /tool offers named a "command" tool that /tool refused. */

@@ -467,20 +467,17 @@ public final class Tools {
                 return true;
             }
             EditSession session = open(context, "tool floodfill");
-            int changed = 0;
             try {
                 for (int i = 0; i < targets.length; i += 3) {
                     int x = targets[i];
                     int y = targets[i + 1];
                     int z = targets[i + 2];
-                    if (session.setBlock(x, y, z, fill.apply(x, y, z))) {
-                        changed++;
-                    }
+                    session.setBlock(x, y, z, fill.apply(x, y, z));
                 }
             } finally {
                 finish(context, session);
             }
-            context.message(Msg.success("Filled " + Msg.blocks(changed)));
+            // A fill says nothing, as upstream's: a tool is clicked many times.
             return true;
         }
 
@@ -781,7 +778,17 @@ public final class Tools {
         }
     }
 
-    /** {@code /tool deltree}. */
+    /**
+     * {@code /tool deltree}, WorldEdit's floating tree remover: a right click
+     * on a tree that stands on nothing - the top a felled trunk left in the air
+     * - takes its logs and leaves away. A tree standing on the ground is not
+     * floating and stays, and the click says so; a removal says nothing, as
+     * upstream's.
+     *
+     * <p>It took away every log and leaf joined to the click, twenty thousand
+     * blocks of a forest's canopy included, whatever they stood on, and said
+     * how many on every click.</p>
+     */
     public static final class DelTreeTool implements Tool {
 
         @Override
@@ -791,15 +798,35 @@ public final class Tools {
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            EditSession session = new EditSession(context.actor.world(), context.actor.session(), "tool deltree");
-            int changed;
-            try {
-                changed = com.maxlananas.fawebim.core.function.Operations.removeTree(
-                        context.actor.world(), session, context.position);
-            } finally {
-                session.close();
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
             }
-            context.message(Msg.success("Removed " + Msg.blocks(changed)));
+            com.maxlananas.fawebim.core.world.World world = context.actor.world();
+            BlockVector3 at = context.position;
+            if (!com.maxlananas.fawebim.core.function.Operations.isTreeBlock(world.getBlock(at.x(), at.y(), at.z()))) {
+                context.message(Msg.error("That's not a tree."));
+                return true;
+            }
+            long[] tree = com.maxlananas.fawebim.core.function.Operations.floatingTree(world, at);
+            if (tree == null) {
+                context.message(Msg.error("That's not a floating tree."));
+                return true;
+            }
+            int air = BlockState.registry().air();
+            EditSession session = open(context, "tool deltree");
+            try {
+                for (long key : tree) {
+                    int x = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyX(key);
+                    int y = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyY(key);
+                    int z = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyZ(key);
+                    if (com.maxlananas.fawebim.core.function.Operations.isTreeBlock(session.getBlock(x, y, z))) {
+                        session.setBlock(x, y, z, air);
+                    }
+                }
+            } finally {
+                finish(context, session);
+            }
             return true;
         }
 

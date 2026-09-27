@@ -1790,18 +1790,6 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e52 = registry.register("//deltree");
-        e52.description = "Remove the tree you are looking at";
-        e52.group = "generation";
-        e52.requiresPlayer = true;
-        e52.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    BlockVector3 target = ctx.targetBlock(100);
-                    int changed = com.maxlananas.fawebim.core.function.Operations.removeTree(ctx.world(), session, target);
-                    flush(ctx, session, "Removed", changed, "block");
-                };
-
-
         CommandRegistry.Entry e53 = registry.register("//ore", "/ore");
         e53.description = "Generates ores";
         e53.group = "generation";

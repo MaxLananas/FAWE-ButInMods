@@ -258,6 +258,9 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
         if (tag.endsWith("logs")) {
             return name.contains("log") || name.contains("stem");
         }
+        if (tag.endsWith("leaves")) {
+            return name.endsWith("_leaves");
+        }
         if (tag.endsWith("wool")) {
             return name.contains("wool");
         }
