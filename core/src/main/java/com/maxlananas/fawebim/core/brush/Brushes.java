@@ -135,6 +135,31 @@ public final class Brushes {
             return session.setBlock(x, y, z, state);
         }
 
+        /** The region a shape covers around the click, as FAWE's region factories build it. */
+        protected static com.maxlananas.fawebim.core.region.Region region(String shape, EditSession session,
+                                                                         BlockVector3 position, double radius) {
+            return com.maxlananas.fawebim.core.region.RegionFactories.parse(shape, session.minY(), session.maxY())
+                    .createCenteredAt(position, radius);
+        }
+
+        /**
+         * Runs an operation that writes through the edit - a forest, a deform -
+         * with the brush's mask added to the edit's for its duration, which is
+         * how FAWE's brush tool masks every brush.
+         */
+        protected int masked(EditSession session, java.util.function.IntSupplier operation) {
+            Mask previous = session.getMask();
+            if (mask == null || mask == previous) {
+                return operation.getAsInt();
+            }
+            session.setMask(previous == null ? mask : new Masks.IntersectionMask(List.of(previous, mask)));
+            try {
+                return operation.getAsInt();
+            } finally {
+                session.setMask(previous);
+            }
+        }
+
         @Override
         public String describe() {
             return "radius=" + radius + (fill != null ? " fill=" + fill.getClass().getSimpleName() : "");
@@ -175,9 +200,7 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            com.maxlananas.fawebim.core.region.Region region = com.maxlananas.fawebim.core.region.RegionFactories
-                    .parse(shape, session.minY(), session.maxY()).createCenteredAt(position, radius);
-            return (int) region.forEachPosition((x, y, z) -> place(session, x, y, z));
+            return (int) region(shape, session, position, radius).forEachPosition((x, y, z) -> place(session, x, y, z));
         }
 
         @Override
@@ -534,42 +557,7 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush raise} and {@code /brush lower}. */
-    public static final class RaiseLowerBrush extends BaseBrush {
-
-        private final boolean lower;
-
-        public RaiseLowerBrush(double radius, Pattern fill, boolean lower, Mask mask) {
-            super(radius, fill, mask);
-            this.lower = lower;
-        }
-
-        @Override
-        public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (int z = -(int) radius; z <= radius; z++) {
-                for (int x = -(int) radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int x0 = position.x() + x;
-                    int z0 = position.z() + z;
-                    int highest = session.getWorld().getHighestBlockY(x0, z0);
-                    if (lower) {
-                        if (session.setBlock(x0, highest, z0, registry.air())) {
-                            changed++;
-                        }
-                    } else if (place(session, x0, highest + 1, z0)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
-        }
-    }
-
-        /**
+    /**
      * {@code /brush layer <radius> <patterns>}: FAWE's layered skin. The solid
      * blocks touching air that connect to the clicked one, diagonals included,
      * within the radius, take the first entry of the list; each entry after it
@@ -1464,44 +1452,49 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush biome} — paints biomes. */
+    /**
+     * {@code /brush biome <shape> [radius] <biome> [-c]}: FAWE's biome brush,
+     * the biome set in every block of the shape. With {@code -c} the shape
+     * goes through the height of the world, a sphere or a cylinder as a
+     * cylinder of the radius and a cuboid as the square of it.
+     *
+     * <p>It set the biome with the id 0 whatever biome it was bound with, in a
+     * cylinder whatever the shape.</p>
+     */
     public static final class BiomeBrush extends BaseBrush {
 
-        private int biomeId;
-        private boolean fullColumn;
+        private final String shape;
+        private final int biome;
+        private final boolean fullColumn;
 
-        public BiomeBrush(double radius, Mask mask) {
+        public BiomeBrush(double radius, Mask mask, String shape, int biome, boolean fullColumn) {
             super(radius, null, mask);
-        }
-
-        public void setBiome(int biomeId) {
-            this.biomeId = biomeId;
-        }
-
-        /** {@code -c}: change the whole column instead of the brush volume. */
-        public void setFullColumn(boolean fullColumn) {
+            this.shape = shape;
+            this.biome = biome;
             this.fullColumn = fullColumn;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            int r = (int) radius;
-            for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int minY = fullColumn ? session.minY() : position.y() - r;
-                    int maxY = fullColumn ? session.maxY() : position.y() + r;
-                    for (int y = minY; y <= maxY; y++) {
-                        if (session.setBiome(position.x() + x, y, position.z() + z, biomeId)) {
-                            changed++;
-                        }
-                    }
-                }
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
+            if (fullColumn) {
+                BlockVector3 min = region.getMinimumPoint();
+                BlockVector3 max = region.getMaximumPoint();
+                region = region instanceof CuboidRegion
+                        ? new CuboidRegion(new BlockVector3(min.x(), session.minY(), min.z()),
+                                new BlockVector3(max.x(), session.maxY(), max.z()))
+                        : new com.maxlananas.fawebim.core.region.CylinderRegion(
+                                new com.maxlananas.fawebim.core.math.Vector2(position.x() + 0.5, position.z() + 0.5),
+                                radius, radius, session.minY(), session.maxY());
             }
-            return changed;
+            com.maxlananas.fawebim.core.region.Region shaped = region;
+            return masked(session, () -> (int) shaped.forEachPosition((x, y, z) -> session.setBiome(x, y, z, biome)));
+        }
+
+        @Override
+        public String describe() {
+            return "biome " + BlockState.registry().biomeName(biome) + " shape=" + shape + (fullColumn ? " -c" : "")
+                    + " " + super.describe();
         }
     }
 
@@ -1543,37 +1536,40 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush forest} — plants trees. */
+    /**
+     * {@code /brush forest <shape> [radius] [density] <type>}: WorldEdit's
+     * forest brush, a {@link Operations#paint} of trees over the shape - a tree
+     * tried on {@code density} percent of its columns, grown as //forest grows
+     * one.
+     *
+     * <p>It tried a fixed number of trees whatever the density, on the square
+     * around the click, and asked the world for a feature named after the tree
+     * type, which no world has: it planted nothing.</p>
+     */
     public static final class ForestBrush extends BaseBrush {
 
-        private double density = 0.05;
+        private final String shape;
+        private final String treeType;
+        private final double density;
 
-        public ForestBrush(double radius, Mask mask) {
+        /** @param density in percent, as typed */
+        public ForestBrush(double radius, Mask mask, String shape, String treeType, double density) {
             super(radius, null, mask);
-        }
-
-        public void setDensity(double density) {
+            this.shape = shape;
+            this.treeType = treeType;
             this.density = density;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            int r = (int) radius;
-            for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius || random.nextDouble() > density) {
-                        continue;
-                    }
-                    int x0 = position.x() + x;
-                    int z0 = position.z() + z;
-                    int y = session.getWorld().getHighestBlockY(x0, z0);
-                    if (session.getWorld().generateTree(session, new BlockVector3(x0, y + 1, z0), "tree", random)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
+            return masked(session, () -> Operations.forest(session, region, treeType, density / 100));
+        }
+
+        @Override
+        public String describe() {
+            return "forest " + treeType + " shape=" + shape + " density=" + Msg.formatDouble(density) + " "
+                    + super.describe();
         }
     }
 
@@ -1757,6 +1753,10 @@ public final class Brushes {
      * WorldEdit's Deform brush. The expression works in the unit cube of the
      * shape, or with {@code -r} in the game's coordinates, or with {@code -o}
      * in blocks from the placement position the brush was bound with.
+     *
+     * <p>WorldEdit's raise and lower brushes are this brush with {@code y-=1}
+     * and {@code y+=1} in the game's coordinates: every block of the shape
+     * takes the one below it, or the one above it.</p>
      */
     public static final class DeformBrush extends BaseBrush {
 
@@ -1767,7 +1767,11 @@ public final class Brushes {
 
         /** @param shape a name {@code RegionFactories} knows */
         public DeformBrush(double radius, String expression, String shape) {
-            super(radius, null, null);
+            this(radius, expression, shape, null);
+        }
+
+        public DeformBrush(double radius, String expression, String shape, Mask mask) {
+            super(radius, null, mask);
             this.expression = expression == null ? "" : expression;
             // Compiled here so a typo is reported when the brush is bound,
             // not on every click.
@@ -1790,12 +1794,11 @@ public final class Brushes {
             if (expression.isEmpty()) {
                 return 0;
             }
-            com.maxlananas.fawebim.core.region.Region region = com.maxlananas.fawebim.core.region.RegionFactories
-                    .parse(shape, session.minY(), session.maxY()).createCenteredAt(position, radius);
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
             Operations.DeformFrame frame = gameOrigin ? Operations.DeformFrame.RAW
                     : placement != null ? Operations.DeformFrame.offset(placement.toVector3())
                     : Operations.DeformFrame.unitCube(region);
-            return Operations.deform(session.getWorld(), session, region, expression, frame);
+            return masked(session, () -> Operations.deform(session.getWorld(), session, region, expression, frame));
         }
     }
 
@@ -1925,58 +1928,42 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush snow}: covers the surface with snow. {@code -s} stacks the
-     * snow layers up instead of laying a single one.
+     * {@code /brush snow <shape> [radius] [-s]}: FAWE's snow brush, the snow
+     * //snow lays - see {@link Operations#simulateSnow(World, EditSession,
+     * com.maxlananas.fawebim.core.region.Region, boolean)} - over the shape. A
+     * cylinder is as high as its radius there, where it is one block high for
+     * the other brushes.
+     *
+     * <p>It put a layer on the highest block of every column of a disc,
+     * whatever the shape and whatever that block was - a flower, flowing
+     * water, a bottom slab - and {@code -s} went through every layer to a full
+     * stack in one click.</p>
      */
     public static final class SnowBrush extends BaseBrush {
 
-        private boolean stack;
-        private int layers = 1;
+        private final String shape;
+        private final boolean stack;
 
-        public SnowBrush(double radius, Mask mask) {
+        public SnowBrush(double radius, Mask mask, String shape, boolean stack) {
             super(radius, null, mask);
-        }
-
-        public void setStack(boolean stack) {
+            this.shape = shape;
             this.stack = stack;
-        }
-
-        public void setLayers(int layers) {
-            this.layers = Math.max(1, layers);
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            int r = (int) radius;
-            for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int x0 = position.x() + x;
-                    int z0 = position.z() + z;
-                    int y = session.getWorld().getHighestBlockY(x0, z0);
-                    if (stack) {
-                        // Stacked snow: one layer per block, up to a full snow
-                        // block, which is what FAWE grows when you brush again.
-                        for (int layer = 1; layer <= Math.min(8, layers * 8); layer++) {
-                            int state = registry.parse("minecraft:snow[layers=" + layer + "]");
-                            if (session.setBlock(x0, y + 1, z0, state)) {
-                                changed++;
-                            }
-                            if (layer % 8 != 0) {
-                                continue;
-                            }
-                            y++;
-                        }
-                    } else if (session.setBlock(x0, y + 1, z0, registry.parse("minecraft:snow[layers=1]"))) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
+            String key = shape.toLowerCase(java.util.Locale.ROOT);
+            com.maxlananas.fawebim.core.region.Region region = key.equals("cyl") || key.equals("cylinder")
+                    ? new com.maxlananas.fawebim.core.region.CylinderRegion(
+                            new com.maxlananas.fawebim.core.math.Vector2(position.x() + 0.5, position.z() + 0.5),
+                            radius, radius, position.y() - (int) (radius / 2), position.y() + (int) (radius / 2))
+                    : region(shape, session, position, radius);
+            return masked(session, () -> Operations.simulateSnow(session.getWorld(), session, region, stack));
+        }
+
+        @Override
+        public String describe() {
+            return "snow shape=" + shape + (stack ? " -s" : "") + " " + super.describe();
         }
     }
 
@@ -2114,47 +2101,47 @@ public final class Brushes {
                 Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP, Direction.DOWN};
     }
 
-    /** {@code /brush feature} and {@code /brush structure} — places a worldgen feature. */
+    /**
+     * {@code /brush feature} and {@code /brush structure <shape> [radius]
+     * [density] <type>}: FAWE's Paint of a worldgen feature or structure over
+     * the shape, placed on the ground of {@code density} percent of its
+     * columns.
+     *
+     * <p>The feature brush placed one feature where it was clicked, whatever
+     * its shape and density, and said so in chat on every click; the
+     * structure brush asked the world for a feature named after the
+     * structure.</p>
+     */
     public static final class FeatureBrush extends BaseBrush {
 
-        private final String kind;
-        private String feature = "minecraft:oak_tree";
-        private int density = 5;
+        private final String shape;
+        private final boolean structure;
+        private final String type;
+        private final double density;
 
-        public FeatureBrush(double radius, String kind, Mask mask) {
+        /** @param density in percent, as typed */
+        public FeatureBrush(double radius, Mask mask, String shape, boolean structure, String type, double density) {
             super(radius, null, mask);
-            this.kind = kind;
-        }
-
-        public void setFeature(String feature) {
-            this.feature = feature == null || feature.isEmpty() ? this.feature : feature;
-        }
-
-        /** How many features the brush tries to place on every click. */
-        public void setDensity(int density) {
-            this.density = Math.max(1, density);
+            this.shape = shape;
+            this.structure = structure;
+            this.type = type;
+            this.density = density;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             World world = session.getWorld();
-            if (kind.equals("feature") || kind.equals("set")) {
-                boolean placed = world.generateFeature(session, position, feature, random);
-                actor.message(placed ? Msg.success("Placed feature " + feature)
-                        : Msg.error("Unknown feature " + feature));
-                return placed ? 1 : 0;
-            }
-            int r = (int) Math.max(1, radius);
-            int placed = 0;
-            for (int attempt = 0; attempt < density; attempt++) {
-                int x = position.x() + random.nextInt(r * 2 + 1) - r;
-                int z = position.z() + random.nextInt(r * 2 + 1) - r;
-                int y = world.getHighestBlockY(x, z);
-                if (world.generateFeature(session, new BlockVector3(x, y, z), feature, random)) {
-                    placed++;
-                }
-            }
-            return placed;
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
+            return masked(session, () -> Operations.paint(session, region, density / 100, random,
+                    (x, y, z, ground) -> structure
+                            ? world.generateStructure(session, type, new BlockVector3(x, y, z), random)
+                            : world.generateFeature(session, new BlockVector3(x, y, z), type, random)));
+        }
+
+        @Override
+        public String describe() {
+            return (structure ? "structure " : "feature ") + type + " shape=" + shape + " density="
+                    + Msg.formatDouble(density) + " " + super.describe();
         }
     }
 }

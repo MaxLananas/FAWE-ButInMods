@@ -97,8 +97,14 @@ public final class BrushFactory {
             case "heightmap" -> createHeightmapBrush(parameters);
             case "circle" -> new Brushes.CircleBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
                     !parameters.string("filled", "false").equals("false"));
-            case "raise", "lower" -> new Brushes.RaiseLowerBrush(parameters.radius(), parameters.pattern(),
-                    key.equals("lower"), parameters.mask());
+            case "raise", "lower" -> {
+                // WorldEdit's: a deform in the game's coordinates, each block of
+                // the shape taking the one below it to raise, above it to lower.
+                Brushes.DeformBrush brush = new Brushes.DeformBrush(parameters.radius(),
+                        key.equals("raise") ? "y-=1" : "y+=1", shape(parameters), parameters.mask());
+                brush.setGameOrigin(true);
+                yield brush;
+            }
             case "layer" -> new Brushes.LayerBrush(parameters.radius(), parameters.layers(), parameters.mask());
             case "line" -> {
                 Brushes.LineBrush brush = new Brushes.LineBrush(parameters.radius(), parameters.pattern(),
@@ -170,18 +176,16 @@ public final class BrushFactory {
                     parameters.flag("b"), parameters.maskValue("sourceMask"), parameters.flag("r"));
             case "copypaste" -> new Brushes.CopyPastaBrush(parameters.radius(), parameters.flag("r"),
                     parameters.flag("a"));
-            case "biome" -> {
-                Brushes.BiomeBrush brush = new Brushes.BiomeBrush(parameters.radius(), parameters.mask());
-                brush.setFullColumn(parameters.flag("c"));
-                yield brush;
-            }
+            case "biome" -> new Brushes.BiomeBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    com.maxlananas.fawebim.core.command.Parsers.biome(parameters.string("biomeType", "")),
+                    parameters.flag("c"));
             case "butcher" -> new Brushes.ButcherBrush(parameters.radius(), categories(parameters));
-            case "forest", "structure", "feature" -> {
-                Brushes.FeatureBrush brush = new Brushes.FeatureBrush(parameters.radius(), key, parameters.mask());
-                brush.setFeature(parameters.string("type", ""));
-                brush.setDensity(parameters.integer("density", 5));
-                yield brush;
-            }
+            case "forest" -> new Brushes.ForestBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    com.maxlananas.fawebim.core.command.Parsers.treeType(parameters.string("type", "")),
+                    parameters.number("density", 20));
+            case "structure", "feature" -> new Brushes.FeatureBrush(parameters.radius(), parameters.mask(),
+                    shape(parameters), key.equals("structure"), parameters.string("type", ""),
+                    parameters.number("density", 5));
             case "command" -> new Brushes.CommandBrush(parameters.radius(), parameters.string("input", ""),
                     parameters.flag("h"));
             case "scattercommand" -> new Brushes.ScatterCommandBrush(parameters.radius(),
@@ -216,11 +220,8 @@ public final class BrushFactory {
             case "dilate" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.MORPH,
                     new Morphology.Passes(5, 1, 2, 1), parameters.mask());
             case "extinguish" -> new Brushes.ExtinguishBrush(parameters.radius());
-            case "snow" -> {
-                Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), parameters.mask());
-                brush.setStack(parameters.flag("s"));
-                yield brush;
-            }
+            case "snow" -> new Brushes.SnowBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    parameters.flag("s"));
             case "snowsmooth" -> new Brushes.SnowSmoothBrush(parameters.radius(),
                     parameters.integer("iterations", 1), parameters.integer("snowBlockCount", 1),
                     parameters.flagMask());

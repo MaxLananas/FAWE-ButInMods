@@ -256,10 +256,27 @@ public final class Operations {
     }
 
     /**
-     * {@code //snow}, FAWE's {@code SnowSimulator} over the cylinder the height
-     * spans up and down from the position.
+     * {@code //snow}, FAWE's: its snow simulation over the cylinder of the
+     * radius - grown by half a block, as WorldEdit grows every cylinder - that
+     * the height spans up and down from the position.
+     */
+    public static int simulateSnow(World world, EditSession session, BlockVector3 center, double radius, int height,
+                                   boolean stack) {
+        // The ends are kept one past the world at most: the height is typed,
+        // and the column walk only needs to know the top is above the world.
+        int bottom = (int) Math.max((long) center.y() - height, session.minY() - 1L);
+        int top = (int) Math.min((long) center.y() + height, session.maxY() + 1L);
+        return simulateSnow(world, session, new com.maxlananas.fawebim.core.region.CylinderRegion(
+                new com.maxlananas.fawebim.core.math.Vector2(center.x() + 0.5, center.z() + 0.5), radius, radius,
+                bottom, top), stack);
+    }
+
+    /**
+     * FAWE's {@code SnowSimulator} laid over a region, as its //snow and its
+     * snow brush lay it: every column of the region's {@link #inFootprint
+     * footprint} is walked down from the top of the region.
      *
-     * <p>Each column is walked down to its ground: the first block that is
+     * <p>The walk stops at the column's ground: the first block that is
      * water or stops movement - air and what does not stop movement, flowers
      * and tall grass, are passed, and so is snow when {@code stack} adds to it.
      * Still water with less than 10 block light freezes. Otherwise a layer of
@@ -268,10 +285,9 @@ public final class Operations {
      * a top slab, a closed top trapdoor, upside-down stairs, eight layers of
      * snow, the blocks the game lets it lie on and none it keeps it off. The
      * ground then turns snowy if it can. A column whose block just above the
-     * cylinder is ground is under cover and left alone.</p>
+     * region is ground is under cover and left alone.</p>
      */
-    public static int simulateSnow(World world, EditSession session, BlockVector3 center, double radius, int height,
-                                   boolean stack) {
+    public static int simulateSnow(World world, EditSession session, Region region, boolean stack) {
         BlockStateRegistry registry = BlockState.registry();
         int snowLayer = registry.defaultState("minecraft:snow");
         int ice = registry.defaultState("minecraft:ice");
@@ -280,21 +296,16 @@ public final class Operations {
         IntPredicate ground = remembered(state -> !registry.isAirLike(state) && !(stack && snow.test(state))
                 && (water.test(state) || registry.isSolid(state)));
         IntPredicate holdsSnow = remembered(state -> holdsSnow(registry, state, snow.test(state)));
-        long highest = (long) center.y() + height;
-        int top = (int) Math.min(highest, session.maxY());
-        int bottom = (int) Math.max((long) center.y() - height, session.minY());
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int top = Math.min(max.y(), session.maxY());
+        int bottom = Math.max(min.y(), session.minY());
+        boolean coverInWorld = max.y() < session.maxY() && max.y() + 1 >= session.minY();
         int affected = 0;
-        double radiusSq = radius * radius;
-        int ceilRadius = (int) Math.ceil(radius);
-        for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
-            for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
-                int dx = x - center.x();
-                int dz = z - center.z();
-                if (dx * dx + dz * dz > radiusSq) {
-                    continue;
-                }
-                if (highest < session.maxY() && highest + 1 >= session.minY()
-                        && ground.test(session.getBlock(x, (int) highest + 1, z))) {
+        for (int x = min.x(); x <= max.x(); x++) {
+            for (int z = min.z(); z <= max.z(); z++) {
+                if (!inFootprint(region, x, min.y(), z)
+                        || coverInWorld && ground.test(session.getBlock(x, max.y() + 1, z))) {
                     continue;
                 }
                 for (int y = top; y >= bottom; y--) {
@@ -334,6 +345,18 @@ public final class Operations {
             }
         }
         return affected;
+    }
+
+    /**
+     * Whether a column is part of the footprint a layer is laid over, as
+     * WorldEdit's {@code Regions.asFlatRegion} reads a region: the outline of a
+     * cylinder or a polygon, and the bounding box of any other region - a
+     * sphere lays its layer over the square around it.
+     */
+    private static boolean inFootprint(Region region, int x, int minY, int z) {
+        return !(region instanceof com.maxlananas.fawebim.core.region.CylinderRegion
+                || region instanceof com.maxlananas.fawebim.core.region.Polygonal2DRegion)
+                || region.contains(x, minY, z);
     }
 
     /**
@@ -1553,10 +1576,9 @@ public final class Operations {
      * function runs there. A column whose block just above the region is not
      * air is under cover and left alone.
      *
-     * <p>The footprint of a cylinder or a polygon is its outline; of any other
-     * region, as in WorldEdit, its bounding box. The blocks are read through
-     * the session, so what the function placed in one column is ground for the
-     * next.</p>
+     * <p>The columns are those of the region's {@link #inFootprint footprint}.
+     * The blocks are read through the session, so what the function placed in
+     * one column is ground for the next.</p>
      *
      * @param density the share of the columns tried, 0 to 1
      * @return how many times the function placed something
@@ -1566,15 +1588,13 @@ public final class Operations {
         BlockStateRegistry registry = BlockState.registry();
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        boolean outline = region instanceof com.maxlananas.fawebim.core.region.CylinderRegion
-                || region instanceof com.maxlananas.fawebim.core.region.Polygonal2DRegion;
         int top = Math.min(max.y(), session.maxY());
         int bottom = Math.max(min.y(), session.minY());
         boolean coverInWorld = max.y() < session.maxY() && max.y() + 1 >= session.minY();
         int placed = 0;
         for (int x = min.x(); x <= max.x(); x++) {
             for (int z = min.z(); z <= max.z(); z++) {
-                if (outline && !region.contains(x, min.y(), z) || random.nextFloat() > density) {
+                if (!inFootprint(region, x, min.y(), z) || random.nextFloat() > density) {
                     continue;
                 }
                 if (coverInWorld && !registry.isAirLike(session.getBlock(x, max.y() + 1, z))) {

@@ -84,6 +84,11 @@ public final class BrushParameters {
             String fallback = defaults.get(index);
             if (fallback == null) {
                 required--;
+                // WorldEdit refuses a line short of a required argument, where
+                // an empty one bound a brush of air or of the default shape.
+                if (next >= given && ctx != null) {
+                    throw CommandRegistry.error("Missing argument " + (index + 1) + " for " + ctx.entry().usage());
+                }
             }
             String value = null;
             if (next < given && (fallback == null || given - next > required)) {

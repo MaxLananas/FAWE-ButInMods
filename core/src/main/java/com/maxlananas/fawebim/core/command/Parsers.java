@@ -225,6 +225,16 @@ public final class Parsers {
         return id;
     }
 
+    /** A tree type as WorldEdit names them - oak, redwood, random - in its canonical spelling. */
+    public static String treeType(String input) {
+        String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(input);
+        if (type == null) {
+            throw CommandRegistry.error("Unknown tree type '" + input + "'. Try: "
+                    + com.maxlananas.fawebim.core.world.TreeTypes.names());
+        }
+        return type;
+    }
+
     /** Parses a pattern: blocks, weighted lists, {@code #clipboard}, {@code ^} ... */
     public static Pattern pattern(String input, Ctx ctx) {
         try {

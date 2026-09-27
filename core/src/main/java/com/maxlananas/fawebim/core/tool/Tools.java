@@ -51,7 +51,7 @@ public final class Tools {
         String key = name.toLowerCase(Locale.ROOT);
         return switch (key) {
             // /tool tree <type> names the tree the tool plants.
-            case "tree" -> new TreeTool(ctx.arg(1, "tree"));
+            case "tree" -> new TreeTool(Parsers.treeType(ctx.arg(1, "tree")));
             case "repl", "replace" -> new ReplaceTool(Parsers.pattern(required(ctx, 1, "repl <pattern>"), ctx));
             case "cycler" -> new CyclerTool();
             case "floodfill", "flood-fill", "flood" -> FloodFillTool.of(ctx);

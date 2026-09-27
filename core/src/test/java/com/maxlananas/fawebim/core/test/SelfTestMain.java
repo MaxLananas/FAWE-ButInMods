@@ -173,6 +173,7 @@ public final class SelfTestMain {
         SchematicFolderTests.run();
         SchematicCommandTests.run();
         GenerationTests.run();
+        ShapeBrushTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -2329,7 +2330,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
         check("//snow runs at the placement", actor.messages().stream()
-                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("49")));
+                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("69")));
     }
 
     private static void testSnapshotSelection() {
@@ -2628,9 +2629,11 @@ public final class SelfTestMain {
                 .anyMatch(m -> plain(m).contains("\u00bb Greened: ") && plain(m).contains("81")));
 
         actor.clearMessages();
+        // WorldEdit's cylinder, half a block wider than the radius: 69 columns
+        // where the thaw's disc, FAWE's too, has 49.
         CommandManager.get().dispatch(actor, "//snow 4");
-        check("//snow covers the disc around the player", actor.messages().stream()
-                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("49")));
+        check("//snow covers the cylinder around the player", actor.messages().stream()
+                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("69")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//thaw 4");
         check("//thaw takes the snow back", actor.messages().stream()

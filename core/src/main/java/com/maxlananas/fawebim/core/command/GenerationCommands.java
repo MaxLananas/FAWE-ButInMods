@@ -268,11 +268,7 @@ final class GenerationCommands {
         entry.arguments.add("[density]");
         entry.handler = ctx -> {
             int size = ctx.sizeArg(0, 10);
-            String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(ctx.arg(1, "tree"));
-            if (type == null) {
-                throw CommandRegistry.error("Unknown tree type '" + ctx.arg(1) + "'. Try: "
-                        + com.maxlananas.fawebim.core.world.TreeTypes.names());
-            }
+            String type = Parsers.treeType(ctx.arg(1, "tree"));
             double density = ctx.doubleArg(2, 5);
             if (!(density >= 0 && density <= 100)) {
                 throw CommandRegistry.error("Density must be between 0 and 100");

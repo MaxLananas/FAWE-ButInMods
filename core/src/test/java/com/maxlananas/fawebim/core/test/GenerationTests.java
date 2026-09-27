@@ -155,6 +155,8 @@ final class GenerationTests {
         String refused = String.join("\n", actor.messages()).replaceAll("\u00a7.", "");
         check("a tree that cannot go there is said so, as FAWE says it (" + refused + ")",
                 refused.contains("A tree can't go there."));
+        check("a tree type nobody knows is refused when the tool is bound",
+                answer(actor, "/tool tree nope").contains("Unknown tree type 'nope'"));
     }
 
     private static int logs(TestWorld world) {

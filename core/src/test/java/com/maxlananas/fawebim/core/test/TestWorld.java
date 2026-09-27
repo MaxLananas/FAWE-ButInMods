@@ -419,11 +419,37 @@ public final class TestWorld implements World {
         return true;
     }
 
+    /**
+     * The features of the test world: a block id is a feature that puts that
+     * block on the one at the position, where there is air above it, as a
+     * patch of flowers is placed; anything else is the test oak, grown at the
+     * position.
+     */
     @Override
     public boolean generateFeature(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
                                    String featureType, Random random) {
-        // Features are placed by the platform; the test world uses its tree generator.
-        return generateTree(session, pos, featureType, random);
+        int block = BlockState.registry().defaultState(featureType);
+        if (block < 0) {
+            return generateTree(session, pos, featureType, random);
+        }
+        return BlockState.registry().isAirLike(session.getBlock(pos.x(), pos.y() + 1, pos.z()))
+                && session.setBlock(pos.x(), pos.y() + 1, pos.z(), block);
+    }
+
+    /**
+     * The structures of the test world: a block id is a structure, a pillar
+     * of two of that block on the one at the position; there is no other.
+     */
+    @Override
+    public boolean generateStructure(com.maxlananas.fawebim.core.extent.EditSession session, String structureId,
+                                     BlockVector3 pos, Random random) {
+        int block = BlockState.registry().defaultState(structureId);
+        if (block < 0) {
+            return false;
+        }
+        session.setBlock(pos.x(), pos.y() + 1, pos.z(), block);
+        session.setBlock(pos.x(), pos.y() + 2, pos.z(), block);
+        return true;
     }
 
     @Override

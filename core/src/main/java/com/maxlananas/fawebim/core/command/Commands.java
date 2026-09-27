@@ -1750,12 +1750,7 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     // WorldEdit defaults the type to a regular tree and takes any
                     // name it declares for one, so the argument is optional.
-                    String type = com.maxlananas.fawebim.core.world.TreeTypes
-                            .canonical(ctx.arg(0, "tree"));
-                    if (type == null) {
-                        throw CommandRegistry.error("Unknown tree type '" + ctx.arg(0)
-                                + "'. Try: " + com.maxlananas.fawebim.core.world.TreeTypes.names());
-                    }
+                    String type = Parsers.treeType(ctx.arg(0, "tree"));
                     double density = ctx.doubleArg(1, 5) / 100.0;
                     int changed = com.maxlananas.fawebim.core.function.Operations.forest(session,
                             ctx.selection(), type, density);
@@ -3565,11 +3560,15 @@ public final class Commands {
         ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped (radius " + Msg.formatDouble(radius) + ")"));
     }
 
+    /**
+     * The line that binds the brush again, for a preset: the brush's own
+     * command and every word typed after it, switches included. It was
+     * "brush" and the arguments alone - no brush name, no switches - so a
+     * preset loaded nothing, and a brush bound without an argument failed
+     * after it was bound.
+     */
     private static String buildBrushLine(Ctx ctx) {
-        StringBuilder line = new StringBuilder("brush ").append(ctx.arg(0));
-        for (int i = 1; i < ctx.args().size(); i++) {
-            line.append(' ').append(ctx.arg(i));
-        }
-        return line.toString();
+        String tail = ctx.tail();
+        return ctx.entry().name + (tail.isEmpty() ? "" : " " + tail);
     }
 }
