@@ -10,7 +10,6 @@ import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.session.ClipboardHolder;
 import com.maxlananas.fawebim.core.util.Msg;
-import com.maxlananas.fawebim.core.world.BlockState;
 
 
 /**
@@ -64,39 +63,30 @@ final class ClipboardExtras {
     }
 
     /**
-     * {@code //lazycut} — the same as {@code //lazycopy}, then clears the region.
+     * {@code //lazycut} - cuts the selection into the clipboard, as
+     * {@code //cut} does, with FAWE's flags: {@code -e} leaves the entities out
+     * and {@code -b} takes the biomes.
+     *
+     * <p>FAWE's lazy cut reads the world when the clipboard is pasted, and
+     * clears each block as it reads it. This one cleared the selection at once
+     * and kept a clipboard that read the world at the paste, by which time the
+     * selection was air: the paste brought nothing back and the build was gone
+     * but for an undo. The blocks now go into the clipboard before the
+     * selection is cleared, in the one pass {@code //cut} makes.</p>
      */
     private void lazyCut() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("lazycut");
         if (entry == null) {
             return;
         }
-        entry.description = "Cut the selection to the clipboard without reading it";
+        entry.description = "Cut the selection to the clipboard";
         entry.group = "clipboard";
         entry.requiresSelection = true;
+        entry.confirmRegion = true;
         entry.booleanFlags.add("e");
         entry.booleanFlags.add("b");
-        entry.handler = ctx -> {
-            Region region = ctx.selection();
-            BlockArrayClipboard clipboard = BlockArrayClipboard.lazy(ctx.world(), region, "lazy");
-            if (ctx.hasFlag("b")) {
-                com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
-            }
-            clipboard.setOrigin(Commands.copyOrigin(ctx, clipboard));
-            ctx.session().setClipboard(clipboard);
-            EditSession session = ctx.editSession("lazycut");
-            int air = BlockState.registry().air();
-            int cleared = 0;
-            for (BlockVector3 position : region) {
-                session.checkTimeout();
-                if (session.setBlock(position.x(), position.y(), position.z(), air)) {
-                    cleared++;
-                }
-            }
-            session.flushQueue();
-            ctx.actor().message(Msg.success("Lazily cut " + Msg.formatNumber(clipboard.volume())
-                    + " block(s), " + cleared + " removed"));
-        };
+        entry.handler = ctx -> Commands.cutSelection(ctx, !ctx.hasFlag("e"), ctx.hasFlag("b"), null,
+                Parsers.pattern("air", ctx));
     }
 
     /**

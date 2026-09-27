@@ -162,6 +162,7 @@ public final class SelfTestMain {
         FillAndLiquidTests.run();
         RemovalTests.run();
         SnowAndGreenTests.run();
+        ClipboardPasteTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -3644,7 +3645,9 @@ public final class SelfTestMain {
         }
         check("a mostly air cut leaves the selection empty", kept == 0);
         check("a mostly air cut keeps the build", builder.session().getClipboard()
-                .getClipboard().volume() == 4 * 3 * 16 * 16);
+                .getClipboard().filled(BlockState.registry()) == 4 * 3 * 16 * 16);
+        check("a mostly air cut keeps the selection's box", builder.session().getClipboard()
+                .getClipboard().volume() == 64 * 20 * 16);
 
         // The same cut with a leave pattern writes the pattern everywhere the
         // selection is, air included, so no section may be skipped.

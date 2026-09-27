@@ -1285,6 +1285,41 @@ public final class Commands {
     }
 
     /**
+     * Cuts the selection into the clipboard and leaves a pattern behind: the
+     * work of {@code //cut}, and of {@code //lazycut}, which differs from it by
+     * its flags only.
+     *
+     * @param exclude blocks that fail it stay where they are, or {@code null}
+     */
+    static void cutSelection(Ctx ctx, boolean withEntities, boolean withBiomes, Mask exclude, Pattern leave) {
+        EditSession session = ctx.editSession();
+        Region region = ctx.selection();
+        // The copy and the replacing share one traversal, so the answer can say
+        // how long the whole cut took.
+        com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
+        BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
+                region, session, withEntities, withBiomes, exclude, leave);
+        clipboard.setOrigin(copyOrigin(ctx, clipboard));
+        ctx.session().setClipboard(clipboard);
+        // The queue is applied before the answer is written, so the time the
+        // line reports is the time the cut really took.
+        session.flushQueue();
+        StringBuilder detail = new StringBuilder(Msg.count(
+                        clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
+                .append(" block(s) to your clipboard");
+        if (!clipboard.entities().isEmpty()) {
+            detail.append(", ").append(Msg.count(clipboard.entities().size())).append(" entities");
+        }
+        if (clipboard.hasBiomes()) {
+            detail.append(", biomes");
+        }
+        detail.append(" in ").append(timer.phrase());
+        detail.append(" (").append(Msg.size(region.getWidth(), region.getHeight(), region.getLength()))
+                .append(')');
+        ctx.actor().message(Msg.result("Cut", detail.toString()));
+    }
+
+    /**
      * How many leading arguments of {@code //move} and {@code //stack} are the
      * count: none when the first is not a number, so {@code //stack up} makes
      * one copy upwards the way {@code //stack 1 up} does.
@@ -1887,35 +1922,11 @@ public final class Commands {
         // Upstream takes the pattern the selection is left as; its default is air.
         e60.arguments.add("[leavePattern]");
         e60.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    Masks.ExtentHolder.set(session);
+                    Masks.ExtentHolder.set(ctx.editSession());
                     Mask exclude = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
-                    Region region = ctx.selection();
                     Pattern leave = ctx.args().isEmpty() ? Parsers.pattern("air", ctx)
                             : Parsers.pattern(ctx.arg(0), ctx);
-                    // The copy and the replacing share one traversal, so the
-                    // answer can say how long the whole cut took.
-                    com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
-                    BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
-                            region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
-                    clipboard.setOrigin(copyOrigin(ctx, clipboard));
-                    ctx.session().setClipboard(clipboard);
-                    // The queue is applied before the answer is written, so the
-                    // time the line reports is the time the cut really took.
-                    session.flushQueue();
-                    StringBuilder detail = new StringBuilder(Msg.count(
-                                    clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
-                            .append(" block(s) to your clipboard");
-                    if (!clipboard.entities().isEmpty()) {
-                        detail.append(", ").append(Msg.count(clipboard.entities().size())).append(" entities");
-                    }
-                    if (clipboard.hasBiomes()) {
-                        detail.append(", biomes");
-                    }
-                    detail.append(" in ").append(timer.phrase());
-                    detail.append(" (").append(Msg.size(region.getWidth(), region.getHeight(), region.getLength()))
-                            .append(')');
-                    ctx.actor().message(Msg.result("Cut", detail.toString()));
+                    cutSelection(ctx, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
                 };
 
 
@@ -2038,7 +2049,9 @@ public final class Commands {
         e64.description = "Clear your clipboard";
         e64.group = "clipboard";
         e64.handler = ctx -> {
-                    ctx.session().setClipboard(new BlockArrayClipboard(BlockVector3.ZERO));
+                    // Empty, as FAWE leaves it: a clipboard of one air block
+                    // still pasted, and saved as a schematic.
+                    ctx.session().setClipboard(null);
                     ctx.actor().message(Msg.result("Clipboard", "cleared"));
                 };
 
@@ -2195,7 +2208,6 @@ public final class Commands {
                         }
                         case "clear" -> {
                             ctx.session().setClipboard(null);
-                            ctx.session().clearClipboardPool();
                             ctx.actor().message(Msg.result("Clipboard", "cleared"));
                         }
                         case "loadall" -> {
@@ -2211,14 +2223,20 @@ public final class Commands {
                             if (loaded.isEmpty()) {
                                 throw CommandRegistry.error("No schematic matched '" + filter + "'");
                             }
-                            if (ctx.hasFlag("o")) {
-                                ctx.session().setClipboardPool(loaded);
-                            } else {
-                                ctx.session().addToClipboardPool(loaded);
+                            // Without -o they join the clipboards the session
+                            // holds, a single one included, as FAWE's addClipboard.
+                            java.util.List<BlockArrayClipboard> pool = new java.util.ArrayList<>();
+                            if (!ctx.hasFlag("o")) {
+                                pool.addAll(ctx.session().getClipboardPool());
+                                if (pool.isEmpty() && ctx.session().hasClipboard()) {
+                                    pool.add(ctx.session().getClipboard().getClipboard());
+                                }
                             }
+                            pool.addAll(loaded);
+                            ctx.session().setClipboard(loaded.get(0));
+                            ctx.session().setClipboardPool(pool);
                             ctx.session().setClipboardPoolRandomRotation(ctx.hasFlag("r") || ctx.hasFlag("d"));
                             ctx.session().setClipboardPoolDynamicRotation(ctx.hasFlag("d"));
-                            ctx.session().setClipboard(loaded.get(0));
                             ctx.actor().message(Msg.success("Loaded " + loaded.size() + " clipboard(s); "
                                     + "//paste picks one at random"));
                         }

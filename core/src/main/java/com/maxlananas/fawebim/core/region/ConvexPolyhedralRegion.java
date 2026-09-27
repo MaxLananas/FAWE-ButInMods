@@ -393,6 +393,17 @@ public class ConvexPolyhedralRegion implements Region {
         return true;
     }
 
+    /** The same vertices added again in their order, which is how {@link #removeLastVertex} rebuilds a hull. */
+    @Override
+    public ConvexPolyhedralRegion copy() {
+        ConvexPolyhedralRegion copy = new ConvexPolyhedralRegion();
+        copy.setBounds(minY, maxY);
+        for (BlockVector3 vertex : getVertices()) {
+            copy.addVertex(vertex);
+        }
+        return copy;
+    }
+
     @Override
     public String describe() {
         return "convex (" + getVertices().size() + " vertices, " + faces.size() + " faces)";

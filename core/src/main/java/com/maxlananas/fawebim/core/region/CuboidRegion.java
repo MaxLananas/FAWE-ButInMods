@@ -274,6 +274,11 @@ public class CuboidRegion implements Region {
     }
 
     @Override
+    public CuboidRegion copy() {
+        return new CuboidRegion(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    @Override
     public String describe() {
         return "cuboid: " + getWidth() + "x" + getHeight() + "x" + getLength();
     }

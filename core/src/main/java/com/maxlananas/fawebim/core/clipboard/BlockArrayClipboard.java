@@ -37,6 +37,8 @@ public final class BlockArrayClipboard implements Extent {
     private Partial lastPartial;
     private int maxY = Integer.MIN_VALUE;
     private World lazyWorld;
+    /** The outline of a copy that was not a box, or {@code null}: the cells a paste writes. */
+    private com.maxlananas.fawebim.core.region.Region shape;
 
     public BlockArrayClipboard(BlockVector3 origin) {
         this.origin = origin;
@@ -49,13 +51,34 @@ public final class BlockArrayClipboard implements Extent {
      * copying a huge selection costs no memory.
      */
     public static BlockArrayClipboard lazy(World world, com.maxlananas.fawebim.core.region.Region region, String name) {
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(region.getMinimumPoint());
-        clipboard.box.set(region.getMinimumPoint().x(), region.getMinimumPoint().y(), region.getMinimumPoint().z(),
-                region.getMaximumPoint().x(), region.getMaximumPoint().y(), region.getMaximumPoint().z());
-        clipboard.minY = region.getMinimumPoint().y();
-        clipboard.maxY = region.getMaximumPoint().y();
+        BlockArrayClipboard clipboard = of(region);
         clipboard.lazyWorld = world;
         clipboard.name = name;
+        return clipboard;
+    }
+
+    /**
+     * An empty clipboard for a copy of a region, as FAWE makes one: its box is
+     * the region's whatever the region holds, so a paste covers what was
+     * selected - the air in it included, which is what clears the place it
+     * lands on - and a shape other than a box keeps its outline, so the paste
+     * writes nothing outside it.
+     *
+     * <p>The box used to grow with the blocks the copy stored, and the copy
+     * stores no air: a selection with air along its sides, or sections of sky
+     * above a build, pasted as a smaller box that left the ground it landed on
+     * standing there, and a copy of nothing but air pasted one block.</p>
+     */
+    public static BlockArrayClipboard of(com.maxlananas.fawebim.core.region.Region region) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        BlockArrayClipboard clipboard = new BlockArrayClipboard(min);
+        clipboard.box.set(min.x(), min.y(), min.z(), max.x(), max.y(), max.z());
+        clipboard.minY = min.y();
+        clipboard.maxY = max.y();
+        if (!(region instanceof com.maxlananas.fawebim.core.region.CuboidRegion)) {
+            clipboard.shape = region.copy();
+        }
         return clipboard;
     }
 
@@ -487,6 +510,9 @@ public final class BlockArrayClipboard implements Extent {
      * @return how many visits reported true
      */
     public int forEachPosition(CellVisitor visitor) {
+        if (shape != null) {
+            return (int) shape.forEachPosition((x, y, z) -> visitor.visit(x, y, z, getBlock(x, y, z)));
+        }
         int visited = 0;
         for (int y = box.minY(); y <= box.maxY(); y++) {
             for (int z = box.minZ(); z <= box.maxZ(); z++) {
@@ -544,7 +570,9 @@ public final class BlockArrayClipboard implements Extent {
     public int forEachStored(int air, CellVisitor visitor) {
         int visited = 0;
         if (lazyWorld != null) {
-            return forEachPosition(visitor);
+            // The world holds the blocks, air as much as the rest: its air is
+            // left out here as the stored air is below.
+            return forEachPosition((x, y, z, state) -> state != 0 && state != air && visitor.visit(x, y, z, state));
         }
         long[] keys = sections.keys();
         for (long key : keys) {

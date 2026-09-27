@@ -237,6 +237,11 @@ public class CylinderRegion implements Region {
     }
 
     @Override
+    public CylinderRegion copy() {
+        return new CylinderRegion(center, radiusX, radiusZ, minY, maxY);
+    }
+
+    @Override
     public String describe() {
         return "cylinder (" + BlockVector2.at((int) center.x(), (int) center.z()) + " r=" + radiusX + "," + radiusZ
                 + " y=" + minY + ".." + maxY + ")";

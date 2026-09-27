@@ -399,10 +399,27 @@ public final class LocalSession {
         return clipboard;
     }
 
+    /**
+     * Replaces the clipboard, and what came with the one before it, as FAWE's
+     * new clipboard holder does: the clipboards a {@code //schem loadall}
+     * gathered and the random rotation a {@code //schem load -r} asked for.
+     * Kept, they went on deciding what a later {@code //copy} pasted as - one
+     * of the loaded schematics, or the copy turned a random way.
+     */
     public void setClipboard(BlockArrayClipboard clipboard) {
         // A null clipboard has to clear the holder: wrapping null would leave
         // hasClipboard() true while every read of the clipboard throws.
         this.clipboard = clipboard == null ? null : new ClipboardHolder(clipboard);
+        clipboardPool.clear();
+        clipboardRandomRotation = false;
+        clipboardDynamicRotation = false;
+        poolRandomRotation = false;
+        poolDynamicRotation = false;
+    }
+
+    /** Moves the clipboard to another of the {@code //schem loadall} ones, which stay loaded. */
+    public void setClipboardFromPool(BlockArrayClipboard member) {
+        this.clipboard = new ClipboardHolder(member);
     }
 
     private com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard anvilClipboard;

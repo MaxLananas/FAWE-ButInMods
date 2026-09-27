@@ -276,6 +276,15 @@ public final class PolyhedralRegion implements Region {
     }
 
     @Override
+    public PolyhedralRegion copy() {
+        PolyhedralRegion copy = new PolyhedralRegion(hull.getMinY(), hull.getMaxY());
+        for (BlockVector3 vertex : hull.getVertices()) {
+            copy.addVertex(vertex);
+        }
+        return copy;
+    }
+
+    @Override
     public String describe() {
         return "polyhedral (" + getVertices().size() + " vertices)";
     }

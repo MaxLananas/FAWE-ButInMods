@@ -189,6 +189,21 @@ public final class FuzzyRegion implements Region {
     }
 
     @Override
+    public FuzzyRegion copy() {
+        FuzzyRegion copy = new FuzzyRegion();
+        for (long key : blocks.toArray()) {
+            copy.blocks.add(key);
+        }
+        copy.minX = minX;
+        copy.minY = minY;
+        copy.minZ = minZ;
+        copy.maxX = maxX;
+        copy.maxY = maxY;
+        copy.maxZ = maxZ;
+        return copy;
+    }
+
+    @Override
     public String describe() {
         return "fuzzy (" + blocks.size() + " blocks)";
     }

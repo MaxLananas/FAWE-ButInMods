@@ -504,6 +504,11 @@ public class Polygonal2DRegion implements Region {
     }
 
     @Override
+    public Polygonal2DRegion copy() {
+        return new Polygonal2DRegion(points, minY, maxY);
+    }
+
+    @Override
     public String describe() {
         return "poly (" + points.size() + " points, y " + minY + ".." + maxY + ")";
     }

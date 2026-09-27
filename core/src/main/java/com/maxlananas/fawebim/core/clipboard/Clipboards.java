@@ -49,7 +49,7 @@ public final class Clipboards {
                                            boolean withBiomes, Mask include, boolean centre) {
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(min);
+        BlockArrayClipboard clipboard = BlockArrayClipboard.of(region);
         Mask sessionMask = session == null ? null : session.getMask();
         Mask mask = sessionMask == null || sessionMask == include ? include
                 : include == null ? sessionMask
@@ -123,7 +123,7 @@ public final class Clipboards {
                                           boolean withBiomes, Mask include, Pattern leave) {
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(min);
+        BlockArrayClipboard clipboard = BlockArrayClipboard.of(region);
         Mask sessionMask = session == null ? null : session.getMask();
         Mask mask = sessionMask == null || sessionMask == include ? include
                 : include == null ? sessionMask

@@ -219,4 +219,11 @@ public interface Region extends Iterable<BlockVector3> {
 
     /** Short human description used by {@code //size} and the selection wand. */
     String describe();
+
+    /**
+     * A region of the same shape that later changes of this one do not reach,
+     * WorldEdit's {@code Region.clone()}: a clipboard keeps the outline it was
+     * copied from while the selection it came from goes on changing.
+     */
+    Region copy();
 }

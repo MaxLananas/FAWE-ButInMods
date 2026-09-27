@@ -258,6 +258,11 @@ public class EllipsoidRegion implements Region {
     }
 
     @Override
+    public EllipsoidRegion copy() {
+        return new EllipsoidRegion(center, radii, minY, maxY);
+    }
+
+    @Override
     public String describe() {
         return "ellipsoid (" + radii.x() + "x" + radii.y() + "x" + radii.z() + ")";
     }
