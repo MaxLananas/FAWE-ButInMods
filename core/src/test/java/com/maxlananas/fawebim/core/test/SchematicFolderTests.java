@@ -73,7 +73,7 @@ final class SchematicFolderTests {
         actor.session().setClipboard(null);
         String loaded = answer(actor, "//schem load trees/oak");
         check("//schem load trees/oak reads it back (" + loaded + ")",
-                loaded.contains("Loaded schematic 'trees/oak'") && actor.session().hasClipboard());
+                loaded.contains("Loaded schematic 'trees/oak.schem'") && actor.session().hasClipboard());
         String taken = answer(actor, "//schem save trees/oak");
         check("a name taken in a folder is refused without -f (" + taken + ")", taken.contains("already exists"));
     }

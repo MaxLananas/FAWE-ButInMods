@@ -1350,6 +1350,92 @@ public final class Commands {
         return completions;
     }
 
+    /**
+     * The clipboards //schem load and loadall put in the session, which //schem
+     * move, unload and delete * go by: the loadall pool, else the clipboard.
+     */
+    private static List<BlockArrayClipboard> loadedClipboards(com.maxlananas.fawebim.core.session.LocalSession session) {
+        if (!session.getClipboardPool().isEmpty()) {
+            return List.copyOf(session.getClipboardPool());
+        }
+        return session.hasClipboard() ? List.of(session.getClipboard().getClipboard()) : List.of();
+    }
+
+    /** The files the loaded clipboards were read from that are still there, each once. */
+    private static List<java.nio.file.Path> loadedFiles(com.maxlananas.fawebim.core.session.LocalSession session) {
+        java.util.Set<java.nio.file.Path> files = new java.util.LinkedHashSet<>();
+        for (BlockArrayClipboard clipboard : loadedClipboards(session)) {
+            if (clipboard.getSource() != null && java.nio.file.Files.isRegularFile(clipboard.getSource())) {
+                files.add(clipboard.getSource());
+            }
+        }
+        return new ArrayList<>(files);
+    }
+
+    /**
+     * FAWE's //schem move: the files the clipboard was loaded from go into a
+     * folder of the schematic folder, and the clipboards follow them, so a
+     * second move or an unload still finds them. A file that cannot go - one of
+     * the same name is there - is reported and the others still move.
+     */
+    private static void moveSchematics(Ctx ctx, String folder) {
+        List<java.nio.file.Path> files = loadedFiles(ctx.session());
+        if (files.isEmpty()) {
+            throw CommandRegistry.error("No schematic file to move: //schem move moves the files"
+                    + " //schem load read into your clipboard");
+        }
+        for (java.nio.file.Path file : files) {
+            String before = Schematics.displayName(file);
+            java.nio.file.Path moved;
+            try {
+                moved = Schematics.move(file, folder);
+            } catch (com.maxlananas.fawebim.core.util.InputException refused) {
+                ctx.actor().message(Msg.warn(refused.getMessage()));
+                continue;
+            }
+            for (BlockArrayClipboard clipboard : loadedClipboards(ctx.session())) {
+                if (file.equals(clipboard.getSource())) {
+                    clipboard.setSource(moved.toAbsolutePath().normalize());
+                }
+            }
+            ctx.actor().message(Msg.success("Moved '" + before + "' to '" + Schematics.displayName(moved) + "'"));
+        }
+    }
+
+    /**
+     * FAWE's //schem unload <file>: one schematic leaves the clipboards
+     * //schem loadall gathered, or the clipboard it was loaded into is
+     * cleared. It used to clear the clipboard whatever the name.
+     */
+    private static void unloadSchematic(Ctx ctx, String name) {
+        com.maxlananas.fawebim.core.session.LocalSession session = ctx.session();
+        BlockArrayClipboard match = null;
+        for (BlockArrayClipboard clipboard : loadedClipboards(session)) {
+            if (clipboard.getSource() != null && Schematics.names(clipboard.getSource(), name)) {
+                match = clipboard;
+                break;
+            }
+        }
+        if (match == null) {
+            throw CommandRegistry.error("You do not have '" + name + "' loaded");
+        }
+        String shown = Schematics.displayName(match.getSource());
+        List<BlockArrayClipboard> rest = new ArrayList<>(session.getClipboardPool());
+        rest.remove(match);
+        if (rest.isEmpty()) {
+            session.setClipboard(null);
+            ctx.actor().message(Msg.success("Unloaded '" + shown + "': your clipboard is empty"));
+            return;
+        }
+        boolean current = session.getClipboard().getClipboard() == match;
+        session.setClipboardPool(rest);
+        if (current) {
+            session.setClipboardFromPool(rest.get(0));
+        }
+        ctx.actor().message(Msg.success("Unloaded '" + shown + "': "
+                + Msg.count(rest.size(), "clipboard", "clipboards") + " left"));
+    }
+
     static BlockVector3 copyOrigin(Ctx ctx, BlockArrayClipboard clipboard) {
         return ctx.placementOr(clipboard.getOrigin());
     }
@@ -2286,25 +2372,55 @@ public final class Commands {
                                 ctx.session().setClipboardRandomRotation(false);
                                 ctx.session().setClipboardDynamicRotation(false);
                             }
-                            ctx.actor().message(Msg.success("Loaded schematic '" + name + "' ("
-                                    + Msg.blocks(clipboard.volume()) + ")"
-                                    + (ctx.hasFlag("r") ? " with a random rotation" : "")));
+                            // The file that was read, which the name may leave open -
+                            // oak is oak.schem or oak.schematic - and FAWE's pointer to
+                            // what comes next.
+                            com.maxlananas.fawebim.core.math.BlockBox box = clipboard.getBox();
+                            ctx.actor().message(Msg.success("Loaded schematic '"
+                                    + Schematics.displayName(clipboard.getSource()) + "' ("
+                                    + Msg.size(box.width(), box.height(), box.length()) + ")"
+                                    + (ctx.hasFlag("r") ? " with a random rotation" : "")
+                                    + ": paste it with //paste"));
                         }
                         case "delete", "d" -> {
-                            Schematics.delete(ctx.arg(1));
-                            ctx.actor().message(Msg.success("Deleted schematic '" + ctx.arg(1) + "'"));
+                            String name = ctx.arg(1);
+                            if (!name.equals("*")) {
+                                Schematics.delete(name);
+                                ctx.actor().message(Msg.success("Deleted schematic '" + name + "'"));
+                                return;
+                            }
+                            // FAWE's //schem delete *: the files the clipboard was loaded from.
+                            List<java.nio.file.Path> files = loadedFiles(ctx.session());
+                            if (files.isEmpty()) {
+                                throw CommandRegistry.error("No schematic file to delete: //schem delete * deletes"
+                                        + " the files //schem load read into your clipboard");
+                            }
+                            for (java.nio.file.Path file : files) {
+                                String shown = Schematics.displayName(file);
+                                Schematics.delete(shown);
+                                ctx.actor().message(Msg.success("Deleted schematic '" + shown + "'"));
+                            }
                         }
                         case "unload" -> {
-                            ctx.session().setClipboard(null);
-                            ctx.actor().message(Msg.result("Clipboard", "unloaded"));
+                            if (ctx.args().size() < 2) {
+                                ctx.session().setClipboard(null);
+                                ctx.actor().message(Msg.result("Clipboard", "unloaded"));
+                                return;
+                            }
+                            unloadSchematic(ctx, ctx.arg(1));
                         }
                         case "move", "m" -> {
-                            String name = ctx.arg(1);
-                            String format = ctx.arg(2, com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat);
-                            com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard converted = Schematics.load(name);
-                            Schematics.delete(name);
-                            Schematics.save(converted, name, format);
-                            ctx.actor().message(Msg.success("Schematic '" + name + "' converted to " + format));
+                            if (ctx.args().size() > 2) {
+                                // Two words: the conversion this command did before it
+                                // moved files as FAWE's does.
+                                String name = ctx.arg(1);
+                                java.nio.file.Path written = Schematics.convert(name, ctx.arg(2));
+                                ctx.actor().message(Msg.success("Converted '" + name + "' to "
+                                        + com.maxlananas.fawebim.core.clipboard.SchematicFormat.of(ctx.arg(2)).id()
+                                        + ": '" + Schematics.displayName(written) + "'"));
+                                return;
+                            }
+                            moveSchematics(ctx, ctx.arg(1));
                         }
                         case "share" -> {
                             if (!ctx.session().hasClipboard()) {

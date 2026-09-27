@@ -311,6 +311,93 @@ public final class Schematics {
             List.of(".schem", ".schematic", ".nbt");
 
     /**
+     * The folder a command names: trees or trees/, and "." for the schematic
+     * folder itself, which a name cannot otherwise reach.
+     */
+    public static Path folder(String name) {
+        String trimmed = name.endsWith("/") ? name.substring(0, name.length() - 1) : name;
+        return trimmed.isEmpty() || trimmed.equals(".") ? directory() : resolve(trimmed);
+    }
+
+    /**
+     * True when a name given in a command stands for the file: its name from
+     * the schematic folder, with or without the extension, ignoring case.
+     */
+    public static boolean names(Path file, String name) {
+        String shown = displayName(file);
+        int dot = shown.lastIndexOf('.');
+        return shown.equalsIgnoreCase(name)
+                || dot > shown.lastIndexOf('/') && shown.substring(0, dot).equalsIgnoreCase(name);
+    }
+
+    /**
+     * Moves a schematic file into a folder of the schematic folder, as FAWE's
+     * {@code //schem move} moves the files the clipboard was loaded from. The
+     * folder is made when it is not there; a file of the same name in it is
+     * left alone.
+     *
+     * @return where the file is now
+     */
+    public static Path move(Path file, String folder) {
+        Path root = directory().toAbsolutePath().normalize();
+        Path from = file.toAbsolutePath().normalize();
+        if (!from.startsWith(root)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + from.getFileName()
+                    + "' is not in the schematic folder");
+        }
+        Path dir = folder(folder);
+        Path to = dir.resolve(from.getFileName().toString()).toAbsolutePath().normalize();
+        if (to.equals(from)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + displayName(from) + "' is already there");
+        }
+        if (Files.exists(to)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + displayName(to) + "' already exists");
+        }
+        try {
+            Files.createDirectories(dir);
+            // Without REPLACE_EXISTING: a file that appeared meanwhile fails the
+            // move rather than being overwritten.
+            return Files.move(from, to);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not move '" + displayName(from) + "'", e);
+        }
+    }
+
+    /**
+     * Rewrites a saved schematic in another format, which is what
+     * {@code //schem move <name> <format>} did before it moved files as FAWE's
+     * does. The new file is written before the old one goes, so a write that
+     * fails leaves the schematic as it was, and another schematic under the
+     * new name is not overwritten.
+     *
+     * @return the file written
+     */
+    public static Path convert(String name, String formatName) {
+        SchematicFormat format = SchematicFormat.of(formatName);
+        Path from = resolveExisting(name).toAbsolutePath().normalize();
+        if (!Files.isRegularFile(from)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("No schematic named '" + name + "'");
+        }
+        String shown = displayName(from);
+        int dot = shown.lastIndexOf('.');
+        String base = dot > shown.lastIndexOf('/') ? shown.substring(0, dot) : shown;
+        Path to = resolve(base + format.suffix()).toAbsolutePath().normalize();
+        if (!to.equals(from) && Files.exists(to)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + displayName(to) + "' already exists");
+        }
+        Path written = save(load(name), base, format.id());
+        if (!to.equals(from)) {
+            try {
+                Files.delete(from);
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException("Wrote '" + displayName(written) + "' but could not delete '"
+                        + shown + "'", e);
+            }
+        }
+        return written;
+    }
+
+    /**
      * The file a name stands for in the schematic folder. As in FAWE the name
      * may go through sub-folders - trees/oak - but it never leads out of the
      * folder: an empty part, a {@code .} or {@code ..}, a backslash or a drive
@@ -432,7 +519,9 @@ public final class Schematics {
     public static BlockArrayClipboard load(String name) {
         Path path = resolveExisting(name);
         try {
-            return readDetected(readAny(path, name), name);
+            BlockArrayClipboard clipboard = readDetected(readAny(path, name), name);
+            clipboard.setSource(path.toAbsolutePath().normalize());
+            return clipboard;
         } catch (java.nio.file.NoSuchFileException e) {
             throw new com.maxlananas.fawebim.core.util.InputException("No schematic named '" + name + "'");
         } catch (IOException e) {

@@ -39,6 +39,8 @@ public final class BlockArrayClipboard implements Extent {
     private World lazyWorld;
     /** The outline of a copy that was not a box, or {@code null}: the cells a paste writes. */
     private com.maxlananas.fawebim.core.region.Region shape;
+    /** The schematic file the clipboard was read from, or {@code null} for a copy. */
+    private java.nio.file.Path source;
 
     public BlockArrayClipboard(BlockVector3 origin) {
         this.origin = origin;
@@ -105,6 +107,19 @@ public final class BlockArrayClipboard implements Extent {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    /**
+     * The schematic file this clipboard was read from, as FAWE's clipboard
+     * keeps its URI: {@code //schem move}, {@code //schem unload} and
+     * {@code //schem delete *} go by it. Null for a copy.
+     */
+    public java.nio.file.Path getSource() {
+        return source;
+    }
+
+    public void setSource(java.nio.file.Path source) {
+        this.source = source;
     }
 
     public List<EntityData> getEntitiesCopy() {

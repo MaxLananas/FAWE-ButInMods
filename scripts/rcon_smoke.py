@@ -76,10 +76,13 @@ CHECKS = [
     ("//set minecraft:air", "256 blocks affected"),
     ("//count minecraft:stone", "counted: 0"),
     ("//schem unload", "Clipboard: unloaded"),
-    ("//schem load fawebim-smoke", "loaded schematic 'fawebim-smoke'"),
+    ("//schem load fawebim-smoke", "loaded schematic 'fawebim-smoke.schem'"),
     ("//paste 0,60,0", "pasted: 256 blocks"),
     ("//count minecraft:stone", "counted: 256"),
-    ("//schem delete fawebim-smoke", "deleted schematic 'fawebim-smoke'"),
+    # FAWE's move: the loaded file goes into a folder, made for it.
+    ("//schem move fawebim-smoke-folder",
+     "moved 'fawebim-smoke.schem' to 'fawebim-smoke-folder/fawebim-smoke.schem'"),
+    ("//schem delete fawebim-smoke-folder/fawebim-smoke", "deleted schematic 'fawebim-smoke-folder/fawebim-smoke'"),
     # Shape commands, checked by their geometry rather than by their messages. The
     # margin selection is cleared first, so the 16x3x16 box is built in the air
     # and the counts only see what the commands below write. The box holds 768
