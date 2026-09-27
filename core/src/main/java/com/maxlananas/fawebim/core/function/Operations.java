@@ -316,28 +316,77 @@ public final class Operations {
     }
 
     /**
-     * {@code //extinguish}: removes every block a mask accepts inside a cube
-     * around a position, which is WorldEdit's {@code removeNear}.
+     * {@code //removenear} and {@code //extinguish}, FAWE's {@code removeNear}:
+     * what the mask accepts in the cube of the apothem around the position -
+     * {@code apothem - 1} blocks each way, so an apothem of 1 is the position
+     * alone - becomes air. The part of the cube outside the world is left out.
      */
-    public static int removeNear(World world, EditSession session, BlockVector3 center, int apothem,
-                                 Mask mask) {
-        int affected = 0;
-        for (int y = center.y() - apothem; y <= center.y() + apothem; y++) {
-            if (y < world.minY() || y > world.maxY()) {
-                continue;
-            }
-            for (int z = center.z() - apothem; z <= center.z() + apothem; z++) {
-                for (int x = center.x() - apothem; x <= center.x() + apothem; x++) {
-                    if (!mask.test(x, y, z)) {
-                        continue;
-                    }
-                    if (session.setBlock(x, y, z, BlockState.registry().air())) {
-                        affected++;
+    public static int removeNear(EditSession session, BlockVector3 center, int apothem, Mask mask) {
+        int reach = apothem - 1;
+        int bottom = (int) Math.max((long) center.y() - reach, session.minY());
+        int top = (int) Math.min((long) center.y() + reach, session.maxY());
+        int air = BlockState.registry().air();
+        int changed = 0;
+        for (int x = from(center.x(), reach), maxX = to(center.x(), reach); x <= maxX; x++) {
+            for (int z = from(center.z(), reach), maxZ = to(center.z(), reach); z <= maxZ; z++) {
+                for (int y = bottom; y <= top; y++) {
+                    session.limiter().check(1);
+                    if (mask.test(x, y, z) && session.setBlock(x, y, z, air)) {
+                        changed++;
                     }
                 }
             }
         }
-        return affected;
+        return changed;
+    }
+
+    /**
+     * {@code //removeabove}, FAWE's {@code removeAbove}: the square of the
+     * apothem around the position, from the position's level up through
+     * {@code height} levels, becomes air - inside the world only.
+     */
+    public static int removeAbove(EditSession session, BlockVector3 position, int apothem, int height) {
+        return removeColumns(session, position, apothem, position.y(), (long) position.y() + height - 1);
+    }
+
+    /** {@code //removebelow}: the same square, from the position's level down through {@code height} levels. */
+    public static int removeBelow(EditSession session, BlockVector3 position, int apothem, int height) {
+        return removeColumns(session, position, apothem, (long) position.y() - height + 1, position.y());
+    }
+
+    private static int removeColumns(EditSession session, BlockVector3 position, int apothem, long lowest,
+                                     long highest) {
+        int reach = apothem - 1;
+        int bottom = (int) Math.max(lowest, session.minY());
+        int top = (int) Math.min(highest, session.maxY());
+        int air = BlockState.registry().air();
+        int changed = 0;
+        for (int x = from(position.x(), reach), maxX = to(position.x(), reach); x <= maxX; x++) {
+            for (int z = from(position.z(), reach), maxZ = to(position.z(), reach); z <= maxZ; z++) {
+                for (int y = bottom; y <= top; y++) {
+                    session.limiter().check(1);
+                    if (session.setBlock(x, y, z, air)) {
+                        changed++;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Minecraft's world border. No block lies past it, and a reach that the
+     * radius limit leaves unbounded is cut there rather than carried past the
+     * range of an int.
+     */
+    private static final int BORDER = 30_000_000;
+
+    private static int from(int center, int reach) {
+        return (int) Math.max((long) center - reach, -BORDER);
+    }
+
+    private static int to(int center, int reach) {
+        return (int) Math.min((long) center + reach, BORDER);
     }
 
     /** A hollow allocates a bit per cell of the selection; past this it refuses. */

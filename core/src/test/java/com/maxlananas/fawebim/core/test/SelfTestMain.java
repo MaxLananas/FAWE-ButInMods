@@ -160,6 +160,7 @@ public final class SelfTestMain {
         BrushArgumentTests.run();
         ConfirmationTests.run();
         FillAndLiquidTests.run();
+        RemovalTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -2623,14 +2624,18 @@ public final class SelfTestMain {
         check("//thaw takes the snow back", actor.messages().stream()
                 .anyMatch(m -> plain(m).contains("\u00bb Thawed: ") && plain(m).contains("49")));
 
-        // Fire in the cube around the player, and nothing else, goes away.
+        // Fire in the cube around the player, and nothing else, goes away. The
+        // placement follows pos1 to the middle of the fire, and a radius of 2 is
+        // FAWE's apothem: a block each way.
         CommandManager.get().dispatch(actor, "//pos1 7,30,7");
         CommandManager.get().dispatch(actor, "//pos2 9,30,9");
         CommandManager.get().dispatch(actor, "//set minecraft:fire");
+        CommandManager.get().dispatch(actor, "//pos1 8,30,8");
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//extinguish 2");
         check("//extinguish removes nearby fire", actor.messages().stream()
                 .anyMatch(m -> plain(m).contains("\u00bb Extinguished: ") && plain(m).contains("9")));
+        CommandManager.get().dispatch(actor, "//pos1 7,30,7");
         CommandManager.get().dispatch(actor, "//count minecraft:fire");
         check("no fire is left", count(actor).equals("Count: 0"));
         // The command removes fire and nothing else, so the grass the fire sat on

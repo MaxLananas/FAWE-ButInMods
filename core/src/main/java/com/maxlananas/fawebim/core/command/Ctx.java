@@ -224,9 +224,11 @@ public final class Ctx {
      * with every other number that is not one.
      */
     public double radiusArg(int index, double fallback) {
-        if (index >= positional.size()) {
-            return fallback;
-        }
+        return index < positional.size() ? radiusArg(index) : fallback;
+    }
+
+    /** {@link #radiusArg(int, double)} for an argument the command cannot do without. */
+    public double radiusArg(int index) {
         double radius = doubleArg(index);
         checkRadius(radius);
         return radius;
@@ -435,6 +437,21 @@ public final class Ctx {
                     (int) Math.floor(center.z()));
         }
         return BlockVector3.ZERO;
+    }
+
+    /**
+     * {@link #placement()} for a command that walks the world from there,
+     * refused above or below the world as FAWE's {@code checkExtentHeightBounds}
+     * refuses it, with FAWE's line.
+     */
+    public BlockVector3 placementInWorld() {
+        BlockVector3 placement = placement();
+        World world = world();
+        if (placement.y() < world.minY() || placement.y() > world.maxY()) {
+            throw CommandRegistry.error("This operation cannot be performed at y=" + placement.y()
+                    + " as it is outside world limits.");
+        }
+        return placement;
     }
 
     /**

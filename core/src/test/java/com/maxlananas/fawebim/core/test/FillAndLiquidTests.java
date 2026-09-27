@@ -29,6 +29,7 @@ final class FillAndLiquidTests {
         fillFillsTheHoleAndNotTheCavesBesideIt();
         fillrFollowsTheHoleBelowItsStart();
         aDirectedFillNeverStepsBack();
+        aWalkNeedsItsRadiusAndTheWorld();
         BlockStateRegistry previous = BlockState.registry();
         BlockState.setRegistry(new PropertyTestRegistry());
         try {
@@ -106,6 +107,23 @@ final class FillAndLiquidTests {
                 && world.getBlock(0, 62, -3) == dirt && world.getBlock(0, 61, 0) == dirt);
         checkEquals("and stays inside its radius", air, world.getBlock(0, 61, -5));
         checkEquals("and never steps back to the south", air, world.getBlock(0, 61, 1));
+    }
+
+    /**
+     * The radius is required, as FAWE declares it, and a walk that would start
+     * above or below the world is refused with FAWE's line rather than run.
+     */
+    private static void aWalkNeedsItsRadiusAndTheWorld() {
+        TestWorld world = new TestWorld("FillBounds");
+        TestActor actor = new TestActor("FillBounds", world, new BlockVector3(0, 64, 0));
+        check("//drain needs its radius", answer(actor, "//drain").contains("Missing argument 1"));
+        check("//fixwater needs its radius", answer(actor, "//fixwater").contains("Missing argument 1"));
+        check("//fill needs its radius", answer(actor, "//fill dirt").contains("Missing argument 2"));
+        TestActor high = new TestActor("FillHigh", world, new BlockVector3(0, 400, 0));
+        String answer = answer(high, "//fill dirt 3");
+        check("a fill above the world is refused (" + answer + ")",
+                answer.contains("cannot be performed at y=400 as it is outside world limits"));
+        check("so is a drain", answer(high, "//drain 3").contains("outside world limits"));
     }
 
     /**

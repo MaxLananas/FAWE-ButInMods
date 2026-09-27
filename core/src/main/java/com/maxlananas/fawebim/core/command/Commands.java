@@ -73,6 +73,23 @@ public final class Commands {
         return (int) (Math.signum(value) * Math.round(Math.abs(value)));
     }
 
+    /**
+     * The levels {@code //removeabove} and {@code //removebelow} clear, counted
+     * as FAWE counts them: the player's own and as many more as typed, never
+     * more than the world is high, which is also what no height means.
+     */
+    private static int removalHeight(Ctx ctx, EditSession session) {
+        int world = session.maxY() - session.minY() + 1;
+        if (ctx.args().size() < 2) {
+            return world;
+        }
+        long height = Math.min(world, ctx.intArg(1) + 1L);
+        if (height < 1) {
+            throw CommandRegistry.error("The height must be at least 0");
+        }
+        return (int) height;
+    }
+
     /** Replaces every block in a region matching {@code mask} with {@code pattern}. */
     private long fill(EditSession session, Region region, Pattern pattern, Mask mask) {
         return region.forEachPosition((x, y, z) -> {
@@ -852,8 +869,6 @@ public final class Commands {
         CommandRegistry.Entry e30 = registry.register("//fill");
         e30.description = "Fill a hole";
         e30.group = "region";
-        e30.booleanFlags.add("r");
-        e30.booleanFlags.add("h");
         e30.arguments.add("pattern");
         e30.arguments.add("radius");
         e30.arguments.add("[depth]");
@@ -862,13 +877,13 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = Math.max(1, ctx.radiusArg(1, 1));
+                    double radius = Math.max(1, ctx.radiusArg(1));
                     int depth = Math.max(1, ctx.sizeArg(2, 1));
                     BlockVector3 direction = ctx.args().size() < 4
                             ? new BlockVector3(0, -1, 0)
                             : expandDirections(ctx, ctx.joined(3)).get(0);
                     int changed = com.maxlananas.fawebim.core.function.Operations.fillDirection(session,
-                            ctx.placement(), pattern, radius, depth, direction);
+                            ctx.placementInWorld(), pattern, radius, depth, direction);
                     flush(ctx, session, "Filled", changed, "block(s)");
                 };
 
@@ -887,10 +902,10 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = Math.max(1, ctx.radiusArg(1, 1));
+                    double radius = Math.max(1, ctx.radiusArg(1));
                     int depth = Math.max(1, ctx.intArg(2, Integer.MAX_VALUE));
                     int changed = com.maxlananas.fawebim.core.function.Operations.fillXz(session,
-                            ctx.placement(), pattern, radius, depth, true);
+                            ctx.placementInWorld(), pattern, radius, depth, true);
                     flush(ctx, session, "Filled", changed, "block(s)");
                 };
 
@@ -904,8 +919,9 @@ public final class Commands {
         e31.arguments.add("<radius>");
         e31.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.drain(session, ctx.placement(),
-                            Math.max(0, ctx.radiusArg(0, 0)), ctx.hasFlag("w"), ctx.hasFlag("p"));
+                    double radius = Math.max(0, ctx.radiusArg(0));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.drain(session,
+                            ctx.placementInWorld(), radius, ctx.hasFlag("w"), ctx.hasFlag("p"));
                     flush(ctx, session, "Drained", changed, "block(s)");
                 };
 
@@ -982,73 +998,52 @@ public final class Commands {
                 };
 
 
+        // FAWE's //removeabove and //removebelow: the size is the apothem of a
+        // square around the player - 1 is the player's column - and the height
+        // counts levels from the player's own, the whole height of the world when
+        // none is given.
         CommandRegistry.Entry e33 = registry.register("//removeabove");
-        e33.description = "Remove blocks above a height";
+        e33.description = "Remove blocks above your head.";
         e33.group = "region";
         e33.arguments.add("[size]");
         e33.arguments.add("[height]");
         e33.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
-                    int size = ctx.sizeArg(0, 0);
-                    int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() + 1;
-                    // The columns start inside the world whatever height was typed:
-                    // a height of minus two billion is not two billion empty steps.
-                    int from = Math.max(height, ctx.world().minY());
-                    for (int x = origin.x() - size; x <= origin.x() + size; x++) {
-                        for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                            for (int y = from; y <= ctx.world().maxY(); y++) {
-                                session.setBlock(x, y, z, air());
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Removed above");
+                    int apothem = Math.max(1, ctx.sizeArg(0, 1));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.removeAbove(session,
+                            ctx.placement(), apothem, removalHeight(ctx, session));
+                    flush(ctx, session, "Removed", changed, "block(s)");
                 };
 
 
         CommandRegistry.Entry e34 = registry.register("//removebelow");
-        e34.description = "Remove blocks below a height";
+        e34.description = "Remove blocks below you.";
         e34.group = "region";
         e34.arguments.add("[size]");
         e34.arguments.add("[height]");
         e34.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
-                    int size = ctx.sizeArg(0, 0);
-                    int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() - 1;
-                    int to = Math.min(height, ctx.world().maxY());
-                    for (int x = origin.x() - size; x <= origin.x() + size; x++) {
-                        for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                            for (int y = ctx.world().minY(); y <= to; y++) {
-                                session.setBlock(x, y, z, air());
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Removed below");
+                    int apothem = Math.max(1, ctx.sizeArg(0, 1));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.removeBelow(session,
+                            ctx.placement(), apothem, removalHeight(ctx, session));
+                    flush(ctx, session, "Removed", changed, "block(s)");
                 };
 
 
+        // FAWE's //removenear: what the mask matches in the cube of the apothem
+        // around the player, fifty unless one is given.
         CommandRegistry.Entry e35 = registry.register("//removenear");
-        e35.description = "Remove blocks near you";
+        e35.description = "Remove blocks near you.";
         e35.group = "region";
         e35.arguments.add("mask");
-        e35.arguments.add("[size]");
+        e35.arguments.add("[radius]");
         e35.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    int size = ctx.sizeArg(1, 10);
-                    BlockVector3 origin = ctx.placement();
-                    int changed = 0;
-                    for (int x = origin.x() - size; x <= origin.x() + size; x++) {
-                        for (int y = origin.y() - size; y <= origin.y() + size; y++) {
-                            for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                                if (mask.test(x, y, z) && session.setBlock(x, y, z, air())) {
-                                    changed++;
-                                }
-                            }
-                        }
-                    }
+                    int apothem = Math.max(1, ctx.sizeArg(1, 50));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.removeNear(session,
+                            ctx.placement(), apothem, mask);
                     flush(ctx, session, "Removed", changed, "block(s)");
                 };
 
@@ -1062,7 +1057,7 @@ public final class Commands {
         e36.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    int size = ctx.sizeArg(0, 0);
+                    int size = Math.max(1, ctx.sizeArg(0));
                     boolean masked = ctx.args().size() > 2;
                     Mask mask = masked ? Parsers.mask(ctx.arg(1), ctx) : new Masks.ExistingMask(session, true);
                     Pattern pattern = Parsers.pattern(ctx.joined(masked ? 2 : 1), ctx);
@@ -1150,7 +1145,7 @@ public final class Commands {
                     int radius = Math.max(1, ctx.sizeArg(0, ceiling > 0 ? Math.min(40, ceiling) : 40));
                     Mask fire = Parsers.mask("minecraft:fire", ctx);
                     int changed = com.maxlananas.fawebim.core.function.Operations.removeNear(
-                            ctx.world(), session, ctx.placement(), radius, fire);
+                            session, ctx.placement(), radius, fire);
                     flush(ctx, session, "Extinguished", changed, "block(s)");
                 };
 
@@ -1161,8 +1156,9 @@ public final class Commands {
         e41.arguments.add("<radius>");
         e41.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session, ctx.placement(),
-                            Math.max(0, ctx.radiusArg(0, 0)), "minecraft:water");
+                    double radius = Math.max(0, ctx.radiusArg(0));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session,
+                            ctx.placementInWorld(), radius, "minecraft:water");
                     flush(ctx, session, "Fixed water", changed, "water block(s)");
                 };
 
@@ -1173,8 +1169,9 @@ public final class Commands {
         e42.arguments.add("<radius>");
         e42.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session, ctx.placement(),
-                            Math.max(0, ctx.radiusArg(0, 0)), "minecraft:lava");
+                    double radius = Math.max(0, ctx.radiusArg(0));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session,
+                            ctx.placementInWorld(), radius, "minecraft:lava");
                     flush(ctx, session, "Fixed lava", changed, "lava block(s)");
                 };
 
