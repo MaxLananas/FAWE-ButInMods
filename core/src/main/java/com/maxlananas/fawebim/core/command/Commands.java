@@ -3160,7 +3160,7 @@ public final class Commands {
         e86b.arguments.add("[mask]");
         e86b.handler = ctx -> {
                     com.maxlananas.fawebim.core.brush.Brush brush =
-                            com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.session());
+                            com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.actor());
                     if (ctx.args().isEmpty()) {
                         ctx.session().setSourceMask(null);
                         if (brush != null) {
@@ -3353,7 +3353,7 @@ public final class Commands {
         e99.description = "Show the current brush";
         e99.group = "brush";
         e99.handler = ctx -> {
-                    var brush = com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.session());
+                    var brush = com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.actor());
                     if (brush == null) {
                         ctx.actor().message(Msg.info("No brush bound. Use /brush sphere 5 stone for example."));
                     } else {
@@ -3375,30 +3375,19 @@ public final class Commands {
             throw CommandRegistry.error("Unknown tool '" + name + "'");
         }
         // The tool's own name, whichever spelling built it: /tool replace is the replacer.
-        com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(),
+        String item = com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(),
                 ctx.arg(first + com.maxlananas.fawebim.core.tool.Tools.argumentCount(tool.name()), ""));
-        ctx.actor().message(Msg.success(com.maxlananas.fawebim.core.tool.Tools.boundLine(tool.name(),
-                String.valueOf(ctx.session().getBindings().get("tool-item")))));
+        ctx.actor().message(Msg.success(com.maxlananas.fawebim.core.tool.Tools.boundLine(tool.name(), item)));
     }
 
     /**
-     * Unbinds the tool, and the brush of the held item: upstream a brush is a
-     * tool bound to an item. FAWE's line says which of the two it was.
+     * Takes whatever is bound to the held item off it, its tool or its
+     * brushes, as FAWE's /tool none and /brush none both do; FAWE's line says
+     * which of the two it was.
      */
     private void unbindTool(Ctx ctx) {
-        LocalSession session = ctx.session();
-        String held = ctx.actor().heldItem();
-        com.maxlananas.fawebim.core.tool.Tools.clear(session);
-        boolean brush = false;
-        if (held != null && held.equals(session.getBindings().get("brush-item"))) {
-            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
-            session.getBindings().remove("brush-command");
-            brush = true;
-        }
-        if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
-            com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
-            brush = true;
-        }
+        com.maxlananas.fawebim.core.session.ItemBinding old = ctx.session().unbind(ctx.actor().heldItem());
+        boolean brush = old != null && old.hasBrush();
         ctx.actor().message(Msg.success((brush ? "Brush" : "Tool") + " unbound from your current item"));
     }
 
@@ -3493,19 +3482,10 @@ public final class Commands {
         if (none == null) {
             return;
         }
-        none.description = "Unbind the brush from your current item";
+        none.description = "Unbind a bound brush from your current item";
         none.group = "brush";
         none.requiresPlayer = true;
-        none.handler = ctx -> {
-            LocalSession session = ctx.session();
-            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
-            session.getBindings().remove("brush-command");
-            String held = ctx.actor().heldItem();
-            if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
-                com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
-            }
-            ctx.actor().message(Msg.success("Brush unbound"));
-        };
+        none.handler = this::unbindTool;
     }
 
     /**
@@ -3524,7 +3504,8 @@ public final class Commands {
             save.handler = ctx -> {
                 java.nio.file.Path file;
                 try {
-                    file = com.maxlananas.fawebim.core.brush.BrushPresets.save(ctx.session(), ctx.arg(0));
+                    file = com.maxlananas.fawebim.core.brush.BrushPresets.save(ctx.session(), ctx.actor().heldItem(),
+                            ctx.arg(0));
                 } catch (java.io.IOException e) {
                     throw CommandRegistry.error("Could not save the preset: " + e.getMessage());
                 }
@@ -3597,9 +3578,8 @@ public final class Commands {
         if (built == null) {
             throw CommandRegistry.error("Brush '" + row[0] + "' could not be created");
         }
-        com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor());
-        // Remembered so the preset commands can save and reload it.
-        session.getBindings().put("brush-command", buildBrushLine(ctx));
+        // With the line that built it, which the preset commands save and reload.
+        com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor(), buildBrushLine(ctx));
         ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped (radius " + Msg.formatDouble(radius) + ")"));
     }
 

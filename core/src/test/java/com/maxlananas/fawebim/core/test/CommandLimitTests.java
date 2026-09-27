@@ -190,10 +190,11 @@ final class CommandLimitTests {
         check("a range above the ceiling is refused",
                 answer(actor, "/tool floodfill gold_block 99").contains("at most"));
         answer(actor, "/tool floodfill gold_block 3");
-        com.maxlananas.fawebim.core.tool.Tool tool = com.maxlananas.fawebim.core.tool.Tools.current(actor.session());
+        com.maxlananas.fawebim.core.tool.Tool tool = com.maxlananas.fawebim.core.tool.Tools.current(actor);
         check("the flood fill tool is bound", tool != null);
         check("it is bound to the held item, not to its pattern",
-                String.valueOf(actor.session().getBindings().get("tool-item")).equals(actor.heldItem()));
+                actor.session().binding(actor.heldItem()) != null
+                        && actor.session().binding(actor.heldItem()).tool() == tool);
         com.maxlananas.fawebim.core.tool.Tool.ToolContext click = new com.maxlananas.fawebim.core.tool.Tool.ToolContext(
                 actor, new BlockVector3(0, 68, 0), com.maxlananas.fawebim.core.world.Direction.UP, null);
         tool.onRightClick(click);

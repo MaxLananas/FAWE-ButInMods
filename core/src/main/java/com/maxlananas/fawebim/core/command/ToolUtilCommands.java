@@ -65,7 +65,7 @@ final class ToolUtilCommands {
         if (!ctx.hasFlag("h")) {
             return requireBrush(ctx);
         }
-        Brush offhand = BrushFactory.currentSecondary(ctx.session());
+        Brush offhand = BrushFactory.currentSecondary(ctx.actor());
         if (offhand == null) {
             throw CommandRegistry.error("No tool in the offhand: bind one with /tool secondary <type> first");
         }
@@ -391,29 +391,27 @@ final class ToolUtilCommands {
      */
     private void bindBrush(Ctx ctx, boolean secondary) {
         LocalSession session = ctx.session();
-        Brush previousPrimary = BrushFactory.current(session);
-        Brush previousSecondary = BrushFactory.currentSecondary(session);
+        String item = ctx.actor().heldItem();
+        com.maxlananas.fawebim.core.session.ItemBinding before = session.binding(item);
+        Brush previousPrimary = before == null ? null : before.primary();
+        String previousLine = before == null ? null : before.brushLine();
         StringBuilder line = new StringBuilder("brush");
         for (String argument : ctx.args()) {
             line.append(' ').append(argument);
         }
         registry.dispatch(ctx.actor(), line.toString());
-        Brush bound = BrushFactory.current(session);
-        if (bound == null) {
+        Brush bound = BrushFactory.current(session, item);
+        // The line that failed said why and bound nothing: the brush there is
+        // still the one of before, which is not to be moved to the other click.
+        if (bound == null || bound == previousPrimary) {
             return;
         }
         if (secondary) {
-            BrushFactory.bindSecondary(session, bound, ctx.actor());
-            if (previousPrimary != null) {
-                session.getBindings().put("brush", previousPrimary);
-            } else {
-                BrushFactory.unbind(session);
-            }
+            com.maxlananas.fawebim.core.session.ItemBinding binding = session.bind(item);
+            binding.setSecondary(bound);
+            binding.setPrimary(previousPrimary, previousLine);
             ctx.actor().message(Msg.result("Left click brush", Msg.value(bound.describe()).raw()));
             return;
-        }
-        if (previousSecondary != null) {
-            BrushFactory.bindSecondary(session, previousSecondary, ctx.actor());
         }
         ctx.actor().message(Msg.result("Right click brush", Msg.value(bound.describe()).raw()));
     }
@@ -465,7 +463,7 @@ final class ToolUtilCommands {
 
     /** The brush bound to the held item, or FAWE's "no brush" error. */
     private static Brush requireBrush(Ctx ctx) {
-        Brush brush = BrushFactory.current(ctx.session());
+        Brush brush = BrushFactory.current(ctx.actor());
         if (brush == null) {
             throw CommandRegistry.error("No brush bound: use /brush <type> first");
         }

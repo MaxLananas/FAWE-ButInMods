@@ -41,10 +41,5 @@ public interface Brush extends Cloneable {
     /** Human readable description for {@code /brush} feedback. */
     String describe();
 
-    /** Whether a left-click applies this brush (some brushes do). */
-    default boolean leftClick() {
-        return false;
-    }
-
     BrushSettings settings();
 }

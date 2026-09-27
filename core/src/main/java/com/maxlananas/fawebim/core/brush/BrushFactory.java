@@ -6,6 +6,7 @@ import com.maxlananas.fawebim.core.function.Morphology;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.RegionFactories;
+import com.maxlananas.fawebim.core.session.ItemBinding;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -28,37 +29,70 @@ public final class BrushFactory {
     private BrushFactory() {
     }
 
-    /** The brush bound to the player's held item, if any. */
-    public static Brush current(LocalSession session) {
-        Object bound = session.getBindings().get("brush");
-        return bound instanceof Brush brush ? brush : null;
+    /** The brush of the right click of an item, or null. */
+    public static Brush current(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        return binding == null ? null : binding.primary();
     }
 
-    public static void bind(LocalSession session, Brush brush, Actor actor) {
-        session.getBindings().put("brush", brush);
-        session.getBindings().put("brush-item", actor.heldItem());
+    /** The brush of the right click of the item the actor holds, or null. */
+    public static Brush current(Actor actor) {
+        return current(actor.session(), actor.heldItem());
     }
 
-    /** The brush bound to the left click of the held item, if any. */
-    public static Brush currentSecondary(LocalSession session) {
-        Object bound = session.getBindings().get("secondary-brush");
-        return bound instanceof Brush brush ? brush : null;
+    /** The brush of the left click of an item, or null. */
+    public static Brush currentSecondary(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        return binding == null ? null : binding.secondary();
     }
 
-    /** Binds a brush to the left click, which is what {@code /tool secondary} does. */
+    /** The brush of the left click of the item the actor holds, or null. */
+    public static Brush currentSecondary(Actor actor) {
+        return currentSecondary(actor.session(), actor.heldItem());
+    }
+
+    /**
+     * Binds a brush to the right click of the held item, where a tool bound
+     * to it was; the brush of its left click stays.
+     *
+     * @param line the command that built the brush, which a preset saves
+     */
+    public static void bind(LocalSession session, Brush brush, Actor actor, String line) {
+        session.bind(actor.heldItem()).setPrimary(brush, line);
+    }
+
+    /** Binds a brush to the left click of the held item, which is what {@code /tool secondary} does. */
     public static void bindSecondary(LocalSession session, Brush brush, Actor actor) {
-        session.getBindings().put("secondary-brush", brush);
-        session.getBindings().put("secondary-brush-item", actor.heldItem());
+        session.bind(actor.heldItem()).setSecondary(brush);
     }
 
-    public static void unbind(LocalSession session) {
-        session.getBindings().remove("brush");
-        session.getBindings().remove("brush-item");
+    /** Takes the brush off the right click of an item. */
+    public static void unbind(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        if (binding != null) {
+            binding.setPrimary(null, null);
+            session.release(item);
+        }
     }
 
-    public static void unbindSecondary(LocalSession session) {
-        session.getBindings().remove("secondary-brush");
-        session.getBindings().remove("secondary-brush-item");
+    /** Takes the brush off the left click of an item. */
+    public static void unbindSecondary(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        if (binding != null) {
+            binding.setSecondary(null);
+            session.release(item);
+        }
+    }
+
+    /** The brush of the right click bound last, whatever the item, or null. */
+    public static Brush latest(LocalSession session) {
+        Brush latest = null;
+        for (ItemBinding binding : session.bindings().values()) {
+            if (binding.primary() != null) {
+                latest = binding.primary();
+            }
+        }
+        return latest;
     }
 
     /**

@@ -26,9 +26,10 @@ public final class BrushPresets {
         return Config.get().resolveDirectory(Config.get().brushPresetDirectory);
     }
 
-    /** Saves the brush currently bound to the player's item. */
-    public static Path save(LocalSession session, String name) throws IOException {
-        Object line = session.getBindings().get("brush-command");
+    /** Saves the brush of the right click of an item, or answers null when it has none. */
+    public static Path save(LocalSession session, String item, String name) throws IOException {
+        com.maxlananas.fawebim.core.session.ItemBinding binding = session.binding(item);
+        String line = binding == null ? null : binding.brushLine();
         if (line == null) {
             return null;
         }

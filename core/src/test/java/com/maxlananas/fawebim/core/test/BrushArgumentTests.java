@@ -55,7 +55,7 @@ final class BrushArgumentTests {
     }
 
     private static int apply(TestActor actor, BlockVector3 at) {
-        Brush brush = BrushFactory.current(actor.session());
+        Brush brush = BrushFactory.current(actor);
         EditSession edit = new EditSession(actor.world(), actor.session(), "brush");
         try {
             return brush.apply(edit, at, actor);

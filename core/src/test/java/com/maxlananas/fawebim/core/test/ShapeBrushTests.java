@@ -202,7 +202,7 @@ final class ShapeBrushTests {
         String sphere = answer(actor, "/brush sphere");
         check("/brush sphere without its pattern is refused (" + sphere + ")",
                 sphere.contains("Missing argument 1 for /brush sphere <pattern>"));
-        check("and binds nothing", BrushFactory.current(actor.session()) == null);
+        check("and binds nothing", BrushFactory.current(actor) == null);
         check("/brush biome without its biome is refused",
                 answer(actor, "/brush biome sphere").contains("Missing argument 3 for /brush biome"));
         check("/brush snow without its shape is refused",
@@ -219,7 +219,7 @@ final class ShapeBrushTests {
             answer(actor, "/brush sphere minecraft:stone 2");
             String loaded = answer(actor, "/brush loadbrush " + name);
             check("a preset binds its brush again (" + loaded + ")", loaded.contains("Brush 'snow' equipped (radius 4)"));
-            Brush brush = BrushFactory.current(actor.session());
+            Brush brush = BrushFactory.current(actor);
             check("with its shape and its switches (" + (brush == null ? null : brush.describe()) + ")",
                     brush != null && brush.describe().contains("shape=cyl -s"));
         } finally {
@@ -233,7 +233,7 @@ final class ShapeBrushTests {
     }
 
     private static int stroke(TestActor actor, int x, int y, int z) {
-        Brush brush = BrushFactory.current(actor.session());
+        Brush brush = BrushFactory.current(actor);
         EditSession edit = new EditSession(actor.world(), actor.session(), "brush");
         try {
             return Brushes.apply(brush, edit, new BlockVector3(x, y, z), actor);

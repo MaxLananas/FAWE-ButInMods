@@ -10,6 +10,7 @@ import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
+import com.maxlananas.fawebim.core.session.ItemBinding;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
@@ -161,19 +162,36 @@ public final class Tools {
         return label + " bound to " + held;
     }
 
-    public static void bind(LocalSession session, Tool tool, Actor actor, String item) {
-        session.getBindings().put("tool", tool);
-        session.getBindings().put("tool-item", item == null || item.isEmpty() ? actor.heldItem() : item);
+    /**
+     * Binds a tool to an item - the held one when none is named - where its
+     * brushes or another tool were, as FAWE's item holds one tool.
+     *
+     * @return the item the tool is bound to
+     */
+    public static String bind(LocalSession session, Tool tool, Actor actor, String item) {
+        String target = item == null || item.isEmpty() ? actor.heldItem() : item;
+        session.bind(target).setTool(tool);
+        return target;
     }
 
-    public static void clear(LocalSession session) {
-        session.getBindings().remove("tool");
-        session.getBindings().remove("tool-item");
+    /** Takes the tool off an item. */
+    public static void clear(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        if (binding != null && binding.tool() != null) {
+            binding.setTool(null);
+            session.release(item);
+        }
     }
 
-    public static Tool current(LocalSession session) {
-        Object tool = session.getBindings().get("tool");
-        return tool instanceof Tool value ? value : null;
+    /** The tool bound to an item, or null. */
+    public static Tool current(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        return binding == null ? null : binding.tool();
+    }
+
+    /** The tool bound to the item the actor holds, or null. */
+    public static Tool current(Actor actor) {
+        return current(actor.session(), actor.heldItem());
     }
 
     private static final Tool NAVIGATION_WAND = new NavigationWandTool();
@@ -187,9 +205,9 @@ public final class Tools {
         if (item == null) {
             return null;
         }
-        Tool tool = current(session);
-        if (tool != null && item.equals(session.getBindings().get("tool-item"))) {
-            return tool;
+        ItemBinding binding = session.binding(item);
+        if (binding != null) {
+            return binding.tool();
         }
         return item.equals(com.maxlananas.fawebim.core.platform.Config.get().navigationWandItem)
                 ? NAVIGATION_WAND : null;
@@ -799,22 +817,24 @@ public final class Tools {
             return "brush";
         }
 
+        /**
+         * Fires the brush bound last, whatever its item, and says nothing when
+         * it went well: a stroke of a brush answers nothing, whichever item
+         * fires it.
+         */
         @Override
         public boolean onRightClick(ToolContext context) {
-            var brush = com.maxlananas.fawebim.core.brush.BrushFactory.current(context.actor.session());
+            var brush = com.maxlananas.fawebim.core.brush.BrushFactory.latest(context.actor.session());
             if (brush == null) {
                 context.message(Msg.error("No brush bound. Use /brush sphere 5 stone"));
                 return false;
             }
             EditSession session = new EditSession(context.actor.world(), context.actor.session(), "brush");
-            int changed;
             try {
-                changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, context.position,
-                        context.actor);
+                com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, context.position, context.actor);
             } finally {
                 session.close();
             }
-            context.message(Msg.success("Brush changed " + Msg.blocks(changed)));
             return true;
         }
 

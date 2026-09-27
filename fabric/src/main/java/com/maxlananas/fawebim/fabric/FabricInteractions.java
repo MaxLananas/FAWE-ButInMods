@@ -11,6 +11,7 @@ import com.maxlananas.fawebim.core.tool.SuperPickaxe;
 import com.maxlananas.fawebim.core.tool.Tool;
 import com.maxlananas.fawebim.core.tool.Tools;
 import com.maxlananas.fawebim.core.util.Msg;
+import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.world.BlockState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -66,20 +67,20 @@ public final class FabricInteractions {
     }
 
     /**
-     * The item a brush or a tool is waiting for when the player holds another.
-     * WorldEdit keeps one tool per item, so a click with the wrong item does
+     * The item bound last when the player clicks with one nothing is bound to.
+     * WorldEdit keeps one tool per item, so a click with another item does
      * nothing at all; naming the item turns that silence into a state the player
      * can act on.
      */
     private static String waitingItem(LocalSession session, String held) {
-        Map<String, Object> bindings = session.getBindings();
-        if (bindings.containsKey("brush") && !held.equals(bindings.get("brush-item"))) {
-            return String.valueOf(bindings.get("brush-item"));
+        if (held == null || session.binding(held) != null) {
+            return null;
         }
-        if (bindings.containsKey("tool") && !held.equals(bindings.get("tool-item"))) {
-            return String.valueOf(bindings.get("tool-item"));
+        String last = null;
+        for (String item : session.bindings().keySet()) {
+            last = item;
         }
-        return null;
+        return last;
     }
 
     private static void noteWaiting(FabricActor actor, String held) {
@@ -87,13 +88,16 @@ public final class FabricInteractions {
         if (player == null) {
             return;
         }
-        String waiting = waitingItem(actor.session(), held);
+        LocalSession session = actor.session();
+        String waiting = waitingItem(session, held);
         if (waiting == null) {
             LAST_NOTICE.remove(player.getUUID());
             return;
         }
         if (!waiting.equals(LAST_NOTICE.put(player.getUUID(), waiting))) {
-            actor.message(Msg.warn("The brush is bound to " + waiting + ", you are holding " + held + "."));
+            String what = session.binding(waiting).hasBrush() ? "The brush" : "The tool";
+            actor.message(Msg.warn(what + " is bound to " + Str.itemName(waiting) + ", you are holding "
+                    + Str.itemName(held) + "."));
         }
     }
 
@@ -110,9 +114,9 @@ public final class FabricInteractions {
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
-        // 1. Left-click brushes (shatter, erode, ...) and tools.
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && brush.leftClick() && bound(session, "brush-item", held)) {
+        // 1. The brush of the left click, FAWE's secondary brush, and tools.
+        Brush brush = BrushFactory.currentSecondary(session, held);
+        if (brush != null) {
             return applyBrush(actor, brush, FabricMessages.blockVector(pos))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
@@ -149,9 +153,10 @@ public final class FabricInteractions {
     /**
      * Left click in the air, or the swing that follows a left click.
      *
-     * <p>The mixin on the swing packet calls this: FAWE's shatter, erode and
-     * blob brushes act on a left click even when the player is aiming at
-     * nothing, and {@code /tool} bindings can use the swing too.</p>
+     * <p>The mixin on the swing packet calls this: the brush of the left click
+     * - FAWE's secondary brush - acts on a left click even when the player is
+     * aiming at nothing, as the one of the right click does, and {@code /tool}
+     * bindings can use the swing too.</p>
      */
     public static boolean onLeftClickAir(ServerPlayer player) {
         FabricActor actor = new FabricActor(player);
@@ -160,8 +165,8 @@ public final class FabricInteractions {
         }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && brush.leftClick() && bound(session, "brush-item", held)) {
+        Brush brush = BrushFactory.currentSecondary(session, held);
+        if (brush != null) {
             return applyBrush(actor, brush, aimedBlock(player));
         }
         Tool tool = Tools.forItem(session, held);
@@ -184,9 +189,9 @@ public final class FabricInteractions {
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
-        // 1. Brushes.
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && bound(session, "brush-item", held)) {
+        // 1. The brush of the right click.
+        Brush brush = BrushFactory.current(session, held);
+        if (brush != null) {
             return applyBrush(actor, brush, landing(player, pos, face))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
@@ -231,8 +236,8 @@ public final class FabricInteractions {
         // A right click in the air with a brush of the held item acts on what the
         // player is looking at, which is what WorldEdit's right-click-air branch
         // does; without it a click that lands one pixel above a block does nothing.
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && bound(session, "brush-item", held)) {
+        Brush brush = BrushFactory.current(session, held);
+        if (brush != null) {
             return applyBrush(actor, brush, aimedBlock(player))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
@@ -299,12 +304,6 @@ public final class FabricInteractions {
         net.minecraft.world.phys.Vec3 end = player.getEyePosition(1.0F)
                 .add(player.getViewVector(1.0F).scale(reach));
         return new BlockVector3((int) Math.floor(end.x), (int) Math.floor(end.y), (int) Math.floor(end.z));
-    }
-
-    /** True when the session's binding for {@code key} matches the held item. */
-    private static boolean bound(LocalSession session, String key, String held) {
-        Object value = session.getBindings().get(key);
-        return held != null && held.equals(value);
     }
 
     /**
@@ -425,9 +424,8 @@ public final class FabricInteractions {
         if (!actor.mayEdit()) {
             return false;
         }
-        LocalSession session = actor.session();
-        Brush brush = BrushFactory.current(session);
-        if (brush == null || !bound(session, "brush-item", FabricMessages.heldItem(player))) {
+        Brush brush = BrushFactory.current(actor.session(), FabricMessages.heldItem(player));
+        if (brush == null) {
             return false;
         }
         com.maxlananas.fawebim.core.tool.Scroll scroll = brush.settings().getScrollAction();

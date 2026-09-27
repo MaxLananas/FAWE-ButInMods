@@ -49,10 +49,10 @@ final class GenerationTests {
         TestWorld world = new TestWorld("TreeCommand");
         world.fillFlat(61);
         TestActor actor = new TestActor("TreeCommand", world, new BlockVector3(0, 61, 0));
-        Tools.clear(actor.session());
+        actor.session().unbind(actor.heldItem());
         String bound = answer(actor, "//tree oak");
         check("//tree binds the tree tool, as FAWE's does (" + bound + ")",
-                bound.contains("Tree tool bound") && Tools.current(actor.session()) instanceof Tools.TreeTool);
+                bound.contains("Tree tool bound") && Tools.current(actor) instanceof Tools.TreeTool);
         check("and so does /tree", answer(actor, "/tree birch").contains("Tree tool bound"));
     }
 
@@ -141,7 +141,7 @@ final class GenerationTests {
         TestActor actor = meadow("TreeTool");
         TestWorld world = (TestWorld) actor.world();
         answer(actor, "/tool tree oak");
-        Tool tool = Tools.current(actor.session());
+        Tool tool = Tools.current(actor);
         actor.clearMessages();
         use(actor, () -> tool.onRightClick(new Tool.ToolContext(actor, new BlockVector3(0, 60, 0), Direction.UP,
                 null)));
@@ -206,7 +206,7 @@ final class GenerationTests {
         check("the feature placer takes the features the world knows",
                 answer(actor, "/tool featureplacer nope").contains("Unknown feature 'nope'"));
         answer(actor, "/tool featureplacer oak");
-        Tool placer = Tools.current(actor.session());
+        Tool placer = Tools.current(actor);
         actor.clearMessages();
         use(actor, () -> placer.onRightClick(new Tool.ToolContext(actor, new BlockVector3(0, 60, 0), Direction.UP,
                 null)));
@@ -223,14 +223,14 @@ final class GenerationTests {
                 String.join("\n", actor.messages()).replaceAll("\u00a7.", "").contains(Tools.FEATURE_FAILED));
 
         answer(actor, "/tool featureplacer minecraft:poppy");
-        Tool flowers = Tools.current(actor.session());
+        Tool flowers = Tools.current(actor);
         use(actor, () -> flowers.onRightClick(new Tool.ToolContext(actor, new BlockVector3(-2, 60, -2),
                 Direction.EAST, null)));
         checkEquals("a feature of the block goes in the clicked block, whatever the face",
                 state("minecraft:poppy"), world.getBlock(-2, 61, -2));
 
         answer(actor, "/tool structureplacer minecraft:oak_log");
-        Tool structures = Tools.current(actor.session());
+        Tool structures = Tools.current(actor);
         actor.clearMessages();
         use(actor, () -> structures.onRightClick(new Tool.ToolContext(actor, new BlockVector3(3, 60, -3),
                 Direction.UP, null)));

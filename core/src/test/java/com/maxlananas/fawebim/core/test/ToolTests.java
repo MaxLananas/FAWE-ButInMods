@@ -147,8 +147,13 @@ final class ToolTests {
         return com.maxlananas.fawebim.core.command.CommandRegistry.interact(actor, "tool", action);
     }
 
+    /** The item bound last, which the tool bound last is on. */
     private static String bound(TestActor actor) {
-        return String.valueOf(actor.session().getBindings().get("tool-item"));
+        String last = null;
+        for (String item : actor.session().bindings().keySet()) {
+            last = item;
+        }
+        return String.valueOf(last);
     }
 
     /**
@@ -180,7 +185,7 @@ final class ToolTests {
         check("unbinding says FAWE's line",
                 answer(actor, "/tool none").endsWith("Tool unbound from your current item"));
         check("as /tool unbind does", answer(actor, "/tool unbind").endsWith("Tool unbound from your current item"));
-        check("and nothing is bound any more", Tools.current(actor.session()) == null);
+        check("and nothing is bound any more", Tools.current(actor) == null);
         answer(actor, "/brush sphere stone 2");
         check("a brush on the held item is said to be unbound",
                 answer(actor, "//unbind").endsWith("Brush unbound from your current item"));
@@ -200,9 +205,9 @@ final class ToolTests {
                 case "structureplacer" -> " minecraft:oak_log";
                 default -> "";
             };
-            Tools.clear(actor.session());
+            actor.session().unbind(actor.heldItem());
             String reply = answer(actor, "/tool " + name + arguments);
-            check("/tool " + name + " binds a tool (" + reply + ")", Tools.current(actor.session()) != null);
+            check("/tool " + name + " binds a tool (" + reply + ")", Tools.current(actor) != null);
             check("/tool " + name + " binds it to the held item", bound(actor).equals(actor.heldItem()));
         }
     }
@@ -210,15 +215,15 @@ final class ToolTests {
     private static void theReplacerTakesItsPatternAndPicksWithItsData() {
         TestActor actor = actor("ToolReplacer");
         TestWorld world = (TestWorld) actor.world();
-        Tools.clear(actor.session());
+        actor.session().unbind(actor.heldItem());
         check("the replacer needs its pattern", answer(actor, "/tool repl").contains("Usage: /tool repl <pattern>"));
-        check("and binds nothing without it", Tools.current(actor.session()) == null);
+        check("and binds nothing without it", Tools.current(actor) == null);
         check("a pattern that does not parse is refused",
                 answer(actor, "/tool repl notablock").contains("notablock"));
-        check("and binds nothing either", Tools.current(actor.session()) == null);
+        check("and binds nothing either", Tools.current(actor) == null);
 
         answer(actor, "/tool repl gold_block");
-        Tool tool = Tools.current(actor.session());
+        Tool tool = Tools.current(actor);
         check("the replacer is bound to the held item, not to its pattern", bound(actor).equals(actor.heldItem()));
         // WorldEdit's replacer: the left click - the one that breaks a block -
         // replaces it with the pattern, and the right click picks.
@@ -248,7 +253,7 @@ final class ToolTests {
         check("with its data", copied != null && copied.getCompoundList("Items").size() == 1
                 && copied.getCompoundList("Items").get(0).getString("id", "").equals("minecraft:diamond"));
 
-        Tools.clear(actor.session());
+        actor.session().unbind(actor.heldItem());
         answer(actor, "/tool repl stone minecraft:stick");
         checkEquals("the item after the pattern is the one bound", "minecraft:stick", bound(actor));
     }
@@ -259,7 +264,7 @@ final class ToolTests {
         check("the builder needs both patterns",
                 answer(actor, "/tool lrbuild stone").contains("Usage: /tool lrbuild"));
         answer(actor, "/tool lrbuild air gold_block");
-        Tool tool = Tools.current(actor.session());
+        Tool tool = Tools.current(actor);
         use(actor, () -> tool.onRightClick(click(actor, 3, 69, 3, Direction.UP)));
         checkEquals("a right click places against the clicked face", state("minecraft:gold_block"),
                 world.getBlock(3, 70, 3));
@@ -287,7 +292,7 @@ final class ToolTests {
         check("a range above the brush range is refused",
                 answer(actor, "/tool stacker 100000").contains("between 1 and"));
         answer(actor, "/tool stacker 3");
-        Tool tool = Tools.current(actor.session());
+        Tool tool = Tools.current(actor);
         int grass = state("minecraft:grass_block");
         use(actor, () -> tool.onRightClick(click(actor, 0, 69, 0, Direction.UP)));
         checkEquals("the clicked block is repeated", grass, world.getBlock(0, 70, 0));
@@ -300,7 +305,7 @@ final class ToolTests {
         checkEquals("which stays", state("minecraft:stone"), world.getBlock(2, 72, 0));
 
         answer(actor, "/tool stacker 2 stone");
-        Tool masked = Tools.current(actor.session());
+        Tool masked = Tools.current(actor);
         use(actor, () -> masked.onRightClick(click(actor, 0, 67, 0, Direction.DOWN)));
         checkEquals("a mask says what it may stack into", state("minecraft:stone"), world.getBlock(0, 66, 0));
         use(actor, () -> masked.onRightClick(click(actor, 0, 69, 0, Direction.EAST)));
@@ -310,7 +315,7 @@ final class ToolTests {
     private static void theWandsNeedABlockInSight() {
         TestActor actor = actor("ToolFarWand");
         answer(actor, "/tool farwand");
-        Tool tool = Tools.current(actor.session());
+        Tool tool = Tools.current(actor);
         use(actor, () -> tool.onSwing(click(actor, 40, 69, 40, Direction.UP)));
         use(actor, () -> tool.onRightClick(click(actor, 45, 69, 41, Direction.UP)));
         com.maxlananas.fawebim.core.region.Region region = actor.session().getSelector(actor.world()).getRegion();
@@ -326,7 +331,7 @@ final class ToolTests {
 
     private static void theNavigationWandJumpsAndTheCompassIsOne() {
         TestActor actor = actor("ToolNavigation");
-        Tools.clear(actor.session());
+        actor.session().unbind(actor.heldItem());
         Tool compass = Tools.forItem(actor.session(),
                 com.maxlananas.fawebim.core.platform.Config.get().navigationWandItem);
         check("the navigation wand item is the navigation wand", compass != null && compass.name().equals("navwand"));
@@ -352,7 +357,7 @@ final class ToolTests {
         TestActor actor = actor("ToolTree");
         TestWorld world = (TestWorld) actor.world();
         answer(actor, "/tool tree");
-        Tool tool = Tools.current(actor.session());
+        Tool tool = Tools.current(actor);
         use(actor, () -> tool.onRightClick(click(actor, 10, 69, 10, Direction.NORTH)));
         checkEquals("the trunk starts on the clicked block, whatever the face", state("minecraft:oak_log"),
                 world.getBlock(10, 70, 10));
@@ -395,7 +400,7 @@ final class ToolTests {
         // used in the other world, where they are air.
         answer(here, "/tool stacker 3 air");
         nether.setBlock(9, 64, 9, state("minecraft:stone"));
-        Tool stacker = Tools.current(there.session());
+        Tool stacker = Tools.current(there);
         use(there, () -> stacker.onRightClick(click(there, 9, 64, 9, Direction.UP)));
         checkEquals("a tool's mask reads the world it is used in", state("minecraft:stone"),
                 nether.getBlock(9, 67, 9));
@@ -408,7 +413,7 @@ final class ToolTests {
         int stairs = registry.defaultState("minecraft:oak_stairs");
         world.setBlock(0, 64, 0, stairs);
         answer(actor, "/tool cycler");
-        Tool tool = Tools.current(actor.session());
+        Tool tool = Tools.current(actor);
         String firstName = registry.properties(stairs).keySet().iterator().next();
         String before = registry.properties(stairs).get(firstName);
         use(actor, () -> tool.onRightClick(click(actor, 0, 64, 0, Direction.UP)));

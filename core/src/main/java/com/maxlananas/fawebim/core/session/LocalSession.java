@@ -46,8 +46,8 @@ public final class LocalSession {
     private boolean tracing = false;
     /** Whether the selection is drawn with particles: {@code //cui} turns it on and off. */
     private boolean drawSelection = com.maxlananas.fawebim.core.platform.Config.get().selectionPreview;
-    private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
-    private String toolBindingName;
+    /** Item id to what it is bound to, the item bound last at the end. */
+    private final java.util.LinkedHashMap<String, ItemBinding> bindings = new java.util.LinkedHashMap<>();
     private Mask sourceMask;
     /**
      * Weak: the reference only matters while an edit of that world runs, and
@@ -672,16 +672,41 @@ public final class LocalSession {
         this.drawSelection = drawSelection;
     }
 
-    public java.util.Map<String, Object> getBindings() {
-        return bindings;
+    /** What an item is bound to, or null when nothing is. */
+    public ItemBinding binding(String item) {
+        return item == null ? null : bindings.get(item);
     }
 
-    public String getToolBindingName() {
-        return toolBindingName;
+    /**
+     * What an item is bound to, made when nothing was, to bind something to;
+     * the item becomes the one bound last.
+     */
+    public ItemBinding bind(String item) {
+        java.util.Objects.requireNonNull(item, "item");
+        ItemBinding binding = bindings.remove(item);
+        if (binding == null) {
+            binding = new ItemBinding();
+        }
+        bindings.put(item, binding);
+        return binding;
     }
 
-    public void setToolBindingName(String name) {
-        this.toolBindingName = name;
+    /** Takes everything off an item, and answers what it held, or null. */
+    public ItemBinding unbind(String item) {
+        return item == null ? null : bindings.remove(item);
+    }
+
+    /** Forgets an item once nothing is bound to it any more. */
+    public void release(String item) {
+        ItemBinding binding = binding(item);
+        if (binding != null && binding.isEmpty()) {
+            bindings.remove(item);
+        }
+    }
+
+    /** The items something is bound to, the one bound last at the end. */
+    public java.util.Map<String, ItemBinding> bindings() {
+        return java.util.Collections.unmodifiableMap(bindings);
     }
 
     public BlockVector3 getLastClickedPosition() {

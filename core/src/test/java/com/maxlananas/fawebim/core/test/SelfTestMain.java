@@ -175,6 +175,7 @@ public final class SelfTestMain {
         GenerationTests.run();
         ShapeBrushTests.run();
         CompletionTests.run();
+        BindingTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -1570,10 +1571,10 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/brush snowsmooth 5 1 -l 3 -m stone");
         check("brush snowsmooth binds the smoother",
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                         instanceof Brushes.SnowSmoothBrush);
         EditSession snowSession = new EditSession(world, session, "brush snowsmooth");
-        com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+        com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                 .apply(snowSession, new BlockVector3(25, 71, 25), actor);
         snowSession.flushQueue();
         check("brush snowsmooth ran with -l and -m", actor.messages().stream()
@@ -1584,7 +1585,7 @@ public final class SelfTestMain {
         world.setBlock(100, 91, 100, air);
         CommandManager.get().dispatch(actor, "/brush sphere dirt 2");
         com.maxlananas.fawebim.core.brush.Brush sphere =
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session);
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem());
         check("brush sphere took its radius", sphere != null && sphere.radius() == 2.0);
         EditSession sphereSession = new EditSession(world, session, "brush sphere");
         sphere.apply(sphereSession, new BlockVector3(100, 90, 100), actor);
@@ -1598,10 +1599,10 @@ public final class SelfTestMain {
         world.setBlock(70, 72, 70, stone);
         CommandManager.get().dispatch(actor, "/brush smooth 3 1 stone");
         check("brush smooth binds the terrain smoother",
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                         instanceof Brushes.SmoothBrush);
         EditSession smoothSession = new EditSession(world, session, "brush smooth");
-        com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+        com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                 .apply(smoothSession, new BlockVector3(70, 69, 70), actor);
         smoothSession.flushQueue();
         check("brush smooth flattened the bump", world.getBlock(70, 72, 70) == air);
@@ -1614,7 +1615,7 @@ public final class SelfTestMain {
         Schematics.save(stamps, "populate-selftest", "sponge.3");
         CommandManager.get().dispatch(actor, "/brush populateschematic populate-selftest.schem stone 4 100");
         check("brush populateschematic binds the scatter brush",
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                         instanceof Brushes.PopulateSchematicBrush);
         TestWorld populated = new TestWorld("populate");
         populated.fillFlat(70);
@@ -1622,7 +1623,7 @@ public final class SelfTestMain {
         scatter.session().setMaxBlocksChanged(100000);
         CommandManager.get().dispatch(scatter, "/brush populateschematic populate-selftest.schem stone 4 100");
         EditSession scatterSession = new EditSession(populated, scatter.session(), "populate");
-        int stamped = com.maxlananas.fawebim.core.brush.BrushFactory.current(scatter.session())
+        int stamped = com.maxlananas.fawebim.core.brush.BrushFactory.current(scatter)
                 .apply(scatterSession, new BlockVector3(0, 70, 0), scatter);
         scatterSession.flushQueue();
         check("brush populateschematic placed copies", stamped > 0);
@@ -1716,10 +1717,10 @@ public final class SelfTestMain {
             world.setBlock(50, 85, 50, stone);
             CommandManager.get().dispatch(actor, "/brush gravity 5 -h 20");
             check("gravity -h 20 binds a gravity brush",
-                    com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                    com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                             instanceof Brushes.GravityBrush);
             EditSession byHeight = new EditSession(world, session, "brush gravity -h 20");
-            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                     .apply(byHeight, new BlockVector3(50, 71, 50), actor);
             byHeight.flushQueue();
             check("gravity -h 20 used the height", world.getBlock(50, 51, 50) == stone
@@ -1729,7 +1730,7 @@ public final class SelfTestMain {
             world.setBlock(60, 75, 60, stone);
             CommandManager.get().dispatch(actor, "/brush gravity 5 -h");
             EditSession byFlag = new EditSession(world, session, "brush gravity -h");
-            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                     .apply(byFlag, new BlockVector3(60, 71, 60), actor);
             byFlag.flushQueue();
             check("gravity -h alone used the world floor", world.getBlock(60, world.minY(), 60) == stone
@@ -1746,7 +1747,7 @@ public final class SelfTestMain {
             world.setBlock(71, 80, 70, dirt);
             CommandManager.get().dispatch(actor, "/brush clipboard -o -m minecraft:stone");
             EditSession sourceMasked = new EditSession(world, session, "brush clipboard -m");
-            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                     .apply(sourceMasked, new BlockVector3(70, 80, 70), actor);
             sourceMasked.flushQueue();
             check("clipboard brush -m pasted onto the matching block", world.getBlock(70, 80, 70) == gold);
@@ -2177,10 +2178,10 @@ public final class SelfTestMain {
         check("//desel responded", actor.messages().size() > 0);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/brush sphere stone 5");
-        check("brush bound", com.maxlananas.fawebim.core.brush.BrushFactory.current(actor.session()) != null);
+        check("brush bound", com.maxlananas.fawebim.core.brush.BrushFactory.current(actor) != null);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/tool tree");
-        check("tool bound", com.maxlananas.fawebim.core.tool.Tools.current(actor.session()) != null);
+        check("tool bound", com.maxlananas.fawebim.core.tool.Tools.current(actor) != null);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fast");
         check("/fast responded", plain(actor.lastMessage()).contains("Fast mode"));
