@@ -189,10 +189,12 @@ public final class FabricInteractions {
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
-        // 1. The brush of the right click.
+        // 1. The brush of the right click, on the clicked block: FAWE's brush
+        // tool fires on the block its trace meets, not on the air in front of
+        // it, and so does a click beyond reach here, which is an item's click.
         Brush brush = BrushFactory.current(session, held);
         if (brush != null) {
-            return applyBrush(actor, brush, landing(player, pos, face))
+            return applyBrush(actor, brush, FabricMessages.blockVector(pos))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
@@ -262,19 +264,6 @@ public final class FabricInteractions {
     private static net.minecraft.world.phys.BlockHitResult aim(ServerPlayer player, double reach) {
         net.minecraft.world.phys.HitResult hit = player.pick(reach, 1.0F, false);
         return hit instanceof net.minecraft.world.phys.BlockHitResult block ? block : null;
-    }
-
-    /** Where a click lands: the block under the crosshair, or the clicked face's neighbour. */
-    private static BlockVector3 landing(ServerPlayer player, BlockPos pos,
-                                        net.minecraft.core.Direction face) {
-        double reach = Math.max(5.0, Config.get().maxBrushRange);
-        net.minecraft.world.phys.BlockHitResult aimed = aim(player, reach);
-        if (aimed != null) {
-            net.minecraft.core.Direction side = aimed.getDirection();
-            return FabricMessages.blockVector(aimed.getBlockPos())
-                    .add(side.getStepX(), side.getStepY(), side.getStepZ());
-        }
-        return FabricMessages.blockVector(pos).add(face.getStepX(), face.getStepY(), face.getStepZ());
     }
 
     /**
