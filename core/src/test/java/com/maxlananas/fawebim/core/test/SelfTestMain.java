@@ -75,6 +75,9 @@ public final class SelfTestMain {
     /** Every line the engine logged at error level: each one is a bug a command hit. */
     static final List<String> loggedErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
 
+    /** Every line the engine logged as a warning, for the tests of what deserves one. */
+    static final List<String> loggedWarnings = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public static void main(String[] args) throws Exception {
         // What the commands write - schematics, reports, the configuration - goes
         // to a folder of the run, not to the directory the run starts in, which
@@ -91,6 +94,8 @@ public final class SelfTestMain {
             }
             if (level == com.maxlananas.fawebim.core.platform.Log.Level.ERROR) {
                 loggedErrors.add(message + (error == null ? "" : ": " + error));
+            } else if (level == com.maxlananas.fawebim.core.platform.Log.Level.WARN) {
+                loggedWarnings.add(message);
             }
         });
 
@@ -166,6 +171,7 @@ public final class SelfTestMain {
         DistributionAndButcherTests.run();
         CommandFeedbackTests.run();
         SchematicFolderTests.run();
+        SchematicCommandTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error

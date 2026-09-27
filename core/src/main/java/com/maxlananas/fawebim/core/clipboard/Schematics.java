@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
@@ -44,9 +43,9 @@ public final class Schematics {
         return directory;
     }
 
-    /** The schematic formats that can be read and written. */
+    /** The schematic formats that can be written, by the name each is stored under. */
     public static List<String> formats() {
-        return List.of("sponge.3", "sponge.2", "mcedit", "schem", "structure");
+        return SchematicFormat.ids();
     }
 
     /**
@@ -178,15 +177,14 @@ public final class Schematics {
         return false;
     }
 
-    /** The file suffix of a format name, {@code .schem} for {@code sponge.3}. */
+    /**
+     * The file suffix of a format name, {@code .schem} for {@code sponge.3} -
+     * the one the format is written with, so an existing file is looked for
+     * under the name the save would give it.
+     */
     public static String suffixOf(String format) {
-        String key = format == null ? "" : format.toLowerCase(java.util.Locale.ROOT);
-        return switch (key) {
-            case "mcedit", "schematic", "mcedit2" -> ".schematic";
-            case "structure", "nbt" -> ".nbt";
-            case "sponge.2" -> ".schem";
-            default -> ".schem";
-        };
+        SchematicFormat known = SchematicFormat.find(format);
+        return known == null ? ".schem" : known.suffix();
     }
 
     /** When the file behind a listed schematic was last written, or -1. */
@@ -387,25 +385,25 @@ public final class Schematics {
      * The bytes of a schematic: gzipped NBT in every format, with the root name
      * each format is recognised by.
      */
-    private static Serialized serialize(BlockArrayClipboard clipboard, String name, String format) {
-        String lower = format.toLowerCase(Locale.ROOT);
+    private static Serialized serialize(BlockArrayClipboard clipboard, String name, String formatName) {
+        SchematicFormat format = SchematicFormat.of(formatName);
         NbtCompound root;
         String rootName;
-        String suffix;
-        if (lower.startsWith("mcedit") || lower.startsWith("legacy")) {
-            root = McEditSchematic.write(clipboard);
-            rootName = McEditSchematic.ROOT_NAME;
-            suffix = ".schematic";
-        } else if (lower.startsWith("structure") || lower.startsWith("nbt")) {
-            root = StructureSchematic.write(clipboard);
-            rootName = "";
-            suffix = ".nbt";
-        } else {
-            int version = lower.endsWith("2") ? 2 : lower.endsWith("1") ? 1 : 3;
-            root = SpongeSchematic.write(clipboard, version);
-            rootName = SpongeSchematic.rootName(version);
-            suffix = ".schem";
+        switch (format) {
+            case MCEDIT -> {
+                root = McEditSchematic.write(clipboard);
+                rootName = McEditSchematic.ROOT_NAME;
+            }
+            case STRUCTURE -> {
+                root = StructureSchematic.write(clipboard);
+                rootName = "";
+            }
+            default -> {
+                root = SpongeSchematic.write(clipboard, format.spongeVersion());
+                rootName = SpongeSchematic.rootName(format.spongeVersion());
+            }
         }
+        String suffix = format.suffix();
         String fileName = name.endsWith(suffix) ? name : name + suffix;
         try {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();

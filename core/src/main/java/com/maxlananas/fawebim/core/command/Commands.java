@@ -2228,7 +2228,10 @@ public final class Commands {
                                 throw CommandRegistry.error("No clipboard: copy something first");
                             }
                             String name = ctx.arg(1);
-                            String format = ctx.arg(2, "sponge.3");
+                            // Without a format the save writes the one saving.format
+                            // names, which it used to ignore for sponge.3.
+                            String format = com.maxlananas.fawebim.core.clipboard.SchematicFormat.of(ctx.arg(2,
+                                    com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat)).id();
                             // -f overwrites an existing file; without it a name
                             // that is already taken is refused.
                             if (!ctx.hasFlag("f") && Schematics.exists(name, format)) {
@@ -2238,8 +2241,7 @@ public final class Commands {
                             // A large save goes to the worker pool, so the tick
                             // loop is not held up while the file is written.
                             BlockArrayClipboard saving = ctx.session().getClipboard().getClipboard();
-                            if (format.toLowerCase(java.util.Locale.ROOT).startsWith("mcedit")
-                                    || format.toLowerCase(java.util.Locale.ROOT).startsWith("legacy")) {
+                            if (format.equals(com.maxlananas.fawebim.core.clipboard.SchematicFormat.MCEDIT.id())) {
                                 int lost = Schematics.legacyLosses(saving);
                                 if (lost > 0) {
                                     ctx.actor().message(Msg.error(Msg.blocks(lost) + " have no legacy id and are"
@@ -2350,8 +2352,15 @@ public final class Commands {
                                     + "//paste picks one at random"));
                         }
                         case "formats", "listformats", "f" -> {
-                            ctx.actor().message(Msg.info("Formats: " + String.join(", ", Schematics.formats())
-                                    + " (default: " + com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat + ")"));
+                            // FAWE's listing: every format with the names it is looked up by.
+                            com.maxlananas.fawebim.core.clipboard.SchematicFormat[] all =
+                                    com.maxlananas.fawebim.core.clipboard.SchematicFormat.values();
+                            ctx.actor().message(Msg.title("Schematic formats (" + all.length + ", default "
+                                    + com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat + ")"));
+                            for (com.maxlananas.fawebim.core.clipboard.SchematicFormat format : all) {
+                                ctx.actor().message(Msg.item(format.id(), format.suffix() + (format.aliases().isEmpty()
+                                        ? "" : " - also " + String.join(", ", format.aliases()))));
+                            }
                         }
                         default -> throw CommandRegistry.error("Usage: //schem list|save <name>|load <name>|delete <name>");
                     }

@@ -175,7 +175,13 @@ public final class Config {
                 value -> schematicSaveDirectory = value);
         text("schematic-format", "saving.format", defaultSchematicFormat,
                 "Format //schem save writes when the command gives none.", () -> defaultSchematicFormat,
-                value -> defaultSchematicFormat = value);
+                value -> defaultSchematicFormat = value)
+                // FAWE's names of a format are taken too, and stored as the format's own.
+                .limitedTo(com.maxlananas.fawebim.core.clipboard.SchematicFormat.ids(), value -> {
+                    com.maxlananas.fawebim.core.clipboard.SchematicFormat format =
+                            com.maxlananas.fawebim.core.clipboard.SchematicFormat.find(value);
+                    return format == null ? null : format.id();
+                });
         integer("max-schematic-size", "limits.max-schematic-size", maxSchematicSize,
                 "Largest schematic that may be loaded, in blocks, 0 for no limit.",
                 () -> maxSchematicSize, value -> maxSchematicSize = value);
@@ -284,8 +290,16 @@ public final class Config {
     private void apply(Map<String, Object> map) {
         for (Setting<?> setting : settings) {
             Object value = MiniYaml.path(map, setting.path(), null);
-            if (value != null) {
-                setting.apply(String.valueOf(value));
+            if (value == null) {
+                continue;
+            }
+            // A value the setting cannot take keeps the previous one, and says
+            // so: dropped in silence, a typo in the file looked like a setting
+            // that does nothing.
+            String error = setting.apply(String.valueOf(value));
+            if (error != null) {
+                Log.warn("Ignored " + setting.path() + ": '" + value + "' in " + file + " - " + error
+                        + "; it stays " + setting.value());
             }
         }
     }
@@ -334,8 +348,10 @@ public final class Config {
         settings.add(Setting.of(key, path, Setting.Kind.INTEGER, description, fallback, reader, writer));
     }
 
-    private void text(String key, String path, String fallback, String description,
-                      Supplier<String> reader, Consumer<String> writer) {
-        settings.add(Setting.of(key, path, Setting.Kind.TEXT, description, fallback, reader, writer));
+    private Setting<String> text(String key, String path, String fallback, String description,
+                                 Supplier<String> reader, Consumer<String> writer) {
+        Setting<String> setting = Setting.of(key, path, Setting.Kind.TEXT, description, fallback, reader, writer);
+        settings.add(setting);
+        return setting;
     }
 }

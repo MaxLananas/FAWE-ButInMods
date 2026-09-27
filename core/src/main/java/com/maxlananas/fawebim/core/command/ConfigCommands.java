@@ -256,8 +256,8 @@ final class ConfigCommands {
             return;
         }
         String lower = prefix.toLowerCase(Locale.ROOT);
-        List<String> candidates = setting.kind() == Setting.Kind.BOOLEAN
-                ? List.of("true", "false")
+        List<String> candidates = setting.kind() == Setting.Kind.BOOLEAN ? List.of("true", "false")
+                : !setting.choices().isEmpty() ? setting.choices()
                 : List.of(setting.value());
         for (String candidate : candidates) {
             if (candidate.toLowerCase(Locale.ROOT).startsWith(lower)) {

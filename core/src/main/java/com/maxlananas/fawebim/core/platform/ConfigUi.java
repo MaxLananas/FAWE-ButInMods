@@ -205,7 +205,7 @@ public final class ConfigUi {
         return switch (setting.kind()) {
             case BOOLEAN -> "true or false";
             case INTEGER -> "a whole number";
-            case TEXT -> "text";
+            case TEXT -> setting.choices().isEmpty() ? "text" : "one of " + String.join(", ", setting.choices());
         };
     }
 }
