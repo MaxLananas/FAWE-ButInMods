@@ -134,6 +134,7 @@ final class Aliases {
             entry.booleanFlags.addAll(delegate.booleanFlags);
             entry.valueFlags.addAll(delegate.valueFlags);
             entry.suggestions = delegate.suggestions;
+            entry.aliasOf = delegate.aliasOf != null ? delegate.aliasOf : delegate;
         }
         entry.handler = ctx -> {
             String arguments = ctx.tail();

@@ -90,7 +90,7 @@ public final class Ctx {
      * {@code //pos1 -1,59,-1} is a position and {@code //expand -10} is a count -
      * so only a dash that opens neither is read as the start of a switch.
      */
-    private static boolean isSwitch(String token) {
+    static boolean isSwitch(String token) {
         if (token.length() < 2 || token.charAt(0) != '-' || Str.isDouble(token)) {
             return false;
         }

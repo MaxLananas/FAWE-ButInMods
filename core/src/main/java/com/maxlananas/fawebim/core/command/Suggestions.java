@@ -1,13 +1,22 @@
 package com.maxlananas.fawebim.core.command;
 
+import com.maxlananas.fawebim.core.function.EntityRemovers;
+import com.maxlananas.fawebim.core.region.RegionFactories;
 import com.maxlananas.fawebim.core.session.LocalSession;
+import com.maxlananas.fawebim.core.session.PlacementType;
 import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.session.SessionManager;
 import com.maxlananas.fawebim.core.world.BlockState;
+import com.maxlananas.fawebim.core.world.TreeTypes;
+import com.maxlananas.fawebim.core.world.World;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * What the client offers to complete an argument with.
@@ -39,12 +48,148 @@ public final class Suggestions {
             "#zaxis", "#true", "#false", "#exposed", "#biome[", "#region", "#sel", "#dregion",
             "#dsel", "#offset[", "#simplex[", "%", "!", "=");
 
-    private static final List<String> SHAPES = List.of(
-            "sphere", "hsphere", "cyl", "hcyl", "cuboid", "pyramid", "hpyramid", "cone", "hcone");
-
     private static final List<String> BOOLEANS = List.of("true", "false");
 
     private Suggestions() {
+    }
+
+    /**
+     * The completions of the word being typed after a command's name.
+     *
+     * <p>{@code remaining} is the text after the name. The words before the last
+     * are counted past the flags and the values of the value flags, and the word
+     * being typed is matched with every argument it may fill: an optional
+     * argument takes a word only while the line holds more words than the
+     * required arguments still to fill, as WorldEdit binds them, so
+     * {@code /brush forest sphere } offers the tree types of {@code <type>} as
+     * well as the nothing of {@code [radius]}. A word opening with a dash offers
+     * the flags, and the word after {@code -m} a mask.</p>
+     *
+     * @param world the world of whoever asks; only called for an argument that
+     *              takes a feature or a structure id
+     */
+    public static List<String> forLine(CommandRegistry.Entry entry, String remaining, Supplier<World> world) {
+        String[] tokens = remaining.split(" ", -1);
+        String typed = tokens[tokens.length - 1];
+        Set<String> out = new LinkedHashSet<>();
+        int words = 0;
+        String valueFlag = null;
+        // A value flag of the family that is a switch under the sub-command, as
+        // the -f of //schem list, takes no value: see Ctx.
+        Set<String> switches = Set.of();
+        for (int i = 0; i < tokens.length - 1; i++) {
+            String token = tokens[i];
+            if (valueFlag != null) {
+                valueFlag = null;
+            } else if (Ctx.isSwitch(token) || token.startsWith("--")) {
+                String flag = token.substring(1);
+                if (entry.valueFlags.contains(flag) && !switches.contains(flag)) {
+                    valueFlag = flag;
+                }
+            } else if (!token.isEmpty()) {
+                if (words == 0) {
+                    switches = entry.switchesUnder.getOrDefault(token.toLowerCase(Locale.ROOT), Set.of());
+                }
+                words++;
+            }
+        }
+        if (valueFlag != null) {
+            if (valueFlag.equals("m")) {
+                out.addAll(masks(typed));
+            }
+        } else if (typed.equals("-") || Ctx.isSwitch(typed)) {
+            out.addAll(flags(entry, typed.substring(1)));
+        } else {
+            String command = (entry.aliasOf != null ? entry.aliasOf : entry).name;
+            List<String> arguments = positional(entry.arguments);
+            for (int index : candidates(arguments, words)) {
+                String argument = arguments.get(index);
+                List<String> offered = forArgument(command, argument, typed, world);
+                out.addAll(offered.isEmpty() ? choices(argument, typed) : offered);
+            }
+        }
+        if (entry.suggestions != null) {
+            out.addAll(entry.suggestions.apply(remaining));
+        }
+        return out.size() <= LIMIT ? List.copyOf(out) : List.copyOf(out).subList(0, LIMIT);
+    }
+
+    /** The declared arguments a word fills, without the flags some signatures list among them. */
+    private static List<String> positional(List<String> arguments) {
+        List<String> out = new ArrayList<>(arguments.size());
+        for (String argument : arguments) {
+            if (!argument.startsWith("-") && !argument.startsWith("[-")) {
+                out.add(argument);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The arguments the word after {@code words} others may fill. The line may
+     * still grow by any number of words, and each length binds the optional
+     * arguments differently: with {@code spare} words more than the required
+     * arguments, the first {@code spare} optional ones take one each.
+     */
+    private static List<Integer> candidates(List<String> arguments, int words) {
+        int required = 0;
+        for (String argument : arguments) {
+            if (!argument.startsWith("[")) {
+                required++;
+            }
+        }
+        int optional = arguments.size() - required;
+        Set<Integer> out = new LinkedHashSet<>();
+        for (int spare = Math.max(0, words + 1 - required); spare <= optional; spare++) {
+            int word = 0;
+            int taken = 0;
+            for (int index = 0; index < arguments.size(); index++) {
+                boolean fills = !arguments.get(index).startsWith("[") || taken++ < spare;
+                if (!fills) {
+                    continue;
+                }
+                if (word == words) {
+                    out.add(index);
+                    break;
+                }
+                word++;
+            }
+        }
+        // A last argument that is a list takes every word after it.
+        if (out.isEmpty() && !arguments.isEmpty() && arguments.get(arguments.size() - 1).contains("...")) {
+            out.add(arguments.size() - 1);
+        }
+        return List.copyOf(out);
+    }
+
+    /** The flags of a command whose name starts with what follows the dash. */
+    private static List<String> flags(CommandRegistry.Entry entry, String prefix) {
+        List<String> out = new ArrayList<>();
+        for (Set<String> flags : List.of(entry.booleanFlags, entry.valueFlags)) {
+            for (String flag : flags) {
+                if (flag.startsWith(prefix) && !out.contains("-" + flag)) {
+                    out.add("-" + flag);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The {@code a|b|c} alternatives an argument is declared with, filtered by what is typed. */
+    private static List<String> choices(String argument, String typed) {
+        String plain = argument.replace("[", "").replace("]", "").replace("<", "").replace(">", "");
+        if (plain.indexOf('|') < 0) {
+            return List.of();
+        }
+        String prefix = typed.toLowerCase(Locale.ROOT);
+        List<String> out = new ArrayList<>();
+        for (String choice : plain.split("\\|")) {
+            String word = choice.trim();
+            if (!word.isEmpty() && word.toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                out.add(word);
+            }
+        }
+        return out;
     }
 
     /**
@@ -52,8 +197,23 @@ public final class Suggestions {
      * decides what may be written there, and the text typed so far filters it.
      */
     public static List<String> forArgument(String argument, String typed) {
+        return forArgument("", argument, typed, null);
+    }
+
+    /**
+     * The completions of one argument of a command, named as it is registered
+     * (an alias by the command it copies). Most arguments say what they take by
+     * their name alone; a {@code type} is a tree type, a feature, a structure, a
+     * brush or an entity filter depending on the command.
+     */
+    public static List<String> forArgument(String command, String argument, String typed, Supplier<World> world) {
         String name = plain(argument).toLowerCase(Locale.ROOT);
         String prefix = typed.trim().toLowerCase(Locale.ROOT);
+        // The words of an a|b|c argument are offered as they are written, and
+        // one of them may contain anything, e.g. the replacepattern of /anvil.
+        if (name.indexOf('|') >= 0) {
+            return List.of();
+        }
         if (name.contains("pattern")) {
             return patterns(prefix);
         }
@@ -63,29 +223,59 @@ public final class Suggestions {
         if (name.contains("biome")) {
             return filtered(BlockState.registry().biomeNames(), prefix);
         }
-        if (name.contains("block") || name.contains("image") || name.contains("item")) {
+        if (name.contains("item")) {
+            return filtered(BlockState.registry().itemNames(), prefix);
+        }
+        if (name.contains("block")) {
             return filtered(BlockState.registry().blockNames(), prefix);
         }
         if (name.equals("offset")) {
             return filtered(Directions.DIAGONAL_SUGGESTIONS, prefix);
         }
-        if (name.contains("direction") || name.contains("dir")) {
+        if (name.contains("direction")) {
             return filtered(Directions.SUGGESTIONS, prefix);
         }
         if (name.equals("selector")) {
             return filtered(com.maxlananas.fawebim.core.region.Selectors.NAMES, prefix);
         }
-        if (name.contains("shape") || name.contains("region") || name.contains("type")) {
-            return filtered(SHAPES, prefix);
+        if (name.equals("shape")) {
+            return filtered(RegionFactories.SHAPES, prefix);
+        }
+        if (name.equals("placementtype")) {
+            List<String> types = new ArrayList<>();
+            for (PlacementType type : PlacementType.values()) {
+                types.add(type.name().toLowerCase(Locale.ROOT));
+            }
+            return filtered(types, prefix);
+        }
+        if (name.equals("feature") || name.equals("type") && command.equals("/brush feature")) {
+            return world == null ? List.of() : filtered(world.get().featureIds(), prefix);
+        }
+        if (name.equals("structure") || name.equals("type") && command.equals("/brush structure")) {
+            return world == null ? List.of() : filtered(world.get().structureIds(), prefix);
+        }
+        if (name.equals("tree-type") || name.equals("type")
+                && (command.equals("//forestgen") || command.equals("/brush forest"))) {
+            return filtered(TreeTypes.canonicalNames(), prefix);
+        }
+        if (name.equals("type") && (command.equals("/tool primary") || command.equals("/tool secondary"))) {
+            List<String> brushes = new ArrayList<>();
+            for (String[] row : BrushTable.BRUSHES) {
+                brushes.add(row[0]);
+            }
+            return filtered(brushes, prefix);
+        }
+        if (name.equals("type") && command.equals("remove")) {
+            List<String> filters = new ArrayList<>();
+            for (EntityRemovers.Type type : EntityRemovers.Type.values()) {
+                filters.add(type.word());
+            }
+            return filtered(filters, prefix);
         }
         if (name.contains("player")) {
             return players(prefix);
         }
-        if (name.startsWith("true|false") || name.equals("boolean") || name.contains("randomize")
-                || name.contains("hollow")) {
-            return filtered(BOOLEANS, prefix);
-        }
-        if (name.contains("boolean")) {
+        if (name.equals("boolean") || name.contains("randomize") || name.contains("hollow")) {
             return filtered(BOOLEANS, prefix);
         }
         return List.of();
@@ -108,7 +298,7 @@ public final class Suggestions {
      * suggestion replaces the whole token.
      */
     private static List<String> completeToken(String typed,
-                                              java.util.function.Function<String, List<String>> part) {
+                                              Function<String, List<String>> part) {
         String text = typed == null ? "" : typed;
         int start = segmentStart(text);
         String head = text.substring(0, start);

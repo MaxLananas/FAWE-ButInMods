@@ -68,6 +68,8 @@ public final class CommandRegistry {
          * key the player has started to type.
          */
         public java.util.function.Function<String, List<String>> suggestions;
+        /** The entry a second spelling copies, see {@link CommandRegistry#alias}; null for the others. */
+        public Entry aliasOf;
 
         Entry(String name) {
             this.name = name;
@@ -178,6 +180,7 @@ public final class CommandRegistry {
         entry.requiresWorld = target.requiresWorld;
         entry.suggestions = target.suggestions;
         entry.handler = target.handler;
+        entry.aliasOf = target.aliasOf != null ? target.aliasOf : target;
         return entry;
     }
 
