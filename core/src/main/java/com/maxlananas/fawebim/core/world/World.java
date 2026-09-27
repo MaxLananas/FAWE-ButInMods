@@ -156,6 +156,15 @@ public interface World extends Extent {
     default void resendChunks(Collection<BlockVector2> chunks) {
     }
 
+    /**
+     * The block light at a position, from 0 to 15: the light of torches, lava
+     * and the like, not the sky's, as the game's light engine last settled it.
+     * A world without light answers 0.
+     */
+    default int blockLight(int x, int y, int z) {
+        return 0;
+    }
+
     /** Queues a "every neighbour of this block should update" notification. */
     default void queueBlockUpdate(int x, int y, int z) {
     }

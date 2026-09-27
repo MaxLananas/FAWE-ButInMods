@@ -669,12 +669,12 @@ public final class Commands {
     }
 
     /**
-     * The vertical reach of WorldEdit's utility commands: its
-     * {@code default-vertical-height}, which is 128 blocks up and down when a
-     * command does not name a height of its own.
+     * The vertical reach of the utility commands that do not name a height,
+     * up and down: {@code limits.vertical-height.default}, 256 unless
+     * configured, as in FAWE.
      */
     private static int defaultVerticalHeight() {
-        return 128;
+        return com.maxlananas.fawebim.core.platform.Config.get().defaultVerticalHeight;
     }
 
 
@@ -1090,7 +1090,7 @@ public final class Commands {
         e37.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.sizeArg(0, 10));
+                    double size = Math.max(1, ctx.radiusArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.simulateSnow(
                             ctx.world(), session, ctx.placement(), size, height, ctx.hasFlag("s"));
@@ -1106,10 +1106,10 @@ public final class Commands {
         e38.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.sizeArg(0, 10));
+                    double size = Math.max(1, ctx.radiusArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.thaw(
-                            ctx.world(), session, ctx.placement(), size, height);
+                            session, ctx.placement(), size, height);
                     flush(ctx, session, "Thawed", changed, "block(s)");
                 };
 
@@ -1124,9 +1124,9 @@ public final class Commands {
         e39.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.sizeArg(0, 10));
+                    double size = Math.max(1, ctx.radiusArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
-                    int changed = com.maxlananas.fawebim.core.function.Operations.green(ctx.world(), session,
+                    int changed = com.maxlananas.fawebim.core.function.Operations.green(session,
                             ctx.placement(), size, height, !ctx.hasFlag("f"));
                     flush(ctx, session, "Greened", changed, "block(s)");
                 };

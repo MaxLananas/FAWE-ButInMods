@@ -28,6 +28,7 @@ public final class TestWorld implements World {
      */
     private final Map<Long, Integer> sectionBlocks = new HashMap<>();
     private final Map<Long, Integer> biomes = new HashMap<>();
+    private final Map<Long, Integer> blockLight = new HashMap<>();
     /** The state a section holds, or -1 once it holds more than one. */
     private final Map<Long, Integer> sectionUniform = new HashMap<>();
     private final Map<Long, NbtCompound> blockEntities = new LinkedHashMap<>();
@@ -320,6 +321,16 @@ public final class TestWorld implements World {
     @Override
     public void removeLight(Collection<BlockVector2> chunks) {
         darkened.addAll(chunks);
+    }
+
+    /** Block light a test puts somewhere; everywhere else is dark. */
+    void setBlockLight(int x, int y, int z, int level) {
+        blockLight.put(key(x, y, z), level);
+    }
+
+    @Override
+    public int blockLight(int x, int y, int z) {
+        return blockLight.getOrDefault(key(x, y, z), 0);
     }
 
     /**

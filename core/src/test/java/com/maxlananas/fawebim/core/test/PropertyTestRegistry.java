@@ -30,7 +30,7 @@ final class PropertyTestRegistry implements BlockStateRegistry {
         block("minecraft:air");
         block("minecraft:stone");
         block("minecraft:dirt");
-        block("minecraft:grass_block");
+        block("minecraft:grass_block", "snowy", List.of("false", "true"));
         block("minecraft:oak_stairs", "facing", HORIZONTAL, "half", List.of("top", "bottom"),
                 "shape", List.of("straight", "inner_left", "inner_right", "outer_left", "outer_right"),
                 "waterlogged", BOOLEAN);
@@ -78,7 +78,29 @@ final class PropertyTestRegistry implements BlockStateRegistry {
         block("minecraft:kelp_plant");
         block("minecraft:seagrass");
         block("minecraft:tall_seagrass", "half", List.of("upper", "lower"));
+        block("minecraft:coarse_dirt");
+        block("minecraft:snow", "layers", List.of("1", "2", "3", "4", "5", "6", "7", "8"));
+        block("minecraft:snow_block");
+        block("minecraft:ice");
+        block("minecraft:packed_ice");
+        block("minecraft:poppy");
+        block("minecraft:oak_trapdoor", "facing", HORIZONTAL, "half", List.of("bottom", "top"),
+                "open", List.of("false", "true"));
     }
+
+    /** What the game lets a body pass through: no block stops it. */
+    private static final java.util.Set<String> NOT_SOLID = java.util.Set.of("minecraft:snow", "minecraft:poppy");
+
+    /** Solid blocks whose shape is not a whole cube, whatever their state. */
+    private static final java.util.Set<String> PARTIAL = java.util.Set.of("minecraft:oak_stairs", "minecraft:oak_fence",
+            "minecraft:cobblestone_wall", "minecraft:redstone_wire", "minecraft:oak_sign", "minecraft:rail",
+            "minecraft:powered_rail", "minecraft:oak_door", "minecraft:chest", "minecraft:hopper",
+            "minecraft:lantern", "minecraft:stone_button", "minecraft:vine", "minecraft:bell",
+            "minecraft:piston_head", "minecraft:oak_trapdoor");
+
+    /** The game's tags this registry needs, by the blocks they hold. */
+    private static final Map<String, java.util.Set<String>> TAGS = Map.of(
+            "minecraft:snow_layer_cannot_survive_on", java.util.Set.of("minecraft:ice", "minecraft:packed_ice"));
 
     /** The blocks the game gives a fluid of their own, whatever their state. */
     private static final java.util.Set<String> FLUID_BLOCKS = java.util.Set.of("minecraft:water", "minecraft:lava",
@@ -265,7 +287,8 @@ final class PropertyTestRegistry implements BlockStateRegistry {
 
     @Override
     public boolean hasTag(int stateId, String tag) {
-        return false;
+        java.util.Set<String> members = TAGS.get(tag.startsWith("#") ? tag.substring(1) : tag);
+        return members != null && members.contains(name(stateId));
     }
 
     @Override
@@ -280,7 +303,8 @@ final class PropertyTestRegistry implements BlockStateRegistry {
 
     @Override
     public boolean isSolid(int stateId) {
-        return stateId != 0;
+        String name = name(stateId);
+        return stateId != 0 && !FLUID_BLOCKS.contains(name) && !NOT_SOLID.contains(name);
     }
 
     /** As the game answers it: the state holds a fluid, a waterlogged block included. */
@@ -291,7 +315,11 @@ final class PropertyTestRegistry implements BlockStateRegistry {
 
     @Override
     public boolean isFullCube(int stateId) {
-        return stateId != 0;
+        if (!isSolid(stateId) || PARTIAL.contains(name(stateId))) {
+            return false;
+        }
+        String slab = properties(stateId).get("type");
+        return !name(stateId).endsWith("_slab") || "double".equals(slab);
     }
 
     @Override

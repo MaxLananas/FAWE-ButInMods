@@ -700,6 +700,16 @@ public final class FabricWorld implements World {
     }
 
     /**
+     * The light engine's settled copy, which the game itself reads on the
+     * server thread while the light thread works; a chunk that is not loaded
+     * reads 0 and is not loaded for it. Server thread only.
+     */
+    @Override
+    public int blockLight(int x, int y, int z) {
+        return level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, new BlockPos(x, y, z));
+    }
+
+    /**
      * Relights whole chunks from their blocks: the sky light sources of every
      * column are found again, then every position goes to the light engine,
      * which drops the light no source explains and spreads the light the

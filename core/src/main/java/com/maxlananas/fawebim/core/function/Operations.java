@@ -155,23 +155,24 @@ public final class Operations {
     }
 
     /**
-     * {@code //thaw}: melts the snow and ice of a cylinder around a position.
-     *
-     * <p>WorldEdit's own algorithm: each column of the disc is walked downwards
-     * and the first block that is not air decides the column - ice becomes
-     * water, a snow layer is removed, and anything else is left alone.</p>
+     * {@code //thaw}, FAWE's {@code thaw}: each column of the disc is walked
+     * down through the air, and the first other block decides it - ice becomes
+     * water, snow of any depth goes and the block it lay on stops being snowy,
+     * anything else stays. The height counts up and down from the position,
+     * brought inside the world first.
      */
-    public static int thaw(World world, EditSession session, BlockVector3 center, double radius, int height) {
-        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+    public static int thaw(EditSession session, BlockVector3 center, double radius, int height) {
+        BlockStateRegistry registry = BlockState.registry();
         int ice = registry.defaultState("minecraft:ice");
-        int snow = registry.defaultState("minecraft:snow");
         int water = registry.defaultState("minecraft:water");
         int air = registry.air();
+        IntPredicate snow = remembered(state -> registry.name(state).equals("minecraft:snow"));
+        int centerY = Math.max(session.minY(), Math.min(session.maxY(), center.y()));
+        int bottom = Math.max(session.minY(), centerY - height);
+        int top = Math.min(session.maxY(), centerY + height);
         int affected = 0;
         double radiusSq = radius * radius;
         int ceilRadius = (int) Math.ceil(radius);
-        int minY = Math.max(world.minY(), center.y() - height);
-        int maxY = Math.min(world.maxY(), center.y() + height);
         for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
             for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
                 int dx = x - center.x();
@@ -179,14 +180,21 @@ public final class Operations {
                 if (dx * dx + dz * dz > radiusSq) {
                     continue;
                 }
-                for (int y = maxY; y > minY; y--) {
+                for (int y = top; y > bottom; y--) {
                     int state = session.getBlock(x, y, z);
                     if (state == ice) {
                         if (session.setBlock(x, y, z, water)) {
                             affected++;
                         }
-                    } else if (state == snow) {
+                    } else if (snow.test(state)) {
                         if (session.setBlock(x, y, z, air)) {
+                            if (y > session.minY()) {
+                                int below = session.getBlock(x, y - 1, z);
+                                int bare = registry.withProperty(below, "snowy", "false");
+                                if (bare >= 0 && session.setBlock(x, y - 1, z, bare)) {
+                                    affected++;
+                                }
+                            }
                             affected++;
                         }
                     } else if (registry.isAirLike(state)) {
@@ -200,25 +208,29 @@ public final class Operations {
     }
 
     /**
-     * {@code //green}: turns the dirt of a cylinder around a position into grass.
-     *
-     * <p>WorldEdit's own algorithm: the topmost block of each column is looked
-     * at, dirt (and coarse dirt with {@code -f}) becomes grass, and water, lava
-     * and anything solid stop the column.</p>
+     * {@code //green}, FAWE's {@code green}: each column of the disc is walked
+     * down to its first dirt - coarse dirt too unless {@code onlyNormalDirt} -
+     * which becomes grass; water, lava or a block that stops movement ends the
+     * column first.
      */
-    public static int green(World world, EditSession session, BlockVector3 center, double radius, int height,
+    public static int green(EditSession session, BlockVector3 center, double radius, int height,
                             boolean onlyNormalDirt) {
-        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
-        int dirt = registry.defaultState("minecraft:dirt");
-        int coarseDirt = registry.defaultState("minecraft:coarse_dirt");
+        BlockStateRegistry registry = BlockState.registry();
         int grass = registry.defaultState("minecraft:grass_block");
-        int water = registry.defaultState("minecraft:water");
-        int lava = registry.defaultState("minecraft:lava");
+        IntPredicate dirt = remembered(state -> {
+            String name = registry.name(state);
+            return name.equals("minecraft:dirt") || !onlyNormalDirt && name.equals("minecraft:coarse_dirt");
+        });
+        IntPredicate stops = remembered(state -> {
+            String name = registry.name(state);
+            return name.equals("minecraft:water") || name.equals("minecraft:lava") || registry.isSolid(state);
+        });
+        int centerY = Math.max(session.minY(), Math.min(session.maxY(), center.y()));
+        int bottom = Math.max(session.minY(), centerY - height);
+        int top = Math.min(session.maxY(), centerY + height);
         int affected = 0;
         double radiusSq = radius * radius;
         int ceilRadius = (int) Math.ceil(radius);
-        int minY = Math.max(world.minY(), center.y() - height);
-        int maxY = Math.min(world.maxY(), center.y() + height);
         for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
             for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
                 int dx = x - center.x();
@@ -226,15 +238,15 @@ public final class Operations {
                 if (dx * dx + dz * dz > radiusSq) {
                     continue;
                 }
-                for (int y = maxY; y > minY; y--) {
+                for (int y = top; y > bottom; y--) {
                     int state = session.getBlock(x, y, z);
-                    if (state == dirt || (!onlyNormalDirt && state == coarseDirt)) {
+                    if (dirt.test(state)) {
                         if (session.setBlock(x, y, z, grass)) {
                             affected++;
                         }
                         break;
                     }
-                    if (state == water || state == lava || registry.isSolid(state)) {
+                    if (stops.test(state)) {
                         break;
                     }
                 }
@@ -244,26 +256,36 @@ public final class Operations {
     }
 
     /**
-     * {@code //snow}: covers a cylinder around a position in snow the way the
-     * weather would.
+     * {@code //snow}, FAWE's {@code SnowSimulator} over the cylinder the height
+     * spans up and down from the position.
      *
-     * <p>WorldEdit's {@code SnowSimulator}: a water block at sea level freezes,
-     * and everything else the column holds gets a snow layer on top of it. With
-     * {@code -s} the layers pile up - a full layer becomes a snow block - instead
-     * of a single layer per run.</p>
+     * <p>Each column is walked down to its ground: the first block that is
+     * water or stops movement - air and what does not stop movement, flowers
+     * and tall grass, are passed, and so is snow when {@code stack} adds to it.
+     * Still water with less than 10 block light freezes. Otherwise a layer of
+     * snow goes on the ground if the block above it is air, or snow to stack
+     * on, and snow can lie on the ground as the game has it lie: a full block,
+     * a top slab, a closed top trapdoor, upside-down stairs, eight layers of
+     * snow, the blocks the game lets it lie on and none it keeps it off. The
+     * ground then turns snowy if it can. A column whose block just above the
+     * cylinder is ground is under cover and left alone.</p>
      */
     public static int simulateSnow(World world, EditSession session, BlockVector3 center, double radius, int height,
                                    boolean stack) {
-        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
-        int snow = registry.defaultState("minecraft:snow");
-        int snowBlock = registry.defaultState("minecraft:snow_block");
+        BlockStateRegistry registry = BlockState.registry();
+        int snowLayer = registry.defaultState("minecraft:snow");
         int ice = registry.defaultState("minecraft:ice");
-        int water = registry.defaultState("minecraft:water");
+        IntPredicate snow = remembered(state -> registry.name(state).equals("minecraft:snow"));
+        IntPredicate water = remembered(state -> registry.name(state).equals("minecraft:water"));
+        IntPredicate ground = remembered(state -> !registry.isAirLike(state) && !(stack && snow.test(state))
+                && (water.test(state) || registry.isSolid(state)));
+        IntPredicate holdsSnow = remembered(state -> holdsSnow(registry, state, snow.test(state)));
+        long highest = (long) center.y() + height;
+        int top = (int) Math.min(highest, session.maxY());
+        int bottom = (int) Math.max((long) center.y() - height, session.minY());
         int affected = 0;
         double radiusSq = radius * radius;
         int ceilRadius = (int) Math.ceil(radius);
-        int minY = Math.max(world.minY(), center.y() - height);
-        int maxY = Math.min(world.maxY(), center.y() + height);
         for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
             for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
                 int dx = x - center.x();
@@ -271,41 +293,40 @@ public final class Operations {
                 if (dx * dx + dz * dz > radiusSq) {
                     continue;
                 }
-                for (int y = maxY; y > minY; y--) {
+                if (highest < session.maxY() && highest + 1 >= session.minY()
+                        && ground.test(session.getBlock(x, (int) highest + 1, z))) {
+                    continue;
+                }
+                for (int y = top; y >= bottom; y--) {
                     int state = session.getBlock(x, y, z);
-                    // The ground of a column is the first block that is not air,
-                    // and not an existing layer when they are being stacked.
-                    if (registry.isAirLike(state) || (stack && state == snow)) {
+                    if (!ground.test(state)) {
                         continue;
                     }
-                    if (state == water) {
-                        if ("0".equals(registry.properties(state).get("level"))) {
-                            if (session.setBlock(x, y, z, ice)) {
-                                affected++;
-                            }
+                    if (water.test(state)) {
+                        if ("0".equals(registry.properties(state).get("level"))
+                                && world.blockLight(x, y, z) < 10 && session.setBlock(x, y, z, ice)) {
+                            affected++;
                         }
                         break;
                     }
-                    // A layer is placed on the block above the ground, at most one
-                    // block below the top of the region.
-                    if (y == maxY) {
+                    if (y == session.maxY()) {
                         break;
                     }
                     int above = session.getBlock(x, y + 1, z);
-                    boolean aboveAir = registry.isAirLike(above);
-                    boolean aboveSnow = above == snow;
-                    if (!aboveAir && !(stack && aboveSnow)) {
+                    boolean onSnow = stack && snow.test(above);
+                    if ((!registry.isAirLike(above) && !onSnow) || !holdsSnow.test(state)) {
                         break;
                     }
-                    if (stack && aboveSnow) {
+                    int placed = snowLayer;
+                    if (onSnow) {
                         int layers = Integer.parseInt(registry.properties(above).getOrDefault("layers", "1"));
-                        int next = layers + 1;
-                        int placed = next >= 8 ? snowBlock
-                                : registry.withProperty(snow, "layers", Integer.toString(next));
-                        if (placed >= 0 && session.setBlock(x, y + 1, z, placed)) {
-                            affected++;
+                        placed = layers >= 8 ? -1 : registry.withProperty(above, "layers", Integer.toString(layers + 1));
+                    }
+                    if (placed >= 0 && session.setBlock(x, y + 1, z, placed)) {
+                        int snowy = registry.withProperty(state, "snowy", "true");
+                        if (snowy >= 0) {
+                            session.setBlock(x, y, z, snowy);
                         }
-                    } else if (session.setBlock(x, y + 1, z, snow)) {
                         affected++;
                     }
                     break;
@@ -313,6 +334,32 @@ public final class Operations {
             }
         }
         return affected;
+    }
+
+    /**
+     * Whether a layer of snow can lie on a block, as FAWE simplifies the game's
+     * rule: its tags first, then a full block, eight layers of snow, or a block
+     * whose top face is full by its state - a top slab, a closed trapdoor or
+     * stairs on their upper half.
+     */
+    private static boolean holdsSnow(BlockStateRegistry registry, int state, boolean snow) {
+        if (registry.hasTag(state, "minecraft:snow_layer_cannot_survive_on")) {
+            return false;
+        }
+        if (registry.hasTag(state, "minecraft:snow_layer_can_survive_on") || registry.isFullCube(state)) {
+            return true;
+        }
+        Map<String, String> properties = registry.properties(state);
+        if (snow) {
+            return "8".equals(properties.get("layers"));
+        }
+        if (properties.containsKey("type")) {
+            return "top".equals(properties.get("type"));
+        }
+        if ("true".equals(properties.get("open"))) {
+            return false;
+        }
+        return "top".equals(properties.get("half"));
     }
 
     /**

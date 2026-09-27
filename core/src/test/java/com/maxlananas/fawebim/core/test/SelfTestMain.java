@@ -161,6 +161,7 @@ public final class SelfTestMain {
         ConfirmationTests.run();
         FillAndLiquidTests.run();
         RemovalTests.run();
+        SnowAndGreenTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error

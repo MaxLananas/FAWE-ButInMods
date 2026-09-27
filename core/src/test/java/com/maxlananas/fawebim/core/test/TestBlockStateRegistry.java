@@ -300,7 +300,7 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
     public boolean isFullCube(int stateId) {
         String name = name(stateId);
         return isSolid(stateId) && !name.contains("stairs") && !name.contains("slab")
-                && !name.contains("torch") && !name.contains("sapling") && !name.contains("grass")
+                && !name.contains("torch") && !name.contains("sapling") && !name.endsWith("grass")
                 && !name.contains("fern") && !name.contains("poppy") && !name.contains("dandelion");
     }
 
