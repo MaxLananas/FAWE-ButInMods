@@ -27,6 +27,7 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.function.IntPredicate;
 
 /**
  * The block operations behind the commands and brushes (FAWE's
@@ -886,76 +887,6 @@ public final class Operations {
         return changed;
     }
 
-    /**
-     * The 3D flood fill of {@code //fill} and {@code //drain}: the connected
-     * blocks the replace mask accepts. Given a depth it is WorldEdit's {@code
-     * /fillr}: it fills no higher than the start and stops {@code depth} blocks
-     * below it, which keeps a recursive fill from following a hole to the bottom
-     * of the world.
-     *
-     * @param depth       how many blocks below the start may be filled, 0 for a
-     *                    fill in every direction
-     * @param replaceMask what the fill may replace; {@code null} for what the
-     *                    start holds
-     */
-    public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
-                                boolean hollow, Mask replaceMask, int depth) {
-        BlockStateRegistry registry = BlockState.registry();
-        int targetState = world.getBlock(start.x(), start.y(), start.z());
-        if (replaceMask == null) {
-            // Without a mask the fill replaces what its start holds: the same
-            // block, or the air joined to it - never everything in its radius.
-            replaceMask = registry.isAirLike(targetState)
-                    ? new com.maxlananas.fawebim.core.mask.Masks.AirMask(session, false)
-                    : new com.maxlananas.fawebim.core.mask.Masks.BlockMask(session,
-                            List.of(registry.describe(targetState)));
-        }
-        // The walk stays inside the world, as WorldEdit's fills do: one that left
-        // it through the sky came back down into holes it could not reach. With
-        // a depth it is /fillr, which fills down from its start and no higher.
-        // The lowest level is found in long arithmetic: the default depth is the
-        // int range, and below y 0 the level wrapped round to the top of it.
-        int lowest = (int) Math.max(depth > 0 ? (long) start.y() - depth + 1 : Long.MIN_VALUE, world.minY());
-        int highest = depth > 0 ? Math.min(world.maxY(), start.y()) : world.maxY();
-        long reach = (long) radius * radius;
-        LongQueue queue = new LongQueue();
-        LongSet visited = new LongSet();
-        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
-        int changed = 0;
-        while (!queue.isEmpty()) {
-            long current = queue.poll();
-            if (!visited.add(current)) {
-                continue;
-            }
-            int x = BlockArrayClipboard.keyX(current);
-            int y = BlockArrayClipboard.keyY(current);
-            int z = BlockArrayClipboard.keyZ(current);
-            if (distanceSq(x, y, z, start) > reach || y < lowest || y > highest) {
-                continue;
-            }
-            Mask reject = replaceMask;
-            if (reject != null && !reject.test(x, y, z)) {
-                continue;
-            }
-            boolean shouldPlace = !hollow || isEdge(world, x, y, z, replaceMask);
-            if (shouldPlace && session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                changed++;
-            }
-            session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
-                int nx = x + direction.x();
-                int ny = y + direction.y();
-                int nz = z + direction.z();
-                long next = BlockArrayClipboard.positionKey(nx, ny, nz);
-                if (!visited.contains(next) && distanceSq(nx, ny, nz, start) <= reach
-                        && ny >= lowest && ny <= highest) {
-                    queue.add(next);
-                }
-            }
-        }
-        return changed;
-    }
-
     /** The six directions in their declared order, read without copying the enum's array per block. */
     private static final com.maxlananas.fawebim.core.world.Direction[] DIRECTIONS =
             com.maxlananas.fawebim.core.world.Direction.values();
@@ -1016,67 +947,212 @@ public final class Operations {
         return clipboard;
     }
 
-    private static boolean isEdge(World world, int x, int y, int z, Mask mask) {
-        for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
-            int nx = x + direction.x();
-            int ny = y + direction.y();
-            int nz = z + direction.z();
-            if (mask != null && !mask.test(nx, ny, nz)) {
-                return true;
-            }
-            if (mask == null && !BlockState.registry().isAirLike(world.getBlock(nx, ny, nz))) {
-                return true;
-            }
+    /**
+     * {@code //fill}, FAWE's {@code fillDirection}. Downwards, the default, is
+     * {@link #fillXz}; any other direction fills the air of the sphere joined
+     * to the origin without ever stepping against the direction, whatever the
+     * depth.
+     */
+    public static int fillDirection(EditSession session, BlockVector3 origin, Pattern pattern, double radius,
+                                    int depth, BlockVector3 direction) {
+        if (direction.x() == 0 && direction.y() < 0 && direction.z() == 0) {
+            return fillXz(session, origin, pattern, radius, depth, false);
         }
-        return false;
+        BlockStateRegistry registry = BlockState.registry();
+        long reach = (long) (radius * radius);
+        Mask joins = (x, y, z) -> distanceSq(x, y, z, origin) <= reach
+                && registry.isAirLike(session.getBlock(x, y, z));
+        Moves along = (fromY, dx, dy, dz) -> (dx == 0 || direction.x() == 0 || direction.x() == dx)
+                && (dy == 0 || direction.y() == 0 || direction.y() == dy)
+                && (dz == 0 || direction.z() == 0 || direction.z() == dz);
+        return walk(session, origin, along, (int) (radius * 2 + 1), joins, pattern);
     }
 
-    /** {@code //drain} — removes connected liquid. */
-    public static int drain(World world, EditSession session, BlockVector3 start, Mask liquidMask, int radius) {
-        LongQueue queue = new LongQueue();
+    /**
+     * FAWE's {@code fillXZ}: the air joined to the origin inside the sphere of
+     * the radius, no higher than the origin and at most {@code depth} levels
+     * down. {@code //fillr} walks it in every direction; {@code //fill} spreads
+     * across the origin's level only, and from there straight down, which fills
+     * the hole under the player and not the caves beside it.
+     */
+    public static int fillXz(EditSession session, BlockVector3 origin, Pattern pattern, double radius, int depth,
+                             boolean recursive) {
+        BlockStateRegistry registry = BlockState.registry();
+        // Long arithmetic: the default depth of /fillr is the int range, and
+        // below y 0 the lowest level wrapped round to the top of it.
+        int lowest = (int) Math.max((long) origin.y() - depth + 1, session.minY());
+        int highest = Math.min(session.maxY(), origin.y());
+        long reach = (long) (radius * radius);
+        Mask joins = (x, y, z) -> y >= lowest && y <= highest && distanceSq(x, y, z, origin) <= reach
+                && registry.isAirLike(session.getBlock(x, y, z));
+        int level = origin.y();
+        Moves moves = recursive ? ANY_MOVE : (fromY, dx, dy, dz) -> dy < 0 || dy == 0 && fromY == level;
+        return walk(session, origin, moves, (int) (radius * 2 + 1), joins, pattern);
+    }
+
+    /**
+     * {@code //drain}, FAWE's {@code drainArea}: the water, lava and bubble
+     * columns - with {@code plants} the kelp and sea grass too - joined to the
+     * cube of 3x3x3 cells around the origin become air, inside the sphere of the
+     * radius and at most twice the radius plus one steps away. A waterlogged
+     * block is a block and stays as it is, unless {@code waterlogged} asks for
+     * it: then it is part of the pool and only loses its water.
+     */
+    public static int drain(EditSession session, BlockVector3 origin, double radius, boolean waterlogged,
+                            boolean plants) {
+        BlockStateRegistry registry = BlockState.registry();
+        java.util.Set<String> liquids = plants ? DRAINED_WITH_PLANTS : DRAINED;
+        IntPredicate soaked = remembered(state -> "true".equals(registry.properties(state).get("waterlogged")));
+        IntPredicate pool = remembered(state -> liquids.contains(registry.name(state))
+                || waterlogged && soaked.test(state));
+        long reach = (long) (radius * radius);
+        Mask joins = (x, y, z) -> distanceSq(x, y, z, origin) <= reach && pool.test(session.getBlock(x, y, z));
+        int air = registry.air();
+        Pattern drained = (x, y, z) -> {
+            int state = session.getBlock(x, y, z);
+            if (!waterlogged || !soaked.test(state)) {
+                return air;
+            }
+            int dry = registry.withProperty(state, "waterlogged", "false");
+            return dry >= 0 ? dry : air;
+        };
+        return walk(session, around(session, origin, joins), ANY_MOVE, (int) (radius * 2 + 1), joins, drained);
+    }
+
+    private static final java.util.Set<String> DRAINED =
+            java.util.Set.of("minecraft:water", "minecraft:lava", "minecraft:bubble_column");
+    private static final java.util.Set<String> DRAINED_WITH_PLANTS = java.util.Set.of("minecraft:water",
+            "minecraft:lava", "minecraft:bubble_column", "minecraft:kelp_plant", "minecraft:kelp",
+            "minecraft:seagrass", "minecraft:tall_seagrass");
+
+    /**
+     * {@code //fixwater} and {@code //fixlava}, FAWE's {@code fixLiquid}: from
+     * the liquid in the cube of 3x3x3 cells around the origin, the liquid and
+     * the air joined to it inside the sphere of the radius, never above the
+     * origin and never climbing, become still source blocks - the flowing
+     * edges of a lake and the holes in its surface alike.
+     *
+     * @param liquid the block, {@code minecraft:water} or {@code minecraft:lava}
+     */
+    public static int fixLiquid(EditSession session, BlockVector3 origin, double radius, String liquid) {
+        BlockStateRegistry registry = BlockState.registry();
+        int source = registry.defaultState(liquid);
+        if (source < 0) {
+            return 0;
+        }
+        IntPredicate ofLiquid = remembered(state -> registry.name(state).equals(liquid));
+        long reach = (long) (radius * radius);
+        int highest = Math.min(origin.y(), session.maxY());
+        Mask joins = (x, y, z) -> {
+            if (y > highest || distanceSq(x, y, z, origin) > reach) {
+                return false;
+            }
+            int state = session.getBlock(x, y, z);
+            return ofLiquid.test(state) || registry.isAirLike(state);
+        };
+        Mask seeds = (x, y, z) -> ofLiquid.test(session.getBlock(x, y, z));
+        return walk(session, around(session, origin, seeds), NOT_UP, Integer.MAX_VALUE, joins,
+                new FixedPattern(source));
+    }
+
+    /** The moves a walk takes from a cell at height {@code fromY}: FAWE's visitor directions and their filters. */
+    @FunctionalInterface
+    private interface Moves {
+        boolean allow(int fromY, int dx, int dy, int dz);
+    }
+
+    private static final Moves ANY_MOVE = (fromY, dx, dy, dz) -> true;
+    private static final Moves NOT_UP = (fromY, dx, dy, dz) -> dy <= 0;
+
+    /** The cells of the cube of 3x3x3 around the origin that {@code seeds} accepts, as FAWE's liquid walks start. */
+    private static LongQueue around(EditSession session, BlockVector3 origin, Mask seeds) {
+        LongQueue start = new LongQueue(32);
+        for (int y = origin.y() - 1; y <= origin.y() + 1; y++) {
+            if (y < session.minY() || y > session.maxY()) {
+                continue;
+            }
+            for (int z = origin.z() - 1; z <= origin.z() + 1; z++) {
+                for (int x = origin.x() - 1; x <= origin.x() + 1; x++) {
+                    if (seeds.test(x, y, z)) {
+                        start.add(BlockArrayClipboard.positionKey(x, y, z));
+                    }
+                }
+            }
+        }
+        return start;
+    }
+
+    private static int walk(EditSession session, BlockVector3 origin, Moves moves, int maxDepth, Mask joins,
+                            Pattern pattern) {
+        LongQueue start = new LongQueue(8);
+        start.add(BlockArrayClipboard.positionKey(origin.x(), origin.y(), origin.z()));
+        return walk(session, start, moves, maxDepth, joins, pattern);
+    }
+
+    /**
+     * FAWE's breadth-first visitor. The seeds are written whatever they hold;
+     * each layer is written before the next is found, and the walk ends after
+     * the layer {@code maxDepth} steps from the seeds. A neighbour joins when
+     * the move to it is allowed and {@code joins} accepts it - one refused is
+     * not marked, so another cell may offer it again.
+     */
+    private static int walk(EditSession session, LongQueue queue, Moves moves, int maxDepth, Mask joins,
+                            Pattern pattern) {
+        int minY = session.minY();
+        int maxY = session.maxY();
         LongSet visited = new LongSet();
-        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
-        long reach = (long) radius * radius;
+        int seeds = queue.size();
+        for (int i = 0; i < seeds; i++) {
+            long seed = queue.poll();
+            if (visited.add(seed)) {
+                queue.add(seed);
+            }
+        }
         int changed = 0;
-        int air = BlockState.registry().air();
-        while (!queue.isEmpty()) {
-            long current = queue.poll();
-            int x = BlockArrayClipboard.keyX(current);
-            int y = BlockArrayClipboard.keyY(current);
-            int z = BlockArrayClipboard.keyZ(current);
-            if (!visited.add(current) || distanceSq(x, y, z, start) > reach) {
-                continue;
-            }
-            if (visited.size() > 1_000_000) {
-                break;
-            }
-            if (!liquidMask.test(x, y, z)) {
-                continue;
-            }
-            if (session.setBlock(x, y, z, air)) {
-                changed++;
-            }
-            session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
-                if (direction == com.maxlananas.fawebim.core.world.Direction.UP) {
+        for (int depth = 0; !queue.isEmpty(); depth++) {
+            for (int remaining = queue.size(); remaining > 0; remaining--) {
+                long current = queue.poll();
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    changed++;
+                }
+                session.limiter().check(1);
+                if (depth == maxDepth) {
                     continue;
                 }
-                queue.add(BlockArrayClipboard.positionKey(x + direction.x(), y + direction.y(), z + direction.z()));
+                for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                    int dy = direction.y();
+                    int ny = y + dy;
+                    if (ny < minY || ny > maxY || !moves.allow(y, direction.x(), dy, direction.z())) {
+                        continue;
+                    }
+                    int nx = x + direction.x();
+                    int nz = z + direction.z();
+                    long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                    if (!visited.contains(next) && joins.test(nx, ny, nz)) {
+                        visited.add(next);
+                        queue.add(next);
+                    }
+                }
             }
         }
         return changed;
     }
 
-    /** {@code //fixwater}, {@code //fixlava} — makes liquid flow to its neighbours. */
-    public static long fixLiquid(World world, EditSession session, Region region, String liquid, int radius) {
-        BlockStateRegistry registry = BlockState.registry();
-        int source = registry.parse("minecraft:" + liquid);
-        if (source < 0) {
-            return 0;
-        }
-        String name = "minecraft:" + liquid;
-        return region.forEachPosition((x, y, z) -> registry.name(world.getBlock(x, y, z)).equals(name)
-                && session.setBlock(x, y, z, source));
+    /** {@code test}, asked once per block state and remembered for the rest of the command. */
+    private static IntPredicate remembered(IntPredicate test) {
+        byte[] known = new byte[Math.max(1, BlockState.registry().stateCount())];
+        return state -> {
+            if (state < 0 || state >= known.length) {
+                return test.test(state);
+            }
+            if (known[state] == 0) {
+                known[state] = (byte) (test.test(state) ? 1 : 2);
+            }
+            return known[state] == 1;
+        };
     }
 
     /** {@code /brush blendball} — blends the brush area with its surroundings. */
@@ -1775,93 +1851,6 @@ public final class Operations {
     }
 
     /**
-     * WorldEdit's {@code EditSession.fillXZ}: fills the air of a sphere around
-     * the placement, down to {@code depth} blocks, walking from the origin
-     * downwards so a cell is only written once.
-     */
-    public static int fillXz(World world, EditSession session, BlockVector3 origin, Pattern pattern,
-                             double radius, int depth) {
-        BlockStateRegistry registry = BlockState.registry();
-        int fromY = Math.max(world.minY(), origin.y() - depth + 1);
-        int toY = Math.min(world.maxY(), origin.y());
-        int spread = (int) Math.ceil(radius);
-        int radiusSq = (int) (radius * radius);
-        int changed = 0;
-        for (int y = toY; y >= fromY; y--) {
-            session.checkTimeout();
-            int dy = y - origin.y();
-            int dy2 = dy * dy;
-            for (int x = origin.x() - spread; x <= origin.x() + spread; x++) {
-                int dx = x - origin.x();
-                int dx2 = dx * dx;
-                if (dx2 + dy2 > radiusSq) {
-                    continue;
-                }
-                for (int z = origin.z() - spread; z <= origin.z() + spread; z++) {
-                    int dz = z - origin.z();
-                    if (dx2 + dy2 + dz * dz > radiusSq) {
-                        continue;
-                    }
-                    if (!registry.isAirLike(world.getBlock(x, y, z))) {
-                        continue;
-                    }
-                    if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                        changed++;
-                    }
-                }
-            }
-        }
-        return changed;
-    }
-
-    /**
-     * FAWE's {@code EditSession.fillDirection}: the same fill, moved along the
-     * direction it was given. Downwards is the common case and takes the walk
-     * above; any other direction follows the sphere from the origin outwards.
-     */
-    public static int fillDirection(World world, EditSession session, BlockVector3 origin, Pattern pattern,
-                                    double radius, int depth, BlockVector3 direction) {
-        if (direction.y() < 0 && direction.x() == 0 && direction.z() == 0) {
-            return fillXz(world, session, origin, pattern, radius, depth);
-        }
-        BlockStateRegistry registry = BlockState.registry();
-        int spread = (int) Math.ceil(radius);
-        int radiusSq = (int) (radius * radius);
-        int changed = 0;
-        for (int step = 0; step < Math.max(1, (int) (radius * 2 + 1)); step++) {
-            session.checkTimeout();
-            BlockVector3 centre = origin.add(direction.multiply(step));
-            for (int x = centre.x() - spread; x <= centre.x() + spread; x++) {
-                int dx = x - origin.x();
-                int dx2 = dx * dx;
-                if (dx2 > radiusSq) {
-                    continue;
-                }
-                for (int y = centre.y() - spread; y <= centre.y() + spread; y++) {
-                    int dy = y - origin.y();
-                    int dxy2 = dx2 + dy * dy;
-                    if (dxy2 > radiusSq) {
-                        continue;
-                    }
-                    for (int z = centre.z() - spread; z <= centre.z() + spread; z++) {
-                        int dz = z - origin.z();
-                        if (dxy2 + dz * dz > radiusSq) {
-                            continue;
-                        }
-                        if (!registry.isAirLike(world.getBlock(x, y, z))) {
-                            continue;
-                        }
-                        if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                            changed++;
-                        }
-                    }
-                }
-            }
-        }
-        return changed;
-    }
-
-    /**
      * WorldEdit's {@code EditSession.makeCone}: a cone of the two radii and the
      * height, hollow when asked, with a shell of the given thickness.
      */
@@ -1960,26 +1949,6 @@ public final class Operations {
             }
         }
         return changed;
-    }
-
-    /**
-     * Removes the water of every waterlogged block of the region, {@code //drain -w}.
-     * The block itself stays, only its {@code waterlogged} property is cleared.
-     */
-    public static long drainWaterlogged(EditSession session, Region region) {
-        BlockStateRegistry registry = BlockState.registry();
-        return region.forEachPosition((x, y, z) -> {
-            int state = session.getBlock(x, y, z);
-            if (state == registry.air()) {
-                return false;
-            }
-            Map<String, String> properties = registry.properties(state);
-            if (!"true".equals(properties.get("waterlogged"))) {
-                return false;
-            }
-            int cleared = registry.withProperty(state, "waterlogged", "false");
-            return cleared >= 0 && session.setBlock(x, y, z, cleared);
-        });
     }
 
     /** A pattern that always returns the same state. */

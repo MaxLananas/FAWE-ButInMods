@@ -67,7 +67,23 @@ final class PropertyTestRegistry implements BlockStateRegistry {
         block("minecraft:bell", "attachment", List.of("floor", "ceiling", "single_wall", "double_wall"),
                 "facing", HORIZONTAL);
         block("minecraft:piston_head", "facing", ALL_DIRECTIONS, "type", List.of("normal", "sticky"));
+        List<String> ages = new ArrayList<>();
+        for (int i = 0; i < 26; i++) {
+            ages.add(String.valueOf(i));
+        }
+        block("minecraft:water", "level", steps);
+        block("minecraft:lava", "level", steps);
+        block("minecraft:bubble_column", "drag", BOOLEAN);
+        block("minecraft:kelp", "age", ages);
+        block("minecraft:kelp_plant");
+        block("minecraft:seagrass");
+        block("minecraft:tall_seagrass", "half", List.of("upper", "lower"));
     }
+
+    /** The blocks the game gives a fluid of their own, whatever their state. */
+    private static final java.util.Set<String> FLUID_BLOCKS = java.util.Set.of("minecraft:water", "minecraft:lava",
+            "minecraft:bubble_column", "minecraft:kelp", "minecraft:kelp_plant", "minecraft:seagrass",
+            "minecraft:tall_seagrass");
 
     private void block(String name, Object... properties) {
         List<String> keys = new ArrayList<>();
@@ -267,9 +283,10 @@ final class PropertyTestRegistry implements BlockStateRegistry {
         return stateId != 0;
     }
 
+    /** As the game answers it: the state holds a fluid, a waterlogged block included. */
     @Override
     public boolean isLiquid(int stateId) {
-        return false;
+        return FLUID_BLOCKS.contains(name(stateId)) || "true".equals(properties(stateId).get("waterlogged"));
     }
 
     @Override

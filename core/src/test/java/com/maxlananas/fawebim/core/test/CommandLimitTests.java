@@ -233,7 +233,7 @@ final class CommandLimitTests {
 
     /**
      * Two shafts in a block of stone at the top of the world, open to the sky
-     * only: a recursive fill started in one used to leave the world through
+     * only: a fill that climbs, started in one, used to leave the world through
      * its top, walk over the stone and come down the other shaft.
      */
     private static void fillStaysInsideTheWorld() {
@@ -254,10 +254,7 @@ final class CommandLimitTests {
         }
         TestActor actor = new TestActor("FillBounds", world, new BlockVector3(0, top - 2, 0));
         int dirt = BlockState.registry().defaultState("minecraft:dirt");
-        EditSession edit = new EditSession(world, actor.session(), "flood");
-        com.maxlananas.fawebim.core.function.Operations.floodFill(world, edit, new BlockVector3(0, top - 2, 0),
-                (x, y, z) -> dirt, 6, false, null, 0);
-        edit.close();
+        answer(actor, "//fill dirt 6 1 up");
         checkEquals("the shaft the fill started in is filled", dirt, world.getBlock(0, top, 0));
         checkEquals("the other shaft is left alone", air, world.getBlock(4, top - 2, 0));
 

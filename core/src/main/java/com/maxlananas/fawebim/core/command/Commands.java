@@ -862,14 +862,13 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = Math.max(1, ctx.sizeArg(1, 1));
-                    int depth = Math.max(1, ctx.intArg(2, 1));
+                    double radius = Math.max(1, ctx.radiusArg(1, 1));
+                    int depth = Math.max(1, ctx.sizeArg(2, 1));
                     BlockVector3 direction = ctx.args().size() < 4
                             ? new BlockVector3(0, -1, 0)
                             : expandDirections(ctx, ctx.joined(3)).get(0);
-                    BlockVector3 start = ctx.placement();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fillDirection(ctx.world(), session,
-                            start, pattern, radius, depth, direction);
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fillDirection(session,
+                            ctx.placement(), pattern, radius, depth, direction);
                     flush(ctx, session, "Filled", changed, "block(s)");
                 };
 
@@ -890,40 +889,23 @@ public final class Commands {
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     double radius = Math.max(1, ctx.radiusArg(1, 1));
                     int depth = Math.max(1, ctx.intArg(2, Integer.MAX_VALUE));
-                    BlockVector3 start = ctx.placement() != null
-                            ? ctx.placement() : ctx.selection().getMinimumPoint();
-                    // The fill follows the empty space, so only air is replaced:
-                    // whatever the hole was dug through stays where it is.
-                    int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
-                            start, pattern, (int) Math.ceil(radius), false,
-                            new Masks.AirMask(session, false), depth);
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fillXz(session,
+                            ctx.placement(), pattern, radius, depth, true);
                     flush(ctx, session, "Filled", changed, "block(s)");
                 };
 
 
         CommandRegistry.Entry e31 = registry.register("//drain");
-        e31.description = "Drain liquids in the selection";
+        e31.description = "Drain a pool";
         e31.group = "region";
-        e31.requiresSelection = true;
         // -p removes the water plants, -w also un-waterlogs the blocks.
         e31.booleanFlags.add("p");
         e31.booleanFlags.add("w");
-        e31.arguments.add("[radius]");
+        e31.arguments.add("<radius>");
         e31.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    Masks.ExtentHolder.set(session);
-                    BlockVector3 start = ctx.placement() != null
-                            ? ctx.placement() : ctx.selection().getMinimumPoint();
-                    Mask drainMask = ctx.hasFlag("p")
-                            ? Parsers.mask("minecraft:water,minecraft:lava,minecraft:kelp,minecraft:seagrass,"
-                            + "minecraft:tall_seagrass,minecraft:lily_pad,minecraft:bubble_column", ctx)
-                            : new Masks.LiquidMask(session);
-                    long changed = com.maxlananas.fawebim.core.function.Operations.drain(ctx.world(), session, start,
-                            drainMask, ctx.intArg(0, 256));
-                    if (ctx.hasFlag("w")) {
-                        changed += com.maxlananas.fawebim.core.function.Operations.drainWaterlogged(session,
-                                ctx.selection());
-                    }
+                    int changed = com.maxlananas.fawebim.core.function.Operations.drain(session, ctx.placement(),
+                            Math.max(0, ctx.radiusArg(0, 0)), ctx.hasFlag("w"), ctx.hasFlag("p"));
                     flush(ctx, session, "Drained", changed, "block(s)");
                 };
 
@@ -1174,27 +1156,25 @@ public final class Commands {
 
 
         CommandRegistry.Entry e41 = registry.register("//fixwater");
-        e41.description = "Fix water placement in the selection";
+        e41.description = "Fix water to be stationary";
         e41.group = "region";
-        e41.requiresSelection = true;
-        e41.arguments.add("[radius]");
+        e41.arguments.add("<radius>");
         e41.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    long changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
-                            ctx.selection(), "water", ctx.intArg(0, 5));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session, ctx.placement(),
+                            Math.max(0, ctx.radiusArg(0, 0)), "minecraft:water");
                     flush(ctx, session, "Fixed water", changed, "water block(s)");
                 };
 
 
         CommandRegistry.Entry e42 = registry.register("//fixlava");
-        e42.description = "Fix lava placement in the selection";
+        e42.description = "Fix lava to be stationary";
         e42.group = "region";
-        e42.requiresSelection = true;
-        e42.arguments.add("[radius]");
+        e42.arguments.add("<radius>");
         e42.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    long changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
-                            ctx.selection(), "lava", ctx.intArg(0, 5));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session, ctx.placement(),
+                            Math.max(0, ctx.radiusArg(0, 0)), "minecraft:lava");
                     flush(ctx, session, "Fixed lava", changed, "lava block(s)");
                 };
 
