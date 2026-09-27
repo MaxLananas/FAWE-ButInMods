@@ -161,7 +161,7 @@ final class ToolTests {
                 case "repl" -> " stone";
                 case "lrbuild" -> " stone air";
                 case "featureplacer" -> " oak";
-                case "structureplacer" -> " village";
+                case "structureplacer" -> " minecraft:oak_log";
                 default -> "";
             };
             Tools.clear(actor.session());

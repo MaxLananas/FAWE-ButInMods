@@ -1,6 +1,13 @@
 package com.maxlananas.fawebim.fabric;
 
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.data.worldgen.features.AquaticFeatures;
+import net.minecraft.data.worldgen.features.CaveFeatures;
+import net.minecraft.data.worldgen.features.EndFeatures;
+import net.minecraft.data.worldgen.features.NetherFeatures;
+import net.minecraft.data.worldgen.features.PileFeatures;
+import net.minecraft.data.worldgen.features.TreeFeatures;
+import net.minecraft.data.worldgen.features.VegetationFeatures;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -26,6 +33,8 @@ final class FabricRegistries {
     private static volatile RegistryAccess access;
     private static volatile List<String> biomeNames = List.of();
     private static volatile Map<String, Integer> biomeIds = Map.of();
+    private static volatile List<String> featureIds = List.of();
+    private static volatile List<String> structureIds = List.of();
 
     private FabricRegistries() {
     }
@@ -49,6 +58,16 @@ final class FabricRegistries {
         }
         biomeNames = names;
         biomeIds = ids;
+        java.util.TreeSet<String> features = new java.util.TreeSet<>();
+        registryAccess.lookupOrThrow(Registries.CONFIGURED_FEATURE).keySet()
+                .forEach(key -> features.add(key.toString()));
+        registryAccess.lookupOrThrow(Registries.PLACED_FEATURE).keySet()
+                .forEach(key -> features.add(key.toString()));
+        featureIds = List.copyOf(features);
+        structureIds = registryAccess.lookupOrThrow(Registries.STRUCTURE).keySet().stream()
+                .map(ResourceLocation::toString)
+                .sorted()
+                .toList();
         access = registryAccess;
     }
 
@@ -56,6 +75,63 @@ final class FabricRegistries {
         access = null;
         biomeNames = List.of();
         biomeIds = Map.of();
+        featureIds = List.of();
+        structureIds = List.of();
+    }
+
+    /** The configured and the placed features of the server, sorted. */
+    static List<String> featureIds() {
+        return featureIds;
+    }
+
+    /** The structures of the server, sorted. */
+    static List<String> structureIds() {
+        return structureIds;
+    }
+
+    /**
+     * Whether FAWE's feature placer puts a feature against the clicked face:
+     * FAWE's list, the game's tree, vegetation, aquatic and pile features and
+     * a few that grow in caves, in the End and in the Nether.
+     */
+    static boolean placesOnFace(String featureId) {
+        return FaceFeatures.IDS.contains(featureId);
+    }
+
+    /**
+     * The features of {@link #placesOnFace}, read once from the keys the game
+     * declares for them. The keys are found by their type, which the remapping
+     * of the game's names leaves alone, as FAWE finds them.
+     */
+    private static final class FaceFeatures {
+
+        static final java.util.Set<String> IDS = ids();
+
+        private static java.util.Set<String> ids() {
+            java.util.Set<String> ids = new java.util.HashSet<>();
+            for (Class<?> holder : new Class<?>[]{AquaticFeatures.class, PileFeatures.class, TreeFeatures.class,
+                    VegetationFeatures.class}) {
+                for (java.lang.reflect.Field field : holder.getFields()) {
+                    int modifiers = field.getModifiers();
+                    if (!java.lang.reflect.Modifier.isStatic(modifiers) || field.getType() != ResourceKey.class) {
+                        continue;
+                    }
+                    try {
+                        ids.add(((ResourceKey<?>) field.get(null)).location().toString());
+                    } catch (IllegalAccessException | RuntimeException skipped) {
+                        FaweMod.LOGGER.debug("Feature key {} not read", field, skipped);
+                    }
+                }
+            }
+            for (ResourceKey<?> key : List.of(CaveFeatures.DRIPSTONE_CLUSTER, CaveFeatures.LARGE_DRIPSTONE,
+                    CaveFeatures.POINTED_DRIPSTONE, CaveFeatures.GLOW_LICHEN, CaveFeatures.CAVE_VINE,
+                    CaveFeatures.CAVE_VINE_IN_MOSS, CaveFeatures.MOSS_VEGETATION, CaveFeatures.DRIPLEAF,
+                    EndFeatures.CHORUS_PLANT, EndFeatures.END_PLATFORM, NetherFeatures.SMALL_BASALT_COLUMNS,
+                    NetherFeatures.LARGE_BASALT_COLUMNS, NetherFeatures.GLOWSTONE_EXTRA)) {
+                ids.add(key.location().toString());
+            }
+            return java.util.Set.copyOf(ids);
+        }
     }
 
     static RegistryAccess access() {

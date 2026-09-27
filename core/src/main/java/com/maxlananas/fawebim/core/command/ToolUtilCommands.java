@@ -476,9 +476,10 @@ final class ToolUtilCommands {
         entry.group = "tool";
         entry.arguments.add("feature");
         entry.handler = ctx -> {
-            var tool = new com.maxlananas.fawebim.core.tool.Tools.FeaturePlacerTool(ctx.arg(0));
+            String feature = Parsers.feature(ctx.world(), ctx.arg(0));
+            var tool = new com.maxlananas.fawebim.core.tool.Tools.FeaturePlacerTool(feature);
             com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), null);
-            ctx.actor().message(Msg.success("Feature placer bound to your held item for '" + ctx.arg(0) + "'"));
+            ctx.actor().message(Msg.success("Feature placer bound to your held item for '" + feature + "'"));
         };
     }
 
@@ -493,9 +494,10 @@ final class ToolUtilCommands {
         entry.group = "tool";
         entry.arguments.add("structure");
         entry.handler = ctx -> {
-            var tool = new com.maxlananas.fawebim.core.tool.Tools.StructurePlacerTool(ctx.arg(0));
+            String structure = Parsers.structure(ctx.world(), ctx.arg(0));
+            var tool = new com.maxlananas.fawebim.core.tool.Tools.StructurePlacerTool(structure);
             com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), null);
-            ctx.actor().message(Msg.success("Structure placer bound to your held item for '" + ctx.arg(0) + "'"));
+            ctx.actor().message(Msg.success("Structure placer bound to your held item for '" + structure + "'"));
         };
     }
 

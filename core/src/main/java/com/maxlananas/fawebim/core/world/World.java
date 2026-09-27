@@ -234,8 +234,11 @@ public interface World extends Extent {
                          Random random);
 
     /**
-     * Places a placed feature ({@code minecraft:ore_gold}, {@code minecraft:trees_plains}, ...)
-     * at pos, its blocks through the session.
+     * Places a worldgen feature at pos, its blocks through the session: a
+     * configured feature, the ones FAWE names ({@code minecraft:oak},
+     * {@code minecraft:ore_gold}, ...), or else a placed one
+     * ({@code minecraft:trees_plains}, ...), placed as world generation places
+     * it but in any biome.
      *
      * @return false when the feature is unknown or did not fit
      */
@@ -250,6 +253,28 @@ public interface World extends Extent {
      */
     default boolean generateStructure(com.maxlananas.fawebim.core.extent.EditSession session, String structureId,
                                       BlockVector3 pos, Random random) {
+        return false;
+    }
+
+    /**
+     * The ids {@link #generateFeature} knows, sorted, or an empty list when the
+     * platform cannot tell: what an id typed for a feature is checked against.
+     */
+    default List<String> featureIds() {
+        return List.of();
+    }
+
+    /** The ids {@link #generateStructure} knows, as {@link #featureIds()}. */
+    default List<String> structureIds() {
+        return List.of();
+    }
+
+    /**
+     * Whether FAWE's feature placer puts the feature against the clicked face
+     * rather than in the clicked block: a tree, a flower, a patch of grass
+     * grows on the block, an ore vein or a geode in it.
+     */
+    default boolean placesFeatureOnFace(String featureId) {
         return false;
     }
 

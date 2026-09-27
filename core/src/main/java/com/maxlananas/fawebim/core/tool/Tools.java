@@ -40,6 +40,12 @@ public final class Tools {
             "none", "tree", "repl", "cycler", "floodfill", "info", "farwand", "navwand", "lrbuild",
             "stacker", "deltree", "brush", "selwand", "featureplacer", "structureplacer", "flood", "warwand");
 
+    /** FAWE's answer to a feature that placed nothing, from its placer and from //feature. */
+    public static final String FEATURE_FAILED = "This feature cannot go here. Ensure the area meets the requirements.";
+
+    /** FAWE's answer to a structure that placed nothing, from its placer and from //structure. */
+    public static final String STRUCTURE_FAILED = "Failed to generate structure. Is it a valid spot for it?";
+
     /**
      * The tool {@code /tool <name> ...} binds, built from the arguments the
      * tool takes - WorldEdit's: the pattern of {@code repl}, the two patterns
@@ -65,10 +71,10 @@ public final class Tools {
             case "deltree" -> new DelTreeTool();
             case "brush" -> new BrushTool();
             case "selwand" -> new SelectWandTool();
-            case "featureplacer", "featuretool" ->
-                    new FeaturePlacerTool(required(ctx, 1, "featureplacer <feature>"));
-            case "structureplacer", "structuretool" ->
-                    new StructurePlacerTool(required(ctx, 1, "structureplacer <structure>"));
+            case "featureplacer", "featuretool" -> new FeaturePlacerTool(
+                    Parsers.feature(ctx.world(), required(ctx, 1, "featureplacer <feature>")));
+            case "structureplacer", "structuretool" -> new StructurePlacerTool(
+                    Parsers.structure(ctx.world(), required(ctx, 1, "structureplacer <structure>")));
             default -> null;
         };
     }
@@ -783,8 +789,14 @@ public final class Tools {
     }
 
     /**
-     * {@code /tool featureplacer} — places a worldgen feature (a tree, an ore
-     * vein, a geode...) where the player clicks.
+     * {@code /tool featureplacer <feature>}, FAWE's feature placer: a right
+     * click generates the feature in the clicked block, or against the
+     * clicked face for the features that grow on a block - a tree, a flower -
+     * trying ten times, and says how many blocks it placed.
+     *
+     * <p>It placed in the clicked block whatever the feature, so a tree met
+     * the ground and did not grow, tried once, and answered "Unknown feature"
+     * for one that did not fit.</p>
      */
     public static final class FeaturePlacerTool implements Tool {
 
@@ -801,35 +813,40 @@ public final class Tools {
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            if (feature == null || feature.isEmpty()) {
-                context.message(Msg.error("No feature set: use /tool featureplacer <feature>"));
-                return false;
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
             }
+            com.maxlananas.fawebim.core.world.World world = context.actor.world();
+            BlockVector3 at = world.placesFeatureOnFace(feature) && context.face != null
+                    ? context.position.add(context.face.toVector()) : context.position;
             EditSession session = open(context, "tool featureplacer");
-            boolean placed;
+            long placed = 0;
             try {
-                placed = context.actor.world().generateFeature(session, context.position, feature,
-                        new java.util.Random());
+                Random random = new Random();
+                for (int attempt = 0; attempt < 10 && placed == 0; attempt++) {
+                    long before = session.getBlocksChanged();
+                    world.generateFeature(session, at, feature, random);
+                    placed = session.getBlocksChanged() - before;
+                }
             } finally {
                 finish(context, session);
             }
-            if (!placed) {
-                context.message(Msg.error("Unknown feature '" + feature + "'"));
-                return false;
-            }
-            context.message(Msg.success("Placed feature " + feature));
+            context.message(placed == 0 ? Msg.error(FEATURE_FAILED)
+                    : Msg.result("Feature created", Msg.blocks(placed) + " placed"));
             return true;
         }
 
         @Override
         public String describe() {
-            return "feature placer (" + (feature == null ? "unset" : feature) + ")";
+            return "feature placer (" + feature + ")";
         }
     }
 
     /**
-     * {@code /tool structureplacer} — generates a worldgen structure (a village,
-     * a shipwreck...) where the player clicks.
+     * {@code /tool structureplacer <structure>}, FAWE's structure placer: a
+     * right click generates the structure at the clicked block, trying ten
+     * times, and says how many blocks it placed.
      */
     public static final class StructurePlacerTool implements Tool {
 
@@ -846,29 +863,31 @@ public final class Tools {
 
         @Override
         public boolean onRightClick(ToolContext context) {
-            if (structure == null || structure.isEmpty()) {
-                context.message(Msg.error("No structure set: use /tool structureplacer <structure>"));
-                return false;
+            if (!context.aimsAtBlock()) {
+                context.message(Msg.error("No block in sight"));
+                return true;
             }
+            com.maxlananas.fawebim.core.world.World world = context.actor.world();
             EditSession session = open(context, "tool structureplacer");
-            boolean placed;
+            long placed = 0;
             try {
-                placed = context.actor.world().generateStructure(session, structure, context.position,
-                        new java.util.Random());
+                Random random = new Random();
+                for (int attempt = 0; attempt < 10 && placed == 0; attempt++) {
+                    long before = session.getBlocksChanged();
+                    world.generateStructure(session, structure, context.position, random);
+                    placed = session.getBlocksChanged() - before;
+                }
             } finally {
                 finish(context, session);
             }
-            if (!placed) {
-                context.message(Msg.error("Unknown structure '" + structure + "'"));
-                return false;
-            }
-            context.message(Msg.success("Generated structure " + structure));
+            context.message(placed == 0 ? Msg.error(STRUCTURE_FAILED)
+                    : Msg.result("Structure created", Msg.blocks(placed) + " placed"));
             return true;
         }
 
         @Override
         public String describe() {
-            return "structure placer (" + (structure == null ? "unset" : structure) + ")";
+            return "structure placer (" + structure + ")";
         }
     }
 }

@@ -35,9 +35,11 @@ public final class BrushParameters {
     private final Map<String, String> values;
     private final BrushOptions options;
     private final BlockVector3 placement;
+    private final com.maxlananas.fawebim.core.world.World world;
 
     private BrushParameters(String name, Pattern pattern, int[] layers, Mask mask, Map<String, Mask> masks,
-                            Map<String, String> values, BrushOptions options, BlockVector3 placement) {
+                            Map<String, String> values, BrushOptions options, BlockVector3 placement,
+                            com.maxlananas.fawebim.core.world.World world) {
         this.name = name;
         this.pattern = pattern;
         this.layers = layers;
@@ -46,6 +48,7 @@ public final class BrushParameters {
         this.values = values;
         this.options = options;
         this.placement = placement;
+        this.world = world;
     }
 
     /**
@@ -144,7 +147,8 @@ public final class BrushParameters {
         }
         // -o counts from the placement position of the moment the brush is bound.
         BlockVector3 placement = ctx != null && options.switchOn("o") ? ctx.placement() : null;
-        return new BrushParameters(row[0], pattern, layers, sessionMask, masks, values, options, placement);
+        return new BrushParameters(row[0], pattern, layers, sessionMask, masks, values, options, placement,
+                ctx == null ? null : ctx.world());
     }
 
     /** The parameters of a brush built without a command line, i.e. a preset. */
@@ -166,7 +170,7 @@ public final class BrushParameters {
             // are re-parsed from the command line when the brush is reloaded.
             values.put("pattern", "");
         }
-        return new BrushParameters(row[0], pattern, new int[0], null, Map.of(), values, options, null);
+        return new BrushParameters(row[0], pattern, new int[0], null, Map.of(), values, options, null, null);
     }
 
     /** The name of the brush, as FAWE spells it. */
@@ -218,6 +222,11 @@ public final class BrushParameters {
     /** The parsed command line flags. */
     public BrushOptions options() {
         return options;
+    }
+
+    /** The world of the player binding the brush, or null for a preset built without one. */
+    public com.maxlananas.fawebim.core.world.World world() {
+        return world;
     }
 
     /** The placement position when the brush was bound with {@code -o}, else null. */

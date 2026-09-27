@@ -40,6 +40,8 @@ final class GenerationTests {
             aPlantATreeMayReplaceIsCleared();
             forestgenGrowsAroundThePlayer();
             theTreeToolIsQuietAndUndone();
+            featuresAndStructuresGrowWhereFaweGrowsThem();
+            thePlacerToolsPlaceAsFawesDo();
         } finally {
             BlockState.setRegistry(previous);
         }
@@ -157,6 +159,84 @@ final class GenerationTests {
                 refused.contains("A tree can't go there."));
         check("a tree type nobody knows is refused when the tool is bound",
                 answer(actor, "/tool tree nope").contains("Unknown tree type 'nope'"));
+        check("and a feature id is taken for what it grows",
+                answer(actor, "/tool tree minecraft:azalea_tree").contains("Tool 'tree' bound"));
+    }
+
+    /**
+     * //feature and //structure generate at the placement position, count the
+     * blocks they placed and tell a feature that did not fit from one that
+     * does not exist, as FAWE does.
+     */
+    private static void featuresAndStructuresGrowWhereFaweGrowsThem() {
+        TestActor actor = meadow("FeatureCommand");
+        TestWorld world = (TestWorld) actor.world();
+        int poppy = state("minecraft:poppy");
+        String created = answer(actor, "//feature minecraft:poppy");
+        check("//feature generates at the placement position (" + created + ")",
+                world.getBlock(0, 61, 0) == poppy);
+        check("and counts what it placed, as FAWE does", created.contains("Feature created: 1 block placed"));
+        check("through the edit", answer(actor, "//undo").contains("Undid: 1 block change"));
+        answer(actor, "//feature poppy 3,61,3");
+        checkEquals("or at the position it is given", poppy, world.getBlock(3, 61, 3));
+        check("an id nobody knows is refused",
+                answer(actor, "//feature minecraft:nope").contains("Unknown feature 'minecraft:nope'"));
+        world.setBlock(2, 60, 2, state("minecraft:stone"));
+        TestActor onStone = new TestActor("FeatureCommand", world, new BlockVector3(2, 61, 2));
+        check("a feature that does not fit is said so, as FAWE says it",
+                answer(onStone, "//feature oak").contains(Tools.FEATURE_FAILED));
+
+        String structure = answer(actor, "//structure minecraft:oak_log");
+        check("//structure needs no selection and generates at the placement (" + structure + ")",
+                world.getBlock(0, 61, 0) == state("minecraft:oak_log")
+                        && world.getBlock(0, 62, 0) == state("minecraft:oak_log"));
+        check("counting what it placed", structure.contains("Structure created: 2 blocks placed"));
+        check("an unknown structure is refused",
+                answer(actor, "//structure village").contains("Unknown structure 'village'"));
+    }
+
+    /**
+     * The feature placer grows a tree on the face it clicks, as FAWE's does for
+     * the features that grow on a block, and an ore - here a poppy - in the
+     * block; each placer tries ten times and says what it placed.
+     */
+    private static void thePlacerToolsPlaceAsFawesDo() {
+        TestActor actor = meadow("FeaturePlacer");
+        TestWorld world = (TestWorld) actor.world();
+        check("the feature placer takes the features the world knows",
+                answer(actor, "/tool featureplacer nope").contains("Unknown feature 'nope'"));
+        answer(actor, "/tool featureplacer oak");
+        Tool placer = Tools.current(actor.session());
+        actor.clearMessages();
+        use(actor, () -> placer.onRightClick(new Tool.ToolContext(actor, new BlockVector3(0, 60, 0), Direction.UP,
+                null)));
+        String grown = String.join("\n", actor.messages()).replaceAll("\u00a7.", "");
+        check("the feature placer grows a tree on the clicked face (" + grown + ")",
+                world.getBlock(0, 61, 0) == state("minecraft:oak_log"));
+        check("and says how many blocks it placed", grown.contains("Feature created: ") && grown.contains("placed"));
+
+        world.setBlock(2, 61, 2, state("minecraft:stone"));
+        actor.clearMessages();
+        use(actor, () -> placer.onRightClick(new Tool.ToolContext(actor, new BlockVector3(2, 61, 2), Direction.UP,
+                null)));
+        check("a tree that finds no soil is said not to go there",
+                String.join("\n", actor.messages()).replaceAll("\u00a7.", "").contains(Tools.FEATURE_FAILED));
+
+        answer(actor, "/tool featureplacer minecraft:poppy");
+        Tool flowers = Tools.current(actor.session());
+        use(actor, () -> flowers.onRightClick(new Tool.ToolContext(actor, new BlockVector3(-2, 60, -2),
+                Direction.EAST, null)));
+        checkEquals("a feature of the block goes in the clicked block, whatever the face",
+                state("minecraft:poppy"), world.getBlock(-2, 61, -2));
+
+        answer(actor, "/tool structureplacer minecraft:oak_log");
+        Tool structures = Tools.current(actor.session());
+        actor.clearMessages();
+        use(actor, () -> structures.onRightClick(new Tool.ToolContext(actor, new BlockVector3(3, 60, -3),
+                Direction.UP, null)));
+        check("the structure placer generates at the clicked block",
+                world.getBlock(3, 61, -3) == state("minecraft:oak_log")
+                        && String.join("\n", actor.messages()).contains("Structure created"));
     }
 
     private static int logs(TestWorld world) {

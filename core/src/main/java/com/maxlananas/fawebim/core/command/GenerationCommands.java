@@ -8,6 +8,7 @@ import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
+import com.maxlananas.fawebim.core.tool.Tools;
 import com.maxlananas.fawebim.core.util.Buffers;
 import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -283,52 +284,63 @@ final class GenerationCommands {
     }
 
     /**
-     * {@code //feature} — places a configured worldgen feature, i.e. anything
-     * the server's {@code PlacedFeature} registry knows: trees, ores, geodes,
-     * lakes, ...
+     * {@code //feature <feature> [position]}, FAWE's: a worldgen feature - a
+     * tree, an ore vein, a geode - generated at the placement position, or at
+     * the position given, through the edit, and counted in blocks as FAWE
+     * counts it.
+     *
+     * <p>It generated at the block in sight, took only placed features, the
+     * ones FAWE does not name, and answered "Unknown feature" for a feature
+     * that did not fit.</p>
      */
     private void feature() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//feature");
         if (entry == null) {
             return;
         }
-        entry.description = "Generate a feature at your position";
+        entry.description = "Generate Minecraft features";
         entry.group = "generation";
         entry.arguments.add("feature");
         entry.arguments.add("[position]");
         entry.handler = ctx -> {
-            String name = ctx.arg(0);
-            BlockVector3 position = ctx.args().size() > 1
-                    ? ctx.blockVector(1) : ctx.targetBlock(100);
-            if (!ctx.world().generateFeature(ctx.editSession(), position, name, new Random())) {
-                throw CommandRegistry.error("Unknown feature '" + name
-                        + "'. Use a namespaced feature id such as minecraft:trees_oak or minecraft:ore_gold");
+            String feature = Parsers.feature(ctx.world(), ctx.arg(0));
+            BlockVector3 position = ctx.args().size() > 1 ? ctx.blockVector(1) : ctx.placement();
+            EditSession session = ctx.editSession();
+            long before = session.getBlocksChanged();
+            ctx.world().generateFeature(session, position, feature, new Random());
+            long placed = session.getBlocksChanged() - before;
+            if (placed == 0) {
+                throw CommandRegistry.error(Tools.FEATURE_FAILED);
             }
-            ctx.actor().message(Msg.result("Placed feature", Msg.value(name).raw() + " at "
-                    + Msg.value(position).raw()));
+            ctx.actor().message(Msg.result("Feature created", Msg.blocks(placed) + " placed"));
         };
     }
 
-    /** {@code //structure} — generates a worldgen structure over the selection. */
+    /**
+     * {@code //structure <structure>}, FAWE's: a worldgen structure - a village,
+     * an igloo - generated at the placement position as the game's /place
+     * structure generates it, through the edit.
+     *
+     * <p>It wanted a selection and generated at its lowest corner.</p>
+     */
     private void structure() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//structure", "/struct");
         if (entry == null) {
             return;
         }
-        entry.description = "Generate a structure over the selection";
+        entry.description = "Generate Minecraft structures";
         entry.group = "generation";
-        entry.requiresSelection = true;
         entry.arguments.add("structure");
         entry.handler = ctx -> {
-            String name = ctx.arg(0);
-            Region region = ctx.selection();
-            BlockVector3 min = region.getMinimumPoint();
-            if (!ctx.world().generateStructure(ctx.editSession(), name, min, new Random())) {
-                throw CommandRegistry.error("Unknown structure '" + name
-                        + "'. Try a worldgen structure id such as minecraft:village_plains");
+            String structure = Parsers.structure(ctx.world(), ctx.arg(0));
+            EditSession session = ctx.editSession();
+            long before = session.getBlocksChanged();
+            ctx.world().generateStructure(session, structure, ctx.placement(), new Random());
+            long placed = session.getBlocksChanged() - before;
+            if (placed == 0) {
+                throw CommandRegistry.error(Tools.STRUCTURE_FAILED);
             }
-            ctx.actor().message(Msg.result("Generated structure", Msg.value(name).raw() + " at "
-                    + Msg.value(min).raw()));
+            ctx.actor().message(Msg.result("Structure created", Msg.blocks(placed) + " placed"));
         };
     }
 

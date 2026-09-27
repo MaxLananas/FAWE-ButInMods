@@ -149,6 +149,14 @@ CHECKS = [
     ("//count minecraft:oak_log", "counted: 0"),
     ("//count minecraft:oak_leaves", "counted: 0"),
     ("//count minecraft:grass_block", "counted: 256"),
+    # So do features, as FAWE's do: the configured oak FAWE names grows on the
+    # floor at the position given and the undo takes it back, and an id the
+    # game does not have is refused before anything is generated.
+    ("//feature minecraft:oak 8,61,8", "feature created:"),
+    ("//undo", "Undid: "),
+    ("//count minecraft:oak_log", "counted: 0"),
+    ("//feature minecraft:nope", "Unknown feature 'minecraft:nope'"),
+    ("//structure minecraft:nope", "Unknown structure 'minecraft:nope'"),
     ("//set minecraft:air", "256 blocks affected"),
     ("//pos2 15,66,15", "position 2: set"),
     ("//flora 5", "planted:"),
@@ -227,6 +235,20 @@ CHECKS = [
     ("//pos2 724,200,724", "position 2: set"),
     ("//set minecraft:air", "Use //confirm to execute //set minecraft:air"),
     ("//undo 51", "Use //confirm to execute //undo 51"),
+    # The game's own worldgen, which the smoke lint leaves out: the head-less
+    # engine has none of its features and structures. A placed feature with a
+    # biome filter, which the game's own placement of a feature throws on
+    # outside of world generation, grows on a grass floor, and an igloo is
+    # generated at the placement, the middle of the selection, with the
+    # entities and the chest of its basement; each is taken back.
+    ("//pos1 0,60,0", "position 1: set"),
+    ("//pos2 15,60,15", "position 2: set"),
+    ("//set minecraft:grass_block", "256 blocks affected"),
+    ("//feature minecraft:patch_grass_forest 0,61,0", "feature created:"),
+    ("//undo", "Undid: "),
+    ("//set minecraft:air", "blocks affected"),
+    ("//structure minecraft:igloo", "structure created:"),
+    ("//undo", "Undid: "),
 ]
 
 

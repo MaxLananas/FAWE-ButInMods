@@ -225,14 +225,45 @@ public final class Parsers {
         return id;
     }
 
-    /** A tree type as WorldEdit names them - oak, redwood, random - in its canonical spelling. */
+    /**
+     * A tree type as WorldEdit names them - oak, redwood, random - in its
+     * canonical spelling, or a worldgen feature id, which grows what it names:
+     * {@code /tool tree minecraft:azalea_tree}.
+     */
     public static String treeType(String input) {
         String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(input);
-        if (type == null) {
-            throw CommandRegistry.error("Unknown tree type '" + input + "'. Try: "
-                    + com.maxlananas.fawebim.core.world.TreeTypes.names());
+        if (type != null) {
+            return type;
         }
-        return type;
+        if (input != null && input.indexOf(':') > 0) {
+            return input.trim().toLowerCase(Locale.ROOT);
+        }
+        throw CommandRegistry.error("Unknown tree type '" + input + "'. Try: "
+                + com.maxlananas.fawebim.core.world.TreeTypes.names());
+    }
+
+    /**
+     * A worldgen feature id, namespaced as the game names it, refused when the
+     * world knows its features and this is not one of them.
+     */
+    public static String feature(com.maxlananas.fawebim.core.world.World world, String input) {
+        return registryId(world == null ? List.of() : world.featureIds(), input, "feature");
+    }
+
+    /** A worldgen structure id, as {@link #feature}. */
+    public static String structure(com.maxlananas.fawebim.core.world.World world, String input) {
+        return registryId(world == null ? List.of() : world.structureIds(), input, "structure");
+    }
+
+    private static String registryId(List<String> known, String input, String kind) {
+        String id = input.trim().toLowerCase(Locale.ROOT);
+        if (id.indexOf(':') < 0) {
+            id = "minecraft:" + id;
+        }
+        if (input.isBlank() || !known.isEmpty() && java.util.Collections.binarySearch(known, id) < 0) {
+            throw CommandRegistry.error("Unknown " + kind + " '" + input.trim() + "'");
+        }
+        return id;
     }
 
     /** Parses a pattern: blocks, weighted lists, {@code #clipboard}, {@code ^} ... */

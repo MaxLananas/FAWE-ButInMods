@@ -183,9 +183,12 @@ public final class BrushFactory {
             case "forest" -> new Brushes.ForestBrush(parameters.radius(), parameters.mask(), shape(parameters),
                     com.maxlananas.fawebim.core.command.Parsers.treeType(parameters.string("type", "")),
                     parameters.number("density", 20));
-            case "structure", "feature" -> new Brushes.FeatureBrush(parameters.radius(), parameters.mask(),
-                    shape(parameters), key.equals("structure"), parameters.string("type", ""),
-                    parameters.number("density", 5));
+            case "feature" -> new Brushes.FeatureBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    false, com.maxlananas.fawebim.core.command.Parsers.feature(parameters.world(),
+                            parameters.string("type", "")), parameters.number("density", 5));
+            case "structure" -> new Brushes.FeatureBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    true, com.maxlananas.fawebim.core.command.Parsers.structure(parameters.world(),
+                            parameters.string("type", "")), parameters.number("density", 5));
             case "command" -> new Brushes.CommandBrush(parameters.radius(), parameters.string("input", ""),
                     parameters.flag("h"));
             case "scattercommand" -> new Brushes.ScatterCommandBrush(parameters.radius(),

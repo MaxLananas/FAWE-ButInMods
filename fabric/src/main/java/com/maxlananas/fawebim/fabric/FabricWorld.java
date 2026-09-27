@@ -12,6 +12,7 @@ import com.maxlananas.fawebim.core.world.PackedBlockArray;
 import com.maxlananas.fawebim.core.world.RegenOptions;
 import com.maxlananas.fawebim.core.world.World;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -21,18 +22,29 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProblemReporter;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
+import net.minecraft.world.level.levelgen.placement.BiomeFilter;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
+import net.minecraft.world.level.levelgen.placement.PlacementContext;
+import net.minecraft.world.level.levelgen.placement.PlacementModifier;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.lighting.LightEngine;
 import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
@@ -819,10 +831,9 @@ public final class FabricWorld implements World {
     public boolean generateTree(EditSession session, BlockVector3 pos, String treeType, Random random) {
         String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(treeType);
         if (type == null) {
-            // Not a WorldEdit tree type: a placed feature id plants what it names.
-            String id = treeType == null || !treeType.contains(":") ? null
-                    : treeType.toLowerCase(java.util.Locale.ROOT);
-            return id != null && placeFeature(session, pos, placedFeature(id), random);
+            // Not a WorldEdit tree type: a feature id plants what it names.
+            return treeType != null && treeType.contains(":")
+                    && generateFeature(session, pos, treeType.toLowerCase(java.util.Locale.ROOT), random);
         }
         // A feature a Minecraft version does not have any more plants a plain oak
         // rather than failing the command that asked for a tree. A tree that is
@@ -831,10 +842,26 @@ public final class FabricWorld implements World {
         return placeFeature(session, pos, feature != null ? feature : placedFeature("minecraft:oak_checked"), random);
     }
 
+    /**
+     * A configured feature, as FAWE generates one, or else a placed one, through
+     * the edit. Server thread only.
+     */
     @Override
     public boolean generateFeature(EditSession session, BlockVector3 pos, String featureType, Random random) {
-        String id = featureType.contains(":") ? featureType : "minecraft:" + featureType;
-        return placeFeature(session, pos, placedFeature(id), random);
+        ResourceLocation id = ResourceLocation.tryParse(featureType.contains(":") ? featureType
+                : "minecraft:" + featureType);
+        if (id == null) {
+            return false;
+        }
+        ConfiguredFeature<?, ?> configured = level.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE)
+                .getValue(id);
+        if (configured == null) {
+            return placeFeature(session, pos, placedFeature(id.toString()), random);
+        }
+        try (EditLevel edit = EditLevel.open(level, session)) {
+            return configured.place(edit.level(), level.getChunkSource().getGenerator(),
+                    RandomSource.create(random.nextLong()), new BlockPos(pos.x(), pos.y(), pos.z()));
+        }
     }
 
     /** The placed feature an id names on this server, or null. */
@@ -849,15 +876,93 @@ public final class FabricWorld implements World {
      * the edit sees it and its blocks become the edit's, so they are masked,
      * counted against the limit and undone with it. Server thread only.
      *
+     * <p>It is placed as the game's {@code PlacedFeature#place} places it - its
+     * placement modifiers in turn, then the configured feature at every
+     * position they leave - but for the biome filter, which asks the biome
+     * whether it generates the feature and throws when no biome's generation
+     * is placing it, as no command's is.</p>
+     *
      * @return false when there is no such feature or it did not fit
      */
     private boolean placeFeature(EditSession session, BlockVector3 pos, PlacedFeature feature, Random random) {
         if (feature == null) {
             return false;
         }
-        net.minecraft.util.RandomSource source = net.minecraft.util.RandomSource.create(random.nextLong());
-        return feature.place(EditLevel.of(level, session), level.getChunkSource().getGenerator(), source,
-                new BlockPos(pos.x(), pos.y(), pos.z()));
+        RandomSource source = RandomSource.create(random.nextLong());
+        ChunkGenerator generator = level.getChunkSource().getGenerator();
+        try (EditLevel edit = EditLevel.open(level, session)) {
+            WorldGenLevel target = edit.level();
+            PlacementContext context = new PlacementContext(target, generator, java.util.Optional.empty());
+            java.util.stream.Stream<BlockPos> positions = java.util.stream.Stream.of(
+                    new BlockPos(pos.x(), pos.y(), pos.z()));
+            for (PlacementModifier modifier : feature.placement()) {
+                if (!(modifier instanceof BiomeFilter)) {
+                    positions = positions.flatMap(at -> modifier.getPositions(context, source, at));
+                }
+            }
+            ConfiguredFeature<?, ?> configured = feature.feature().value();
+            // Every position is placed, in the order the game places them: a
+            // reduction does not stop at the first success as a match would.
+            return positions.map(at -> configured.place(target, generator, source, at))
+                    .reduce(false, Boolean::logicalOr);
+        }
+    }
+
+    /**
+     * A structure generated as the game's /place structure generates one - its
+     * start in the chunk of the position, then its pieces chunk by chunk over
+     * its bounding box - through the edit, as WorldEdit's Fabric world does.
+     * Server thread only.
+     */
+    @Override
+    public boolean generateStructure(EditSession session, String structureId, BlockVector3 pos, Random random) {
+        ResourceLocation id = ResourceLocation.tryParse(structureId.contains(":") ? structureId
+                : "minecraft:" + structureId);
+        if (id == null) {
+            return false;
+        }
+        Registry<Structure> structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        Structure structure = structures.getValue(id);
+        if (structure == null) {
+            return false;
+        }
+        ServerChunkCache chunks = level.getChunkSource();
+        ChunkGenerator generator = chunks.getGenerator();
+        try (EditLevel edit = EditLevel.open(level, session)) {
+            StructureStart start = structure.generate(structures.wrapAsHolder(structure), level.dimension(),
+                    level.registryAccess(), generator, generator.getBiomeSource(), chunks.randomState(),
+                    level.getStructureManager(), level.getSeed(), new ChunkPos(new BlockPos(pos.x(), pos.y(), pos.z())),
+                    0, edit.level(), biome -> true);
+            if (!start.isValid()) {
+                return false;
+            }
+            BoundingBox box = start.getBoundingBox();
+            ChunkPos min = new ChunkPos(SectionPos.blockToSectionCoord(box.minX()),
+                    SectionPos.blockToSectionCoord(box.minZ()));
+            ChunkPos max = new ChunkPos(SectionPos.blockToSectionCoord(box.maxX()),
+                    SectionPos.blockToSectionCoord(box.maxZ()));
+            RandomSource source = RandomSource.create(random.nextLong());
+            ChunkPos.rangeClosed(min, max).forEach(chunk -> start.placeInChunk(edit.level(),
+                    level.structureManager(), generator, source,
+                    new BoundingBox(chunk.getMinBlockX(), level.getMinY(), chunk.getMinBlockZ(),
+                            chunk.getMaxBlockX(), level.getMaxY(), chunk.getMaxBlockZ()), chunk));
+            return true;
+        }
+    }
+
+    @Override
+    public List<String> featureIds() {
+        return FabricRegistries.featureIds();
+    }
+
+    @Override
+    public List<String> structureIds() {
+        return FabricRegistries.structureIds();
+    }
+
+    @Override
+    public boolean placesFeatureOnFace(String featureId) {
+        return FabricRegistries.placesOnFace(featureId);
     }
 
     /**
@@ -891,10 +996,14 @@ public final class FabricWorld implements World {
      * its passengers inside; {@code null} for one the game does not save.
      */
     private NbtCompound saveEntity(Entity entity) {
+        return saveEntity(entity, level.registryAccess());
+    }
+
+    static NbtCompound saveEntity(Entity entity, net.minecraft.core.RegistryAccess registries) {
         try {
             net.minecraft.world.level.storage.TagValueOutput output =
                     net.minecraft.world.level.storage.TagValueOutput.createWithContext(
-                            ProblemReporter.DISCARDING, level.registryAccess());
+                            ProblemReporter.DISCARDING, registries);
             return entity.saveAsPassenger(output) ? fromTag(output.buildResult()) : null;
         } catch (IOException | RuntimeException exception) {
             FaweMod.LOGGER.warn("Could not save the data of entity {}", entity.getStringUUID(), exception);
@@ -1066,17 +1175,22 @@ public final class FabricWorld implements World {
     public NbtCompound getBlockEntity(int x, int y, int z) {
         LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
         var blockEntity = chunk.getBlockEntity(new BlockPos(x, y, z), LevelChunk.EntityCreationType.CHECK);
-        if (blockEntity == null) {
-            return null;
-        }
+        return blockEntity == null ? null : saveBlockEntity(blockEntity, level.registryAccess());
+    }
+
+    /** The data of a block entity with its id, as the game saves it into a chunk. */
+    static NbtCompound saveBlockEntity(net.minecraft.world.level.block.entity.BlockEntity blockEntity,
+                                       net.minecraft.core.RegistryAccess registries) {
         try {
             net.minecraft.world.level.storage.TagValueOutput output =
                     net.minecraft.world.level.storage.TagValueOutput.createWithContext(
-                            ProblemReporter.DISCARDING, level.registryAccess());
+                            ProblemReporter.DISCARDING, registries);
             blockEntity.saveWithId(output);
             return fromTag(output.buildResult());
         } catch (IOException | RuntimeException exception) {
-            FaweMod.LOGGER.warn("Could not save the data of the block entity at {},{},{}", x, y, z, exception);
+            BlockPos pos = blockEntity.getBlockPos();
+            FaweMod.LOGGER.warn("Could not save the data of the block entity at {},{},{}", pos.getX(), pos.getY(),
+                    pos.getZ(), exception);
             return null;
         }
     }

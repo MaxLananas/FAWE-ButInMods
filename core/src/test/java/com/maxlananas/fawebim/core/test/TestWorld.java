@@ -421,34 +421,68 @@ public final class TestWorld implements World {
 
     /**
      * The features of the test world: a block id is a feature that puts that
-     * block on the one at the position, where there is air above it, as a
-     * patch of flowers is placed; anything else is the test oak, grown at the
-     * position.
+     * block at the position, or on top of it when the position holds a block,
+     * as a patch of flowers settles on the ground; {@code minecraft:oak} is the
+     * test oak, grown at the position, and against the face the feature placer
+     * clicks.
      */
     @Override
     public boolean generateFeature(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
                                    String featureType, Random random) {
         int block = BlockState.registry().defaultState(featureType);
         if (block < 0) {
-            return generateTree(session, pos, featureType, random);
+            return featureType.equals(OAK) && generateTree(session, pos, featureType, random);
         }
-        return BlockState.registry().isAirLike(session.getBlock(pos.x(), pos.y() + 1, pos.z()))
-                && session.setBlock(pos.x(), pos.y() + 1, pos.z(), block);
+        int y = surface(session, pos);
+        return y != Integer.MIN_VALUE && session.setBlock(pos.x(), y, pos.z(), block);
+    }
+
+    /** The position if it is air, else the one above it if that is, else none. */
+    private static int surface(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos) {
+        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+        if (registry.isAirLike(session.getBlock(pos.x(), pos.y(), pos.z()))) {
+            return pos.y();
+        }
+        return registry.isAirLike(session.getBlock(pos.x(), pos.y() + 1, pos.z())) ? pos.y() + 1 : Integer.MIN_VALUE;
+    }
+
+    private static final String OAK = "minecraft:oak";
+
+    @Override
+    public List<String> featureIds() {
+        List<String> ids = new ArrayList<>(BlockState.registry().blockNames());
+        ids.add(OAK);
+        ids.sort(null);
+        return ids;
+    }
+
+    @Override
+    public List<String> structureIds() {
+        List<String> ids = new ArrayList<>(BlockState.registry().blockNames());
+        ids.sort(null);
+        return ids;
+    }
+
+    @Override
+    public boolean placesFeatureOnFace(String featureId) {
+        return featureId.equals(OAK);
     }
 
     /**
      * The structures of the test world: a block id is a structure, a pillar
-     * of two of that block on the one at the position; there is no other.
+     * of two of that block from the position, or from on top of it when the
+     * position holds a block; there is no other.
      */
     @Override
     public boolean generateStructure(com.maxlananas.fawebim.core.extent.EditSession session, String structureId,
                                      BlockVector3 pos, Random random) {
         int block = BlockState.registry().defaultState(structureId);
-        if (block < 0) {
+        int y = surface(session, pos);
+        if (block < 0 || y == Integer.MIN_VALUE) {
             return false;
         }
-        session.setBlock(pos.x(), pos.y() + 1, pos.z(), block);
-        session.setBlock(pos.x(), pos.y() + 2, pos.z(), block);
+        session.setBlock(pos.x(), y, pos.z(), block);
+        session.setBlock(pos.x(), y + 1, pos.z(), block);
         return true;
     }
 
