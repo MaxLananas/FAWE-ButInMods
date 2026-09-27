@@ -186,17 +186,19 @@ CHECKS = [
      '{condition:"minecraft:location_check",predicate:{light:{light:{min:13}}}}', "passed", 10),
     ("//fixlighting", "Lighting propagated: 16 chunk(s)"),
     ("forceload remove all", "force loaded"),
-    # The same roof where nothing keeps the chunks loaded: the edit loads them,
-    # the game unloads and saves them a tick or two later, while its light
-    # thread may still be darkening the air under the roof, and takes the saved
-    # light back when it loads them again. The flushing save writes out what it
-    # saved; loaded again from the disk, the chunks must come back dark under
-    # the roof.
+    # The same roof where nothing keeps the chunks loaded. The edit loads them
+    # with the game's ticket of a tick, and the light thread, which finds their
+    # blocks through the loaded chunks, may reach them after that: the mod
+    # keeps them loaded until it is done, and holds their saves until then, as
+    # the game takes the saved light back when it loads a chunk. Whether they
+    # are still loaded or come back from what the flushing save wrote, they
+    # hold the roof and the dark under it.
     ("//pos1 1000,80,1000", "position 1: set"),
     ("//pos2 1063,82,1063", "position 2: set"),
     ("//set minecraft:stone", "12,288 block(s) affected"),
     ("save-all flush", "saved the game"),
     ("forceload add 1000 1000 1063 1063", "force loaded"),
+    ("execute if block 1032 80 1032 minecraft:stone", "passed"),
     ('execute positioned 1032 79 1032 if predicate '
      '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed", 10),
     ("forceload remove all", "force loaded"),

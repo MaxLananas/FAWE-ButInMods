@@ -117,6 +117,7 @@ public final class FaweMod implements ModInitializer {
                 case ERROR -> LOGGER.error(message, error);
             }
         });
+        LightTickets.register();
         // The game builds the command dispatcher while its server object is being
         // constructed, which happens before the starting event reaches the mod.
         // Everything the commands need to exist has to be ready by then, so the
@@ -165,6 +166,7 @@ public final class FaweMod implements ModInitializer {
             FabricWorld.drainWorkers();
             drainWriter();
             FabricRegistries.clear();
+            LightTickets.clear();
         });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->

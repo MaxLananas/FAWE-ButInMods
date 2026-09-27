@@ -597,28 +597,31 @@ public final class FabricWorld implements World {
     }
 
     /**
-     * Holds every save of a chunk until the light engine has run the work just
-     * queued for it.
+     * Keeps the chunk loaded, and holds every save of it, until the light
+     * engine has run the work just queued for it.
      *
-     * <p>The game saves the light of a chunk as its engine holds it, and takes
-     * the saved light back when it loads the chunk, even one saved as not lit:
-     * the lighting it then runs only adds light. A chunk nothing keeps loaded -
-     * an edit away from every player, a paste wider than the view distance - is
-     * unloaded and saved a tick or two after the edit loaded it, while the
-     * light thread may still be working on it, and it came back with the light
-     * from before the edit: sky light under a new roof. The unload, the
-     * autosave and a flushing save-all wait for the save dependencies of the
-     * chunk's holder, as they wait for a chunk still being generated; the
-     * future is the one the game hands the send dependencies to hold a chunk's
-     * packet until its light is done. Server thread only.</p>
+     * <p>A chunk nothing keeps loaded - an edit away from every player, a paste
+     * wider than the view distance - leaves the loaded set a tick or two after
+     * the edit loaded it, while the light thread may not have reached it yet:
+     * the engine, which finds a chunk's blocks and sky light sources through
+     * the loaded chunks, then left the sky light under a new roof at 15. The
+     * {@link LightTickets ticket} keeps it loaded, not ticking, until the work
+     * is done. The save dependency covers the saves made meanwhile - the
+     * autosave, a flushing save-all - which would store the light as it was
+     * before the edit, and the game takes the saved light back when it loads
+     * the chunk. The future is the one the game hands a holder's send
+     * dependencies to hold a chunk's packet until its light is done. Server
+     * thread only.</p>
      */
     private void lightPending(LevelChunk chunk, net.minecraft.server.level.ThreadedLevelLightEngine engine) {
         ChunkPos pos = chunk.getPos();
+        java.util.concurrent.CompletableFuture<?> done = engine.waitForPendingTasks(pos.x, pos.z);
         net.minecraft.server.level.ChunkHolder holder =
                 level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(pos.toLong());
         if (holder != null) {
-            holder.addSaveDependency(engine.waitForPendingTasks(pos.x, pos.z));
+            holder.addSaveDependency(done);
         }
+        LightTickets.hold(level, pos, done);
     }
 
     /** Whether a buffered state is one the villagers or the portal search keep track of. */
