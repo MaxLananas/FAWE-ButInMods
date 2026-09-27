@@ -382,17 +382,26 @@ public final class TestWorld implements World {
         };
     }
 
+    /**
+     * A small oak for the tests: a trunk of five to seven logs under a crown of
+     * leaves. Like the game's trees it needs air where its trunk starts and dirt
+     * or grass under it, and its blocks go through the session, as the Fabric
+     * world's do.
+     */
     @Override
-    public boolean generateTree(BlockVector3 pos, String treeType, Random random) {
-        int log = BlockState.registry().defaultState("minecraft:oak_log");
-        int leaves = BlockState.registry().defaultState("minecraft:oak_leaves");
-        if (log < 0 || leaves < 0) {
+    public boolean generateTree(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                                String treeType, Random random) {
+        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+        int log = registry.defaultState("minecraft:oak_log");
+        int leaves = registry.defaultState("minecraft:oak_leaves");
+        if (log < 0 || leaves < 0 || !registry.isAirLike(session.getBlock(pos.x(), pos.y(), pos.z()))) {
+            return false;
+        }
+        String soil = registry.name(session.getBlock(pos.x(), pos.y() - 1, pos.z()));
+        if (!soil.equals("minecraft:grass_block") && !soil.equals("minecraft:dirt")) {
             return false;
         }
         int height = 5 + random.nextInt(3);
-        for (int y = 0; y < height; y++) {
-            setBlock(pos.x(), pos.y() + y, pos.z(), log);
-        }
         for (int dy = height - 3; dy <= height; dy++) {
             int radius = dy >= height - 1 ? 1 : 2;
             for (int dx = -radius; dx <= radius; dx++) {
@@ -400,17 +409,21 @@ public final class TestWorld implements World {
                     if (Math.abs(dx) == radius && Math.abs(dz) == radius) {
                         continue;
                     }
-                    setBlock(pos.x() + dx, pos.y() + dy, pos.z() + dz, leaves);
+                    session.setBlock(pos.x() + dx, pos.y() + dy, pos.z() + dz, leaves);
                 }
             }
+        }
+        for (int y = 0; y < height; y++) {
+            session.setBlock(pos.x(), pos.y() + y, pos.z(), log);
         }
         return true;
     }
 
     @Override
-    public boolean generateFeature(BlockVector3 pos, String featureType, Random random) {
+    public boolean generateFeature(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                                   String featureType, Random random) {
         // Features are placed by the platform; the test world uses its tree generator.
-        return generateTree(pos, featureType, random);
+        return generateTree(session, pos, featureType, random);
     }
 
     @Override

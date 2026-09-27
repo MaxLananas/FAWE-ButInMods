@@ -172,6 +172,7 @@ public final class SelfTestMain {
         CommandFeedbackTests.run();
         SchematicFolderTests.run();
         SchematicCommandTests.run();
+        GenerationTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -2707,7 +2708,8 @@ public final class SelfTestMain {
         // The same commands run for a player at the position they stand on.
         TestActor player = new TestActor("Builder", world, new BlockVector3(40, 71, 0));
         CommandManager.get().dispatch(player, "//tree oak");
-        check("//tree plants for a player", player.lastMessage().contains("Tree planted at"));
+        check("//tree binds the tree tool for a player, as FAWE's does",
+                plain(player.lastMessage()).contains("Tool 'tree' bound"));
         player.clearMessages();
         CommandManager.get().dispatch(player, "//wand");
         check("//wand hands the wand to a player",

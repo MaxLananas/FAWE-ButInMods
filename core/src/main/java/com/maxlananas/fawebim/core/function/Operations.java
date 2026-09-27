@@ -1525,32 +1525,97 @@ public final class Operations {
     }
 
     /**
-     * {@code //forest} — plants trees over the region.
+     * {@code //forest} and {@code //forestgen}, WorldEdit's makeForest: a
+     * {@link #paint} of trees, each grown as {@link #growTree} grows it.
      *
-     * <p>WorldEdit picks a column of the region at the density it was given, finds
-     * the surface and plants the tree type it was asked for; a tree that does not
-     * fit (a spot too small, a plant the world does not know) is skipped.</p>
+     * @param density the share of the columns a tree is tried on, 0 to 1
+     * @return the trees that grew
      */
-    public static int forest(World world, EditSession session, Region region, String treeType, double density) {
+    public static int forest(EditSession session, Region region, String treeType, double density) {
         Random random = new Random();
+        return paint(session, region, density, random,
+                (x, y, z, ground) -> growTree(session, x, y, z, ground, treeType, random));
+    }
+
+    /** What {@link #paint} does on the ground of a column: grows a tree, places a feature. */
+    @FunctionalInterface
+    public interface GroundFunction {
+
+        /** @return true when something was placed on the ground block at x, y, z, which holds {@code ground} */
+        boolean apply(int x, int y, int z, int ground);
+    }
+
+    /**
+     * WorldEdit's Paint, which its //forest and its forest, feature and
+     * structure brushes are made of: every column of the region's footprint
+     * that a draw at the density lets through is walked down from the top of
+     * the region to its first block that is not air - the ground - and the
+     * function runs there. A column whose block just above the region is not
+     * air is under cover and left alone.
+     *
+     * <p>The footprint of a cylinder or a polygon is its outline; of any other
+     * region, as in WorldEdit, its bounding box. The blocks are read through
+     * the session, so what the function placed in one column is ground for the
+     * next.</p>
+     *
+     * @param density the share of the columns tried, 0 to 1
+     * @return how many times the function placed something
+     */
+    public static int paint(EditSession session, Region region, double density, Random random,
+                            GroundFunction function) {
         BlockStateRegistry registry = BlockState.registry();
-        int changed = 0;
-        for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-            for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                if (random.nextDouble() > density) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        boolean outline = region instanceof com.maxlananas.fawebim.core.region.CylinderRegion
+                || region instanceof com.maxlananas.fawebim.core.region.Polygonal2DRegion;
+        int top = Math.min(max.y(), session.maxY());
+        int bottom = Math.max(min.y(), session.minY());
+        boolean coverInWorld = max.y() < session.maxY() && max.y() + 1 >= session.minY();
+        int placed = 0;
+        for (int x = min.x(); x <= max.x(); x++) {
+            for (int z = min.z(); z <= max.z(); z++) {
+                if (outline && !region.contains(x, min.y(), z) || random.nextFloat() > density) {
                     continue;
                 }
-                int y = world.getHighestBlockY(x, z);
-                if (y < region.getMinimumPoint().y() || y + 1 > region.getMaximumPoint().y()) {
+                if (coverInWorld && !registry.isAirLike(session.getBlock(x, max.y() + 1, z))) {
                     continue;
                 }
-                if (registry.isAirLike(world.getBlock(x, y + 1, z))
-                        && world.generateTree(new BlockVector3(x, y + 1, z), treeType, random)) {
-                    changed++;
+                for (int y = top; y >= bottom; y--) {
+                    int state = session.getBlock(x, y, z);
+                    if (!registry.isAirLike(state)) {
+                        if (function.apply(x, y, z, state)) {
+                            placed++;
+                        }
+                        break;
+                    }
                 }
             }
         }
-        return changed;
+        return placed;
+    }
+
+    /**
+     * WorldEdit's ForestGenerator: a tree grows on top of solid ground; a plant
+     * a tree may take the place of - grass, a fern - is cleared, the tree grows
+     * where it stood, and it is put back when no tree fits; anything else holds
+     * no tree.
+     */
+    public static boolean growTree(EditSession session, int x, int y, int z, int ground, String treeType,
+                                   Random random) {
+        BlockStateRegistry registry = BlockState.registry();
+        World world = session.getWorld();
+        if (registry.isSolid(ground)) {
+            return world.generateTree(session, new BlockVector3(x, y + 1, z), treeType, random);
+        }
+        if (!registry.hasTag(ground, "minecraft:replaceable")) {
+            return false;
+        }
+        session.setBlock(x, y, z, registry.air());
+        if (world.generateTree(session, new BlockVector3(x, y, z), treeType, random)) {
+            return true;
+        }
+        session.setBlock(x, y, z, ground);
+        return false;
     }
 
     /** {@code //deltree} — removes a tree starting from its trunk. */

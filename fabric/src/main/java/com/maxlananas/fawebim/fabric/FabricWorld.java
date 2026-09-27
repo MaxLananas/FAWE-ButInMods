@@ -1,5 +1,6 @@
 package com.maxlananas.fawebim.fabric;
 
+import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.Vector3;
@@ -31,6 +32,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import net.minecraft.world.level.lighting.LightEngine;
 import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
@@ -814,38 +816,47 @@ public final class FabricWorld implements World {
     }
 
     @Override
-    public boolean generateTree(BlockVector3 pos, String treeType, Random random) {
+    public boolean generateTree(EditSession session, BlockVector3 pos, String treeType, Random random) {
         String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(treeType);
         if (type == null) {
             // Not a WorldEdit tree type: a placed feature id plants what it names.
             String id = treeType == null || !treeType.contains(":") ? null
                     : treeType.toLowerCase(java.util.Locale.ROOT);
-            return id != null && placeFeature(pos, id, random);
+            return id != null && placeFeature(session, pos, placedFeature(id), random);
         }
         // A feature a Minecraft version does not have any more plants a plain oak
-        // rather than failing the command that asked for a tree.
-        return placeFeature(pos, com.maxlananas.fawebim.core.world.TreeTypes.feature(type, random), random)
-                || placeFeature(pos, "minecraft:oak_checked", random);
+        // rather than failing the command that asked for a tree. A tree that is
+        // known but does not fit is not replaced by another: it does not grow.
+        PlacedFeature feature = placedFeature(com.maxlananas.fawebim.core.world.TreeTypes.feature(type, random));
+        return placeFeature(session, pos, feature != null ? feature : placedFeature("minecraft:oak_checked"), random);
     }
 
     @Override
-    public boolean generateFeature(BlockVector3 pos, String featureType, Random random) {
+    public boolean generateFeature(EditSession session, BlockVector3 pos, String featureType, Random random) {
         String id = featureType.contains(":") ? featureType : "minecraft:" + featureType;
-        return placeFeature(pos, id, random);
+        return placeFeature(session, pos, placedFeature(id), random);
     }
 
-    private boolean placeFeature(BlockVector3 pos, String id, Random random) {
+    /** The placed feature an id names on this server, or null. */
+    private PlacedFeature placedFeature(String id) {
         ResourceLocation location = ResourceLocation.tryParse(id);
-        if (location == null) {
-            return false;
-        }
-        net.minecraft.world.level.levelgen.placement.PlacedFeature placement =
-                level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
-        if (placement == null) {
+        return location == null ? null
+                : level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
+    }
+
+    /**
+     * Places a placed feature through the edit: the feature reads the world as
+     * the edit sees it and its blocks become the edit's, so they are masked,
+     * counted against the limit and undone with it. Server thread only.
+     *
+     * @return false when there is no such feature or it did not fit
+     */
+    private boolean placeFeature(EditSession session, BlockVector3 pos, PlacedFeature feature, Random random) {
+        if (feature == null) {
             return false;
         }
         net.minecraft.util.RandomSource source = net.minecraft.util.RandomSource.create(random.nextLong());
-        return placement.place(level, level.getChunkSource().getGenerator(), source,
+        return feature.place(EditLevel.of(level, session), level.getChunkSource().getGenerator(), source,
                 new BlockPos(pos.x(), pos.y(), pos.z()));
     }
 

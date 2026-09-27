@@ -1757,7 +1757,7 @@ public final class Commands {
                                 + "'. Try: " + com.maxlananas.fawebim.core.world.TreeTypes.names());
                     }
                     double density = ctx.doubleArg(1, 5) / 100.0;
-                    int changed = com.maxlananas.fawebim.core.function.Operations.forest(ctx.world(), session,
+                    int changed = com.maxlananas.fawebim.core.function.Operations.forest(session,
                             ctx.selection(), type, density);
                     flush(ctx, session, "Planted", changed, "tree");
                 };
@@ -1792,24 +1792,6 @@ public final class Commands {
                         }
                     }
                     flush(ctx, session, "Generated", changed, "pumpkin");
-                };
-
-
-        CommandRegistry.Entry e51 = registry.register("//tree");
-        e51.description = "Create a tree at your position";
-        e51.group = "generation";
-        e51.requiresPlayer = true;
-        e51.booleanFlags.add("t");
-        e51.arguments.add("[type]");
-        e51.handler = ctx -> {
-                    String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(ctx.arg(0, "tree"));
-                    if (type == null) {
-                        throw CommandRegistry.error("Unknown tree type '" + ctx.arg(0, "")
-                                + "'. Try: " + com.maxlananas.fawebim.core.world.TreeTypes.names());
-                    }
-                    boolean ok = ctx.world().generateTree(ctx.placement(), type, new java.util.Random());
-                    ctx.actor().message(ok ? Msg.success("Tree planted at ").append(Msg.value(ctx.placement()))
-                            : Msg.error("The world cannot plant a " + type + " tree here"));
                 };
 
 
@@ -3391,6 +3373,9 @@ public final class Commands {
         e100.description = "Bind a tool to an item: none, tree, repl, cycler, flood-fill, brush, info, farwand, "
                         + "navwand, lrbuild, stacker, deltree";
         e100.group = "tool";
+        // A tool is bound to the item in a hand, as every one of WorldEdit's
+        // tool commands takes a player: a console has no hand to bind it to.
+        e100.requiresPlayer = true;
         e100.arguments.add("[" + String.join("|", com.maxlananas.fawebim.core.tool.Tools.NAMES) + "]");
         e100.arguments.add("[target]");
         e100.handler = ctx -> {

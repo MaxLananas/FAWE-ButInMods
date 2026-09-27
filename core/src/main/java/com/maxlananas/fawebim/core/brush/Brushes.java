@@ -1568,7 +1568,7 @@ public final class Brushes {
                     int x0 = position.x() + x;
                     int z0 = position.z() + z;
                     int y = session.getWorld().getHighestBlockY(x0, z0);
-                    if (session.getWorld().generateTree(new BlockVector3(x0, y + 1, z0), "tree", random)) {
+                    if (session.getWorld().generateTree(session, new BlockVector3(x0, y + 1, z0), "tree", random)) {
                         changed++;
                     }
                 }
@@ -2139,7 +2139,7 @@ public final class Brushes {
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             World world = session.getWorld();
             if (kind.equals("feature") || kind.equals("set")) {
-                boolean placed = world.generateFeature(position, feature, random);
+                boolean placed = world.generateFeature(session, position, feature, random);
                 actor.message(placed ? Msg.success("Placed feature " + feature)
                         : Msg.error("Unknown feature " + feature));
                 return placed ? 1 : 0;
@@ -2150,7 +2150,7 @@ public final class Brushes {
                 int x = position.x() + random.nextInt(r * 2 + 1) - r;
                 int z = position.z() + random.nextInt(r * 2 + 1) - r;
                 int y = world.getHighestBlockY(x, z);
-                if (world.generateFeature(new BlockVector3(x, y, z), feature, random)) {
+                if (world.generateFeature(session, new BlockVector3(x, y, z), feature, random)) {
                     placed++;
                 }
             }

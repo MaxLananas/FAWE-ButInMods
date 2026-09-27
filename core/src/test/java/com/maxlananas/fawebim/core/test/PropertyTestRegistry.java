@@ -86,10 +86,13 @@ final class PropertyTestRegistry implements BlockStateRegistry {
         block("minecraft:poppy");
         block("minecraft:oak_trapdoor", "facing", HORIZONTAL, "half", List.of("bottom", "top"),
                 "open", List.of("false", "true"));
+        block("minecraft:oak_leaves");
+        block("minecraft:short_grass");
     }
 
     /** What the game lets a body pass through: no block stops it. */
-    private static final java.util.Set<String> NOT_SOLID = java.util.Set.of("minecraft:snow", "minecraft:poppy");
+    private static final java.util.Set<String> NOT_SOLID = java.util.Set.of("minecraft:snow", "minecraft:poppy",
+            "minecraft:short_grass");
 
     /** Solid blocks whose shape is not a whole cube, whatever their state. */
     private static final java.util.Set<String> PARTIAL = java.util.Set.of("minecraft:oak_stairs", "minecraft:oak_fence",
@@ -100,7 +103,8 @@ final class PropertyTestRegistry implements BlockStateRegistry {
 
     /** The game's tags this registry needs, by the blocks they hold. */
     private static final Map<String, java.util.Set<String>> TAGS = Map.of(
-            "minecraft:snow_layer_cannot_survive_on", java.util.Set.of("minecraft:ice", "minecraft:packed_ice"));
+            "minecraft:snow_layer_cannot_survive_on", java.util.Set.of("minecraft:ice", "minecraft:packed_ice"),
+            "minecraft:replaceable", java.util.Set.of("minecraft:short_grass", "minecraft:snow", "minecraft:water"));
 
     /** The blocks the game gives a fluid of their own, whatever their state. */
     private static final java.util.Set<String> FLUID_BLOCKS = java.util.Set.of("minecraft:water", "minecraft:lava",

@@ -221,17 +221,35 @@ public interface World extends Extent {
         return -1;
     }
 
-    boolean generateTree(BlockVector3 pos, String treeType, Random random);
+    /**
+     * Grows a tree whose trunk starts at pos: a WorldEdit tree type
+     * ({@code oak}, {@code mega_redwood}, ...) or a placed feature id. Its blocks
+     * go through the session, as WorldEdit's and FAWE's trees do, so the mask,
+     * the change limit and the history see them: a tree placed straight into
+     * the world could not be undone.
+     *
+     * @return false when nothing grew - no room, no soil, or a type the world does not know
+     */
+    boolean generateTree(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos, String treeType,
+                         Random random);
 
-    boolean generateFeature(BlockVector3 pos, String featureType, Random random);
+    /**
+     * Places a placed feature ({@code minecraft:ore_gold}, {@code minecraft:trees_plains}, ...)
+     * at pos, its blocks through the session.
+     *
+     * @return false when the feature is unknown or did not fit
+     */
+    boolean generateFeature(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                            String featureType, Random random);
 
     /**
      * Generates a worldgen structure (a village, a shipwreck, a stronghold...) at
-     * the given position.
+     * the given position, its blocks through the session.
      *
-     * @return false when the structure id is unknown to the server
+     * @return false when the structure id is unknown to the server or it did not fit
      */
-    default boolean generateStructure(String structureId, BlockVector3 pos, Random random) {
+    default boolean generateStructure(com.maxlananas.fawebim.core.extent.EditSession session, String structureId,
+                                      BlockVector3 pos, Random random) {
         return false;
     }
 

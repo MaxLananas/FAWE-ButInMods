@@ -137,6 +137,20 @@ CHECKS = [
     ("//forest oak 20", "planted:"),
     ("//forestgen 5 mega_redwood 10", "planted:"),
     ("//tree oak", "must be run by a player"),
+    # Trees grow through the edit, as WorldEdit's do: on a grass floor laid in
+    # the air, a forest of oaks at full density, and //undo takes back every log
+    # and leaf the game's tree features grew - the floor, which the count of
+    # grass reads, is still there, so the undo was the forest's.
+    ("//pos2 15,60,15", "position 2: set"),
+    ("//set minecraft:grass_block", "256 blocks affected"),
+    ("//pos2 15,80,15", "position 2: set"),
+    ("//forest oak 100", "planted:"),
+    ("//undo", "Undid: "),
+    ("//count minecraft:oak_log", "counted: 0"),
+    ("//count minecraft:oak_leaves", "counted: 0"),
+    ("//count minecraft:grass_block", "counted: 256"),
+    ("//set minecraft:air", "256 blocks affected"),
+    ("//pos2 15,66,15", "position 2: set"),
     ("//flora 5", "planted:"),
     ("//ores minecraft:stone", "blocks affected"),
     ("//ore minecraft:stone minecraft:iron_ore 9 40 100 60 70", "blocks affected"),

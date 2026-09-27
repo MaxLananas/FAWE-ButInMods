@@ -249,53 +249,40 @@ final class GenerationCommands {
                 Math.max(1, Math.max(origin[2] - min.z(), max.z() - origin[2]))};
     }
 
+    /**
+     * {@code //forestgen [size] [type] [density]}, WorldEdit's: a forest in the
+     * box that reaches {@code size} blocks each way from where the player
+     * stands, grown as //forest grows one. It planted over the selection - a
+     * command WorldEdit runs without one - and read the size as the size of a
+     * tree.
+     */
     private void forestGen() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//forestgen", "/forestgen");
         if (entry == null) {
             return;
         }
-        entry.description = "Generate a forest in the selection";
+        entry.description = "Generate a forest";
         entry.group = "generation";
-        entry.requiresSelection = true;
         entry.arguments.add("[size]");
         entry.arguments.add("[type]");
         entry.arguments.add("[density]");
         entry.handler = ctx -> {
-            int size = ctx.intArg(0, 10);
-            String type = ctx.arg(1, "tree").toLowerCase(Locale.ROOT);
-            double density = ctx.doubleArg(2, 5) / 100.0;
-            if (size < 1 || size > 50) {
-                throw CommandRegistry.error("Tree size must be between 1 and 50");
-            }
-            String canonical = com.maxlananas.fawebim.core.world.TreeTypes.canonical(type);
-            if (canonical == null) {
-                throw CommandRegistry.error("Unknown tree type '" + type + "'. Try: "
+            int size = ctx.sizeArg(0, 10);
+            String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(ctx.arg(1, "tree"));
+            if (type == null) {
+                throw CommandRegistry.error("Unknown tree type '" + ctx.arg(1) + "'. Try: "
                         + com.maxlananas.fawebim.core.world.TreeTypes.names());
             }
-            type = canonical;
-            if (density <= 0 || density > 0.5) {
-                throw CommandRegistry.error("Density is a percentage between 0.1 and 50");
+            double density = ctx.doubleArg(2, 5);
+            if (!(density >= 0 && density <= 100)) {
+                throw CommandRegistry.error("Density must be between 0 and 100");
             }
-            Region region = ctx.selection();
-            World world = ctx.world();
-            Random random = new Random();
-            BlockVector3 min = region.getMinimumPoint();
-            BlockVector3 max = region.getMaximumPoint();
-            int attempts = (int) (region.getVolume() * density);
-            int planted = 0;
-            for (int i = 0; i < attempts; i++) {
-                int x = min.x() + random.nextInt(max.x() - min.x() + 1);
-                int z = min.z() + random.nextInt(max.z() - min.z() + 1);
-                int ground = world.getHighestBlockY(x, z);
-                if (ground < min.y() || ground > max.y()) {
-                    continue;
-                }
-                if (world.generateTree(new BlockVector3(x, ground + 1, z), type, random)) {
-                    planted++;
-                }
-            }
-            ctx.actor().message(Msg.result("Planted", Msg.count(planted, "tree", "trees") + " out of "
-                    + Msg.count(attempts, "attempt", "attempts")));
+            BlockVector3 center = ctx.placement();
+            Region region = new com.maxlananas.fawebim.core.region.CuboidRegion(center.add(-size, -size, -size),
+                    center.add(size, size, size));
+            int planted = com.maxlananas.fawebim.core.function.Operations.forest(ctx.editSession(), region, type,
+                    density / 100);
+            ctx.actor().message(Msg.result("Planted", Msg.count(planted, "tree", "trees")));
         };
     }
 
@@ -317,7 +304,7 @@ final class GenerationCommands {
             String name = ctx.arg(0);
             BlockVector3 position = ctx.args().size() > 1
                     ? ctx.blockVector(1) : ctx.targetBlock(100);
-            if (!ctx.world().generateFeature(position, name, new Random())) {
+            if (!ctx.world().generateFeature(ctx.editSession(), position, name, new Random())) {
                 throw CommandRegistry.error("Unknown feature '" + name
                         + "'. Use a namespaced feature id such as minecraft:trees_oak or minecraft:ore_gold");
             }
@@ -340,7 +327,7 @@ final class GenerationCommands {
             String name = ctx.arg(0);
             Region region = ctx.selection();
             BlockVector3 min = region.getMinimumPoint();
-            if (!ctx.world().generateStructure(name, min, new Random())) {
+            if (!ctx.world().generateStructure(ctx.editSession(), name, min, new Random())) {
                 throw CommandRegistry.error("Unknown structure '" + name
                         + "'. Try a worldgen structure id such as minecraft:village_plains");
             }

@@ -982,7 +982,10 @@ public final class EditSession implements Extent {
      *             {@code tree}; an s makes it plural
      */
     public Msg result(String label, long changed, String unit) {
-        return Msg.result(label, Msg.count(changed, unit, unit + "s") + " affected in "
+        // Blocks are what an edit affects; trees and plants are what it made:
+        // "Planted: 9 trees in 45ms".
+        String counted = Msg.count(changed, unit, unit + "s") + (unit.endsWith("block") ? " affected" : "");
+        return Msg.result(label, counted + " in "
                 + Msg.value(com.maxlananas.fawebim.core.util.Timer.phrase(elapsed())).raw());
     }
 

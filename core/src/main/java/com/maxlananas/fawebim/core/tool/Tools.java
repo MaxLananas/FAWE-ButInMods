@@ -162,9 +162,23 @@ public final class Tools {
                 context.message(Msg.error("No block in sight"));
                 return true;
             }
-            boolean ok = context.actor.world().generateTree(context.position.add(0, 1, 0), treeType, new Random());
-            context.message(ok ? Msg.success("Planted a " + treeType)
-                    : Msg.error("A " + treeType + " does not fit there"));
+            // WorldEdit's tree planter: the tree goes through the edit, so it
+            // can be undone, and a shape that does not fit is tried again, up
+            // to ten times; only a tree that cannot go there is reported.
+            EditSession session = open(context, "tool tree");
+            boolean planted = false;
+            try {
+                Random random = new Random();
+                for (int attempt = 0; attempt < 10 && !planted; attempt++) {
+                    planted = context.actor.world().generateTree(session, context.position.add(0, 1, 0), treeType,
+                            random);
+                }
+            } finally {
+                finish(context, session);
+            }
+            if (!planted) {
+                context.message(Msg.error("A tree can't go there."));
+            }
             return true;
         }
 
@@ -791,7 +805,15 @@ public final class Tools {
                 context.message(Msg.error("No feature set: use /tool featureplacer <feature>"));
                 return false;
             }
-            if (!context.actor.world().generateFeature(context.position, feature, new java.util.Random())) {
+            EditSession session = open(context, "tool featureplacer");
+            boolean placed;
+            try {
+                placed = context.actor.world().generateFeature(session, context.position, feature,
+                        new java.util.Random());
+            } finally {
+                finish(context, session);
+            }
+            if (!placed) {
                 context.message(Msg.error("Unknown feature '" + feature + "'"));
                 return false;
             }
@@ -828,7 +850,15 @@ public final class Tools {
                 context.message(Msg.error("No structure set: use /tool structureplacer <structure>"));
                 return false;
             }
-            if (!context.actor.world().generateStructure(structure, context.position, new java.util.Random())) {
+            EditSession session = open(context, "tool structureplacer");
+            boolean placed;
+            try {
+                placed = context.actor.world().generateStructure(session, structure, context.position,
+                        new java.util.Random());
+            } finally {
+                finish(context, session);
+            }
+            if (!placed) {
                 context.message(Msg.error("Unknown structure '" + structure + "'"));
                 return false;
             }

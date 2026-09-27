@@ -111,12 +111,14 @@ public final class BenchMain {
         }
 
         @Override
-        public boolean generateTree(BlockVector3 pos, String treeType, Random random) {
+        public boolean generateTree(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                                    String treeType, Random random) {
             return false;
         }
 
         @Override
-        public boolean generateFeature(BlockVector3 pos, String featureType, Random random) {
+        public boolean generateFeature(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                                       String featureType, Random random) {
             return false;
         }
 
