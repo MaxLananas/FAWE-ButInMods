@@ -47,14 +47,9 @@ final class WorldCommands {
         entry.group = "worldedit";
         entry.handler = ctx -> {
             ctx.actor().message(Msg.result("FAWE-BIM " + Config.VERSION, "FastAsyncWorldEdit, but in mods"));
-            ctx.actor().message(Msg.keyValue("Minecraft", Config.MINECRAFT_VERSION + ", Fabric " + loaderVersion()));
+            ctx.actor().message(Msg.keyValue("Minecraft", Config.MINECRAFT_VERSION + ", " + Config.platform()));
             ctx.actor().message(Msg.keyValue("Author", "MaxLananas, based on WorldEdit 7.3.17 and FastAsyncWorldEdit"));
         };
-    }
-
-    private static String loaderVersion() {
-        String version = WorldCommands.class.getPackage().getImplementationVersion();
-        return version == null ? "0.17.x" : version;
     }
 
     /** {@code /we reload} — reloads the config file from disk. */
@@ -163,6 +158,7 @@ final class WorldCommands {
                     .resolve("report-" + System.currentTimeMillis() + ".txt");
             List<String> lines = new ArrayList<>(List.of(
                     "FAWE-BIM " + Config.VERSION + " (Minecraft " + Config.MINECRAFT_VERSION + ")",
+                    "Platform: " + Config.platform(),
                     "Author: MaxLananas",
                     "Based on WorldEdit 7.3.17 and FastAsyncWorldEdit",
                     "Java: " + System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")",
@@ -213,6 +209,7 @@ final class WorldCommands {
         entry.handler = ctx -> {
             Map<String, String> info = new java.util.LinkedHashMap<>();
             info.put("version", Config.VERSION + " for Minecraft " + Config.MINECRAFT_VERSION);
+            info.put("platform", Config.platform());
             info.put("java", System.getProperty("java.version"));
             info.put("players-world", ctx.world().name() + " @ " + ctx.actor().position());
             info.put("commands", String.valueOf(registry.all().size()));

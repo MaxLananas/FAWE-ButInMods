@@ -86,6 +86,13 @@ public final class FaweMod implements ModInitializer {
         CommandManager.get().initialise();
     }
 
+    /** The version of a loaded mod, as its metadata gives it, or "unknown" when it is not loaded. */
+    private static String modVersion(String id) {
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer(id)
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("unknown");
+    }
+
     /**
      * Waits for the history and snapshot files handed to the writer so far.
      *
@@ -118,6 +125,9 @@ public final class FaweMod implements ModInitializer {
             }
         });
         LightTickets.register();
+        // What /we version and the reports name, read from the loader: they
+        // printed "Fabric 0.17.x" whatever the loader was.
+        Config.setPlatform("Fabric " + modVersion("fabricloader") + ", Fabric API " + modVersion("fabric-api"));
         // The game builds the command dispatcher while its server object is being
         // constructed, which happens before the starting event reaches the mod.
         // Everything the commands need to exist has to be ready by then, so the

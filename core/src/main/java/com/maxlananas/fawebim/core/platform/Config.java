@@ -33,6 +33,13 @@ public final class Config {
 
     private static final Config INSTANCE = new Config();
 
+    /**
+     * The platform the mod runs on and its versions, which the platform module
+     * reads from its loader and hands over at load, since core cannot ask the
+     * loader: what /we version and the reports print.
+     */
+    private static volatile String platform = "Fabric";
+
     /** Everything a user can tune, mirroring WorldEdit's and FAWE's keys. */
     public String wandItem = "minecraft:wooden_axe";
     public String navigationWandItem = "minecraft:compass";
@@ -221,6 +228,15 @@ public final class Config {
 
     public static Config get() {
         return INSTANCE;
+    }
+
+    /** {@code Fabric 0.17.3, Fabric API 0.138.0+1.21.10}, or {@code Fabric} before the platform said. */
+    public static String platform() {
+        return platform;
+    }
+
+    public static void setPlatform(String description) {
+        platform = description;
     }
 
     /** Every setting, in the order the configuration file writes them. */
