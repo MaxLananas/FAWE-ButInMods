@@ -61,9 +61,14 @@ public final class BrushFactory {
         session.bind(actor.heldItem()).setPrimary(brush, line);
     }
 
-    /** Binds a brush to the left click of the held item, which is what {@code /tool secondary} does. */
-    public static void bindSecondary(LocalSession session, Brush brush, Actor actor) {
-        session.bind(actor.heldItem()).setSecondary(brush);
+    /**
+     * Binds a brush to the left click of the held item, which is what
+     * {@code /tool secondary} does.
+     *
+     * @param line the command that built the brush
+     */
+    public static void bindSecondary(LocalSession session, Brush brush, Actor actor, String line) {
+        session.bind(actor.heldItem()).setSecondary(brush, line);
     }
 
     /** Takes the brush off the right click of an item. */
@@ -79,7 +84,7 @@ public final class BrushFactory {
     public static void unbindSecondary(LocalSession session, String item) {
         ItemBinding binding = session.binding(item);
         if (binding != null) {
-            binding.setSecondary(null);
+            binding.setSecondary(null, null);
             session.release(item);
         }
     }

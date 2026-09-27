@@ -21,6 +21,7 @@ public final class ItemBinding {
     private Brush primary;
     private Brush secondary;
     private String brushLine;
+    private String secondaryLine;
 
     ItemBinding() {
     }
@@ -36,6 +37,7 @@ public final class ItemBinding {
             primary = null;
             secondary = null;
             brushLine = null;
+            secondaryLine = null;
         }
     }
 
@@ -62,9 +64,14 @@ public final class ItemBinding {
         return secondary;
     }
 
-    /** Binds the brush of the left click, which takes the tool off. */
-    public void setSecondary(Brush brush) {
+    /**
+     * Binds the brush of the left click, which takes the tool off.
+     *
+     * @param line the command that built it
+     */
+    public void setSecondary(Brush brush, String line) {
         secondary = brush;
+        secondaryLine = brush == null ? null : line;
         if (brush != null) {
             tool = null;
         }
@@ -73,6 +80,11 @@ public final class ItemBinding {
     /** The command that built the primary brush, or null. */
     public String brushLine() {
         return brushLine;
+    }
+
+    /** The command that built the secondary brush, or null. */
+    public String secondaryLine() {
+        return secondaryLine;
     }
 
     /** Whether a brush is bound to either click. */

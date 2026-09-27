@@ -853,7 +853,7 @@ public final class Tools {
         public boolean onRightClick(ToolContext context) {
             var brush = com.maxlananas.fawebim.core.brush.BrushFactory.latest(context.actor.session());
             if (brush == null) {
-                context.message(Msg.error("No brush bound. Use /brush sphere 5 stone"));
+                context.message(Msg.error("No brush bound. Use /brush sphere stone 5"));
                 return false;
             }
             EditSession session = new EditSession(context.actor.world(), context.actor.session(), "brush");

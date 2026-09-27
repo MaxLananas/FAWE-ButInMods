@@ -114,8 +114,15 @@ final class BindingTests {
         check("and moves nothing to the left click",
                 BrushFactory.currentSecondary(actor) instanceof Brushes.CylinderBrush
                         && BrushFactory.current(actor) instanceof Brushes.SphereBrush);
+        actor.setHeldItem(AXE);
+        String shown = answer(actor, "/brush");
+        check("/brush shows each click by the line that built it (" + shown + ")",
+                shown.contains("Right click: /brush sphere stone 2 (size 2)")
+                        && shown.contains("Left click: /brush cylinder dirt 3 (size 3)"));
         actor.setHeldItem(SHOVEL);
         check("another item has no left click brush", BrushFactory.currentSecondary(actor) == null);
+        check("and /brush says so, with a line that works",
+                answer(actor, "/brush").contains("Use /brush sphere stone 5"));
     }
 
     private static void unbindingTakesOffWhatTheHeldItemHolds() {

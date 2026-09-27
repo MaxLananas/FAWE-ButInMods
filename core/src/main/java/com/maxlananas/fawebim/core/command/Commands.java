@@ -3338,14 +3338,24 @@ public final class Commands {
         registerBrushNone();
 
         CommandRegistry.Entry e99 = registry.register("/brush", "//brush", "/br");
-        e99.description = "Show the current brush";
+        e99.description = "Show the brushes of the item in hand";
         e99.group = "brush";
         e99.handler = ctx -> {
-                    var brush = com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.actor());
-                    if (brush == null) {
-                        ctx.actor().message(Msg.info("No brush bound. Use /brush sphere 5 stone for example."));
-                    } else {
-                        ctx.actor().message(Msg.keyValue("Brush", brush.describe()));
+                    com.maxlananas.fawebim.core.session.ItemBinding binding =
+                            ctx.session().binding(ctx.actor().heldItem());
+                    if (binding == null || !binding.hasBrush()) {
+                        ctx.actor().message(Msg.info("No brush bound. Use /brush sphere stone 5 for example."));
+                        return;
+                    }
+                    // Each click by the line that built its brush, which says it
+                    // as it was typed, and the size it has now.
+                    if (binding.primary() != null) {
+                        ctx.actor().message(Msg.keyValue("Right click",
+                                brushSummary(binding.brushLine(), binding.primary())));
+                    }
+                    if (binding.secondary() != null) {
+                        ctx.actor().message(Msg.keyValue("Left click",
+                                brushSummary(binding.secondaryLine(), binding.secondary())));
                     }
                 };
 
@@ -3569,6 +3579,11 @@ public final class Commands {
         // With the line that built it, which the preset commands save and reload.
         com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor(), buildBrushLine(ctx));
         ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped (radius " + Msg.formatDouble(radius) + ")"));
+    }
+
+    /** A bound brush as the line that built it, with the size it has now. */
+    private static String brushSummary(String line, com.maxlananas.fawebim.core.brush.Brush brush) {
+        return (line == null ? brush.describe() : line) + " (size " + Msg.formatDouble(brush.radius()) + ")";
     }
 
     /**

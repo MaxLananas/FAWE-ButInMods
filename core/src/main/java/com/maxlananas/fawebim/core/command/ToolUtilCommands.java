@@ -406,14 +406,15 @@ final class ToolUtilCommands {
         if (bound == null || bound == previousPrimary) {
             return;
         }
+        // The brush line said the brush is equipped, which is all FAWE's
+        // /primary says; the left click is named, as the brush is not where a
+        // brush goes by default.
         if (secondary) {
             com.maxlananas.fawebim.core.session.ItemBinding binding = session.bind(item);
-            binding.setSecondary(bound);
+            binding.setSecondary(bound, binding.brushLine());
             binding.setPrimary(previousPrimary, previousLine);
-            ctx.actor().message(Msg.result("Left click brush", Msg.value(bound.describe()).raw()));
-            return;
+            ctx.actor().message(Msg.keyValue("Left click", binding.secondaryLine()));
         }
-        ctx.actor().message(Msg.result("Right click brush", Msg.value(bound.describe()).raw()));
     }
 
     /**
