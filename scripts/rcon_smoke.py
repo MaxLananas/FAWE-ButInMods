@@ -240,8 +240,13 @@ CHECKS = [
     # biome filter, which the game's own placement of a feature throws on
     # outside of world generation, grows on a grass floor, and an igloo is
     # generated at the placement, the middle of the selection, with the
-    # entities and the chest of its basement; each is taken back.
+    # entities and the chest of its basement; each is taken back. The air over
+    # the floor is cleared first: the hollow sphere and cylinder built above
+    # stand there, and the patch placed on the heightmap of a column they
+    # cover lands on stone, where grass does not grow.
     ("//pos1 0,60,0", "position 1: set"),
+    ("//pos2 15,72,15", "position 2: set"),
+    ("//set minecraft:air", "blocks affected"),
     ("//pos2 15,60,15", "position 2: set"),
     ("//set minecraft:grass_block", "256 blocks affected"),
     ("//feature minecraft:patch_grass_forest 0,61,0", "feature created:"),
