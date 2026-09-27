@@ -2713,7 +2713,7 @@ public final class SelfTestMain {
         TestActor player = new TestActor("Builder", world, new BlockVector3(40, 71, 0));
         CommandManager.get().dispatch(player, "//tree oak");
         check("//tree binds the tree tool for a player, as FAWE's does",
-                plain(player.lastMessage()).contains("Tool 'tree' bound"));
+                plain(player.lastMessage()).contains("Tree tool bound"));
         player.clearMessages();
         CommandManager.get().dispatch(player, "//wand");
         check("//wand hands the wand to a player",

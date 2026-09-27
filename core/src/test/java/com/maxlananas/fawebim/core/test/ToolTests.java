@@ -33,6 +33,7 @@ final class ToolTests {
     static void run() {
         section("tools");
         everyListedToolCanBeBound();
+        eachToolIsASubCommandOfItsOwn();
         theReplacerTakesItsPatternAndPicksWithItsData();
         theLongRangeBuilderPlacesAgainstTheFaceOrClears();
         theStackerRepeatsTheClickedBlockIntoAir();
@@ -148,6 +149,41 @@ final class ToolTests {
 
     private static String bound(TestActor actor) {
         return String.valueOf(actor.session().getBindings().get("tool-item"));
+    }
+
+    /**
+     * FAWE declares each tool as a sub-command of /tool with its arguments and
+     * its description, and says which tool is bound to which item. Here every
+     * tool was the one /tool with a list of names and a "[target]", so //help
+     * //repl and the completion of //tree offered the names of the tools, and
+     * the bind line said "Tool 'tree' bound to your held item".
+     */
+    private static void eachToolIsASubCommandOfItsOwn() {
+        TestActor actor = actor("ToolSubCommands");
+        check("//help //repl shows its pattern and FAWE's description",
+                answer(actor, "//help //repl").contains("//repl <pattern> - Block replacer tool"));
+        check("and //help //tree its tree type",
+                answer(actor, "//help //tree").contains("//tree [type] - Tree generator tool"));
+        check("the long range builder its two patterns", answer(actor, "//help lrbuild")
+                .contains("/tool lrbuild <primary> <secondary> - Long-range building tool"));
+        check("the bind line is FAWE's, with the item",
+                answer(actor, "/tool tree birch").endsWith("Tree tool bound to Wooden Axe"));
+        check("its other spellings run it",
+                answer(actor, "/tool flood stone 5").endsWith("Block flood fill tool bound to Wooden Axe"));
+        check("so do the global ones", answer(actor, "//warwand").endsWith("Far wand tool bound to Wooden Axe"));
+        check("the placers say theirs",
+                answer(actor, "/tool featureplacer oak").endsWith("Feature placer tool bound to Wooden Axe"));
+        check("the item named after the arguments is the one bound",
+                answer(actor, "/tool repl stone minecraft:stick").endsWith("Block replacer tool bound to Stick"));
+        check("whichever spelling names the tool",
+                answer(actor, "/tool replace stone minecraft:stick").endsWith("Block replacer tool bound to Stick"));
+        check("unbinding says FAWE's line",
+                answer(actor, "/tool none").endsWith("Tool unbound from your current item"));
+        check("as /tool unbind does", answer(actor, "/tool unbind").endsWith("Tool unbound from your current item"));
+        check("and nothing is bound any more", Tools.current(actor.session()) == null);
+        answer(actor, "/brush sphere stone 2");
+        check("a brush on the held item is said to be unbound",
+                answer(actor, "//unbind").endsWith("Brush unbound from your current item"));
     }
 
     /** The list /tool offers named a "command" tool that /tool refused. */

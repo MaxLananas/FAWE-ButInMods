@@ -3363,10 +3363,48 @@ public final class Commands {
 
     }
 
+    /**
+     * Binds the tool a name stands for to the held item, or to the item named
+     * right after the tool's arguments, and says so as FAWE does.
+     *
+     * @param first where the tool's arguments start among the command's
+     */
+    private void bindTool(Ctx ctx, String name, int first) {
+        com.maxlananas.fawebim.core.tool.Tool tool = com.maxlananas.fawebim.core.tool.Tools.create(name, ctx, first);
+        if (tool == null) {
+            throw CommandRegistry.error("Unknown tool '" + name + "'");
+        }
+        // The tool's own name, whichever spelling built it: /tool replace is the replacer.
+        com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(),
+                ctx.arg(first + com.maxlananas.fawebim.core.tool.Tools.argumentCount(tool.name()), ""));
+        ctx.actor().message(Msg.success(com.maxlananas.fawebim.core.tool.Tools.boundLine(tool.name(),
+                String.valueOf(ctx.session().getBindings().get("tool-item")))));
+    }
+
+    /**
+     * Unbinds the tool, and the brush of the held item: upstream a brush is a
+     * tool bound to an item. FAWE's line says which of the two it was.
+     */
+    private void unbindTool(Ctx ctx) {
+        LocalSession session = ctx.session();
+        String held = ctx.actor().heldItem();
+        com.maxlananas.fawebim.core.tool.Tools.clear(session);
+        boolean brush = false;
+        if (held != null && held.equals(session.getBindings().get("brush-item"))) {
+            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
+            session.getBindings().remove("brush-command");
+            brush = true;
+        }
+        if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
+            com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
+            brush = true;
+        }
+        ctx.actor().message(Msg.success((brush ? "Brush" : "Tool") + " unbound from your current item"));
+    }
+
     private void registerTools() {
         CommandRegistry.Entry e100 = registry.register("/tool", "//tool");
-        e100.description = "Bind a tool to an item: none, tree, repl, cycler, flood-fill, brush, info, farwand, "
-                        + "navwand, lrbuild, stacker, deltree";
+        e100.description = "Binds a tool to the item in your hand";
         e100.group = "tool";
         // A tool is bound to the item in a hand, as every one of WorldEdit's
         // tool commands takes a player: a console has no hand to bind it to.
@@ -3376,29 +3414,34 @@ public final class Commands {
         e100.handler = ctx -> {
                     String type = ctx.arg(0, "none").toLowerCase(Locale.ROOT);
                     if (type.equals("none")) {
-                        LocalSession session = ctx.session();
-                        String held = ctx.actor().heldItem();
-                        com.maxlananas.fawebim.core.tool.Tools.clear(session);
-                        // Upstream a brush is a tool bound to an item, so unbinding
-                        // clears the brush equipped with the held item as well.
-                        if (held != null && held.equals(session.getBindings().get("brush-item"))) {
-                            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
-                            session.getBindings().remove("brush-command");
-                        }
-                        if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
-                            com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
-                        }
-                        ctx.actor().message(Msg.success("Tool unbound"));
+                        unbindTool(ctx);
                         return;
                     }
-                    com.maxlananas.fawebim.core.tool.Tool tool = com.maxlananas.fawebim.core.tool.Tools.create(type, ctx);
-                    if (tool == null) {
-                        throw CommandRegistry.error("Unknown tool '" + type + "'");
-                    }
-                    com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(),
-                            ctx.arg(com.maxlananas.fawebim.core.tool.Tools.targetArgument(type), ""));
-                    ctx.actor().message(Msg.success("Tool '" + type + "' bound to your held item"));
+                    bindTool(ctx, type, 1);
                 };
+
+        // Each tool is a sub-command of its own, as in FAWE, with the arguments
+        // and the description FAWE gives it: //help, the usage of a line short
+        // of an argument and tab completion show what the tool takes.
+        CommandRegistry.Entry none = registry.registerUnlessPresent("/tool none", "/tool unbind");
+        if (none != null) {
+            none.description = "Unbind a bound tool from your current item";
+            none.group = "tool";
+            none.requiresPlayer = true;
+            none.handler = this::unbindTool;
+        }
+        for (com.maxlananas.fawebim.core.tool.Tools.Kind kind : com.maxlananas.fawebim.core.tool.Tools.KINDS) {
+            String[] aliases = kind.aliases().stream().map(alias -> "/tool " + alias).toArray(String[]::new);
+            CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool " + kind.name(), aliases);
+            if (entry == null) {
+                continue;
+            }
+            entry.description = kind.description();
+            entry.group = "tool";
+            entry.requiresPlayer = true;
+            entry.arguments.addAll(kind.arguments());
+            entry.handler = ctx -> bindTool(ctx, kind.name(), 0);
+        }
 
 
         CommandRegistry.Entry e101 = registry.register("/superpickaxe", "/sp", "//sp");

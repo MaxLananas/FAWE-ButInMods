@@ -52,8 +52,8 @@ final class GenerationTests {
         Tools.clear(actor.session());
         String bound = answer(actor, "//tree oak");
         check("//tree binds the tree tool, as FAWE's does (" + bound + ")",
-                bound.contains("Tool 'tree' bound") && Tools.current(actor.session()) instanceof Tools.TreeTool);
-        check("and so does /tree", answer(actor, "/tree birch").contains("Tool 'tree' bound"));
+                bound.contains("Tree tool bound") && Tools.current(actor.session()) instanceof Tools.TreeTool);
+        check("and so does /tree", answer(actor, "/tree birch").contains("Tree tool bound"));
     }
 
     /** Grass at y 60 over stone, nine by nine around the origin, and a builder standing on it. */
@@ -160,7 +160,7 @@ final class GenerationTests {
         check("a tree type nobody knows is refused when the tool is bound",
                 answer(actor, "/tool tree nope").contains("Unknown tree type 'nope'"));
         check("and a feature id is taken for what it grows",
-                answer(actor, "/tool tree minecraft:azalea_tree").contains("Tool 'tree' bound"));
+                answer(actor, "/tool tree minecraft:azalea_tree").contains("Tree tool bound"));
     }
 
     /**

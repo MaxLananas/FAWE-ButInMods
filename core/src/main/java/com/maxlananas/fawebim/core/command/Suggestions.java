@@ -214,7 +214,8 @@ public final class Suggestions {
         if (name.indexOf('|') >= 0) {
             return List.of();
         }
-        if (name.contains("pattern")) {
+        // Both arguments of the long-range builder, primary and secondary, are patterns.
+        if (name.contains("pattern") || command.equals("/tool lrbuild")) {
             return patterns(prefix);
         }
         if (name.contains("mask")) {
@@ -255,7 +256,7 @@ public final class Suggestions {
             return world == null ? List.of() : filtered(world.get().structureIds(), prefix);
         }
         if (name.equals("tree-type") || name.equals("type")
-                && (command.equals("//forestgen") || command.equals("/brush forest"))) {
+                && (command.equals("//forestgen") || command.equals("/brush forest") || command.equals("/tool tree"))) {
             return filtered(TreeTypes.canonicalNames(), prefix);
         }
         if (name.equals("type") && (command.equals("/tool primary") || command.equals("/tool secondary"))) {

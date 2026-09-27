@@ -73,6 +73,13 @@ final class CompletionTests {
         check("the structure placer the structures",
                 complete("/tool structureplacer", "oak_l", world).contains("oak_log"));
         check("//forest its tree types", complete("//forest", "jun", world).contains("jungle"));
+        check("//tree the tree types, not the tools", complete("//tree", "", world).contains("dark_oak")
+                && !complete("//tree", "", world).contains("repl"));
+        check("//repl its pattern", complete("//repl", "sto", world).contains("stone"));
+        check("the long range builder a pattern for both clicks",
+                complete("/tool lrbuild", "stone gold_bl", world).contains("gold_block"));
+        check("the //placefeature spelling what //feature takes",
+                complete("/placefeature", "oa", world).contains("oak"));
         check("/placement its placements", complete("placement", "", world).containsAll(
                 List.of("world", "player", "here", "pos1", "min", "max")));
         check("/remove its entity filters", complete("remove", "fall", world).contains("fallingblocks"));

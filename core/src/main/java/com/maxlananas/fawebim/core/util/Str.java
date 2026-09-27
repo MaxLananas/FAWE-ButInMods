@@ -198,6 +198,27 @@ public final class Str {
         return idx < 0 ? key : key.substring(idx + 1);
     }
 
+    /**
+     * A registry id as a name to read, the way the game names most things:
+     * {@code minecraft:wooden_axe} is Wooden Axe.
+     */
+    public static String itemName(String id) {
+        String path = stripNamespace(id);
+        StringBuilder name = new StringBuilder(path.length());
+        boolean start = true;
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '_') {
+                name.append(' ');
+                start = true;
+            } else {
+                name.append(start ? Character.toUpperCase(c) : c);
+                start = false;
+            }
+        }
+        return name.toString();
+    }
+
     /** Ensures the key has a namespace. */
     public static String withNamespace(String key) {
         return key.indexOf(':') < 0 ? "minecraft:" + key : key;

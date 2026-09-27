@@ -54,8 +54,6 @@ final class ToolUtilCommands {
         secondary();
         sourceMask();
         inspect();
-        featurePlacer();
-        structurePlacer();
     }
 
     /**
@@ -463,42 +461,6 @@ final class ToolUtilCommands {
         entry.requiresPlayer = true;
         entry.group = "tool";
         entry.handler = ctx -> registry.dispatch(ctx.actor(), "tool info");
-    }
-
-    private void featurePlacer() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool featureplacer", "/tool featuretool");
-        if (entry == null) {
-            return;
-        }
-        entry.description =
-                "Bind a tool that places a worldgen feature on click";
-        entry.requiresPlayer = true;
-        entry.group = "tool";
-        entry.arguments.add("feature");
-        entry.handler = ctx -> {
-            String feature = Parsers.feature(ctx.world(), ctx.arg(0));
-            var tool = new com.maxlananas.fawebim.core.tool.Tools.FeaturePlacerTool(feature);
-            com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), null);
-            ctx.actor().message(Msg.success("Feature placer bound to your held item for '" + feature + "'"));
-        };
-    }
-
-    private void structurePlacer() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool structureplacer", "/tool structuretool");
-        if (entry == null) {
-            return;
-        }
-        entry.description =
-                "Bind a tool that generates a structure on click";
-        entry.requiresPlayer = true;
-        entry.group = "tool";
-        entry.arguments.add("structure");
-        entry.handler = ctx -> {
-            String structure = Parsers.structure(ctx.world(), ctx.arg(0));
-            var tool = new com.maxlananas.fawebim.core.tool.Tools.StructurePlacerTool(structure);
-            com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), null);
-            ctx.actor().message(Msg.success("Structure placer bound to your held item for '" + structure + "'"));
-        };
     }
 
     /** The brush bound to the held item, or FAWE's "no brush" error. */

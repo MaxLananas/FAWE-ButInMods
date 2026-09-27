@@ -40,6 +40,53 @@ public final class Tools {
             "none", "tree", "repl", "cycler", "floodfill", "info", "farwand", "navwand", "lrbuild",
             "stacker", "deltree", "brush", "selwand", "featureplacer", "structureplacer", "flood", "warwand");
 
+    /**
+     * A sub-command of {@code /tool} as FAWE's ToolCommands declares it: its
+     * name and other spellings, its arguments, its description, and what the
+     * line binding it calls the tool, "Tree tool bound to Stick".
+     */
+    public record Kind(String name, java.util.List<String> aliases, java.util.List<String> arguments,
+                       String description, String label) {
+    }
+
+    /** FAWE's tool sub-commands but {@code none}, in the order it declares them. */
+    public static final java.util.List<Kind> KINDS = java.util.List.of(
+            new Kind("selwand", java.util.List.of(), java.util.List.of(), "Selection wand tool", "Selection wand"),
+            new Kind("navwand", java.util.List.of(), java.util.List.of(), "Navigation wand tool", "Navigation wand"),
+            new Kind("info", java.util.List.of(), java.util.List.of(), "Block information tool", "Info tool"),
+            new Kind("tree", java.util.List.of(), java.util.List.of("[type]"), "Tree generator tool", "Tree tool"),
+            new Kind("featureplacer", java.util.List.of("featuretool"), java.util.List.of("feature"),
+                    "Feature placer tool", "Feature placer tool"),
+            new Kind("structureplacer", java.util.List.of("structuretool"), java.util.List.of("structure"),
+                    "Structure placer tool", "Structure placer tool"),
+            new Kind("stacker", java.util.List.of(), java.util.List.of("[range]", "[mask]"), "Block stacker tool",
+                    "Stack tool"),
+            new Kind("repl", java.util.List.of(), java.util.List.of("pattern"), "Block replacer tool",
+                    "Block replacer tool"),
+            new Kind("cycler", java.util.List.of(), java.util.List.of(), "Block data cycler tool",
+                    "Block data cycler tool"),
+            // The pattern and the range have defaults here, the pattern in the
+            // hotbar and the super pickaxe's ceiling; FAWE asks for both.
+            new Kind("floodfill", java.util.List.of("flood"), java.util.List.of("[pattern]", "[range]"),
+                    "Flood fill tool", "Block flood fill tool"),
+            new Kind("deltree", java.util.List.of(), java.util.List.of(), "Floating tree remover tool",
+                    "Floating tree remover tool"),
+            new Kind("farwand", java.util.List.of("warwand"), java.util.List.of(), "Wand at a distance tool",
+                    "Far wand tool"),
+            new Kind("lrbuild", java.util.List.of(), java.util.List.of("primary", "secondary"),
+                    "Long-range building tool", "Long-range building tool"));
+
+    /** The sub-command a name or another spelling of it stands for, or null. */
+    public static Kind kind(String name) {
+        String key = name.toLowerCase(Locale.ROOT);
+        for (Kind kind : KINDS) {
+            if (kind.name().equals(key) || kind.aliases().contains(key)) {
+                return kind;
+            }
+        }
+        return null;
+    }
+
     /** FAWE's answer to a feature that placed nothing, from its placer and from //feature. */
     public static final String FEATURE_FAILED = "This feature cannot go here. Ensure the area meets the requirements.";
 
@@ -52,29 +99,33 @@ public final class Tools {
      * of {@code lrbuild}, the range and mask of {@code stacker} - or null for a
      * name that is not a tool. An argument that does not parse is refused
      * here, before anything is bound.
+     *
+     * @param first where the tool's own arguments start among the command's:
+     *              after the name on {@code /tool <name>}, at the start on a
+     *              sub-command of its own
      */
-    public static Tool create(String name, Ctx ctx) {
+    public static Tool create(String name, Ctx ctx, int first) {
         String key = name.toLowerCase(Locale.ROOT);
         return switch (key) {
             // /tool tree <type> names the tree the tool plants.
-            case "tree" -> new TreeTool(Parsers.treeType(ctx.arg(1, "tree")));
-            case "repl", "replace" -> new ReplaceTool(Parsers.pattern(required(ctx, 1, "repl <pattern>"), ctx));
+            case "tree" -> new TreeTool(Parsers.treeType(ctx.arg(first, "tree")));
+            case "repl", "replace" -> new ReplaceTool(Parsers.pattern(required(ctx, first, "repl <pattern>"), ctx));
             case "cycler" -> new CyclerTool();
-            case "floodfill", "flood-fill", "flood" -> FloodFillTool.of(ctx);
+            case "floodfill", "flood-fill", "flood" -> FloodFillTool.of(ctx, first);
             case "info", "inspect" -> new InfoTool();
             case "farwand", "warwand" -> new FarWandTool();
             case "navwand", "navigation", "navigationwand" -> new NavigationWandTool();
             case "lrbuild", "lr-build" -> new LRBuildTool(
-                    Parsers.pattern(required(ctx, 1, LRBuildTool.USAGE), ctx),
-                    Parsers.pattern(required(ctx, 2, LRBuildTool.USAGE), ctx));
-            case "stacker" -> StackerTool.of(ctx);
+                    Parsers.pattern(required(ctx, first, LRBuildTool.USAGE), ctx),
+                    Parsers.pattern(required(ctx, first + 1, LRBuildTool.USAGE), ctx));
+            case "stacker" -> StackerTool.of(ctx, first);
             case "deltree" -> new DelTreeTool();
             case "brush" -> new BrushTool();
             case "selwand" -> new SelectWandTool();
             case "featureplacer", "featuretool" -> new FeaturePlacerTool(
-                    Parsers.feature(ctx.world(), required(ctx, 1, "featureplacer <feature>")));
+                    Parsers.feature(ctx.world(), required(ctx, first, "featureplacer <feature>")));
             case "structureplacer", "structuretool" -> new StructurePlacerTool(
-                    Parsers.structure(ctx.world(), required(ctx, 1, "structureplacer <structure>")));
+                    Parsers.structure(ctx.world(), required(ctx, first, "structureplacer <structure>")));
             default -> null;
         };
     }
@@ -88,17 +139,26 @@ public final class Tools {
     }
 
     /**
-     * Where the item to bind to sits among the arguments of {@code /tool}: right
-     * after the arguments the tool takes, so {@code /tool repl stone} binds a
-     * stone replacer to the held item and {@code /tool repl stone stick} binds
-     * it to sticks.
+     * How many arguments a tool takes before the item to bind it to, which
+     * comes right after them: {@code /tool repl stone} binds a stone replacer
+     * to the held item and {@code /tool repl stone stick} binds it to sticks.
      */
-    public static int targetArgument(String name) {
-        return switch (name.toLowerCase(Locale.ROOT)) {
-            case "tree", "repl", "replace", "featureplacer", "featuretool", "structureplacer", "structuretool" -> 2;
-            case "floodfill", "flood-fill", "flood", "lrbuild", "lr-build", "stacker" -> 3;
-            default -> 1;
-        };
+    public static int argumentCount(String name) {
+        Kind kind = kind(name);
+        return kind == null ? 0 : kind.arguments().size();
+    }
+
+    /**
+     * The line that says a tool is bound, as FAWE's: "Tree tool bound to
+     * Stick". The empty hand, which a tool is bound to as well, is said so.
+     */
+    public static String boundLine(String name, String item) {
+        Kind kind = kind(name);
+        String label = kind != null ? kind.label()
+                : Character.toUpperCase(name.charAt(0)) + name.substring(1).toLowerCase(Locale.ROOT) + " tool";
+        String held = item == null || item.equals("minecraft:air") ? "your empty hand"
+                : com.maxlananas.fawebim.core.util.Str.itemName(item);
+        return label + " bound to " + held;
     }
 
     public static void bind(LocalSession session, Tool tool, Actor actor, String item) {
@@ -357,12 +417,12 @@ public final class Tools {
         private double range = 5;
 
         /** The tool {@code /tool floodfill} describes; the range is refused above the ceiling. */
-        static FloodFillTool of(Ctx ctx) {
+        static FloodFillTool of(Ctx ctx, int first) {
             FloodFillTool tool = new FloodFillTool();
-            if (ctx.args().size() > 1) {
-                tool.pattern = com.maxlananas.fawebim.core.command.Parsers.pattern(ctx.arg(1), ctx);
+            if (ctx.args().size() > first) {
+                tool.pattern = com.maxlananas.fawebim.core.command.Parsers.pattern(ctx.arg(first), ctx);
             }
-            tool.range = ctx.args().size() > 2 ? ctx.intArg(2) : SuperPickaxe.ceiling();
+            tool.range = ctx.args().size() > first + 1 ? ctx.intArg(first + 1) : SuperPickaxe.ceiling();
             SuperPickaxe.checkRange(tool.range);
             return tool;
         }
@@ -649,10 +709,10 @@ public final class Tools {
             this.mask = mask;
         }
 
-        static StackerTool of(Ctx ctx) {
-            int range = ctx.intArg(1, 10, 1, com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange,
+        static StackerTool of(Ctx ctx, int first) {
+            int range = ctx.intArg(first, 10, 1, com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange,
                     "stack range");
-            Mask mask = ctx.args().size() > 2 ? Parsers.mask(ctx.arg(2), ctx) : null;
+            Mask mask = ctx.args().size() > first + 1 ? Parsers.mask(ctx.arg(first + 1), ctx) : null;
             return new StackerTool(range, mask);
         }
 

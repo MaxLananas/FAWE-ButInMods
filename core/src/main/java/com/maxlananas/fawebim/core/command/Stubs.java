@@ -38,13 +38,25 @@ final class Stubs {
                 continue;
             }
             CommandRegistry.Entry entry = registry.register(name);
-            CommandRegistry.Entry delegate = registry.resolve(target);
+            CommandRegistry.Entry exact = registry.get(target);
+            CommandRegistry.Entry delegate = exact != null ? exact : registry.resolve(target);
             entry.description = delegate == null ? target : delegate.description;
             entry.group = delegate == null ? groupFor(name) : delegate.group;
             entry.status = "alias";
             entry.requiresSelection = delegate != null && delegate.requiresSelection;
             entry.requiresPlayer = PLAYER_ONLY.contains(name)
                     || (delegate != null && delegate.requiresPlayer);
+            // The spelling takes the line of the command it runs, so it has its
+            // signature too: for //help, for the usage of a short line and for
+            // tab completion, which offered nothing after //placefeature.
+            if (exact != null) {
+                entry.arguments.addAll(exact.arguments);
+                entry.booleanFlags.addAll(exact.booleanFlags);
+                entry.valueFlags.addAll(exact.valueFlags);
+                entry.switchesUnder.putAll(exact.switchesUnder);
+                entry.suggestions = exact.suggestions;
+                entry.aliasOf = exact.aliasOf != null ? exact.aliasOf : exact;
+            }
             entry.handler = ctx -> {
                 String arguments = ctx.tail();
                 registry.dispatch(ctx.actor(), target + (arguments.isEmpty() ? "" : " " + arguments));
