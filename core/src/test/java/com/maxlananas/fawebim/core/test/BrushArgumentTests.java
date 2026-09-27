@@ -67,15 +67,15 @@ final class BrushArgumentTests {
     private static void anOptionalArgumentGivesWayToARequiredOne() {
         TestActor actor = actor("BrushOptional");
         check("/brush set <shape> <pattern> keeps the default radius",
-                bind(actor, "/brush set cuboid minecraft:stone").contains("equipped (radius 5.0)"));
+                bind(actor, "/brush set cuboid minecraft:stone").contains("equipped (radius 5)"));
         check("and takes a radius when there is room for one",
-                bind(actor, "/brush set cuboid 3 minecraft:stone").contains("equipped (radius 3.0)"));
+                bind(actor, "/brush set cuboid 3 minecraft:stone").contains("equipped (radius 3)"));
         check("/brush biome <shape> <biome> keeps the default radius",
-                bind(actor, "/brush biome sphere minecraft:plains").contains("equipped (radius 5.0)"));
+                bind(actor, "/brush biome sphere minecraft:plains").contains("equipped (radius 5)"));
         check("/brush forest <shape> <type> keeps the radius and the density",
-                bind(actor, "/brush forest sphere oak").contains("equipped (radius 5.0)"));
+                bind(actor, "/brush forest sphere oak").contains("equipped (radius 5)"));
         check("/brush forest <shape> <radius> <type> skips the density",
-                bind(actor, "/brush forest sphere 4 oak").contains("equipped (radius 4.0)"));
+                bind(actor, "/brush forest sphere 4 oak").contains("equipped (radius 4)"));
     }
 
     private static void theSetBrushBuildsItsShape() {
@@ -118,7 +118,7 @@ final class BrushArgumentTests {
         int emerald = state("minecraft:emerald_block");
         check("/brush layer takes its list",
                 bind(actor, "/brush layer 3 minecraft:gold_block,minecraft:diamond_block,minecraft:emerald_block")
-                        .contains("equipped (radius 3.0)"));
+                        .contains("equipped (radius 3)"));
         apply(actor, new BlockVector3(0, 69, 0));
         check("the surface takes the first entry, the blocks under it the next ones",
                 world.getBlock(0, 69, 0) == gold && world.getBlock(0, 68, 0) == diamond

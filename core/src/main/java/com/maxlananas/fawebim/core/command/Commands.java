@@ -681,7 +681,7 @@ public final class Commands {
         e19.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Pattern pattern = Parsers.pattern(ctx.joined(0), ctx);
+                    Pattern pattern = Parsers.pattern(ctx.requiredJoined(0), ctx);
                     Mask mask = null;
                     if (ctx.hasFlag("m")) {
                         mask = ctx.session().getMask();
@@ -706,7 +706,7 @@ public final class Commands {
                     // and replaces every block that is not air.
                     boolean masked = ctx.args().size() > 1;
                     Mask mask = masked ? Parsers.mask(ctx.arg(0), ctx) : new Masks.ExistingMask(session, true);
-                    Pattern pattern = Parsers.pattern(ctx.joined(masked ? 1 : 0), ctx);
+                    Pattern pattern = Parsers.pattern(ctx.requiredJoined(masked ? 1 : 0), ctx);
                     fill(session, ctx.selection(), pattern, mask);
                     flush(ctx, session, "Replaced");
                 };
@@ -1050,7 +1050,7 @@ public final class Commands {
                     int size = Math.max(1, ctx.sizeArg(0));
                     boolean masked = ctx.args().size() > 2;
                     Mask mask = masked ? Parsers.mask(ctx.arg(1), ctx) : new Masks.ExistingMask(session, true);
-                    Pattern pattern = Parsers.pattern(ctx.joined(masked ? 2 : 1), ctx);
+                    Pattern pattern = Parsers.pattern(ctx.requiredJoined(masked ? 2 : 1), ctx);
                     BlockVector3 origin = ctx.placement();
                     int changed = 0;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
@@ -1304,6 +1304,18 @@ public final class Commands {
                 counts.total());
     }
 
+    /** The sub-commands of /we, each by the name it was registered under. */
+    private java.util.Set<String> weSubCommands() {
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (CommandRegistry.Entry entry : registry.all()) {
+            java.util.stream.Stream.concat(java.util.stream.Stream.of(entry.name), entry.aliases.stream())
+                    .filter(name -> name.startsWith("/we "))
+                    .findFirst()
+                    .ifPresent(name -> names.add(name.substring(4)));
+        }
+        return names;
+    }
+
     static BlockVector3 copyOrigin(Ctx ctx, BlockArrayClipboard clipboard) {
         return ctx.placementOr(clipboard.getOrigin());
     }
@@ -1521,7 +1533,7 @@ public final class Commands {
         e48.booleanFlags.add("c");
         e48.arguments.add("expression");
         e48.handler = ctx -> {
-                    String expression = ctx.joined(0);
+                    String expression = ctx.requiredJoined(0);
                     Region deformRegion = ctx.selection();
                     // WorldEdit's order: -r, then -o, then -c, else the unit cube.
                     Operations.DeformFrame frame;
@@ -2025,7 +2037,7 @@ public final class Commands {
         e62.arguments.add("[rotateZ]");
         e62.handler = ctx -> {
                     if (!ctx.session().hasClipboard()) {
-                        throw CommandRegistry.error("No clipboard");
+                        throw CommandRegistry.error("No clipboard: use //copy first");
                     }
                     double rotateY = ctx.doubleArg(0);
                     double rotateX = ctx.doubleArg(1, 0);
@@ -2050,6 +2062,13 @@ public final class Commands {
                     }
                     holder.setTransform(transform);
                     ctx.actor().message(Msg.result("Clipboard", "rotated"));
+                    // WorldEdit's note: a block is turned by a quarter at a
+                    // time, so any other angle lands between two of them.
+                    if (Math.abs(rotateY % 90) > 0.001 || Math.abs(rotateX % 90) > 0.001
+                            || Math.abs(rotateZ % 90) > 0.001) {
+                        ctx.actor().message(Msg.warn("Interpolation is not supported: angles that are"
+                                + " multiples of 90 are recommended"));
+                    }
                 };
 
 
@@ -2991,30 +3010,26 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e94 = registry.register("//we", "/we", "/worldedit");
+        CommandRegistry.Entry e94 = registry.register("//we", "/we", "/worldedit", "/fawe", "/fastasyncworldedit");
         e94.description = "WorldEdit/FAWE information";
         e94.group = "utility";
         e94.arguments.add("[version|reload|trace|help]");
         e94.handler = ctx -> {
-                    String action = ctx.arg(0, "version").toLowerCase(Locale.ROOT);
-                    switch (action) {
-                        case "version" -> ctx.actor().message(Msg.info("FAWE-BIM "
-                                + com.maxlananas.fawebim.core.platform.Config.VERSION
-                                + " for Minecraft " + com.maxlananas.fawebim.core.platform.Config.MINECRAFT_VERSION
-                                + " (WorldEdit/FAWE command surface 7.3.17)"));
-                        case "reload" -> {
-                            com.maxlananas.fawebim.core.platform.Config.get().reload();
-                            ctx.actor().message(Msg.success("Configuration reloaded"));
-                        }
-                        case "trace" -> {
-                            // The same switch as the /we trace command, for a
-                            // line that reached /we itself.
-                            boolean tracing = !ctx.session().isTracing();
-                            ctx.session().setTracing(tracing);
-                            ctx.actor().message(Msg.result("Trace mode", tracing ? "active" : "inactive"));
-                        }
-                        default -> ctx.actor().message(Msg.info("Usage: /we version|reload|trace"));
+                    // FAWE's /worldedit container, which answers to /we, /fawe
+                    // and /fastasyncworldedit too. Its sub-commands are
+                    // registered as "/we <name>": a line that came in through
+                    // another spelling is sent on to them, and a bare /we lists
+                    // them, as FAWE's container does.
+                    if (ctx.args().isEmpty()) {
+                        Help.subCommands(ctx, registry, "we");
+                        return;
                     }
+                    String sub = "/we " + ctx.arg(0).toLowerCase(Locale.ROOT);
+                    if (!registry.contains(sub)) {
+                        throw CommandRegistry.error("Unknown sub-command '" + ctx.arg(0) + "': /we "
+                                + String.join("|", weSubCommands()));
+                    }
+                    registry.dispatch(ctx.actor(), "/we " + ctx.tail());
                 };
 
 
@@ -3305,7 +3320,7 @@ public final class Commands {
         com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor());
         // Remembered so the preset commands can save and reload it.
         session.getBindings().put("brush-command", buildBrushLine(ctx));
-        ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped (radius " + radius + ")"));
+        ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped (radius " + Msg.formatDouble(radius) + ")"));
     }
 
     private static String buildBrushLine(Ctx ctx) {

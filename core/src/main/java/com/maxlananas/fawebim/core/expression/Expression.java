@@ -925,7 +925,9 @@ public final class Expression {
         private Node parsePrimary() {
             skipWhitespace();
             if (pos >= input.length()) {
-                return new Constant(0);
+                // WorldEdit refuses a line that stops where a value is due:
+                // "2+" read as 2 + 0 gave a result for what was never typed.
+                throw new ExpressionException("Unexpected end of expression: " + input);
             }
             char c = input.charAt(pos);
             if (c == '(') {

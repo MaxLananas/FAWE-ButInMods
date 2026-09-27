@@ -448,10 +448,16 @@ public final class Msg {
         return String.format(Locale.ROOT, "%,d", value);
     }
 
+    /** {@code 3}, {@code 2.5}, {@code 3.142}: at most three decimals, and none that are zero. */
     public static String formatDouble(double value) {
         if (value == Math.floor(value) && !Double.isInfinite(value)) {
             return String.valueOf((long) value);
         }
-        return String.format(Locale.ROOT, "%.3f", value);
+        String fixed = String.format(Locale.ROOT, "%.3f", value);
+        int end = fixed.length();
+        while (fixed.charAt(end - 1) == '0') {
+            end--;
+        }
+        return fixed.charAt(end - 1) == '.' ? fixed.substring(0, end - 1) : fixed.substring(0, end);
     }
 }

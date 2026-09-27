@@ -87,25 +87,40 @@ final class Help {
     /** {@code //help -s <command>}: the sub-commands registered under one name. */
     static void subCommands(Ctx ctx, CommandRegistry registry, String filter) {
         List<CommandRegistry.Entry> matches = new ArrayList<>();
+        CommandRegistry.Entry container = null;
         for (CommandRegistry.Entry entry : registry.all()) {
             String name = entry.name.toLowerCase(Locale.ROOT);
-            if (name.startsWith("/" + filter + " ") || name.startsWith("//" + filter + " ")
-                    || name.equals("/" + filter) || name.equals("//" + filter)) {
+            if (name.equals("/" + filter) || name.equals("//" + filter)) {
+                container = entry;
+            } else if (isUnder(name, filter) || entry.aliases.stream().anyMatch(alias -> isUnder(alias, filter))) {
+                // A command registered elsewhere that the container answers to
+                // as well, as //cui is also /we cui.
                 matches.add(entry);
             }
+        }
+        // The container itself is listed only when it has no sub-command to show.
+        if (matches.isEmpty() && container != null) {
+            matches.add(container);
         }
         if (matches.isEmpty()) {
             ctx.actor().message(Msg.error("No sub-command found for '" + filter + "'"));
             return;
         }
         matches.sort(Comparator.comparing(entry -> entry.name));
-        Page page = Page.of(ctx, matches.size(), PAGE_SIZE);
+        // A container with a handful of sub-commands shows them all at once
+        // rather than leaving one or two for a second page.
+        Page page = Page.of(ctx, matches.size(), matches.size() <= PAGE_SIZE + 2 ? matches.size() : PAGE_SIZE);
         ctx.actor().message(header("Sub-commands of " + filter, matches.size(), page));
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
             ctx.actor().suggestLink(row(entry), entry.name,
                     "Put " + entry.name + " in the chat box");
         }
         footer(ctx, "//help -s " + filter, page);
+    }
+
+    private static boolean isUnder(String name, String container) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.startsWith("/" + container + " ") || lower.startsWith("//" + container + " ");
     }
 
     /**
@@ -128,7 +143,8 @@ final class Help {
 
     /** The heading of a page: the title, how many there are, and which page this is. */
     private static Msg header(String label, int total, Page page) {
-        return Msg.title(label + " (" + total + " commands, page " + page.number() + "/" + page.pages() + ")");
+        return Msg.title(label + " (" + total + (total == 1 ? " command" : " commands")
+                + (page.pages() > 1 ? ", page " + page.number() + "/" + page.pages() : "") + ")");
     }
 
     /** One command: its name - sub-command included - its arguments, then what it does. */

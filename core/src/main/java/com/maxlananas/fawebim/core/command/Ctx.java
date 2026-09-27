@@ -167,6 +167,17 @@ public final class Ctx {
         return Str.join(positional.subList(Math.min(from, positional.size()), positional.size()), " ");
     }
 
+    /**
+     * The arguments from one on, joined, for a last argument the command
+     * cannot do without - a pattern, an expression. A line that stops short
+     * of it gets the usage, as a missing argument does, rather than whatever
+     * the parser makes of nothing.
+     */
+    public String requiredJoined(int from) {
+        arg(from);
+        return joined(from);
+    }
+
     public int intArg(int index) {
         return Parsers.intArg(arg(index), "argument " + (index + 1));
     }

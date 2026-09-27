@@ -69,35 +69,31 @@ final class UtilityExtras {
         entry.group = "utility";
         entry.arguments.add("expression");
         entry.handler = ctx -> {
-            Expression expression;
+            String input = ctx.requiredJoined(0);
+            double value;
             try {
-                expression = Expression.compile(ctx.joined(0));
-            } catch (IllegalArgumentException e) {
-                throw CommandRegistry.error("Invalid expression: " + e.getMessage());
+                // pi, e, true and false are the expression's own constants,
+                // and a variable is assigned in the expression: a=2; a*3.
+                value = Expression.compile(input).evaluate(new Expression.Variables());
+            } catch (IllegalArgumentException | ArithmeticException e) {
+                throw CommandRegistry.error("'" + input + "' could not be parsed as a valid expression: "
+                        + e.getMessage());
             }
-            Expression.Variables variables = new Expression.Variables();
-            variables.set("pi", Math.PI);
-            variables.set("e", Math.E);
-            variables.set("true", 1);
-            variables.set("false", 0);
-            for (int i = 0; i < ctx.args().size(); i++) {
-                String argument = ctx.arg(i);
-                int equals = argument.indexOf('=');
-                if (equals > 0) {
-                    variables.set(argument.substring(0, equals),
-                            Double.parseDouble(argument.substring(equals + 1)));
-                }
-            }
-            double value = expression.evaluate(variables);
-            ctx.actor().message(Msg.result("=", format(value)));
+            ctx.actor().message(Msg.info(input + " = " + Msg.value(format(value)).raw()));
         };
     }
 
+    /**
+     * The result as FAWE writes it: grouped thousands and at most five
+     * decimals, so 0.1+0.2 is 0.3 rather than the double's 0.30000000000000004.
+     */
     private static String format(double value) {
-        if (value == Math.floor(value) && !Double.isInfinite(value) && Math.abs(value) < 1e15) {
-            return String.valueOf((long) value);
+        if (Double.isNaN(value)) {
+            return "NaN";
         }
-        return String.valueOf(value);
+        java.text.DecimalFormat format = new java.text.DecimalFormat("#,##0.#####",
+                java.text.DecimalFormatSymbols.getInstance(Locale.ROOT));
+        return format.format(value);
     }
 
     /** {@code //cancel} — aborts the next edit that reaches a timeout check. */

@@ -83,6 +83,7 @@ final class Aliases {
             "/tool tarmask", "/tool tracemask",
             "/tool tm", "/tool tracemask",
             "/brush listbrush", "//brushes",
+            "/we help", "//help",
     };
 
     private Aliases() {

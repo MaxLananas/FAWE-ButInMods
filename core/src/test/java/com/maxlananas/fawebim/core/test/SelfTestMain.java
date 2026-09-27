@@ -164,6 +164,7 @@ public final class SelfTestMain {
         SnowAndGreenTests.run();
         ClipboardPasteTests.run();
         DistributionAndButcherTests.run();
+        CommandFeedbackTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
