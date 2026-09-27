@@ -56,6 +56,7 @@ final class SchematicCommandTests {
             twoWordsStillConvert();
             unloadTakesOneSchematicOut();
             deleteStarDeletesTheLoadedFiles();
+            aBareSchemListsItsSubCommands();
         } finally {
             Config.get().defaultSchematicFormat = format;
             Schematics.setDirectory(previous);
@@ -231,6 +232,24 @@ final class SchematicCommandTests {
         check("and only those", Files.isRegularFile(file("kept.schem")));
         check("a second time there is nothing left to delete",
                 answer(actor, "//schem delete *").contains("No schematic file to delete"));
+    }
+
+    private static void aBareSchemListsItsSubCommands() {
+        TestActor actor = builder("SchemHelp");
+        String bare = answer(actor, "//schem");
+        check("a bare //schem lists the sub-commands, as FAWE's help does (" + bare + ")",
+                bare.contains("Schematic commands (10)")
+                        && bare.contains("//schem move <folder> - Move your loaded schematic")
+                        && bare.contains("//schem load <name> [-r] [-d] - Load a schematic into your clipboard"));
+        check("and so does //schem help", answer(actor, "//schem help").contains("Schematic commands (10)"));
+        String load = answer(actor, "//schem load");
+        check("a sub-command without its argument gives its own usage (" + load + ")",
+                load.contains("Missing argument 1 for //schem load <name> [-r] [-d]"));
+        String unknown = answer(actor, "//schem nope");
+        check("an unknown sub-command lists the real ones (" + unknown + ")",
+                unknown.contains("Unknown sub-command 'nope': //schem list|load|save|loadall|unload|move|delete"));
+        check("the aliases still work", answer(actor, "//schem ls").contains("Schematics")
+                && answer(actor, "//schem f").contains("Schematic formats"));
     }
 
     private static Path file(String name) {

@@ -1351,6 +1351,54 @@ public final class Commands {
     }
 
     /**
+     * A sub-command of //schem, with its arguments and FAWE's description of
+     * it: what a bare //schem lists, and the usage the sub-command answers
+     * with when its argument is missing.
+     */
+    private record SchematicSubCommand(String name, String arguments, boolean needsArgument, String description) {
+
+        private static final List<SchematicSubCommand> ALL = List.of(
+                new SchematicSubCommand("list", "[folder/] [filter] [-p <page>] [-d|-n] [-f <format>]", false,
+                        "List saved schematics"),
+                new SchematicSubCommand("load", "<name> [-r] [-d]", true, "Load a schematic into your clipboard"),
+                new SchematicSubCommand("save", "<name> [format] [-f]", true,
+                        "Save your clipboard into a schematic file"),
+                new SchematicSubCommand("loadall", "[format] <name> [-o] [-r] [-d]", true,
+                        "Load multiple clipboards (paste will randomly choose one)"),
+                new SchematicSubCommand("unload", "[name]", false, "Remove a clipboard from your multi-clipboard"),
+                new SchematicSubCommand("move", "<folder>", true,
+                        "Move your loaded schematic; <name> <format> converts one"),
+                new SchematicSubCommand("delete", "<name|*>", true, "Delete a saved schematic"),
+                new SchematicSubCommand("formats", "", false, "List available formats"),
+                new SchematicSubCommand("share", "[name]", false, "Save your clipboard under a name to share"),
+                new SchematicSubCommand("clear", "", false, "Clear your clipboard"));
+
+        static SchematicSubCommand named(String name) {
+            for (SchematicSubCommand sub : ALL) {
+                if (sub.name.equals(name)) {
+                    return sub;
+                }
+            }
+            return null;
+        }
+
+        static String names() {
+            return String.join("|", ALL.stream().map(SchematicSubCommand::name).toList());
+        }
+    }
+
+    /** A bare //schem: every sub-command, each a click away from the chat box. */
+    private static void schematicHelp(Ctx ctx) {
+        ctx.actor().message(Msg.title("Schematic commands (" + SchematicSubCommand.ALL.size() + ")"));
+        for (SchematicSubCommand sub : SchematicSubCommand.ALL) {
+            String command = "//schem " + sub.name();
+            ctx.actor().suggestLink(Msg.usage(command, sub.arguments(), sub.description()).raw(), command + " ",
+                    "Put " + command + " in the chat box");
+        }
+        ctx.actor().message(Msg.hint("A name may go through folders: //schem save trees/oak"));
+    }
+
+    /**
      * The clipboards //schem load and loadall put in the session, which //schem
      * move, unload and delete * go by: the loadall pool, else the clipboard.
      */
@@ -2236,9 +2284,28 @@ public final class Commands {
         e65.arguments.add("[-p <page>]");
         e65.suggestions = Commands::schematicCompletions;
         e65.handler = ctx -> {
-                    String action = ctx.arg(0).toLowerCase(Locale.ROOT);
-                    if (action.equals("ls") || action.equals("all")) {
-                        action = "list";
+                    // A bare //schem lists the sub-commands, as FAWE's help for the
+                    // container does, where it answered with a missing argument.
+                    if (ctx.args().isEmpty() || ctx.arg(0).equalsIgnoreCase("help")) {
+                        schematicHelp(ctx);
+                        return;
+                    }
+                    String action = switch (ctx.arg(0).toLowerCase(Locale.ROOT)) {
+                        case "ls", "all" -> "list";
+                        case "d" -> "delete";
+                        case "m" -> "move";
+                        case "f", "listformats" -> "formats";
+                        default -> ctx.arg(0).toLowerCase(Locale.ROOT);
+                    };
+                    SchematicSubCommand sub = SchematicSubCommand.named(action);
+                    if (sub == null) {
+                        throw CommandRegistry.error("Unknown sub-command '" + ctx.arg(0) + "': //schem "
+                                + SchematicSubCommand.names());
+                    }
+                    // The usage of the sub-command, not of every one of them.
+                    if (sub.needsArgument() && ctx.args().size() < 2) {
+                        throw CommandRegistry.error("Missing argument 1 for //schem " + sub.name() + " "
+                                + sub.arguments());
                     }
                     switch (action) {
                         case "list" -> {
@@ -2441,9 +2508,6 @@ public final class Commands {
                             // FAWE's //schem loadall [format] <filename>: one word is the
                             // file, and the format only comes first when both are given.
                             // The format is read from each file anyway.
-                            if (ctx.args().size() < 2) {
-                                throw CommandRegistry.error("Usage: //schem loadall [format] <filename>");
-                            }
                             String filter = ctx.arg(ctx.args().size() > 2 ? 2 : 1);
                             java.util.List<com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard> loaded =
                                     Schematics.loadAll(filter);
@@ -2478,7 +2542,8 @@ public final class Commands {
                                         ? "" : " - also " + String.join(", ", format.aliases()))));
                             }
                         }
-                        default -> throw CommandRegistry.error("Usage: //schem list|save <name>|load <name>|delete <name>");
+                        default -> throw CommandRegistry.error("Unknown sub-command '" + ctx.arg(0) + "': //schem "
+                                + SchematicSubCommand.names());
                     }
                 };
 

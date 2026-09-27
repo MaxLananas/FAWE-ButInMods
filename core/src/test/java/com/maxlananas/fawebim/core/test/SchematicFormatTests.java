@@ -770,7 +770,7 @@ final class SchematicFormatTests {
                 {"//schem loadall -o sponge lonely-house", "Loaded 1 clipboard"},
                 {"//schem loadall -o pool-*", "Loaded 2 clipboards"},
                 {"//schem loadall -o nothing-here", "No schematic named 'nothing-here'"},
-                {"//schem loadall", "Usage: //schem loadall [format] <filename>"},
+                {"//schem loadall", "Missing argument 1 for //schem loadall [format] <name>"},
         };
         for (String[] row : cases) {
             actor.clearMessages();
