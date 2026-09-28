@@ -83,21 +83,31 @@ final class Stubs {
 
     /**
      * WorldEdit registers {@code /} (which the player types as {@code //}) as the
-     * super-pickaxe toggle, so it gets a real implementation instead of a stub.
+     * super-pickaxe toggle, so it gets a real implementation instead of a stub:
+     * one command under both names, {@code /} as WorldEdit declares it and
+     * {@code //} as a line reaches the dispatcher once the platform took its
+     * first slash. Two commands were registered, and the one named {@code /}
+     * could not be reached by any line.
      */
     private static void registerPickaxeToggle(CommandRegistry registry) {
-        for (String name : new String[]{"/", "//"}) {
-            if (registry.get(name) != null) {
-                continue;
-            }
-            CommandRegistry.Entry entry = registry.register(name);
+        if (registry.get("//") == null && registry.get("/") == null) {
+            CommandRegistry.Entry entry = registry.register("//", "/");
             entry.description = "Toggle the super pickaxe function";
             entry.group = "tool";
             entry.status = "implemented";
+            // The pickaxe is the one in a hand, and WorldEdit's toggle takes a player.
+            entry.requiresPlayer = true;
+            entry.arguments.add("[on|off]");
             entry.handler = ctx -> {
-                boolean enabled = !ctx.session().isSuperPickaxeEnabled();
-                ctx.session().setSuperPickaxeEnabled(enabled);
-                ctx.actor().message(Msg.success("Super pickaxe " + (enabled ? "enabled" : "disabled")));
+                boolean current = ctx.session().isSuperPickaxeEnabled();
+                // WorldEdit's toggle: turned on or off when told which, and told
+                // so when it already is.
+                if (!ctx.args().isEmpty() && Parsers.booleanArg(ctx, 0, !current) == current) {
+                    ctx.actor().message(Msg.info("Super pickaxe already " + (current ? "enabled" : "disabled")));
+                    return;
+                }
+                ctx.session().setSuperPickaxeEnabled(!current);
+                ctx.actor().message(Msg.success("Super pickaxe " + (!current ? "enabled" : "disabled")));
             };
         }
     }

@@ -37,6 +37,7 @@ final class CommandLimitTests {
         radiiAreRefusedBeforeTheWalk();
         heightsStayInsideTheWorld();
         superPickaxeRangeIsChecked();
+        theSuperPickaxeIsAPlayersOwn();
         superPickaxePlans();
         toggleEditWandTogglesTheWand();
         floodFillToolFillsTheClickedType();
@@ -93,6 +94,32 @@ final class CommandLimitTests {
         check("//removeabove with a height below the world answers", !above.isEmpty());
         check("//removebelow with a height above the world answers", !below.isEmpty());
         check("both walk the world's height only (" + millis + " ms)", millis < 20_000);
+    }
+
+    /**
+     * The super pickaxe is the one in a player's hand, and every one of
+     * WorldEdit's pickaxe commands takes a player; its toggle is turned on or
+     * off when told which. A console set a pickaxe it has no hand for, the
+     * toggle ignored what it was told, and it was two commands, one of which
+     * no line reached.
+     */
+    private static void theSuperPickaxeIsAPlayersOwn() {
+        TestActor console = TestActor.positionlessConsole(new TestWorld("pickaxe-console"));
+        for (String line : new String[]{"//", "// on", "/sp area 3", "/superpickaxe single"}) {
+            check(line + " needs a player", answer(console, line).contains("must be run by a player"));
+        }
+        check("/ and // are one command", CommandManager.get().registry().get("/") != null
+                && CommandManager.get().registry().get("/") == CommandManager.get().registry().get("//"));
+        TestActor actor = actor("PickaxeToggle");
+        check("// turns the pickaxe on", answer(actor, "//").contains("Super pickaxe enabled")
+                && actor.session().isSuperPickaxeEnabled());
+        check("// on says it already is", answer(actor, "// on").contains("Super pickaxe already enabled")
+                && actor.session().isSuperPickaxeEnabled());
+        check("// off turns it off", answer(actor, "// off").contains("Super pickaxe disabled")
+                && !actor.session().isSuperPickaxeEnabled());
+        check("// off again says so", answer(actor, "// off").contains("already disabled"));
+        check("a word that is not on or off is refused", answer(actor, "// maybe").contains("maybe")
+                && !actor.session().isSuperPickaxeEnabled());
     }
 
     private static void superPickaxeRangeIsChecked() {

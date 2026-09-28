@@ -3434,6 +3434,8 @@ public final class Commands {
         CommandRegistry.Entry e101 = registry.register("/superpickaxe", "/sp", "//sp");
         e101.description = "Super-pickaxe: single, area <range>, recursive <range>";
         e101.group = "tool";
+        // A mode of the pickaxe in a hand: every one of WorldEdit's takes a player.
+        e101.requiresPlayer = true;
         e101.arguments.add("[single|area|recursive|recur|off]");
         e101.arguments.add("[range]");
         e101.handler = ctx -> {
