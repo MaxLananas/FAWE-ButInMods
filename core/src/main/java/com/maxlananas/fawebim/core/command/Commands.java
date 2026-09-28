@@ -1869,7 +1869,7 @@ public final class Commands {
                             : new int[]{ctx.pattern(0).apply(ctx.placement())};
                     long changed = com.maxlananas.fawebim.core.function.Operations.fall(ctx.world(), session,
                             ctx.selection(), ctx.hasFlag("m"), replace);
-                    flush(ctx, session, "Generated", changed, "block");
+                    flush(ctx, session, "Dropped", changed, "block");
                 };
 
     }

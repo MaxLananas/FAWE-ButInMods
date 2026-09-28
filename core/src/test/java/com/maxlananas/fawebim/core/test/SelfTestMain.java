@@ -1395,6 +1395,13 @@ public final class SelfTestMain {
         Operations.fall(world, settled, region, true, null);
         settled.flushQueue();
         check("//fall -m leaves a resting block where it is", world.getBlock(10, 70, 10) == stone);
+        CommandManager.get().dispatch(actor, "//pos1 8,70,8");
+        CommandManager.get().dispatch(actor, "//pos2 15,90,15");
+        world.setBlock(12, 85, 12, stone);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//fall -m");
+        check("//fall says its blocks dropped; it said they were generated",
+                plain(actor.lastMessage()).contains("Dropped: 1 block affected"));
 
         checkEquals("schematic format of .schem", "sponge.3",
                 com.maxlananas.fawebim.core.clipboard.Schematics.formatOf("house.schem"));
