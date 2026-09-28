@@ -34,6 +34,7 @@ final class BrushCommandTests {
         theCommandBrushRunsAtTheClick();
         theScatterBrushesPickSurfacePointsApart();
         theSplatterBrushPaintsTheSurface();
+        theLineBrushesJoinTwoClicks();
     }
 
     private static TestActor actor(String name) {
@@ -122,6 +123,48 @@ final class BrushCommandTests {
         answer(actor, "//undo");
         answer(actor, "/brush splatter gold_block 6 1 0");
         checkEquals("a splotch of no recursion is its point", 1, stroke(actor, 0, 63, 0));
+    }
+
+    /**
+     * FAWE's line and catenary brushes join the points of two clicks. The line
+     * brush drew from where the player stood on the first click and from there
+     * forever after; the catenary one hung a sine from the corner of the
+     * selection, and failed without one.
+     */
+    private static void theLineBrushesJoinTwoClicks() {
+        TestActor actor = actor("LineBrush");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        answer(actor, "/brush line gold_block 0");
+        checkEquals("the first click of the line brush only marks a point", 0, stroke(actor, 0, 70, 0));
+        checkEquals("the second draws the line", 6, stroke(actor, 5, 70, 0));
+        check("between the two", world.getBlock(0, 70, 0) == gold && world.getBlock(3, 70, 0) == gold
+                && world.getBlock(5, 70, 0) == gold);
+        checkEquals("and the next click starts another line", 0, stroke(actor, 5, 75, 0));
+        stroke(actor, 5, 78, 0);
+        check("from there", world.getBlock(5, 77, 0) == gold && world.getBlock(5, 72, 0) != gold);
+        answer(actor, "/brush line diamond_block 0 -s");
+        stroke(actor, 20, 70, 0);
+        stroke(actor, 20, 70, 4);
+        // The shared end is already there: two new blocks.
+        checkEquals("with -s the end of a line starts the next", 2, stroke(actor, 22, 70, 4));
+        answer(actor, "/brush line emerald_block 1 -f");
+        stroke(actor, 30, 70, 0);
+        stroke(actor, 34, 70, 0);
+        check("-f draws discs at the line's height, not balls", world.getBlock(32, 70, 1) == state("minecraft:emerald_block")
+                && world.getBlock(32, 71, 0) != state("minecraft:emerald_block"));
+
+        answer(actor, "/brush catenary gold_block 1.5 0");
+        checkEquals("the catenary brush marks its first end too", 0, stroke(actor, 40, 90, 0));
+        check("and hangs a wire to the second", stroke(actor, 50, 90, 0) > 0);
+        int lowest = Integer.MAX_VALUE;
+        for (int y = 60; y <= 90; y++) {
+            if (world.getBlock(45, y, 0) == gold) {
+                lowest = Math.min(lowest, y);
+            }
+        }
+        check("that sags between them (" + lowest + ")", lowest < 90 && lowest > 70);
+        check("from one end to the other", world.getBlock(40, 90, 0) == gold && world.getBlock(50, 90, 0) == gold);
     }
 
     private static void theScatterBrushesPickSurfacePointsApart() {

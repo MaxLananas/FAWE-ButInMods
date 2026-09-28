@@ -803,6 +803,17 @@ public final class Operations {
      */
     public static int drawLine(EditSession session, List<BlockVector3> points, double radius, boolean filled,
                                Pattern pattern) {
+        return drawLine(session, points, radius, filled, false, pattern);
+    }
+
+    /**
+     * {@link #drawLine(EditSession, List, double, boolean, Pattern)}, or with
+     * {@code flat}, FAWE's flat line: each block of the line a disc of
+     * {@code radius} at its height instead of a ball, and without
+     * {@code filled} only the blocks of the discs with a side outside them.
+     */
+    public static int drawLine(EditSession session, List<BlockVector3> points, double radius, boolean filled,
+                               boolean flat, Pattern pattern) {
         ShapeCells tips = new ShapeCells("The line");
         for (int i = 0; i + 1 < points.size(); i++) {
             BlockVector3 from = points.get(i);
@@ -826,6 +837,9 @@ public final class Operations {
                         (int) Math.round(from.y() + (double) step * dy / steps * signY),
                         (int) Math.round(from.z() + (double) step * dz / steps * signZ));
             }
+        }
+        if (flat) {
+            return tips.stretch(radius, "The line").writeOutline(session, pattern, !filled);
         }
         return tips.balloon(radius, "The line").write(session, pattern, !filled);
     }
@@ -917,6 +931,55 @@ public final class Operations {
             return ballooned;
         }
 
+        /**
+         * The blocks within {@code radius} of one of these at its own height, as
+         * FAWE's getStretched; a radius under one leaves them as they are.
+         * Empties this set.
+         */
+        ShapeCells stretch(double radius, String name) {
+            if (radius < 1) {
+                return this;
+            }
+            int reach = (int) Math.ceil(radius);
+            double reachSquared = radius * radius;
+            ShapeCells stretched = new ShapeCells(name);
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int tipX = BlockArrayClipboard.keyX(key);
+                int tipY = BlockArrayClipboard.keyY(key);
+                int tipZ = BlockArrayClipboard.keyZ(key);
+                for (int x = tipX - reach; x <= tipX + reach; x++) {
+                    for (int z = tipZ - reach; z <= tipZ + reach; z++) {
+                        int dx = x - tipX;
+                        int dz = z - tipZ;
+                        if (dx * dx + dz * dz <= reachSquared) {
+                            stretched.add(x, tipY, z);
+                        }
+                    }
+                }
+            }
+            return stretched;
+        }
+
+        /** Writes every block, or with {@code outline} those with a side outside the set, as FAWE's getOutline. */
+        int writeOutline(EditSession session, Pattern pattern, boolean outline) {
+            int changed = 0;
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int x = BlockArrayClipboard.keyX(key);
+                int y = BlockArrayClipboard.keyY(key);
+                int z = BlockArrayClipboard.keyZ(key);
+                if (outline && contains(x + 1, y, z) && contains(x - 1, y, z) && contains(x, y, z + 1)
+                        && contains(x, y, z - 1)) {
+                    continue;
+                }
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    changed++;
+                }
+            }
+            return changed;
+        }
+
         void add(int x, int y, int z) {
             long key = BlockArrayClipboard.positionKey(x, y, z);
             if (seen.add(key)) {
@@ -984,26 +1047,36 @@ public final class Operations {
         return tips.balloon(radius, "The curve").write(session, pattern, !filled);
     }
 
-    /** {@code /brush catenary} — a sagging rope between two points. */
-    public static int catenary(EditSession session, BlockVector3 from, BlockVector3 to, Pattern pattern,
-                               double lengthFactor, double thickness) {
-        int changed = 0;
-        double distance = from.distance(to);
-        double sag = distance * lengthFactor;
-        int steps = (int) Math.max(2, distance * 2);
-        for (int i = 0; i <= steps; i++) {
-            double t = (double) i / steps;
-            double x = from.x() + (to.x() - from.x()) * t;
-            double z = from.z() + (to.z() - from.z()) * t;
-            double y = from.y() + (to.y() - from.y()) * t - sag * Math.sin(Math.PI * t);
-            int bx = (int) Math.floor(x);
-            int by = (int) Math.floor(y);
-            int bz = (int) Math.floor(z);
-            if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
-                changed++;
-            }
+    /**
+     * The lowest point of a wire hung between two points, FAWE's CatenaryBrush
+     * vertex: the wire {@code lengthFactor} times as long as the distance, a
+     * catenary through both ends, the midpoint when it is no longer than the
+     * distance or the ends are one above the other.
+     */
+    public static BlockVector3 catenaryVertex(BlockVector3 from, BlockVector3 to, double lengthFactor) {
+        Vector3 a = from.toVector3();
+        Vector3 b = to.toVector3();
+        double dy = b.y() - a.y();
+        double dx = b.x() - a.x();
+        double dz = b.z() - a.z();
+        double dh = Math.sqrt(dx * dx + dz * dz);
+        if (lengthFactor <= 1 || dh == 0) {
+            return new BlockVector3((int) Math.round((a.x() + b.x()) / 2), (int) Math.round((a.y() + b.y()) / 2),
+                    (int) Math.round((a.z() + b.z()) / 2));
         }
-        return changed;
+        double curveLength = a.distance(b) * lengthFactor;
+        double g = Math.sqrt(curveLength * curveLength - dy * dy) / 2;
+        double scale = 0.00001;
+        while (g < scale * Math.sinh(dh / (2 * scale))) {
+            scale *= 1.00001;
+        }
+        double vertexX = (dh - scale * Math.log((curveLength + dy) / (curveLength - dy))) / 2.0;
+        double half = (dh / 2) / scale;
+        double offsetY = (dy - curveLength * (Math.cosh(half) / Math.sinh(half))) / 2;
+        double vertexY = scale + offsetY;
+        double along = vertexX / dh;
+        return new BlockVector3((int) Math.round(a.x() + dx * along), (int) Math.round(a.y() + dy * along + vertexY),
+                (int) Math.round(a.z() + dz * along));
     }
 
     /** The six directions in their declared order, read without copying the enum's array per block. */

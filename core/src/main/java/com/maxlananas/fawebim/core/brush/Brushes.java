@@ -784,22 +784,23 @@ public final class Brushes {
             this.flat = flat;
         }
 
+        /**
+         * FAWE's: the first click marks where the line starts, the second draws
+         * it there, of the brush's radius - a ball around each block, or with
+         * {@code -f} a disc at its height - solid unless {@code -h}, and with
+         * {@code -s} the second click starts the next line. What each click did
+         * is said over the hotbar, not in the chat.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockVector3 from = start != null ? start : actor.session().getSelector(actor.world())
-                    .getRegion().getMinimumPoint();
             if (start == null) {
-                start = actor.position();
-                from = start;
+                start = position;
+                actor.status(Msg.info("Added point " + position + ", click another position to create the line"));
+                return 0;
             }
-            BlockVector3 end = flat ? position.withY(from.y()) : position;
-            int changed = Operations.drawLine(session, List.of(from, end), 0, !shell, fill);
-            if (select) {
-                var selector = actor.session().getSelector(actor.world());
-                var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
-                selector.selectPrimary(from, limits);
-                selector.selectSecondary(end, limits);
-            }
+            int changed = Operations.drawLine(session, List.of(start, position), radius, !shell, flat, fill);
+            actor.status(Msg.info("Created the line"));
+            start = select ? position : null;
             return changed;
         }
     }
@@ -838,10 +839,13 @@ public final class Brushes {
     /** {@code /brush catenary} — a rope with sag between two points. */
     public static final class CatenaryBrush extends BaseBrush {
 
-        private double lengthFactor = 1.1;
+        private double lengthFactor = 1.2;
         private boolean shell;
         private boolean select;
         private boolean facingDirection;
+        private BlockVector3 start;
+        private BlockVector3 end;
+        private BlockVector3 vertex;
 
         public CatenaryBrush(double radius, Pattern fill, Mask mask) {
             super(radius, fill, mask);
@@ -863,23 +867,47 @@ public final class Brushes {
             this.facingDirection = facingDirection;
         }
 
+        /**
+         * FAWE's: the first click marks one end, the second hangs a wire of
+         * {@code lengthFactor} times the distance from there - a spline through
+         * the ends and the lowest point of the catenary between them, of the
+         * brush's radius, hollow with {@code -h}. With {@code -d} a third click
+         * turns the sag towards where the player looks. With {@code -s} the end
+         * of a wire starts the next. It hung a sine from the corner of the
+         * selection, as deep as the line was long times the factor.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockVector3 from = actor.session().getSelector(actor.world()).getRegion().getMinimumPoint();
-            // -d drops the line in the direction the player looks at instead of
-            // straight down.
-            BlockVector3 end = position;
-            if (facingDirection) {
-                var facing = actor.facing();
-                end = position.add(facing.toVector().multiply(Math.max(1, (int) radius * 2)));
+            if (start == null || position.equals(start)) {
+                start = position;
+                vertex = null;
+                actor.status(Msg.info("Added point " + position + ", click another position to create the line"));
+                return 0;
             }
-            int changed = Operations.catenary(session, from, end, fill, lengthFactor, shell ? 0.5 : 0);
-            if (select) {
-                var selector = actor.session().getSelector(actor.world());
-                var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
-                selector.selectPrimary(from, limits);
-                selector.selectSecondary(end, limits);
+            if (vertex == null) {
+                end = position;
+                vertex = Operations.catenaryVertex(start, end, lengthFactor);
+                if (facingDirection) {
+                    actor.status(Msg.info("Added point " + position
+                            + ", click the direction you want to create the spline"));
+                    return 0;
+                }
+            } else if (facingDirection) {
+                // The sag keeps its depth and turns to the view.
+                BlockVector3 middle = new BlockVector3((start.x() + end.x()) / 2, (start.y() + end.y()) / 2,
+                        (start.z() + end.z()) / 2);
+                double depth = Math.sqrt(middle.distanceSq(vertex));
+                com.maxlananas.fawebim.core.math.Vector3 facing = actor.direction();
+                vertex = new BlockVector3((int) Math.round(middle.x() + facing.x() * depth),
+                        (int) Math.round(middle.y() + facing.y() * depth),
+                        (int) Math.round(middle.z() + facing.z() * depth));
             }
+            BlockVector3 last = facingDirection ? end : position;
+            int changed = Operations.drawSpline(session, List.of(start, vertex, last), 0, 0, 0, 10, radius, !shell,
+                    fill);
+            actor.status(Msg.info("Created the line"));
+            vertex = null;
+            start = select ? last : null;
             return changed;
         }
     }
