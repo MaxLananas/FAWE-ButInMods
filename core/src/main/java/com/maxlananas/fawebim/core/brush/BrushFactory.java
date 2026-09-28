@@ -173,7 +173,8 @@ public final class BrushFactory {
             }
             case "scatter" -> new Brushes.ScatterBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
                     parameters.integer("points", 5), parameters.integer("distance", 1), parameters.flag("o"));
-            case "shatter" -> new Brushes.ShatterBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "shatter" -> new Brushes.ShatterBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
+                    parameters.integer("count", 10));
             case "splatter" -> {
                 Brushes.SplatterBrush brush = new Brushes.SplatterBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask());

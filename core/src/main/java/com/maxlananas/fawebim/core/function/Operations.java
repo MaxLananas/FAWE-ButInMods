@@ -2391,6 +2391,86 @@ public final class Operations {
         return changed;
     }
 
+    /**
+     * {@code /brush shatter <pattern> [radius] [count]}, FAWE's: {@code count}
+     * points on the surface - the points of {@link #scatterPoints}, a block
+     * apart - each grows a patch over the surface within the radius, at random
+     * speed, and where two patches meet the pattern draws the crack between
+     * them, which breaks the surface into pieces.
+     */
+    public static int shatter(EditSession session, BlockVector3 center, double radius, int count, Pattern pattern,
+                              Mask mask, Random random) {
+        List<BlockVector3> seeds = scatterPoints(session, center, radius, count, 1, mask, random);
+        long radiusSq = (long) (radius * radius);
+        LongSet claimed = new LongSet();
+        List<LongSet> reached = new ArrayList<>(seeds.size());
+        List<List<Long>> frontiers = new ArrayList<>(seeds.size());
+        for (BlockVector3 seed : seeds) {
+            long key = BlockArrayClipboard.positionKey(seed.x(), seed.y(), seed.z());
+            claimed.add(key);
+            LongSet own = new LongSet();
+            own.add(key);
+            reached.add(own);
+            List<Long> frontier = new ArrayList<>();
+            frontier.add(key);
+            frontiers.add(frontier);
+        }
+        Mask edit = session.getMask();
+        int changed = 0;
+        boolean growing = true;
+        while (growing) {
+            growing = false;
+            for (int i = 0; i < frontiers.size(); i++) {
+                List<Long> frontier = frontiers.get(i);
+                growing |= !frontier.isEmpty();
+                LongSet own = reached.get(i);
+                List<Long> next = new ArrayList<>();
+                for (long node : frontier) {
+                    // A patch grows at random speed: half its edge waits a turn.
+                    if (random.nextInt(2) == 0) {
+                        next.add(node);
+                        continue;
+                    }
+                    int x = BlockArrayClipboard.keyX(node);
+                    int y = BlockArrayClipboard.keyY(node);
+                    int z = BlockArrayClipboard.keyZ(node);
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dy = -1; dy <= 1; dy++) {
+                            for (int dz = -1; dz <= 1; dz++) {
+                                if (dx == 0 && dy == 0 && dz == 0) {
+                                    continue;
+                                }
+                                int nx = x + dx;
+                                int ny = y + dy;
+                                int nz = z + dz;
+                                if (ny < session.minY() || ny > session.maxY()
+                                        || distanceSq(nx, ny, nz, center) > radiusSq
+                                        || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                        || openSide(session, nx, ny, nz) == null
+                                        || mask != null && !mask.test(nx, ny, nz)
+                                        || edit != null && !edit.test(nx, ny, nz)) {
+                                    continue;
+                                }
+                                long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                                if (!claimed.add(key)) {
+                                    // Another patch was there first: the crack.
+                                    if (!own.contains(key) && session.setBlock(nx, ny, nz, pattern.apply(nx, ny, nz))) {
+                                        changed++;
+                                    }
+                                } else {
+                                    own.add(key);
+                                    next.add(key);
+                                }
+                            }
+                        }
+                    }
+                }
+                frontiers.set(i, next);
+            }
+        }
+        return changed;
+    }
+
     /** Whether a point is within the cube of {@code radius} around one of the points, as FAWE's set tests it. */
     private static boolean withinCube(List<BlockVector3> points, BlockVector3 point, int radius) {
         for (BlockVector3 other : points) {

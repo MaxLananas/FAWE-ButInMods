@@ -35,6 +35,7 @@ final class BrushCommandTests {
         theScatterBrushesPickSurfacePointsApart();
         theSplatterBrushPaintsTheSurface();
         theLineBrushesJoinTwoClicks();
+        theShatterBrushDrawsCracks();
     }
 
     private static TestActor actor(String name) {
@@ -105,8 +106,10 @@ final class BrushCommandTests {
         int changed = stroke(actor, 0, 63, 0);
         int surface = 0;
         int elsewhere = 0;
-        for (int x = -8; x <= 8; x++) {
-            for (int z = -8; z <= 8; z++) {
+        // A splotch grows up to the radius from its point, and its point is up
+        // to the radius from the click.
+        for (int x = -13; x <= 13; x++) {
+            for (int z = -13; z <= 13; z++) {
                 for (int y = 58; y <= 70; y++) {
                     if (world.getBlock(x, y, z) == state("minecraft:gold_block")) {
                         if (y == 63) {
@@ -165,6 +168,41 @@ final class BrushCommandTests {
         }
         check("that sags between them (" + lowest + ")", lowest < 90 && lowest > 70);
         check("from one end to the other", world.getBlock(40, 90, 0) == gold && world.getBlock(50, 90, 0) == gold);
+    }
+
+    /**
+     * FAWE's shatter draws its pattern along the cracks between patches grown
+     * over the surface from its points; it set random blocks of a sphere to
+     * air whatever its pattern.
+     */
+    private static void theShatterBrushDrawsCracks() {
+        TestActor actor = actor("ShatterBrush");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        answer(actor, "/brush shatter gold_block 6 5");
+        int changed = stroke(actor, 0, 63, 0);
+        int cracks = 0;
+        int elsewhere = 0;
+        int air = 0;
+        for (int x = -10; x <= 10; x++) {
+            for (int z = -10; z <= 10; z++) {
+                for (int y = 58; y <= 70; y++) {
+                    int block = world.getBlock(x, y, z);
+                    if (block == gold) {
+                        if (y == 63 && x * x + z * z <= 36) {
+                            cracks++;
+                        } else {
+                            elsewhere++;
+                        }
+                    } else if (y <= 63 && BlockState.registry().isAirLike(block)) {
+                        air++;
+                    }
+                }
+            }
+        }
+        check("the shatter brush draws cracks of its pattern (" + changed + ")", changed > 0 && cracks == changed);
+        checkEquals("on the surface within its radius only", 0, elsewhere);
+        checkEquals("and takes no block away", 0, air);
     }
 
     private static void theScatterBrushesPickSurfacePointsApart() {

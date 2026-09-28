@@ -936,23 +936,24 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush shatter} — removes the surface like an explosion. */
+    /**
+     * {@code /brush shatter <pattern> [radius] [count]}, FAWE's: the pattern
+     * drawn along the cracks between patches grown over the surface from
+     * {@code count} points, see {@link Operations#shatter}. It set random blocks
+     * of a sphere to air whatever its pattern and count.
+     */
     public static final class ShatterBrush extends BaseBrush {
 
-        public ShatterBrush(double radius, Pattern fill, Mask mask) {
+        private final int count;
+
+        public ShatterBrush(double radius, Pattern fill, Mask mask, int count) {
             super(radius, fill, mask);
+            this.count = Math.max(1, count);
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                if (!test(x, y, z)) {
-                    return false;
-                }
-                return random.nextDouble() < 0.3
-                        && session.setBlock(x, y, z, registry.air());
-            });
+            return Operations.shatter(session, position, radius, count, fill, mask, random);
         }
     }
 
