@@ -128,8 +128,14 @@ public final class BrushFactory {
                 brush.setIterations(parameters.integer("iterations", 4));
                 yield brush;
             }
-            case "blendball" -> new Brushes.BlendBallBrush(parameters.radius(), parameters.mask(),
-                    parameters.flag("a"), parameters.integer("minFreqDiff", 1), parameters.flagMask());
+            case "blendball" -> {
+                int minFreqDiff = parameters.integer("minFreqDiff", 1);
+                if (minFreqDiff < 0 || minFreqDiff > 26) {
+                    throw CommandRegistry.error("minFreqDiff not in range 0 <= value <= 26");
+                }
+                yield new Brushes.BlendBallBrush(parameters.radius(), parameters.mask(), parameters.flag("a"),
+                        minFreqDiff, parameters.flagMask());
+            }
             case "height" -> terrain(parameters, false, false);
             case "cliff" -> terrain(parameters, true, false);
             case "flatten" -> terrain(parameters, false, true);

@@ -179,6 +179,7 @@ public final class SelfTestMain {
         MaskSyntaxTests.run();
         PatternSyntaxTests.run();
         BrushCommandTests.run();
+        SculptBrushTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error

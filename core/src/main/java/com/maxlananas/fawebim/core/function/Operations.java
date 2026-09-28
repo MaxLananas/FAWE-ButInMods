@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.function.IntPredicate;
+import java.util.function.IntUnaryOperator;
 
 /**
  * The block operations behind the commands and brushes (FAWE's
@@ -1347,81 +1348,216 @@ public final class Operations {
         };
     }
 
-    /** {@code /brush blendball} — blends the brush area with its surroundings. */
-    public static int blendBall(EditSession session, BlockVector3 center, int radius, Mask mask) {
-        return blendBall(session, center, radius, mask, false, 1);
-    }
-
     /**
-     * FAWE's blend ball. With {@code onlyAir} the comparison only looks at
-     * whether a position is air or not, which evens out cliffs without touching
-     * the material mix; otherwise a block changes when its neighbours agree on
-     * another block at least {@code minFreqDiff} times more often than on the
-     * current one.
+     * FAWE's blend ball. Each block of the ball takes the block type its 26
+     * neighbours hold most, when that type outnumbers its own by
+     * {@code minFreqDiff} and no other ties with it; air counts as a type too,
+     * so a block standing out into the air goes and a pit fills. With
+     * {@code onlyAir} a block turns to air when its air neighbours outnumber
+     * the others by {@code minFreqDiff}, and air takes the most common
+     * neighbour when they are the ones outnumbered.
+     *
+     * <p>{@code limit} is FAWE's {@code -m}: a block it refuses is left as it
+     * is and counts as air to its neighbours. {@code mask}, the brush's own,
+     * only keeps a block from being written.</p>
+     *
+     * <p>Every block is decided on the terrain as it stood before the stroke,
+     * as FAWE's filter reads it: the layers are read once, three at a time,
+     * the masks are asked before anything is written, and the changes are
+     * written last. Reading the neighbours back through the edit let a block
+     * see those changed before it, so the ball drifted along the order of the
+     * scan; air was never chosen, and with {@code -a} every block was compared
+     * with itself and none changed.</p>
      */
-    public static int blendBall(EditSession session, BlockVector3 center, int radius, Mask mask,
+    public static int blendBall(EditSession session, BlockVector3 center, double size, Mask mask, Mask limit,
                                 boolean onlyAir, int minFreqDiff) {
         BlockStateRegistry registry = BlockState.registry();
-        int changed = 0;
-        // The 27 cells around a block hold at most 27 states: a tally in two
-        // small arrays reused for every block, instead of a map per block.
-        int[] states = new int[27];
-        int[] counts = new int[27];
-        for (int y = -radius; y <= radius; y++) {
-            for (int z = -radius; z <= radius; z++) {
-                for (int x = -radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + y * y + z * z) > radius) {
+        int outset = (int) (size + 1);
+        int squared = (int) (size * size);
+        int side = 2 * outset + 3;
+        Buffers.checkInts(3L * side * side, 3, "A blend ball of radius " + Msg.formatNumber((long) size));
+        IntUnaryOperator typeOf = rememberedType(registry);
+        IntPredicate airLike = remembered(registry::isAirLike);
+        int air = registry.air();
+        int airType = typeOf.applyAsInt(air);
+        BlendLayer below = new BlendLayer(outset + 1, limit != null);
+        BlendLayer here = new BlendLayer(outset + 1, limit != null);
+        BlendLayer above = new BlendLayer(outset + 1, limit != null);
+        below.read(session, center, -outset - 1, limit, typeOf, airLike);
+        here.read(session, center, -outset, limit, typeOf, airLike);
+        // Up to 26 types around a block: a tally in two small arrays reused
+        // for every block, in the order FAWE walks the neighbours, which is
+        // the order its ties and its choice of state depend on.
+        int[] tallyTypes = new int[26];
+        int[] tallyCounts = new int[26];
+        int[] changes = new int[64];
+        int pending = 0;
+        for (int y = -outset; y <= outset; y++) {
+            above.read(session, center, y + 1, limit, typeOf, airLike);
+            for (int z = -outset; z <= outset && !here.outside; z++) {
+                for (int x = -outset; x <= outset; x++) {
+                    if (x * x + y * y + z * z >= squared) {
                         continue;
+                    }
+                    int index = here.index(x, z);
+                    if (here.refused != null && here.refused[index]) {
+                        continue;
+                    }
+                    int current = here.state[index];
+                    int currentType = here.type[index];
+                    int highest = 1;
+                    int currentFrequency = 1;
+                    int highestState = current;
+                    int airCount = 0;
+                    int total = 26;
+                    boolean tie = false;
+                    int distinct = 0;
+                    for (int ox = -1; ox <= 1; ox++) {
+                        for (int oz = -1; oz <= 1; oz++) {
+                            for (int oy = -1; oy <= 1; oy++) {
+                                if (ox == 0 && oy == 0 && oz == 0) {
+                                    continue;
+                                }
+                                BlendLayer layer = oy < 0 ? below : oy > 0 ? above : here;
+                                if (layer.outside) {
+                                    total--;
+                                    continue;
+                                }
+                                int neighbour = layer.index(x + ox, z + oz);
+                                boolean refused = layer.refused != null && layer.refused[neighbour];
+                                int state = refused ? air : layer.state[neighbour];
+                                int type = refused ? airType : layer.type[neighbour];
+                                if (refused || layer.air[neighbour]) {
+                                    airCount++;
+                                }
+                                if (type == currentType) {
+                                    currentFrequency++;
+                                }
+                                int slot = 0;
+                                while (slot < distinct && tallyTypes[slot] != type) {
+                                    slot++;
+                                }
+                                if (slot == distinct) {
+                                    tallyTypes[distinct] = type;
+                                    tallyCounts[distinct++] = 0;
+                                }
+                                int count = ++tallyCounts[slot];
+                                if (count - highest >= minFreqDiff) {
+                                    highest = count;
+                                    highestState = state;
+                                    tie = false;
+                                } else if (count == highest) {
+                                    tie = true;
+                                }
+                            }
+                        }
+                    }
+                    int next = current;
+                    if (onlyAir) {
+                        if (airCount * 2 - total >= minFreqDiff) {
+                            if (!here.air[index]) {
+                                next = air;
+                            }
+                        } else if (here.air[index] && total - 2 * airCount >= minFreqDiff) {
+                            next = highestState;
+                        }
+                    } else if (highest - currentFrequency >= minFreqDiff && !tie) {
+                        next = highestState;
                     }
                     int bx = center.x() + x;
                     int by = center.y() + y;
                     int bz = center.z() + z;
-                    if (mask != null && !mask.test(bx, by, bz)) {
+                    if (next == current || (mask != null && !mask.test(bx, by, bz))) {
                         continue;
                     }
-                    int current = session.getBlock(bx, by, bz);
-                    int distinct = 0;
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dy = -1; dy <= 1; dy++) {
-                            for (int dz = -1; dz <= 1; dz++) {
-                                int state = session.getBlock(bx + dx, by + dy, bz + dz);
-                                if (onlyAir) {
-                                    state = registry.isAirLike(state) ? registry.air() : current;
-                                }
-                                int slot = 0;
-                                while (slot < distinct && states[slot] != state) {
-                                    slot++;
-                                }
-                                if (slot == distinct) {
-                                    states[distinct] = state;
-                                    counts[distinct++] = 0;
-                                }
-                                counts[slot]++;
-                            }
-                        }
+                    if (pending + 4 > changes.length) {
+                        changes = java.util.Arrays.copyOf(changes, changes.length * 2);
                     }
-                    // Ties go to the state seen first, as the map's order used to
-                    // decide them is not one anybody chose.
-                    int best = current;
-                    int bestCount = 0;
-                    int currentCount = 0;
-                    for (int slot = 0; slot < distinct; slot++) {
-                        if (counts[slot] > bestCount && !registry.isAirLike(states[slot])) {
-                            bestCount = counts[slot];
-                            best = states[slot];
-                        }
-                        if (states[slot] == current) {
-                            currentCount = counts[slot];
-                        }
-                    }
-                    if (best != current && bestCount - currentCount >= minFreqDiff
-                            && session.setBlock(bx, by, bz, best)) {
-                        changed++;
+                    changes[pending++] = bx;
+                    changes[pending++] = by;
+                    changes[pending++] = bz;
+                    changes[pending++] = next;
+                }
+            }
+            BlendLayer spare = below;
+            below = here;
+            here = above;
+            above = spare;
+        }
+        int changed = 0;
+        for (int i = 0; i < pending; i += 4) {
+            if (session.setBlock(changes[i], changes[i + 1], changes[i + 2], changes[i + 3])) {
+                changed++;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * One horizontal layer of the blocks around a blend ball, as they stood
+     * before the stroke: each state, its block type, whether it is air and
+     * whether the ball's own mask refuses it.
+     */
+    private static final class BlendLayer {
+
+        private final int half;
+        private final int side;
+        final int[] state;
+        final int[] type;
+        final boolean[] air;
+        final boolean[] refused;
+        boolean outside;
+
+        BlendLayer(int half, boolean limited) {
+            this.half = half;
+            this.side = 2 * half + 1;
+            this.state = new int[side * side];
+            this.type = new int[side * side];
+            this.air = new boolean[side * side];
+            this.refused = limited ? new boolean[side * side] : null;
+        }
+
+        int index(int x, int z) {
+            return (z + half) * side + x + half;
+        }
+
+        /** Reads the layer {@code y} blocks above the centre; a layer outside the world has no block. */
+        void read(EditSession session, BlockVector3 center, int y, Mask limit, IntUnaryOperator typeOf,
+                  IntPredicate airLike) {
+            int by = center.y() + y;
+            outside = by < session.minY() || by > session.maxY();
+            if (outside) {
+                return;
+            }
+            for (int z = -half; z <= half; z++) {
+                for (int x = -half; x <= half; x++) {
+                    int bx = center.x() + x;
+                    int bz = center.z() + z;
+                    int i = index(x, z);
+                    int block = session.getBlock(bx, by, bz);
+                    state[i] = block;
+                    type[i] = typeOf.applyAsInt(block);
+                    air[i] = airLike.test(block);
+                    if (refused != null) {
+                        refused[i] = !limit.test(bx, by, bz);
                     }
                 }
             }
         }
-        return changed;
+    }
+
+    /** The block type of a state - the default state of its block - asked once per state. */
+    private static IntUnaryOperator rememberedType(BlockStateRegistry registry) {
+        int[] known = new int[Math.max(1, registry.stateCount())];
+        return state -> {
+            if (state < 0 || state >= known.length) {
+                return registry.defaultState(registry.name(state));
+            }
+            if (known[state] == 0) {
+                known[state] = registry.defaultState(registry.name(state)) + 1;
+            }
+            return known[state] - 1;
+        };
     }
 
     /** {@code /brush gravity} — drops blocks straight down. */

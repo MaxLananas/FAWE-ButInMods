@@ -325,10 +325,9 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            Mask combined = limit == null || limit == mask ? mask
-                    : mask == null ? limit
-                    : new Masks.IntersectionMask(List.of(mask, limit));
-            return Operations.blendBall(session, position, (int) radius, combined, onlyAir, minFreqDiff);
+            // The two masks do different things: -m decides which blocks take
+            // part in the blend, the brush's mask only which may be written.
+            return Operations.blendBall(session, position, radius, mask, limit, onlyAir, minFreqDiff);
         }
     }
 
