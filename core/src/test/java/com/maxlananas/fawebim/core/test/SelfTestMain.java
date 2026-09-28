@@ -1639,7 +1639,8 @@ public final class SelfTestMain {
         scatterSession.flushQueue();
         check("brush populateschematic placed copies", stamped > 0);
         // The mask decides which block of a column counts as the surface: the
-        // stone one, so no copy lands on the grass above it.
+        // stone one. Each copy stands on it, one block up as FAWE's does, and
+        // none lands on the grass above.
         int onStone = 0;
         int onSurface = 0;
         for (int x = -16; x < 16; x++) {
@@ -1648,7 +1649,7 @@ public final class SelfTestMain {
                     if (populated.getBlock(x, y, z) != gold) {
                         continue;
                     }
-                    if (y == 67) {
+                    if (y == 68) {
                         onStone++;
                     } else if (y >= 69) {
                         onSurface++;

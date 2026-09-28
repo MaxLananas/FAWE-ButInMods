@@ -261,7 +261,13 @@ public final class BrushFactory {
             case "populateschematic" -> {
                 Brushes.PopulateSchematicBrush brush = new Brushes.PopulateSchematicBrush(parameters.radius(),
                         parameters.flagMask());
-                brush.setSchematic(parameters.string("clipboardStr", ""));
+                // Read once, when the brush is bound, as FAWE reads its
+                // clipboard argument: a name that is no schematic is refused
+                // there rather than on every click.
+                String schematic = parameters.string("clipboardStr", "");
+                if (!schematic.isEmpty() && parameters.world() != null) {
+                    brush.setSchematics(schematic, Brushes.PopulateSchematicBrush.load(schematic));
+                }
                 brush.setDensity(parameters.integer("density", 50));
                 brush.setRandomRotation(parameters.flag("r"));
                 yield brush;

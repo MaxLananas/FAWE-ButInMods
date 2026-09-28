@@ -39,6 +39,62 @@ final class BrushCommandTests {
         theSurfaceBrushPaintsAnySurface();
         theImageBrushPaintsItsImage();
         theCopyPasteBrushCopiesThenPastesAboutItsOrigin();
+        thePopulateBrushSetsItsSchematicsOnTheSurfaceWithoutTheirAir();
+    }
+
+    /**
+     * FAWE's populate brush pastes each schematic one block above the surface
+     * block, without the schematic's air, and reads the schematics once, when
+     * it is bound: a file, a list, or a folder whose every schematic is drawn
+     * from. It pasted the air of the schematic's box into the ground, stood
+     * the schematic in the surface block, and read the file on every copy.
+     */
+    private static void thePopulateBrushSetsItsSchematicsOnTheSurfaceWithoutTheirAir() {
+        int gold = state("minecraft:gold_block");
+        int diamond = state("minecraft:diamond_block");
+        com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard stamp =
+                new com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard(new BlockVector3(0, 0, 0));
+        for (int x = -1; x <= 1; x++) {
+            for (int y = 0; y <= 2; y++) {
+                for (int z = -1; z <= 1; z++) {
+                    stamp.setBlock(x, y, z, x == 0 && y == 0 && z == 0 ? gold : BlockState.registry().air());
+                }
+            }
+        }
+        com.maxlananas.fawebim.core.clipboard.Schematics.save(stamp, "populate-stamp", "sponge.3");
+        TestActor actor = actor("Populate");
+        TestWorld world = (TestWorld) actor.world();
+        String refused = answer(actor, "/brush populateschematic populate-nothing grass_block 5 100");
+        check("a schematic that is not there is refused when the brush is bound (" + refused + ")",
+                refused.contains("populate-nothing") && BrushFactory.current(actor) == null);
+        answer(actor, "/brush populateschematic populate-stamp grass_block 6 100");
+        com.maxlananas.fawebim.core.clipboard.Schematics.delete("populate-stamp.schem");
+        int groundBefore = 0;
+        for (int x = -24; x < 24; x++) {
+            for (int z = -24; z < 24; z++) {
+                groundBefore += world.getBlock(x, 63, z) == state("minecraft:grass_block") ? 1 : 0;
+            }
+        }
+        stroke(actor, 0, 64, 0);
+        int stamps = 0;
+        int ground = 0;
+        for (int x = -24; x < 24; x++) {
+            for (int z = -24; z < 24; z++) {
+                stamps += world.getBlock(x, 64, z) == gold ? 1 : 0;
+                ground += world.getBlock(x, 63, z) == state("minecraft:grass_block") ? 1 : 0;
+            }
+        }
+        check("the schematics read when the brush was bound are set on the grass, one block up (" + stamps + ")",
+                stamps > 0);
+        checkEquals("and their air leaves the ground as it was", groundBefore, ground);
+
+        com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard other =
+                new com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard(new BlockVector3(0, 0, 0));
+        other.setBlock(0, 0, 0, diamond);
+        com.maxlananas.fawebim.core.clipboard.Schematics.save(stamp, "populate-folder/gold", "sponge.3");
+        com.maxlananas.fawebim.core.clipboard.Schematics.save(other, "populate-folder/diamond", "sponge.3");
+        checkEquals("a folder gives every schematic in it", 2,
+                Brushes.PopulateSchematicBrush.load("populate-folder").size());
     }
 
     /**

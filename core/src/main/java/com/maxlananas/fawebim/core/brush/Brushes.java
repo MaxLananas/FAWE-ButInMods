@@ -1909,17 +1909,23 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush populateschematic} — scatters copies of a schematic over the
-     * surface around the click.
+     * {@code /brush populateschematic <schematic> [mask] [radius] [density] [-r]}:
+     * FAWE's schematic scatter. Each chunk the brush's box reaches gets, as
+     * often as the density says, one schematic at a random column: on the
+     * highest block of that column the mask accepts within the box's height,
+     * one block above it and without its air, turned a random quarter with
+     * {@code -r}. The schematic is a file, a folder whose every schematic is
+     * drawn from, or a list of them, read once when the brush is bound.
      *
-     * <p>FAWE walks the chunks the brush covers, rolls the density once per chunk
-     * and drops one copy at a random column of it. The column is found with the
-     * mask, which defaults to any solid block when the command line leaves it
-     * out.</p>
+     * <p>This pasted the schematic's air, which carved a box through the
+     * ground and through what the stroke had placed before; it stood the
+     * schematic in the surface block instead of on it, looked for the surface
+     * in the whole column, and read the file again for every copy.</p>
      */
     public static final class PopulateSchematicBrush extends BaseBrush {
 
         private String schematic;
+        private java.util.List<BlockArrayClipboard> clipboards = java.util.List.of();
         private boolean randomRotation;
         private int density = 50;
 
@@ -1927,31 +1933,56 @@ public final class Brushes {
             super(radius, null, mask);
         }
 
-        public void setSchematic(String schematic) {
+        /** The schematics to draw from, as the line named them and as they were read. */
+        public void setSchematics(String schematic, java.util.List<BlockArrayClipboard> clipboards) {
             this.schematic = schematic;
+            this.clipboards = java.util.List.copyOf(clipboards);
         }
 
         public void setRandomRotation(boolean randomRotation) {
             this.randomRotation = randomRotation;
         }
 
-        /** How likely a chunk receives a copy, in percent. */
+        /** How likely a chunk receives a copy: FAWE's rarity, a chance of one more in a hundred. */
         public void setDensity(int density) {
-            this.density = Math.max(1, Math.min(100, density));
+            this.density = Math.max(0, Math.min(100, density));
+        }
+
+        /**
+         * Reads what a line names, as FAWE reads its clipboard argument: each
+         * of a comma separated list is a schematic, a pattern of them, or a
+         * folder whose every schematic is taken.
+         */
+        public static java.util.List<BlockArrayClipboard> load(String names) {
+            java.util.List<BlockArrayClipboard> loaded = new java.util.ArrayList<>();
+            for (String name : names.split(",")) {
+                String entry = name.trim();
+                if (entry.isEmpty()) {
+                    continue;
+                }
+                String folder = entry.endsWith("/") ? entry.substring(0, entry.length() - 1) : entry;
+                boolean isFolder = com.maxlananas.fawebim.core.clipboard.Schematics.isFolder(folder);
+                java.util.List<BlockArrayClipboard> found =
+                        com.maxlananas.fawebim.core.clipboard.Schematics.loadAll(isFolder ? folder + "/*" : entry);
+                if (found.isEmpty()) {
+                    throw com.maxlananas.fawebim.core.command.CommandRegistry.error("No schematic in '" + entry + "'");
+                }
+                loaded.addAll(found);
+            }
+            return loaded;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            if (schematic == null || schematic.isEmpty()) {
-                actor.message(Msg.error("Set a schematic first: /brush populateschematic <name> <radius>"));
+            if (clipboards.isEmpty()) {
+                actor.message(Msg.error("Set a schematic first: /brush populateschematic <schematic>"));
                 return 0;
             }
-            // A comma separated list is FAWE's "clipboard uri": one of them is
-            // picked for every copy that is placed.
-            String[] names = schematic.split(",");
+            BlockStateRegistry registry = BlockState.registry();
+            World world = session.getWorld();
             int size = (int) radius;
-            int minY = session.getWorld().minY();
-            int maxY = session.getWorld().maxY();
+            int bottom = Math.max(world.minY(), position.y() - size);
+            int top = Math.min(world.maxY(), position.y() + size);
             int changed = 0;
             for (int chunkX = (position.x() - size) >> 4; chunkX <= (position.x() + size) >> 4; chunkX++) {
                 for (int chunkZ = (position.z() - size) >> 4; chunkZ <= (position.z() + size) >> 4; chunkZ++) {
@@ -1960,25 +1991,35 @@ public final class Brushes {
                     }
                     int x = (chunkX << 4) + random.nextInt(16);
                     int z = (chunkZ << 4) + random.nextInt(16);
-                    int y = HeightMaps.highestTerrain(session.getWorld(), mask, x, z, minY, maxY);
+                    int y = HeightMaps.highestTerrain(world, mask, x, z, bottom, top);
+                    // Nothing the mask accepts in the box but its floor, which
+                    // FAWE only builds on when movement stops there.
+                    if (y == bottom && !stopsMovement(registry, world.getBlock(x, y, z))) {
+                        continue;
+                    }
                     if (mask != null && !mask.test(x, y, z)) {
                         continue;
                     }
-                    String name = names[random.nextInt(names.length)].trim();
-                    var clipboard = com.maxlananas.fawebim.core.clipboard.Schematics.load(name);
-                    if (clipboard == null) {
-                        actor.message(Msg.error("Could not load schematic '" + name + "'"));
-                        return changed;
-                    }
-                    var transform = randomRotation
-                            ? com.maxlananas.fawebim.core.transform.Transforms.rotate(clipboard.getOrigin(),
-                                    random.nextInt(4) * 90)
-                            : com.maxlananas.fawebim.core.transform.Transform.identity();
+                    BlockArrayClipboard clipboard = clipboards.get(random.nextInt(clipboards.size()));
+                    int quarters = randomRotation ? random.nextInt(4) : 0;
+                    Transform transform = quarters == 0 ? Transform.identity()
+                            : Transforms.rotate(clipboard.getOrigin(), quarters * 90.0);
                     changed += com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard,
-                            new BlockVector3(x, y, z), session, transform, false, false, false);
+                            new BlockVector3(x, y + 1, z), session, transform, true, null, false, false, false, false);
                 }
             }
             return changed;
+        }
+
+        /** FAWE's movement blocker: the game's solid blocks but the cobweb and the bamboo sapling. */
+        private static boolean stopsMovement(BlockStateRegistry registry, int state) {
+            String name = registry.name(state);
+            return registry.isSolid(state) && !"minecraft:cobweb".equals(name) && !"minecraft:bamboo_sapling".equals(name);
+        }
+
+        @Override
+        public String describe() {
+            return "populateschematic " + schematic + " (radius " + radius + ", density " + density + ")";
         }
     }
 
