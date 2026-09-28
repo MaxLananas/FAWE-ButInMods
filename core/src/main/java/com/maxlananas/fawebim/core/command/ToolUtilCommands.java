@@ -384,35 +384,43 @@ final class ToolUtilCommands {
     }
 
     /**
-     * Binds a brush like {@code /brush} would, then moves it to the requested
-     * mouse button. The brush already bound to the other button is restored, so
-     * binding one does not unbind the other.
+     * FAWE's {@code /tool primary} and {@code /tool secondary}: the brush line
+     * binds its brush as {@code /brush} does, to both clicks, and when the
+     * item already held a brush the other click gets back the one it had. An
+     * item that held none has the new brush on both clicks, as in FAWE.
      */
     private void bindBrush(Ctx ctx, boolean secondary) {
         LocalSession session = ctx.session();
         String item = ctx.actor().heldItem();
         com.maxlananas.fawebim.core.session.ItemBinding before = session.binding(item);
-        Brush previousPrimary = before == null ? null : before.primary();
-        String previousLine = before == null ? null : before.brushLine();
+        boolean hadBrush = before != null && before.hasBrush();
+        Brush previousPrimary = hadBrush ? before.primary() : null;
+        String previousLine = hadBrush ? before.brushLine() : null;
+        Brush previousSecondary = hadBrush ? before.secondary() : null;
+        String previousSecondaryLine = hadBrush ? before.secondaryLine() : null;
         StringBuilder line = new StringBuilder("brush");
         for (String argument : ctx.args()) {
             line.append(' ').append(argument);
         }
         registry.dispatch(ctx.actor(), line.toString());
         Brush bound = BrushFactory.current(session, item);
-        // The line that failed said why and bound nothing: the brush there is
-        // still the one of before, which is not to be moved to the other click.
+        // The line that failed said why and bound nothing: the brushes there
+        // are still the ones of before.
         if (bound == null || bound == previousPrimary) {
             return;
         }
-        // The brush line said the brush is equipped, which is all FAWE's
-        // /primary says; the left click is named, as the brush is not where a
-        // brush goes by default.
+        if (!hadBrush) {
+            return;
+        }
+        com.maxlananas.fawebim.core.session.ItemBinding binding = session.bind(item);
         if (secondary) {
-            com.maxlananas.fawebim.core.session.ItemBinding binding = session.bind(item);
-            binding.setSecondary(bound, binding.brushLine());
             binding.setPrimary(previousPrimary, previousLine);
+            // The brush line said the brush is equipped, which is all FAWE's
+            // /primary says; the left click is named, as the right click
+            // keeps its own brush.
             ctx.actor().message(Msg.keyValue("Left click", binding.secondaryLine()));
+        } else {
+            binding.setSecondary(previousSecondary, previousSecondaryLine);
         }
     }
 

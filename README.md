@@ -15,7 +15,7 @@ placeholder commands.
 [![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
-[![Engine tests](https://img.shields.io/badge/engine%20tests-2464%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-2470%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
 [![Commands](https://img.shields.io/badge/commands-300%20registered-58a6ff?style=flat-square)](#status)
 [![Coverage](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](reference/commands-inventory.json)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](scripts/flag_audit.py)
@@ -271,7 +271,7 @@ plane at a time now: 1.1 ms to 0.52 ms around a 64^3 selection, which is the sam
 
 | | |
 |---|---|
-| Engine tests | **2464 passing, 0 failing** (`./gradlew :core:selfTest`) |
+| Engine tests | **2470 passing, 0 failing** (`./gradlew :core:selfTest`) |
 | Commands registered | **300** |
 | Implemented | **253** |
 | Aliases of an implemented command | **47** |

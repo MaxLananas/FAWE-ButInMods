@@ -52,13 +52,18 @@ public final class BrushFactory {
     }
 
     /**
-     * Binds a brush to the right click of the held item, where a tool bound
-     * to it was; the brush of its left click stays.
+     * Binds a brush to both clicks of the held item, in place of what it held,
+     * as FAWE's /brush does: it gives the brush tool's primary and secondary
+     * settings the same brush, so a left click fires it as a right click does
+     * until {@code /tool secondary} gives the left click another, and a
+     * setting changed on one is changed on both.
      *
      * @param line the command that built the brush, which a preset saves
      */
     public static void bind(LocalSession session, Brush brush, Actor actor, String line) {
-        session.bind(actor.heldItem()).setPrimary(brush, line);
+        ItemBinding binding = session.bind(actor.heldItem());
+        binding.setPrimary(brush, line);
+        binding.setSecondary(brush, line);
     }
 
     /**

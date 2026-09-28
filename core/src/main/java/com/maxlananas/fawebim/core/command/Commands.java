@@ -3359,7 +3359,13 @@ public final class Commands {
                         return;
                     }
                     // Each click by the line that built its brush, which says it
-                    // as it was typed, and the size it has now.
+                    // as it was typed, and the size it has now; one line for a
+                    // brush both clicks share, as /brush binds it.
+                    if (binding.primary() != null && binding.secondary() == binding.primary()) {
+                        ctx.actor().message(Msg.keyValue("Both clicks",
+                                brushSummary(binding.brushLine(), binding.primary())));
+                        return;
+                    }
                     if (binding.primary() != null) {
                         ctx.actor().message(Msg.keyValue("Right click",
                                 brushSummary(binding.brushLine(), binding.primary())));

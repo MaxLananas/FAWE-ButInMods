@@ -114,8 +114,8 @@ Changelog of 1.1.0:
 ```markdown
 The commands behave as FAWE's in many more places, above all the brushes.
 
-- Brushes and tools are bound per item, as in FAWE: each item keeps its own brush, tool and settings,
-  and `/tool secondary` gives the left click a brush of its own
+- Brushes and tools are bound per item, as in FAWE: each item keeps its own brush, tool and settings;
+  a brush fires on both clicks, and `/tool secondary` gives the left click a brush of its own
 - A click fires the brush on the clicked block, aimed by `/tool range`, `tracemask`, `target` and
   `targetoffset`; `/brush` alone shows what the item in hand holds
 - Brushes redone to do what FAWE's do: blendball, erode, pull, morph, dilate, rock, circle, height,

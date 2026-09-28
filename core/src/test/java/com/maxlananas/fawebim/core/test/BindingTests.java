@@ -43,6 +43,44 @@ final class BindingTests {
         theBrushToolFiresTheBrushBoundLast();
         aLineThatNamesNoToolOrBrushKeepsWhatTheItemHolds();
         eachClipboardBrushKeepsTheClipboardItWasBoundWith();
+        aBrushIsBoundToBothClicksAsFaweBindsIt();
+    }
+
+    /**
+     * FAWE's /brush gives the brush tool's primary and secondary settings the
+     * same brush: a left click fires it as a right click does, a setting
+     * changes it for both, and /tool secondary is what gives the left click
+     * another brush. /tool primary and /tool secondary on an item that holds
+     * no brush bind theirs to both clicks too. The left click fired nothing
+     * until /tool secondary gave it a brush.
+     */
+    private static void aBrushIsBoundToBothClicksAsFaweBindsIt() {
+        TestActor actor = actor("BindBothClicks");
+        actor.setHeldItem(AXE);
+        answer(actor, "/brush sphere stone 2");
+        check("a left click fires the brush /brush bound", BrushFactory.currentSecondary(actor) != null
+                && BrushFactory.currentSecondary(actor) == BrushFactory.current(actor));
+        answer(actor, "/tool size 4");
+        check("and a setting changes it for both clicks", BrushFactory.currentSecondary(actor).radius() == 4.0);
+        answer(actor, "/tool secondary cylinder dirt 3");
+        check("/tool secondary gives the left click a brush of its own",
+                BrushFactory.currentSecondary(actor) instanceof Brushes.CylinderBrush
+                        && BrushFactory.current(actor) instanceof Brushes.SphereBrush);
+        answer(actor, "/brush smooth 3");
+        check("and a /brush takes both clicks again", BrushFactory.current(actor) instanceof Brushes.SmoothBrush
+                && BrushFactory.currentSecondary(actor) == BrushFactory.current(actor));
+
+        actor.setHeldItem(SHOVEL);
+        answer(actor, "/tool primary sphere stone 2");
+        check("/tool primary on an item with no brush binds both clicks",
+                BrushFactory.current(actor) instanceof Brushes.SphereBrush
+                        && BrushFactory.currentSecondary(actor) == BrushFactory.current(actor));
+        actor.setHeldItem("minecraft:stick");
+        String line = answer(actor, "/tool secondary cylinder dirt 3");
+        check("so does /tool secondary, which then names no left click of its own (" + line + ")",
+                BrushFactory.current(actor) instanceof Brushes.CylinderBrush
+                        && BrushFactory.currentSecondary(actor) == BrushFactory.current(actor)
+                        && !line.contains("Left click"));
     }
 
     private static int stroke(TestActor actor, int x, int y, int z) {
@@ -79,7 +117,7 @@ final class BindingTests {
         check("a brush with no radius is bound without one (" + bound + ")",
                 bound.endsWith("Brush 'clipboard' equipped"));
         String shown = answer(actor, "/brush");
-        check("and shown without one (" + shown + ")", shown.contains("Right click: /brush clipboard")
+        check("and shown without one (" + shown + ")", shown.contains("Both clicks: /brush clipboard")
                 && !shown.contains("size"));
         world.setBlock(5, 70, 5, diamond);
         answer(actor, "//copy");
@@ -150,7 +188,7 @@ final class BindingTests {
         check("none of them rebinds the item", BrushFactory.current(actor) instanceof Brushes.SphereBrush
                 && BrushFactory.current(actor).radius() == 2.0);
         check("and a bare /brush still shows the brush in hand",
-                answer(actor, "/brush").contains("Right click: /brush sphere stone 2 (size 2)"));
+                answer(actor, "/brush").contains("Both clicks: /brush sphere stone 2 (size 2)"));
 
         check("/none takes it off, as FAWE's global spelling of /tool none does",
                 answer(actor, "/none").endsWith("Brush unbound from your current item")
