@@ -1436,15 +1436,19 @@ public final class Brushes {
     public static final class ScatterCommandBrush extends BaseBrush {
 
         private final String command;
+        private final int points;
+        private final int distance;
         private boolean verbose;
 
         public ScatterCommandBrush(double radius, String command) {
-            this(radius, command, false);
+            this(radius, 1, 1, command, false);
         }
 
-        public ScatterCommandBrush(double radius, String command, boolean verbose) {
+        public ScatterCommandBrush(double radius, int points, int distance, String command, boolean verbose) {
             super(radius, null, null);
             this.command = command == null ? "" : command;
+            this.points = Math.max(1, points);
+            this.distance = Math.max(0, distance);
             this.verbose = verbose;
         }
 
@@ -1454,20 +1458,12 @@ public final class Brushes {
                 actor.message(Msg.error("No command set: /brush scattercommand <radius> <command>"));
                 return 0;
             }
-            int count = Math.max(1, (int) Math.round(radius));
-            Actor target = verbose ? actor : new com.maxlananas.fawebim.core.actor.SilentActor(actor);
+            // FAWE's: the points of the scatter brush, and the commands run at
+            // each with a selection as large as the distance between them.
             int executed = 0;
-            for (int i = 0; i < count; i++) {
-                int x = position.x() + random.nextInt((int) radius * 2 + 1) - (int) radius;
-                int y = position.y() + random.nextInt((int) radius * 2 + 1) - (int) radius;
-                int z = position.z() + random.nextInt((int) radius * 2 + 1) - (int) radius;
-                String parsed = command
-                        .replace("%x%", String.valueOf(x))
-                        .replace("%y%", String.valueOf(y))
-                        .replace("%z%", String.valueOf(z));
-                if (com.maxlananas.fawebim.core.command.BrushCommands.run(target, parsed)) {
-                    executed++;
-                }
+            for (BlockVector3 point : Operations.scatterPoints(session, position, radius, points, distance, null,
+                    random)) {
+                executed += runCommandsAt(actor, point, distance, command, !verbose);
             }
             return executed;
         }
@@ -1599,7 +1595,51 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush command} — runs a command where the brush is used. */
+    /**
+     * Runs the commands of a command brush at a point, as FAWE's command
+     * brushes run them: the selection becomes the cube of {@code size} around
+     * the point, the placeholders {x}, {y}, {z}, {world} and {size} - and the
+     * older %x%, %y%, %z% - are the point's, the line is split at ';', and each
+     * command runs for the player standing at the point, so //set fills the
+     * cube and //sphere is built there.
+     *
+     * @return how many of the commands ran
+     */
+    static int runCommandsAt(Actor actor, BlockVector3 point, int size, String commands, boolean quiet) {
+        World world = actor.world();
+        com.maxlananas.fawebim.core.region.RegionSelector cube =
+                com.maxlananas.fawebim.core.region.Selectors.create("cuboid", world, null);
+        com.maxlananas.fawebim.core.region.SelectorLimits limits =
+                com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
+        cube.selectPrimary(point.add(-size, -size, -size), limits);
+        cube.selectSecondary(point.add(size, size, size), limits);
+        actor.session().setSelector(cube);
+        actor.updateSelectionOutline();
+        String x = String.valueOf(point.x());
+        String y = String.valueOf(point.y());
+        String z = String.valueOf(point.z());
+        String line = commands.replace("{x}", x).replace("{y}", y).replace("{z}", z)
+                .replace("{world}", world.name()).replace("{size}", String.valueOf(size))
+                .replace("%x%", x).replace("%y%", y).replace("%z%", z);
+        Actor runner = new com.maxlananas.fawebim.core.actor.PositionedActor(actor, point);
+        if (quiet) {
+            runner = new com.maxlananas.fawebim.core.actor.SilentActor(runner);
+        }
+        int ran = 0;
+        for (String command : line.split(";")) {
+            if (!command.isBlank() && com.maxlananas.fawebim.core.command.BrushCommands.run(runner, command.trim())) {
+                ran++;
+            }
+        }
+        return ran;
+    }
+
+    /**
+     * {@code /brush command <radius> <commands> [-h]}, FAWE's: the commands run
+     * where the brush lands, with a selection of the radius around it, each
+     * answering in chat unless {@code -h} hides it. It announced the command it
+     * ran on every click and kept the player's own selection.
+     */
     public static final class CommandBrush extends BaseBrush {
 
         private final String command;
@@ -1622,17 +1662,7 @@ public final class Brushes {
                 return 0;
             }
             lastPosition = position;
-            String parsed = command
-                    .replace("%x%", String.valueOf(position.x()))
-                    .replace("%y%", String.valueOf(position.y()))
-                    .replace("%z%", String.valueOf(position.z()));
-            // -h keeps the brush from printing what it ran and what the command
-            // answered, which matters when it fires on every click.
-            Actor target = quiet ? new com.maxlananas.fawebim.core.actor.SilentActor(actor) : actor;
-            if (!quiet) {
-                target.message(Msg.info("Brush command: /" + parsed));
-            }
-            return com.maxlananas.fawebim.core.command.BrushCommands.run(target, parsed) ? 1 : 0;
+            return runCommandsAt(actor, position, (int) radius, command, quiet);
         }
 
         @Override

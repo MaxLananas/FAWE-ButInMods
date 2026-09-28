@@ -231,6 +231,7 @@ public final class BrushFactory {
             case "command" -> new Brushes.CommandBrush(parameters.radius(), parameters.string("input", ""),
                     parameters.flag("h"));
             case "scattercommand" -> new Brushes.ScatterCommandBrush(parameters.radius(),
+                    parameters.integer("points", 1), parameters.integer("distance", 1),
                     parameters.string("commandStr", ""), parameters.flag("p"));
             case "populateschematic" -> {
                 Brushes.PopulateSchematicBrush brush = new Brushes.PopulateSchematicBrush(parameters.radius(),

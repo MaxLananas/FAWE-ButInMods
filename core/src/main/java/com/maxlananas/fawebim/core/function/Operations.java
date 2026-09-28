@@ -2129,50 +2129,139 @@ public final class Operations {
         return session.setBlock(x, y, z, pattern.apply(x, y, z)) ? 1 : 0;
     }
 
-    /** {@code /brush scatter} — scatters a pattern over the surface. */
-    public static int scatter(EditSession session, BlockVector3 center, int radius, Pattern pattern, Random random,
-                              boolean overwrite) {
-        return scatter(session, center, radius, 1, radius, pattern, random, overwrite, null);
-    }
-
     /**
-     * {@code /brush scatter <pattern> [radius] [points] [distance] [-o]}: drops a
-     * number of points on the surface around the click, each of them somewhere
-     * within {@code distance} blocks of where it was aimed. With {@code overlay}
-     * the block is placed on top of the surface, otherwise a point that is not
-     * already air is skipped.
+     * {@code /brush scatter <pattern> [radius] [points] [distance] [-o]}, FAWE's:
+     * {@code points} of the surface blocks around the click, none closer than
+     * {@code distance} to another, take the pattern - with {@code -o} the block
+     * beside each of them that stops nothing does, which lays it on the surface.
+     * The points are those of {@link #scatterPoints}, the brush's mask kept to.
+     *
+     * <p>It dropped the pattern on top of random columns of a disc whatever
+     * {@code -o} said, and took the distance for a height to shake them by.</p>
      */
     public static int scatter(EditSession session, BlockVector3 center, int points, int distance, double radius,
                               Pattern pattern, Random random, boolean overlay, Mask mask) {
-        BlockStateRegistry registry = BlockState.registry();
         int changed = 0;
-        int spread = (int) Math.max(1, radius);
-        for (int i = 0; i < Math.max(1, points); i++) {
-            int x = random.nextInt(spread * 2 + 1) - spread;
-            int z = random.nextInt(spread * 2 + 1) - spread;
-            if (Math.sqrt(x * x + z * z) > spread) {
-                continue;
+        for (BlockVector3 point : scatterPoints(session, center, radius, points, distance, mask, random)) {
+            int x = point.x();
+            int y = point.y();
+            int z = point.z();
+            if (overlay) {
+                int[] side = openSide(session, x, y, z);
+                if (side == null) {
+                    continue;
+                }
+                x += side[0];
+                y += side[1];
+                z += side[2];
             }
-            int y = spread;
-            while (y > -spread
-                    && registry.isAirLike(session.getBlock(center.x() + x, center.y() + y, center.z() + z))) {
-                y--;
-            }
-            int jitter = Math.max(0, distance - 1);
-            int by = center.y() + y + 1 + (jitter == 0 ? 0 : random.nextInt(jitter * 2 + 1) - jitter);
-            int bx = center.x() + x;
-            int bz = center.z() + z;
-            if (mask != null && !mask.test(bx, by, bz)) {
-                continue;
-            }
-            if (!overlay && !registry.isAirLike(session.getBlock(bx, by, bz))) {
-                continue;
-            }
-            if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
+            if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
                 changed++;
             }
         }
         return changed;
+    }
+
+    /** The sides of a block in the order FAWE's surface mask asks them: east, west, south, north, up, down. */
+    private static final int[][] SURFACE_SIDES = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}, {0, -1, 0}};
+
+    /**
+     * The side of a block where the block beside it stops nothing - air or a
+     * block one walks through - in FAWE's order, or null when it has none.
+     */
+    private static int[] openSide(EditSession session, int x, int y, int z) {
+        for (int[] side : SURFACE_SIDES) {
+            int ny = y + side[1];
+            if (ny < session.minY() || ny > session.maxY()) {
+                continue;
+            }
+            if (!BlockState.registry().isSolid(session.getBlock(x + side[0], ny, z + side[2]))) {
+                return side;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The points of FAWE's scatter brushes: the surface blocks - blocks that
+     * stop movement with a side that does not - joined to the click, diagonals
+     * included, no farther than the radius from it; {@code count} of them picked
+     * at random, each at least {@code distance} blocks (or the radius, if less)
+     * from those picked before it, a thousand misses at most. The click itself
+     * is one of the blocks picked from, as in FAWE's walk, and the mask - the
+     * brush's and the edit's - has to accept a point.
+     */
+    public static List<BlockVector3> scatterPoints(EditSession session, BlockVector3 center, double radius, int count,
+                                                   int distance, Mask mask, Random random) {
+        int size = (int) radius;
+        int spacing = Math.min(size, distance);
+        long maxSq = (long) size * size;
+        List<BlockVector3> surface = new ArrayList<>();
+        LongSet visited = new LongSet();
+        LongQueue queue = new LongQueue();
+        long start = BlockArrayClipboard.positionKey(center.x(), center.y(), center.z());
+        visited.add(start);
+        queue.add(start);
+        surface.add(center);
+        while (!queue.isEmpty() && size > 0) {
+            long current = queue.poll();
+            int x = BlockArrayClipboard.keyX(current);
+            int y = BlockArrayClipboard.keyY(current);
+            int z = BlockArrayClipboard.keyZ(current);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue;
+                        }
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        int nz = z + dz;
+                        if (ny < session.minY() || ny > session.maxY() || distanceSq(nx, ny, nz, center) > maxSq) {
+                            continue;
+                        }
+                        long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (visited.contains(next) || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                || openSide(session, nx, ny, nz) == null) {
+                            continue;
+                        }
+                        visited.add(next);
+                        queue.add(next);
+                        surface.add(new BlockVector3(nx, ny, nz));
+                    }
+                }
+            }
+        }
+        Mask edit = session.getMask();
+        List<BlockVector3> picked = new ArrayList<>();
+        int misses = 1000;
+        for (int i = 0; i < count; i++) {
+            BlockVector3 point = surface.get(random.nextInt(surface.size()));
+            if ((mask != null && !mask.test(point.x(), point.y(), point.z()))
+                    || (edit != null && !edit.test(point.x(), point.y(), point.z()))) {
+                continue;
+            }
+            if (withinCube(picked, point, spacing)) {
+                if (misses-- <= 0) {
+                    break;
+                }
+                i--;
+                continue;
+            }
+            picked.add(point);
+        }
+        return picked;
+    }
+
+    /** Whether a point is within the cube of {@code radius} around one of the points, as FAWE's set tests it. */
+    private static boolean withinCube(List<BlockVector3> points, BlockVector3 point, int radius) {
+        for (BlockVector3 other : points) {
+            if (Math.abs(other.x() - point.x()) <= radius && Math.abs(other.y() - point.y()) <= radius
+                    && Math.abs(other.z() - point.z()) <= radius) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A pattern that always returns the same state. */
