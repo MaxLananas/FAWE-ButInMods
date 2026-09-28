@@ -928,40 +928,40 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush splatter} — random blocks in a sphere. */
+    /**
+     * {@code /brush splatter <pattern> [radius] [points] [recursion] [solid]},
+     * FAWE's: splotches grown over the surface from points on it, see
+     * {@link Operations#splatter}. It filled random blocks of a sphere, air
+     * included, whatever its recursion and solid said.
+     */
     public static final class SplatterBrush extends BaseBrush {
 
         private int points = 1;
+        private int recursion = 5;
+        private boolean solid = true;
 
         public SplatterBrush(double radius, Pattern fill, Mask mask) {
             super(radius, fill, mask);
         }
 
-        /** How many clumps the brush throws; FAWE's {@code points} argument. */
+        /** How many splotches the brush throws; FAWE's {@code points} argument. */
         public void setPoints(int points) {
             this.points = Math.max(1, points);
         }
 
+        /** How many levels a splotch grows; FAWE's {@code recursion} argument. */
+        public void setRecursion(int recursion) {
+            this.recursion = Math.max(0, recursion);
+        }
+
+        /** One block of the pattern per splotch, where false asks it for every block. */
+        public void setSolid(boolean solid) {
+            this.solid = solid;
+        }
+
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            int attempts = (int) (radius * radius * 4) * points;
-            for (int i = 0; i < attempts; i++) {
-                double dx = random.nextDouble() * 2 - 1;
-                double dy = random.nextDouble() * 2 - 1;
-                double dz = random.nextDouble() * 2 - 1;
-                double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                if (length > 1) {
-                    continue;
-                }
-                int x = position.x() + (int) (dx * radius);
-                int y = position.y() + (int) (dy * radius);
-                int z = position.z() + (int) (dz * radius);
-                if (place(session, x, y, z)) {
-                    changed++;
-                }
-            }
-            return changed;
+            return Operations.splatter(session, position, radius, points, recursion, solid, fill, mask, random);
         }
     }
 

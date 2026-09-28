@@ -33,6 +33,7 @@ final class BrushCommandTests {
         section("command and scatter brushes");
         theCommandBrushRunsAtTheClick();
         theScatterBrushesPickSurfacePointsApart();
+        theSplatterBrushPaintsTheSurface();
     }
 
     private static TestActor actor(String name) {
@@ -90,6 +91,37 @@ final class BrushCommandTests {
         checkEquals("{x} {y} {z} are the click, and ; separates commands", state("minecraft:lapis_block"),
                 world.getBlock(40, 75, 40));
         check("-h keeps them quiet", actor.messages().isEmpty());
+    }
+
+    /**
+     * FAWE's splatter grows splotches over the surface from points on it; it
+     * filled random blocks of a sphere, the air over the ground included.
+     */
+    private static void theSplatterBrushPaintsTheSurface() {
+        TestActor actor = actor("SplatterBrush");
+        TestWorld world = (TestWorld) actor.world();
+        answer(actor, "/brush splatter gold_block 6 3 4");
+        int changed = stroke(actor, 0, 63, 0);
+        int surface = 0;
+        int elsewhere = 0;
+        for (int x = -8; x <= 8; x++) {
+            for (int z = -8; z <= 8; z++) {
+                for (int y = 58; y <= 70; y++) {
+                    if (world.getBlock(x, y, z) == state("minecraft:gold_block")) {
+                        if (y == 63) {
+                            surface++;
+                        } else {
+                            elsewhere++;
+                        }
+                    }
+                }
+            }
+        }
+        check("the splatter brush paints (" + changed + ")", changed > 0 && surface == changed);
+        checkEquals("on the surface only, never in the air or under the ground", 0, elsewhere);
+        answer(actor, "//undo");
+        answer(actor, "/brush splatter gold_block 6 1 0");
+        checkEquals("a splotch of no recursion is its point", 1, stroke(actor, 0, 63, 0));
     }
 
     private static void theScatterBrushesPickSurfacePointsApart() {

@@ -2253,6 +2253,71 @@ public final class Operations {
         return picked;
     }
 
+    /**
+     * {@code /brush splatter <pattern> [radius] [points] [recursion] [solid]},
+     * FAWE's: a splotch at each of {@code points} surface points - the points of
+     * {@link #scatterPoints}, a block apart - grown over the surface from its
+     * point, level after level up to {@code recursion} levels, each block
+     * reaching at most two new ones, each of those taken two times in five,
+     * none farther than the radius from the point or taken before. The pattern
+     * is asked once per splotch when {@code solid}, which gives each splotch one
+     * block, and once per block otherwise.
+     */
+    public static int splatter(EditSession session, BlockVector3 center, double radius, int points, int recursion,
+                               boolean solid, Pattern pattern, Mask mask, Random random) {
+        long sizeSq = (long) (radius * radius);
+        LongSet placed = new LongSet();
+        int changed = 0;
+        for (BlockVector3 seed : scatterPoints(session, center, radius, points, 1, mask, random)) {
+            Pattern fill = solid ? new FixedPattern(pattern.apply(seed.x(), seed.y(), seed.z())) : pattern;
+            LongSet visited = new LongSet();
+            List<Long> level = new ArrayList<>();
+            long start = BlockArrayClipboard.positionKey(seed.x(), seed.y(), seed.z());
+            visited.add(start);
+            level.add(start);
+            for (int depth = 0; !level.isEmpty() && depth <= recursion; depth++) {
+                List<Long> next = new ArrayList<>();
+                for (long node : level) {
+                    int x = BlockArrayClipboard.keyX(node);
+                    int y = BlockArrayClipboard.keyY(node);
+                    int z = BlockArrayClipboard.keyZ(node);
+                    if (session.setBlock(x, y, z, fill.apply(x, y, z))) {
+                        changed++;
+                    }
+                    int reached = 0;
+                    for (int dx = -1; dx <= 1 && reached < 2; dx++) {
+                        for (int dy = -1; dy <= 1 && reached < 2; dy++) {
+                            for (int dz = -1; dz <= 1 && reached < 2; dz++) {
+                                if (dx == 0 && dy == 0 && dz == 0) {
+                                    continue;
+                                }
+                                int nx = x + dx;
+                                int ny = y + dy;
+                                int nz = z + dz;
+                                if (ny < session.minY() || ny > session.maxY()) {
+                                    continue;
+                                }
+                                long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                                if (visited.contains(key) || distanceSq(nx, ny, nz, seed) >= sizeSq
+                                        || placed.contains(key) || random.nextInt(5) >= 2
+                                        || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                        || openSide(session, nx, ny, nz) == null) {
+                                    continue;
+                                }
+                                placed.add(key);
+                                visited.add(key);
+                                next.add(key);
+                                reached++;
+                            }
+                        }
+                    }
+                }
+                level = next;
+            }
+        }
+        return changed;
+    }
+
     /** Whether a point is within the cube of {@code radius} around one of the points, as FAWE's set tests it. */
     private static boolean withinCube(List<BlockVector3> points, BlockVector3 point, int radius) {
         for (BlockVector3 other : points) {

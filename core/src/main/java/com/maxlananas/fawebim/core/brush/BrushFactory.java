@@ -178,6 +178,9 @@ public final class BrushFactory {
                 Brushes.SplatterBrush brush = new Brushes.SplatterBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask());
                 brush.setPoints(parameters.integer("points", 1));
+                brush.setRecursion(parameters.integer("recursion", 5));
+                brush.setSolid(!java.util.Set.of("false", "no", "off", "0")
+                        .contains(parameters.string("solid", "true").toLowerCase(Locale.ROOT)));
                 yield brush;
             }
             case "rock" -> {
