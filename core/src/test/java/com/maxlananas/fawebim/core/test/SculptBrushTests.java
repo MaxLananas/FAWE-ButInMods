@@ -28,6 +28,9 @@ import static com.maxlananas.fawebim.core.test.SelfTestMain.section;
  * FAWE's and WorldEdit's and settled ties their own way, erode counted states
  * where FAWE counts types, took a single open face where FAWE needs a type met
  * twice, and called the cobweb closed.</p>
+ *
+ * <p>The rock drew the same sphere, wobbled by sines of its offsets, on every
+ * click, and refused FAWE's radius of three numbers.</p>
  */
 final class SculptBrushTests {
 
@@ -42,6 +45,63 @@ final class SculptBrushTests {
         theBlendBallDecidesOnTheTerrainBeforeTheStroke();
         erosionCountsTypesAndNeedsOneTwice();
         erosionFillingKeepsTheLastTypeAndMorphTheFirstToLead();
+        theRockTakesARadiusPerAxisAndIsNewEveryClick();
+    }
+
+    /**
+     * FAWE's rock reads its radius as a vector and draws its noise from a
+     * random corner on every click. Without noise it is FAWE's ellipsoid, the
+     * axis radii dividing the squared offsets: 6,3,6 reaches 5 blocks out and
+     * 4 up, x² + 2y² + z² under 36.
+     */
+    private static void theRockTakesARadiusPerAxisAndIsNewEveryClick() {
+        TestActor actor = actor("Rock");
+        TestWorld world = (TestWorld) actor.world();
+        String bound = answer(actor, "/brush rock gold_block 3,6,3");
+        check("a radius per axis is taken, the largest being the size (" + bound + ")",
+                bound.contains("equipped (radius 6)"));
+        check("two numbers are no radius", answer(actor, "/brush rock gold_block 6,3").contains(
+                "'6,3' is not a radius: give one number, or three like 10,5,10"));
+        check("nor is zero", answer(actor, "/brush rock gold_block 6,0,6").contains("Each radius must be a positive number"));
+
+        answer(actor, "/brush rock gold_block 6,3,6 100 30 0");
+        stroke(actor, 0, 120, 0);
+        int gold = state("minecraft:gold_block");
+        int blocks = 0;
+        int expected = 0;
+        int widest = 0;
+        int highest = 0;
+        for (int x = -12; x <= 12; x++) {
+            for (int y = -12; y <= 12; y++) {
+                for (int z = -12; z <= 12; z++) {
+                    if (x * x + 2 * y * y + z * z < 36) {
+                        expected++;
+                    }
+                    if (world.getBlock(x, 120 + y, z) == gold) {
+                        blocks++;
+                        widest = Math.max(widest, Math.abs(x));
+                        highest = Math.max(highest, Math.abs(y));
+                    }
+                }
+            }
+        }
+        checkEquals("without noise the rock is FAWE's ellipsoid", expected, blocks);
+        check("wider than it is high (" + widest + ", " + highest + ")", widest == 5 && highest == 4);
+
+        answer(actor, "/brush rock gold_block 6");
+        stroke(actor, 40, 120, 0);
+        stroke(actor, 80, 120, 0);
+        int differ = 0;
+        for (int x = -12; x <= 12; x++) {
+            for (int y = -12; y <= 12; y++) {
+                for (int z = -12; z <= 12; z++) {
+                    if ((world.getBlock(40 + x, 120 + y, z) == gold) != (world.getBlock(80 + x, 120 + y, z) == gold)) {
+                        differ++;
+                    }
+                }
+            }
+        }
+        check("two clicks give two rocks (" + differ + " blocks apart)", differ > 0);
     }
 
     private static int apply(TestActor actor, Brush brush, int x, int y, int z) {

@@ -300,9 +300,44 @@ public final class BrushParameters {
         }
     }
 
-    /** The radius of the brush. */
+    /**
+     * The radius of the brush; for a brush whose radius has one value per
+     * axis, the largest of them, which is its size.
+     */
     public double radius() {
+        if (AXIS_RADII.contains(name)) {
+            double[] radii = radii();
+            return Math.max(radii[0], Math.max(radii[1], radii[2]));
+        }
         return expression("radius", 5);
+    }
+
+    /** FAWE's brushes whose radius is a vector, one value per axis. */
+    private static final java.util.Set<String> AXIS_RADII = java.util.Set.of("rock");
+
+    /**
+     * The radius of each axis, as FAWE reads a vector argument: one number for
+     * the three axes, or three separated by commas, such as {@code 10,5,10}
+     * for a rock twice as wide as it is high.
+     */
+    public double[] radii() {
+        String value = values.get("radius");
+        if (value == null || value.isBlank()) {
+            return new double[] {5, 5, 5};
+        }
+        String[] parts = value.split(",", -1);
+        if (parts.length != 1 && parts.length != 3) {
+            throw CommandRegistry.error("'" + value + "' is not a radius: give one number, or three like 10,5,10");
+        }
+        double[] radii = new double[3];
+        for (int axis = 0; axis < 3; axis++) {
+            double radius = parse(parts[parts.length == 1 ? 0 : axis], "radius");
+            if (!(radius > 0) || Double.isInfinite(radius)) {
+                throw CommandRegistry.error("Each radius must be a positive number, got '" + value + "'");
+            }
+            radii[axis] = radius;
+        }
+        return radii;
     }
 
     public static List<String> arguments(String[] row) {

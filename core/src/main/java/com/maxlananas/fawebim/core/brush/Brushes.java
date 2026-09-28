@@ -10,8 +10,10 @@ import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.pattern.MapColors;
 import com.maxlananas.fawebim.core.pattern.Pattern;
+import com.maxlananas.fawebim.core.transform.Axis;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.transform.Transforms;
 import com.maxlananas.fawebim.core.util.LongQueue;
@@ -1181,42 +1183,117 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush rock}: a distorted sphere. {@code sphericity} is how close to
-     * a perfect sphere the low frequency noise stays, {@code frequency} how fast
-     * the surface wobbles and {@code amplitude} how far it wobbles.
+     * {@code /brush rock <pattern> [radius] [roundness] [frequency] [amplitude]}:
+     * FAWE's blob, a ball whose surface simplex noise pushes in and out, drawn
+     * afresh on every click from a random corner of the noise.
+     *
+     * <p>The radius is one number or one per axis, {@code 10,5,10} for a flat
+     * rock; the brush's size is the largest, and the others keep their share
+     * of it when {@code /tool size} changes it. At a roundness under 100 the
+     * ball is mixed with FAWE's "Manhattan" shape - the sum and the largest of
+     * the axes, each stretched at random - and turned at random.</p>
+     *
+     * <p>This drew the same wobbled sphere, from sines of the offsets, on every
+     * click, and read the radius as a single number.</p>
      */
     public static final class RockBrush extends BaseBrush {
 
-        private double sphericity = 100;
-        private double frequency = 30;
-        private double amplitude = 50;
+        /** The radius of each axis divided by the largest, which is the size. */
+        private double[] axes = {1, 1, 1};
+        private double sphericity = 1;
+        private double frequency = 0.3;
+        private double amplitude = 0.5;
 
         public RockBrush(double radius, Pattern fill, Mask mask) {
             super(radius, fill, mask);
         }
 
-        public void setShape(double sphericity, double frequency, double amplitude) {
-            this.sphericity = sphericity;
-            this.frequency = frequency;
-            this.amplitude = amplitude;
+        /**
+         * The shape as the command line gives it: the radius of each axis, and
+         * the roundness, frequency and amplitude as percentages.
+         */
+        public void setShape(double[] radii, double sphericity, double frequency, double amplitude) {
+            double largest = Math.max(radii[0], Math.max(radii[1], radii[2]));
+            this.axes = new double[] {radii[0] / largest, radii[1] / largest, radii[2] / largest};
+            this.sphericity = sphericity / 100;
+            this.frequency = frequency / 100;
+            this.amplitude = amplitude / 100;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            // The angular part of the position drives the noise, so the surface
-            // wobbles per direction instead of per block.
-            double noiseScale = frequency / 100.0;
-            double wobble = amplitude / 100.0;
-            double roundness = sphericity / 100.0;
-            return Operations.forEachInSphere(position, (int) radius, false, (bx, by, bz) -> {
-                double dx = bx - position.x();
-                double dy = by - position.y();
-                double dz = bz - position.z();
-                double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                double noise = Math.sin(dx * noiseScale) * Math.cos(dy * noiseScale) * Math.sin(dz * noiseScale + 1);
-                double limit = radius * (roundness + noise * wobble * (1 - roundness));
-                return distance <= limit && place(session, bx, by, bz);
-            });
+            com.maxlananas.fawebim.core.util.noise.Noise noise =
+                    com.maxlananas.fawebim.core.util.noise.Noise.Simplex.classic();
+            double seedX = random.nextDouble();
+            double seedY = random.nextDouble();
+            double seedZ = random.nextDouble();
+            double size = radius;
+            double distort = frequency / size;
+            double modX = 1 / axes[0];
+            double modY = 1 / axes[1];
+            double modZ = 1 / axes[2];
+            int reach = (int) size * 2;
+            int changed = 0;
+            if (sphericity == 1) {
+                int radiusSquared = (int) (size * size);
+                for (int x = -reach; x <= reach; x++) {
+                    double dx = x * x * modX;
+                    for (int y = -reach; y <= reach; y++) {
+                        double dxy = dx + y * y * modY;
+                        for (int z = -reach; z <= reach; z++) {
+                            double distance = dxy + z * z * modZ;
+                            double push = amplitude * noise.noise(seedX + x * distort, seedY + y * distort,
+                                    seedZ + z * distort);
+                            if (distance + distance * push < radiusSquared
+                                    && place(session, position.x() + x, position.y() + y, position.z() + z)) {
+                                changed++;
+                            }
+                        }
+                    }
+                }
+                return changed;
+            }
+            // FAWE turns the offsets about x, y and z by a whole number of
+            // degrees each, the z turn applied first; the three make one matrix.
+            int turnX = random.nextInt(360);
+            int turnY = random.nextInt(360);
+            int turnZ = random.nextInt(360);
+            Transform turn = Transforms.rotate(BlockVector3.ZERO, Axis.Z, turnZ)
+                    .combine(Transforms.rotate(BlockVector3.ZERO, Axis.Y, turnY))
+                    .combine(Transforms.rotate(BlockVector3.ZERO, Axis.X, turnX));
+            Vector3 alongX = turn.apply(new Vector3(1, 0, 0));
+            Vector3 alongY = turn.apply(new Vector3(0, 1, 0));
+            Vector3 alongZ = turn.apply(new Vector3(0, 0, 1));
+            double stretchX = 1.25 + seedX * 0.5;
+            double stretchY = 1.25 + seedY * 0.5;
+            double stretchZ = 1.25 + seedZ * 0.5;
+            double roughness = 1 - sphericity;
+            int limit = (int) size;
+            for (int xr = -reach; xr <= reach; xr++) {
+                for (int yr = -reach; yr <= reach; yr++) {
+                    for (int zr = -reach; zr <= reach; zr++) {
+                        int x = (int) Math.floor(xr * alongX.x() + yr * alongY.x() + zr * alongZ.x());
+                        int y = (int) Math.floor(xr * alongX.y() + yr * alongY.y() + zr * alongZ.y());
+                        int z = (int) Math.floor(xr * alongX.z() + yr * alongY.z() + zr * alongZ.z());
+                        double scaledX = Math.abs(x) * modX;
+                        double scaledY = Math.abs(y) * modY;
+                        double scaledZ = Math.abs(z) * modZ;
+                        double manhattan = scaledX + scaledY + scaledZ;
+                        double squared = x * x * modX + z * z * modZ + y * y * modY;
+                        double distance = Math.sqrt(squared) * sphericity + Math.max(Math.max(manhattan,
+                                scaledX * stretchX), Math.max(scaledY * stretchY, scaledZ * stretchZ)) * roughness;
+                        // FAWE reads the noise at (x, z, z) here, not (x, y, z):
+                        // the rough rock's bumps run straight through it.
+                        double push = amplitude * noise.noise(seedX + x * distort, seedZ + z * distort,
+                                seedZ + z * distort);
+                        if (distance + distance * push < limit
+                                && place(session, position.x() + xr, position.y() + yr, position.z() + zr)) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+            return changed;
         }
     }
 

@@ -193,8 +193,8 @@ public final class BrushFactory {
             case "rock" -> {
                 Brushes.RockBrush brush = new Brushes.RockBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask());
-                brush.setShape(parameters.number("sphericity", 100), parameters.number("frequency", 30),
-                        parameters.number("amplitude", 50));
+                brush.setShape(parameters.radii(), parameters.number("sphericity", 100),
+                        parameters.number("frequency", 30), parameters.number("amplitude", 50));
                 yield brush;
             }
             case "pull" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.ERODE,
