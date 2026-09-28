@@ -2116,16 +2116,18 @@ public final class Brushes {
         }
 
         private static boolean isOpen(BlockStateRegistry registry, int state, Morphology.Style style) {
-            if (style == Morphology.Style.ERODE) {
-                return !registry.isSolid(state);
-            }
-            // WorldEdit's liquids are the water and lava blocks themselves: a
-            // waterlogged block or a kelp plant is a block.
-            if (registry.isAirLike(state)) {
-                return true;
-            }
             String name = registry.name(state);
-            return "minecraft:water".equals(name) || "minecraft:lava".equals(name);
+            if (style == Morphology.Style.ERODE) {
+                // FAWE asks whether the block stops movement: the game's solid
+                // blocks but the cobweb and the bamboo sapling.
+                return !registry.isSolid(state) || "minecraft:cobweb".equals(name)
+                        || "minecraft:bamboo_sapling".equals(name);
+            }
+            // WorldEdit's liquids are the blocks the game calls liquid - water,
+            // lava and the bubble column: a waterlogged block or a kelp plant
+            // is a block.
+            return registry.isAirLike(state) || "minecraft:water".equals(name) || "minecraft:lava".equals(name)
+                    || "minecraft:bubble_column".equals(name);
         }
     }
 

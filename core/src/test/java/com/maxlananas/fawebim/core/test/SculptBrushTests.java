@@ -23,6 +23,11 @@ import static com.maxlananas.fawebim.core.test.SelfTestMain.section;
  * skipped blocks, where FAWE's also counts what it refuses as air; and each
  * block read the blocks the same stroke had changed before it, so the result
  * depended on the order of the scan.</p>
+ *
+ * <p>The erode and morph brushes met the neighbours in another order than
+ * FAWE's and WorldEdit's and settled ties their own way, erode counted states
+ * where FAWE counts types, took a single open face where FAWE needs a type met
+ * twice, and called the cobweb closed.</p>
  */
 final class SculptBrushTests {
 
@@ -35,6 +40,87 @@ final class SculptBrushTests {
         theBlendBallFillsAPocketAndLevelsWithAir();
         theBlendBallMaskCountsWhatItRefusesAsAir();
         theBlendBallDecidesOnTheTerrainBeforeTheStroke();
+        erosionCountsTypesAndNeedsOneTwice();
+        erosionFillingKeepsTheLastTypeAndMorphTheFirstToLead();
+    }
+
+    private static int apply(TestActor actor, Brush brush, int x, int y, int z) {
+        EditSession session = new EditSession(actor.world(), actor.session(), "brush");
+        try {
+            return Brushes.apply(brush, session, new BlockVector3(x, y, z), actor);
+        } finally {
+            session.close();
+        }
+    }
+
+    private static Brushes.MorphBrush erode(double radius, int erodeFaces, int erodeRec, int fillFaces, int fillRec) {
+        return new Brushes.MorphBrush(radius, com.maxlananas.fawebim.core.function.Morphology.Style.ERODE,
+                new com.maxlananas.fawebim.core.function.Morphology.Passes(erodeFaces, erodeRec, fillFaces, fillRec),
+                null);
+    }
+
+    /**
+     * FAWE's erosion counts the open neighbours by block type from one up, and
+     * a block only takes a type met at least twice: air and cave air beside a
+     * block are two types met once, and one air face is not enough even when
+     * one is asked for. What does not stop movement is open, the cobweb with
+     * it, though the game calls it solid. Radius 1 holds the centre alone.
+     */
+    private static void erosionCountsTypesAndNeedsOneTwice() {
+        TestActor actor = actor("ErodeTypes");
+        TestWorld world = (TestWorld) actor.world();
+        int air = BlockState.registry().air();
+        world.setBlock(0, 40, -1, air);
+        world.setBlock(0, 40, 1, state("minecraft:cave_air"));
+        apply(actor, erode(1, 2, 1, 5, 0), 0, 40, 0);
+        checkEquals("air and cave air are two types met once: the block stays", "minecraft:stone",
+                name(world, 0, 40, 0));
+        world.setBlock(0, 40, 1, air);
+        apply(actor, erode(1, 2, 1, 5, 0), 0, 40, 0);
+        checkEquals("two air faces erode it", "minecraft:air", name(world, 0, 40, 0));
+
+        world.setBlock(4, 40, -1, air);
+        apply(actor, erode(1, 1, 1, 5, 0), 4, 40, 0);
+        checkEquals("one air face is not enough, even with one asked", "minecraft:stone", name(world, 4, 40, 0));
+
+        world.setBlock(8, 40, -1, state("minecraft:cobweb"));
+        world.setBlock(8, 40, 1, state("minecraft:cobweb"));
+        apply(actor, erode(1, 2, 1, 5, 0), 8, 40, 0);
+        checkEquals("a block between two cobwebs, which let movement through, erodes into one",
+                "minecraft:cobweb", name(world, 8, 40, 0));
+    }
+
+    /**
+     * FAWE's filling lets a later type that equals the best take its place;
+     * WorldEdit's morph keeps the state that reached the best count first.
+     * Both meet the neighbours north, east, south, west, up and down.
+     */
+    private static void erosionFillingKeepsTheLastTypeAndMorphTheFirstToLead() {
+        TestActor actor = actor("ErodeTies");
+        TestWorld world = (TestWorld) actor.world();
+        int air = BlockState.registry().air();
+        for (int[] cell : new int[][] {{0, 0, 0}, {0, 1, 0}, {0, -1, 0}, {-1, 0, 0}, {0, 0, 1}}) {
+            world.setBlock(cell[0], 40 + cell[1], cell[2], air);
+        }
+        world.setBlock(0, 40, -1, state("minecraft:stone"));
+        world.setBlock(1, 40, 0, state("minecraft:dirt"));
+        apply(actor, erode(1, 6, 0, 2, 1), 0, 40, 0);
+        checkEquals("filling between stone to the north and dirt to the east takes the dirt, met last",
+                "minecraft:dirt", name(world, 0, 40, 0));
+
+        for (int[] cell : new int[][] {{0, 0, 0}, {0, 1, 0}, {0, -1, 0}}) {
+            world.setBlock(6 + cell[0], 40 + cell[1], cell[2], air);
+        }
+        world.setBlock(6, 40, -1, state("minecraft:stone"));
+        world.setBlock(7, 40, 0, state("minecraft:dirt"));
+        world.setBlock(6, 40, 1, state("minecraft:dirt"));
+        world.setBlock(5, 40, 0, state("minecraft:stone"));
+        Brushes.MorphBrush morph = new Brushes.MorphBrush(0.5,
+                com.maxlananas.fawebim.core.function.Morphology.Style.MORPH,
+                new com.maxlananas.fawebim.core.function.Morphology.Passes(7, 0, 4, 1), null);
+        apply(actor, morph, 6, 40, 0);
+        checkEquals("morph fills with the dirt, whose second face comes before the stone's", "minecraft:dirt",
+                name(world, 6, 40, 0));
     }
 
     private static TestActor actor(String name) {

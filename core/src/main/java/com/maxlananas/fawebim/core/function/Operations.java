@@ -1547,7 +1547,7 @@ public final class Operations {
     }
 
     /** The block type of a state - the default state of its block - asked once per state. */
-    private static IntUnaryOperator rememberedType(BlockStateRegistry registry) {
+    static IntUnaryOperator rememberedType(BlockStateRegistry registry) {
         int[] known = new int[Math.max(1, registry.stateCount())];
         return state -> {
             if (state < 0 || state >= known.length) {
