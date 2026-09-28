@@ -102,12 +102,37 @@ For each release:
 
 1. Build with `./gradlew build`, or take the `FAWE-BIM` artifact of the CI run, and upload
    `FAWE-BIM-<version>.jar` from `fabric/build/libs`.
-2. Version number `1.0.0`, name `FAWE-BIM 1.0.0`. Channel **Beta** for the first release: the engine
-   is tested head-less, not yet by many players in game.
+2. Version number as `mod_version` in `gradle.properties` says, name `FAWE-BIM <version>`. Channel
+   **Beta** while the engine is tested head-less more than by players in game.
 3. Loader Fabric, game version 1.21.10.
 4. Dependencies: Fabric API **required**; Mod Menu **optional**; WorldEdit **incompatible** (both
    register the same commands, and Brigadier merges them into one broken tree).
 5. Tag the commit `v<version>` on GitHub, and link the tag in the changelog.
+
+Changelog of 1.1.0:
+
+```markdown
+The commands behave as FAWE's in many more places, above all the brushes.
+
+- Brushes and tools are bound per item, as in FAWE: each item keeps its own brush, tool and settings,
+  and `/tool secondary` gives the left click a brush of its own
+- A click fires the brush on the clicked block, aimed by `/tool range`, `tracemask`, `target` and
+  `targetoffset`; `/brush` alone shows what the item in hand holds
+- Brushes redone to do what FAWE's do: blendball, erode, pull, morph, dilate, rock, circle, height,
+  cliff, splatter, shatter, surface, scatter, scattercommand, command, line, catenary, image, forest,
+  feature, structure, snow, biome, raise and lower
+- Masks and patterns: `>` `<` `$` `^`, `#offset`, `#existing`, `##tag`, `#spread`, `#surfacespread`,
+  the linear and colour patterns, `#typeswap`, `#clipboard`, `#relative`, `#hotbar`; `#simplex` reads
+  FAWE's own noise, so the same line places the same blocks as on a FAWE server
+- Trees, features and structures grow through the edit: masks, limits and `//undo` apply to them
+- `/tool` alone lists the tools instead of unbinding the one in hand; a mistyped brush is named back
+- Schematics in folders (`//schem save trees/oak`), FAWE's format names, `//schem move`, `unload`
+  and `delete *`
+- Tab completion completes the argument being typed; `//help <command>` explains one command
+- Counts read "1 block", "2 blocks"; `/we version` names the real Fabric loader and API versions
+
+Source: https://github.com/MaxLananas/FAWE-ButInMods/releases/tag/v1.1.0
+```
 
 Changelog of the first version:
 
