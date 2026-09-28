@@ -3621,6 +3621,9 @@ public final class Commands {
         com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor(), buildBrushLine(ctx));
         ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped"
                 + (sized(row) ? " (radius " + Msg.formatDouble(radius) + ")" : "")));
+        if (built.hint() != null) {
+            ctx.actor().message(Msg.hint(built.hint()));
+        }
     }
 
     /**

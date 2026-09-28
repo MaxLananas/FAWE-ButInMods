@@ -1092,49 +1092,68 @@ public final class Operations {
     }
 
     /**
-     * Collects the connected non-air blocks under a position into a clipboard,
-     * which is what the first click of {@code /brush copypaste} does: FAWE walks
-     * the blob with a recursive visitor limited to the brush radius and to the
-     * height of the click, so the copy never grows downwards into the ground.
+     * The first click of {@code /brush copypaste}, FAWE's: the blocks that are
+     * not air, joined to the start through their faces, no lower than it and
+     * accepted by the mask, found layer by layer. FAWE's walk stops after the
+     * layer of the depth but still asks the neighbours of that layer, and its
+     * mask is what copies, so the copy reaches one step past the depth. The
+     * walk starts from the start whatever it holds.
      *
-     * @param limit the brush radius, which also caps how far the walk goes
-     * @param mask  the brush mask, applied on top of "the block is not air"
+     * <p>This measured the depth as a distance from the start, which cut a
+     * tree trunk or a winding branch where FAWE's steps do not.</p>
+     *
+     * @param depth the brush radius, as FAWE's visitor counts its steps
+     * @param mask  the mask of the edit, or null
      */
     public static com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard copyConnected(
-            World world, EditSession session, BlockVector3 start, int limit, Mask mask) {
+            World world, EditSession session, BlockVector3 start, int depth, Mask mask) {
         BlockStateRegistry registry = BlockState.registry();
         com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard clipboard =
                 new com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard(start);
-        if (registry.isAirLike(world.getBlock(start.x(), start.y(), start.z()))) {
-            return clipboard;
-        }
-        LongQueue queue = new LongQueue();
-        LongSet visited = new LongSet();
-        queue.add(BlockArrayClipboard.positionKey(start.x(), start.y(), start.z()));
-        long reach = (long) limit * limit;
-        while (!queue.isEmpty()) {
-            long current = queue.poll();
-            if (!visited.add(current)) {
-                continue;
-            }
-            int x = BlockArrayClipboard.keyX(current);
-            int y = BlockArrayClipboard.keyY(current);
-            int z = BlockArrayClipboard.keyZ(current);
-            if (y < start.y() || distanceSq(x, y, z, start) > reach) {
-                continue;
+        int lowest = start.y();
+        int top = world.maxY();
+        BlockVisitor copy = (x, y, z) -> {
+            if (y < lowest || mask != null && !mask.test(x, y, z)) {
+                return false;
             }
             int state = world.getBlock(x, y, z);
-            if (registry.isAirLike(state) || mask != null && !mask.test(x, y, z)) {
-                continue;
+            if (registry.isAirLike(state)) {
+                return false;
             }
             clipboard.setBlock(x, y, z, state);
             session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
-                long next = BlockArrayClipboard.positionKey(x + direction.x(), y + direction.y(), z + direction.z());
-                if (!visited.contains(next)) {
-                    queue.add(next);
+            return true;
+        };
+        copy.visit(start.x(), start.y(), start.z());
+        LongSet visited = new LongSet();
+        LongQueue layer = new LongQueue();
+        LongQueue next = new LongQueue();
+        long first = BlockArrayClipboard.positionKey(start.x(), start.y(), start.z());
+        visited.add(first);
+        layer.add(first);
+        for (int step = 0; !layer.isEmpty() && step <= depth; step++) {
+            while (!layer.isEmpty()) {
+                long current = layer.poll();
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                    int nx = x + direction.x();
+                    int ny = y + direction.y();
+                    int nz = z + direction.z();
+                    if (ny < world.minY() || ny > top) {
+                        continue;
+                    }
+                    long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                    if (!visited.contains(key) && copy.visit(nx, ny, nz)) {
+                        visited.add(key);
+                        next.add(key);
+                    }
                 }
             }
+            LongQueue swap = layer;
+            layer = next;
+            next = swap;
         }
         com.maxlananas.fawebim.core.clipboard.Clipboards.copyBlockEntities(world, clipboard);
         return clipboard;

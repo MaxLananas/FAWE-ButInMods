@@ -64,6 +64,7 @@ public final class BrushFactory {
         ItemBinding binding = session.bind(actor.heldItem());
         binding.setPrimary(brush, line);
         binding.setSecondary(brush, line);
+        brush.bound(session);
     }
 
     /**

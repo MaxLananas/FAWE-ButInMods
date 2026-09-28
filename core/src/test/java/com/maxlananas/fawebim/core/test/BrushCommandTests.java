@@ -38,6 +38,61 @@ final class BrushCommandTests {
         theShatterBrushDrawsCracks();
         theSurfaceBrushPaintsAnySurface();
         theImageBrushPaintsItsImage();
+        theCopyPasteBrushCopiesThenPastesAboutItsOrigin();
+    }
+
+    /**
+     * FAWE's copy paste brush empties the clipboard when it is bound, so its
+     * first click copies: the blocks joined to the clicked one, no lower,
+     * within the radius counted in steps - FAWE's walk reaches one step past
+     * it. The next clicks paste one block above the click, turned about the
+     * origin of the copy. The paste was turned about the click, which threw
+     * the object as far away as the click was from the copy, and a clipboard
+     * of before was pasted by the first click.
+     */
+    private static void theCopyPasteBrushCopiesThenPastesAboutItsOrigin() {
+        TestActor actor = actor("CopyPaste");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        int diamond = state("minecraft:diamond_block");
+        for (int y = 70; y < 80; y++) {
+            world.setBlock(0, y, 0, gold);
+        }
+        answer(actor, "//pos1 0,70,0");
+        answer(actor, "//pos2 0,70,0");
+        answer(actor, "//copy");
+        String bound = answer(actor, "/brush copypaste 3");
+        check("binding it empties the clipboard, so the first click copies",
+                !actor.session().hasClipboard());
+        check("and says how to use it (" + bound + ")", bound.contains("Left click the base of an object to copy"));
+        stroke(actor, 0, 70, 0);
+        check("the first click copies the pillar up to one step past the radius",
+                actor.session().hasClipboard() && actor.session().getClipboard().getClipboard().volume() == 5);
+
+        world.setBlock(20, 70, 0, gold);
+        world.setBlock(21, 70, 0, diamond);
+        TestActor turner = actor("CopyPasteTurn");
+        TestWorld turned = (TestWorld) turner.world();
+        turned.setBlock(20, 70, 0, gold);
+        turned.setBlock(21, 70, 0, diamond);
+        answer(turner, "/brush copypaste 3 -a");
+        stroke(turner, 20, 70, 0);
+        turner.setYaw(90);
+        turner.setPitch(90);
+        stroke(turner, 40, 80, 40);
+        check("a turned paste stands on the click", turned.getBlock(40, 81, 40) == gold);
+        check("turned a quarter about the origin of the copy", turned.getBlock(40, 81, 41) == diamond
+                && turned.getBlock(41, 81, 40) != diamond);
+
+        TestActor masked = actor("CopyPasteMask");
+        TestWorld maskedWorld = (TestWorld) masked.world();
+        maskedWorld.setBlock(20, 70, 0, gold);
+        maskedWorld.setBlock(21, 70, 0, diamond);
+        answer(masked, "/brush copypaste 3");
+        answer(masked, "/tool mask gold_block");
+        stroke(masked, 20, 70, 0);
+        checkEquals("the brush's mask decides what is copied", 1L,
+                masked.session().getClipboard().getClipboard().volume());
     }
 
     private static TestActor actor(String name) {

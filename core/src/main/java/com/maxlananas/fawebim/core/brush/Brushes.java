@@ -1584,9 +1584,20 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush copypaste [-r] [-a] <radius>} — the first click copies the
-     * connected blob under the cursor, the next ones paste it back with an
-     * optional rotation, which is FAWE's {@code CopyPastaBrush}.
+     * {@code /brush copypaste [radius] [-r] [-a]}: FAWE's copy paste brush. A
+     * click while the clipboard is empty copies the object under it - the
+     * blocks joined to the clicked one, no lower than it, within the radius in
+     * steps - with the clicked block as the origin; the next clicks paste it
+     * one block above the click without its air, turned a random quarter with
+     * {@code -r} or the way the player looks with {@code -a}, or else as the
+     * clipboard's own transform says. Binding the brush empties the clipboard,
+     * so the first click copies, and the brush's mask applies to both.
+     *
+     * <p>The paste was turned around the click, not around the origin of the
+     * copy, which threw a turned object as far from the click as the click
+     * was from where it had been copied; a clipboard of before was pasted by
+     * the first click instead of the object under it; and the masks were not
+     * read.</p>
      */
     public static final class CopyPastaBrush extends BaseBrush {
 
@@ -1600,32 +1611,50 @@ public final class Brushes {
         }
 
         @Override
+        public void bound(com.maxlananas.fawebim.core.session.LocalSession session) {
+            session.setClipboard(null);
+        }
+
+        @Override
+        public String hint() {
+            return "Left click the base of an object to copy, right click to paste. Increase the brush radius if"
+                    + " necessary.";
+        }
+
+        @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            if (!actor.session().hasClipboard()) {
-                BlockArrayClipboard copied = com.maxlananas.fawebim.core.function.Operations.copyConnected(
-                        session.getWorld(), session, position, (int) Math.ceil(radius), mask);
-                if (copied.volume() == 0) {
-                    actor.message(Msg.error("Nothing to copy at " + position));
+            return masked(session, () -> {
+                if (!actor.session().hasClipboard()) {
+                    BlockArrayClipboard copied = Operations.copyConnected(session.getWorld(), session, position,
+                            (int) radius, session.getMask());
+                    if (copied.volume() == 0) {
+                        actor.message(Msg.error("Nothing to copy here: click the base of an object"));
+                        return 0;
+                    }
+                    actor.session().setClipboard(copied);
+                    actor.message(Msg.result("Copied", Msg.blocks(copied.volume()) + " to your clipboard"));
                     return 0;
                 }
-                actor.session().setClipboard(copied);
-                actor.message(Msg.success("Copied " + Msg.blocks(copied.volume())));
-                return 0;
-            }
-            Transform transform = Transform.identity();
-            if (randomRotate) {
-                transform = Transforms.rotate(position, random.nextInt(4) * 90.0);
-            }
-            if (autoRotate) {
-                // The blob follows the way the player looks, as FAWE's brush does:
-                // the yaw turns it around Y, the pitch tilts it.
-                transform = Transforms.rotate(position, com.maxlananas.fawebim.core.transform.Axis.Y, -actor.yaw())
-                        .combine(transform);
-                transform = Transforms.rotate(position, com.maxlananas.fawebim.core.transform.Axis.X,
-                        actor.pitch() - 90).combine(transform);
-            }
-            return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(actor.session().getClipboard().getClipboard(),
-                    position.add(0, 1, 0), session, transform, true, null, false, false, false, false);
+                var holder = actor.session().getClipboard();
+                BlockArrayClipboard clipboard = holder.getClipboard();
+                BlockVector3 origin = clipboard.getOrigin();
+                // FAWE's flags replace the clipboard's transform with theirs; a
+                // turn of nothing leaves the clipboard's own in place.
+                Transform turn = Transform.identity();
+                int quarters = randomRotate ? random.nextInt(4) : 0;
+                if (quarters != 0) {
+                    turn = Transforms.rotate(origin, quarters * 90.0);
+                }
+                if (autoRotate) {
+                    turn = Transforms.rotate(origin, com.maxlananas.fawebim.core.transform.Axis.Y, -actor.yaw())
+                            .combine(turn);
+                    turn = Transforms.rotate(origin, com.maxlananas.fawebim.core.transform.Axis.X,
+                            actor.pitch() - 90).combine(turn);
+                }
+                Transform transform = turn.isIdentity() ? holder.getTransform() : turn;
+                return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, position.add(0, 1, 0),
+                        session, transform, true, null, false, false, false, false);
+            });
         }
 
         @Override
