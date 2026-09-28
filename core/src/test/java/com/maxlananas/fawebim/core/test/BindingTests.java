@@ -75,7 +75,12 @@ final class BindingTests {
         answer(actor, "//pos2 6,70,5");
         answer(actor, "//copy");
         actor.setHeldItem(AXE);
-        answer(actor, "/brush clipboard");
+        String bound = answer(actor, "/brush clipboard");
+        check("a brush with no radius is bound without one (" + bound + ")",
+                bound.endsWith("Brush 'clipboard' equipped"));
+        String shown = answer(actor, "/brush");
+        check("and shown without one (" + shown + ")", shown.contains("Right click: /brush clipboard")
+                && !shown.contains("size"));
         world.setBlock(5, 70, 5, diamond);
         answer(actor, "//copy");
         answer(actor, "//rotate 90");

@@ -3613,12 +3613,26 @@ public final class Commands {
         }
         // With the line that built it, which the preset commands save and reload.
         com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor(), buildBrushLine(ctx));
-        ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped (radius " + Msg.formatDouble(radius) + ")"));
+        ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped"
+                + (sized(row) ? " (radius " + Msg.formatDouble(radius) + ")" : "")));
+    }
+
+    /**
+     * Whether FAWE gives the brush a radius: the clipboard, item and sweep
+     * brushes have none, and are not told one they would not use.
+     */
+    private static boolean sized(String[] row) {
+        return row == null || com.maxlananas.fawebim.core.brush.BrushParameters.arguments(row).stream()
+                .anyMatch(argument -> argument.startsWith("radius") || argument.startsWith("size"));
     }
 
     /** A bound brush as the line that built it, with the size it has now. */
     private static String brushSummary(String line, com.maxlananas.fawebim.core.brush.Brush brush) {
-        return (line == null ? brush.describe() : line) + " (size " + Msg.formatDouble(brush.radius()) + ")";
+        String[] words = line == null ? new String[0] : line.trim().split("\\s+");
+        String[] row = words.length < 2 ? null : BrushTable.byName(
+                com.maxlananas.fawebim.core.brush.BrushFactory.canonical(words[1].toLowerCase(Locale.ROOT)));
+        return (line == null ? brush.describe() : line)
+                + (sized(row) ? " (size " + Msg.formatDouble(brush.radius()) + ")" : "");
     }
 
     /**
