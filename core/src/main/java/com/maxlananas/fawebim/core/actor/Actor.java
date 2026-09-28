@@ -34,6 +34,16 @@ public interface Actor {
         return new Vector3(0, 0, 1);
     }
 
+    /**
+     * Where the actor stands, to the fraction of a block: a player's feet. An
+     * actor with no finer position stands on the corner of its block; null for
+     * the console.
+     */
+    default Vector3 location() {
+        BlockVector3 block = position();
+        return block == null ? null : new Vector3(block.x(), block.y(), block.z());
+    }
+
     default Direction facing() {
         return Direction.NORTH;
     }

@@ -96,6 +96,14 @@ public final class FabricActor implements Actor {
     }
 
     @Override
+    public Vector3 location() {
+        if (player == null) {
+            return Actor.super.location();
+        }
+        return new Vector3(player.getX(), player.getY(), player.getZ());
+    }
+
+    @Override
     public Vector3 direction() {
         if (player == null) {
             return new Vector3(0, 0, 1);

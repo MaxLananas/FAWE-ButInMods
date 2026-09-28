@@ -58,6 +58,11 @@ public abstract class DelegatingActor implements Actor {
     }
 
     @Override
+    public Vector3 location() {
+        return delegate.location();
+    }
+
+    @Override
     public Direction facing() {
         return delegate.facing();
     }

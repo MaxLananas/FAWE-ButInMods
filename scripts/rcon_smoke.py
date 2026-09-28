@@ -133,7 +133,14 @@ CHECKS = [
     ("//blob minecraft:stone 3", "Blob: "),
     ("//fillr minecraft:stone 3 3", "filled:"),
     ("//sphere minecraft:stone 3", "created:"),
+    # FAWE's blob is drawn afresh every time and its noise reaches four blocks
+    # past its size, beyond the box: the air takes back a box that holds all
+    # of it, and the corners are put back for the rows below.
+    ("//pos1 0,58,0", "position 1: set"),
+    ("//pos2 15,70,15", "position 2: set"),
     ("//air", "Set to air:"),
+    ("//pos1 0,60,0", "position 1: set"),
+    ("//pos2 15,66,15", "position 2: set"),
     ("//forest oak 20", "planted:"),
     ("//forestgen 5 mega_redwood 10", "planted:"),
     ("//tree oak", "must be run by a player"),

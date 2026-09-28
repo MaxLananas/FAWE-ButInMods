@@ -2245,6 +2245,78 @@ public final class Operations {
         return changed;
     }
 
+    /**
+     * FAWE's {@code EditSession.makeCircle}, behind the circle brush: the
+     * blocks of the ball of the radius, or of its shell when not filled, that
+     * lie within half a block of the plane through the centre square to the
+     * normal. The radius grows by half a block before it is measured, as the
+     * sphere's does, and the ball is walked an eighth at a time.
+     *
+     * @param normal the direction the circle faces, of length one
+     * @param place  sets one block and says whether it changed
+     * @return how many blocks changed
+     */
+    public static int circle(BlockVector3 center, double radius, boolean filled, Vector3 normal, BlockVisitor place) {
+        double grown = radius + 0.5;
+        double inverse = 1 / grown;
+        int ceil = (int) Math.ceil(grown);
+        int changed = 0;
+        double nextXn = 0;
+        forX:
+        for (int x = 0; x <= ceil; x++) {
+            double xn = nextXn;
+            double dx = xn * xn;
+            nextXn = (x + 1) * inverse;
+            double nextXnSq = nextXn * nextXn;
+            double nextYn = 0;
+            double alongX = x * normal.x();
+            forY:
+            for (int y = 0; y <= ceil; y++) {
+                double yn = nextYn;
+                double dy = yn * yn;
+                double dxy = dx + dy;
+                nextYn = (y + 1) * inverse;
+                double nextYnSq = nextYn * nextYn;
+                double nextZn = 0;
+                double alongY = y * normal.y();
+                for (int z = 0; z <= ceil; z++) {
+                    double zn = nextZn;
+                    double dz = zn * zn;
+                    double dxyz = dxy + dz;
+                    nextZn = (z + 1) * inverse;
+                    if (dxyz > 1) {
+                        if (z == 0) {
+                            if (y == 0) {
+                                break forX;
+                            }
+                            break forY;
+                        }
+                        break;
+                    }
+                    if (!filled && nextXnSq + dy + dz <= 1 && nextYnSq + dx + dz <= 1
+                            && nextZn * nextZn + dxy <= 1) {
+                        continue;
+                    }
+                    double alongZ = z * normal.z();
+                    // The eight mirrors of the offset, each placed when it lies
+                    // close enough to the plane; an offset of zero on an axis is
+                    // its own mirror there.
+                    for (int sx = 1; sx >= -1 && (sx > 0 || x != 0); sx -= 2) {
+                        for (int sy = 1; sy >= -1 && (sy > 0 || y != 0); sy -= 2) {
+                            for (int sz = 1; sz >= -1 && (sz > 0 || z != 0); sz -= 2) {
+                                if (Math.abs(sx * alongX + sy * alongY + sz * alongZ) < 0.5
+                                        && place.visit(center.x() + sx * x, center.y() + sy * y, center.z() + sz * z)) {
+                                    changed++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
     /** {@code //fall} — drops every block in the region to the ground. */
     public static long fall(World world, EditSession session, Region region) {
         return fall(world, session, region, false, null);

@@ -53,6 +53,58 @@ final class ShapeBrushTests {
         theBiomeBrushSetsItsBiomeInItsShape();
         aRequiredArgumentIsRequired();
         aPresetBindsItsBrushAgain();
+        theCircleIsFawesDiscFacingThePlayer();
+    }
+
+    /**
+     * FAWE's circle is the blocks of the ball, radius plus half a block, within
+     * half a block of the plane square to the line from the player's feet to
+     * the click: facing a click ten blocks north, a filled circle of radius 3
+     * is the 37 blocks with x² + y² at most 12.25, and it is symmetric about
+     * its centre. The circle was walked by angles and floored, which made it
+     * lopsided.
+     */
+    private static void theCircleIsFawesDiscFacingThePlayer() {
+        TestWorld world = new TestWorld("CircleBrush");
+        TestActor actor = new TestActor("CircleBrush", world, new BlockVector3(0, 80, -10));
+        actor.session().setMaxBlocksChanged(1_000_000);
+        answer(actor, "/brush circle gold_block 3 true");
+        int disc = stroke(actor, 0, 80, 0);
+        checkEquals("a filled circle of radius 3 has FAWE's 37 blocks", 37, disc);
+        int gold = state("minecraft:gold_block");
+        boolean flat = true;
+        boolean symmetric = true;
+        for (int x = -5; x <= 5; x++) {
+            for (int y = 75; y <= 85; y++) {
+                for (int z = -5; z <= 5; z++) {
+                    boolean here = world.getBlock(x, y, z) == gold;
+                    flat &= !here || z == 0;
+                    symmetric &= here == (world.getBlock(-x, 160 - y, z) == gold);
+                }
+            }
+        }
+        check("in the plane square to the line from the player", flat);
+        check("and symmetric about its centre", symmetric);
+
+        TestActor aside = new TestActor("CircleRing", world, new BlockVector3(20, 80, -10));
+        answer(aside, "/brush circle diamond_block 3");
+        int ring = stroke(aside, 20, 80, 0);
+        int diamond = state("minecraft:diamond_block");
+        check("a circle that is not filled is a ring (" + ring + " blocks)", ring > 0 && ring < disc
+                && world.getBlock(20, 80, 0) != diamond && world.getBlock(23, 80, 0) == diamond);
+
+        TestActor above = new TestActor("CircleAbove", world, new BlockVector3(40, 90, 0));
+        answer(above, "/brush circle gold_block 2 true");
+        stroke(above, 40, 80, 0);
+        boolean level = true;
+        for (int x = 36; x <= 44; x++) {
+            for (int y = 76; y <= 84; y++) {
+                for (int z = -4; z <= 4; z++) {
+                    level &= world.getBlock(x, y, z) != gold || y == 80;
+                }
+            }
+        }
+        check("seen from above the circle lies flat", level && world.getBlock(42, 80, 0) == gold);
     }
 
     /** Grass at y 60 over eight layers of stone, thirteen by thirteen around the origin. */

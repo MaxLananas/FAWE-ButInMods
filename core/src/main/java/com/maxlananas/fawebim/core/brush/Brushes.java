@@ -1313,8 +1313,14 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush circle} — a disc facing the player, which is how FAWE builds
-     * it: the plane normal is the vector from the player to the target.
+     * {@code /brush circle <pattern> [radius] [filled]}: FAWE's circle, a disc
+     * or a ring facing the player - the blocks of the ball, or of its shell,
+     * within half a block of the plane square to the line from the player to
+     * the clicked block.
+     *
+     * <p>This walked the circle by angles and floored each point, which left
+     * holes on the diagonals and put the circle a block off towards negative
+     * coordinates.</p>
      */
     public static final class CircleBrush extends BaseBrush {
 
@@ -1327,46 +1333,15 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            com.maxlananas.fawebim.core.math.Vector3 normal = new com.maxlananas.fawebim.core.math.Vector3(
-                    position.x() - actor.position().x(),
-                    position.y() - actor.position().y(),
-                    position.z() - actor.position().z());
+            // FAWE faces the circle along the line from the player's feet to
+            // the clicked block, measured from its corner.
+            Vector3 feet = actor.location();
+            Vector3 normal = feet == null ? Vector3.ZERO
+                    : new Vector3(position.x() - feet.x(), position.y() - feet.y(), position.z() - feet.z());
             if (normal.lengthSq() == 0) {
                 normal = actor.direction();
             }
-            normal = normal.normalize();
-            com.maxlananas.fawebim.core.math.Vector3 axisU = orthogonal(normal);
-            com.maxlananas.fawebim.core.math.Vector3 axisV = normal.cross(axisU).normalize();
-            int steps = Math.max(8, (int) (2 * Math.PI * radius));
-            int changed = 0;
-            for (int step = 0; step < steps; step++) {
-                double angle = 2 * Math.PI * step / steps;
-                double cos = Math.cos(angle);
-                double sin = Math.sin(angle);
-                int rings = filled ? (int) radius + 1 : 1;
-                for (int ring = 0; ring < rings; ring++) {
-                    double scale = filled ? ring : radius;
-                    double px = position.x() + (axisU.x() * cos + axisV.x() * sin) * scale;
-                    double py = position.y() + (axisU.y() * cos + axisV.y() * sin) * scale;
-                    double pz = position.z() + (axisU.z() * cos + axisV.z() * sin) * scale;
-                    int x = (int) Math.floor(px);
-                    int y = (int) Math.floor(py);
-                    int z = (int) Math.floor(pz);
-                    if (place(session, x, y, z)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
-        }
-
-        /** Any unit vector perpendicular to the given one. */
-        private static com.maxlananas.fawebim.core.math.Vector3 orthogonal(com.maxlananas.fawebim.core.math.Vector3 normal) {
-            com.maxlananas.fawebim.core.math.Vector3 candidate =
-                    Math.abs(normal.y()) < 0.9
-                            ? new com.maxlananas.fawebim.core.math.Vector3(0, 1, 0)
-                            : new com.maxlananas.fawebim.core.math.Vector3(1, 0, 0);
-            return normal.cross(candidate).normalize();
+            return Operations.circle(position, radius, filled, normal.normalize(), (x, y, z) -> place(session, x, y, z));
         }
     }
 
