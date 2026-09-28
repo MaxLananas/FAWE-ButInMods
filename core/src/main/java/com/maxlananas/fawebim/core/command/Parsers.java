@@ -323,6 +323,35 @@ public final class Parsers {
     }
 
     /**
+     * WorldEdit's {@code #clipboard} and {@code #copy}, the clipboard repeated
+     * across the world, with {@code @[x,y,z]} to shift it. FAWE's
+     * {@code #fullcopy} pastes the whole clipboard where it is applied, which a
+     * pattern of one block cannot; it is the same repetition here.
+     */
+    private static Pattern clipboardPattern(String key, Ctx ctx) {
+        BlockVector3 offset = BlockVector3.ZERO;
+        int at = key.indexOf('@');
+        String name = at < 0 ? key : key.substring(0, at);
+        if (!name.equals("clipboard") && !name.equals("copy") && !name.equals("c") && !name.equals("fullcopy")) {
+            throw CommandRegistry.error("Unknown pattern '#" + key + "'");
+        }
+        if (at >= 0) {
+            String coords = key.substring(at + 1);
+            String[] parts = coords.startsWith("[") && coords.endsWith("]")
+                    ? coords.substring(1, coords.length() - 1).split(",") : new String[0];
+            if (parts.length != 3) {
+                throw CommandRegistry.error("Syntax: #" + name + "@[x,y,z], e.g. #" + name + "@[0,-1,0]");
+            }
+            offset = new BlockVector3(intArgument(parts[0]), intArgument(parts[1]), intArgument(parts[2]));
+        }
+        if (!ctx.session().hasClipboard()) {
+            throw CommandRegistry.error("No clipboard: copy something first");
+        }
+        var clipboard = ctx.session().getClipboard().getClipboard();
+        return new Patterns.ClipboardPattern(clipboard, clipboard.getBox(), offset);
+    }
+
+    /**
      * WorldEdit's {@code ##tag} pattern: a random block of a block tag, or of
      * one of the mod's categories, in its default state, and with
      * {@code ##*tag} in any of its states. It was never reached: the {@code #}
@@ -395,22 +424,16 @@ public final class Parsers {
     private static Pattern hashPattern(String input, Ctx ctx) {
         String key = input.substring(1);
         String lower = key.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("clipboard") || lower.startsWith("copy") || lower.equals("c")
+                || lower.startsWith("fullcopy")) {
+            return clipboardPattern(lower, ctx);
+        }
         int bracket = lower.indexOf('[');
         String id = bracket < 0 ? lower : lower.substring(0, bracket);
         String args = bracketArguments(key, bracket);
 
         Extent extent = ctx.hasSelection() ? extOf(ctx) : ctx.world();
         switch (id) {
-            case "clipboard", "copy", "c", "fullcopy" -> {
-                if (!ctx.session().hasClipboard()) {
-                    throw CommandRegistry.error("No clipboard: copy something first");
-                }
-                var holder = ctx.session().getClipboard();
-                // The pattern reads the clipboard from its lowest corner, which
-                // is not where the origin is since //copy takes the player's.
-                BlockVector3 corner = holder.getClipboard().getBox().min();
-                return new Patterns.ClipboardPattern(holder.getClipboard(), corner, id.equals("fullcopy"), false);
-            }
             case "existing" -> {
                 return new Patterns.Existing(extent);
             }
@@ -517,8 +540,11 @@ public final class Parsers {
                         parts.get(1).trim().toLowerCase(Locale.ROOT));
             }
             case "rel", "r", "relative", "~" -> {
-                BlockVector3 origin = ctx.placement();
-                return new Patterns.Relative(pattern(args, ctx), origin);
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 1) {
+                    throw CommandRegistry.error("Syntax: #relative[pattern], e.g. #relative[#clipboard]");
+                }
+                return new Patterns.Relative(pattern(parts.get(0), ctx));
             }
             case "color", "colour" -> {
                 return new Patterns.Color(colourArguments(id, input));
@@ -939,6 +965,14 @@ public final class Parsers {
             }
             case "false" -> {
                 return new Masks.ConstantMask(false);
+            }
+            case "hotbar" -> {
+                // FAWE's #hotbar: the blocks of the items in the hotbar, in any state.
+                List<Integer> hotbar = ctx.actor().hotbarBlocks();
+                if (hotbar.isEmpty()) {
+                    throw CommandRegistry.error("#hotbar needs blocks in the hotbar");
+                }
+                return new Masks.HotbarMask(extent, new java.util.HashSet<>(hotbar));
             }
             case "exposed" -> {
                 return new Masks.ExposedMask(extent);

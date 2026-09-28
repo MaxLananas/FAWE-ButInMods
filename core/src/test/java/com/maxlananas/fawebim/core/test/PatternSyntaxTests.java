@@ -32,6 +32,7 @@ final class PatternSyntaxTests {
         linearPatterns();
         tagPatterns();
         colourAndSwapPatterns();
+        clipboardPatterns();
         BlockStateRegistry previous = BlockState.registry();
         BlockState.setRegistry(new PropertyTestRegistry());
         try {
@@ -172,6 +173,36 @@ final class PatternSyntaxTests {
         checkEquals("and leaves what has no spruce in its name", state("minecraft:stone"), world.getBlock(1, 63, 0));
         check("it needs its input and its output",
                 answer(actor, "//set #ts[spruce]").contains("#ts[input][output]"));
+    }
+
+    /**
+     * WorldEdit's #clipboard repeats the clipboard across the world; it read
+     * the clipboard at the coordinates of the world, air far from its middle.
+     * #relative is the pattern from where the edit starts; it added the
+     * placement position to every position.
+     */
+    private static void clipboardPatterns() {
+        TestActor actor = actor("PatternClipboard");
+        TestWorld world = (TestWorld) actor.world();
+        world.setBlock(0, 70, 0, state("minecraft:stone"));
+        world.setBlock(1, 70, 0, state("minecraft:dirt"));
+        answer(actor, "//pos1 0,70,0");
+        answer(actor, "//pos2 1,70,0");
+        answer(actor, "//copy");
+        answer(actor, "//pos1 101,80,40");
+        answer(actor, "//pos2 102,80,40");
+        answer(actor, "//set #clipboard");
+        checkEquals("#clipboard repeats the clipboard, far from where it was copied too", state("minecraft:dirt"),
+                world.getBlock(101, 80, 40));
+        checkEquals("block for block", state("minecraft:stone"), world.getBlock(102, 80, 40));
+        answer(actor, "//set #copy@[1,0,0]");
+        checkEquals("@[x,y,z] shifts it", state("minecraft:stone"), world.getBlock(101, 80, 40));
+        check("an offset of two numbers is refused",
+                answer(actor, "//set #clipboard@[1,0]").contains("#clipboard@[x,y,z]"));
+        answer(actor, "//set #relative[#clipboard]");
+        checkEquals("#relative starts the pattern at the first block of the edit", state("minecraft:stone"),
+                world.getBlock(101, 80, 40));
+        checkEquals("and goes on from there", state("minecraft:dirt"), world.getBlock(102, 80, 40));
     }
 
     private static void typeAndStatePatterns() {

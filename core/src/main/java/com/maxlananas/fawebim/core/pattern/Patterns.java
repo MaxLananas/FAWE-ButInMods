@@ -115,91 +115,42 @@ public final class Patterns {
         }
     }
 
-    /** {@code #clipboard} — places blocks from the session clipboard. */
+    /**
+     * WorldEdit's {@code #clipboard}: the clipboard repeated across the world
+     * from its lowest corner, the block of a position being the clipboard's at
+     * the position modulo its size, shifted by the offset of
+     * {@code #clipboard@[x,y,z]}. It read the clipboard at its corner plus the
+     * coordinates of the world, outside the clipboard and so air everywhere but
+     * near the middle of the world; only {@code #fullcopy} repeated it.
+     */
     public static final class ClipboardPattern implements Pattern {
 
         private final Extent clipboard;
-        private final BlockVector3 origin;
-        private final boolean fullCopy;
-        private final boolean randomRotation;
-        private final Random random = new Random();
-        /** Cached per-apply rotation, refreshed for every rotation step. */
-        private int rotation;
+        private final BlockVector3 min;
+        private final BlockVector3 offset;
+        private final int width;
+        private final int height;
+        private final int length;
 
-        public ClipboardPattern(Extent clipboard, BlockVector3 origin, boolean fullCopy, boolean randomRotation) {
+        public ClipboardPattern(Extent clipboard, com.maxlananas.fawebim.core.math.BlockBox box, BlockVector3 offset) {
             this.clipboard = clipboard;
-            this.origin = origin;
-            this.fullCopy = fullCopy;
-            this.randomRotation = randomRotation;
+            this.min = box.min();
+            this.offset = offset;
+            this.width = Math.max(1, box.width());
+            this.height = Math.max(1, box.height());
+            this.length = Math.max(1, box.length());
         }
 
         @Override
         public int apply(int x, int y, int z) {
-            int px = x - origin.x();
-            int pz = z - origin.z();
-            if (randomRotation && (px == 0 && pz == 0)) {
-                // The rotation is picked once per block column, so a tower of
-                // blocks coming from one clipboard cell stays coherent.
-                rotation = random.nextInt(4);
-            }
-            if (randomRotation && rotation != 0) {
-                int w = Math.max(1, clipboardWidth());
-                int l = Math.max(1, clipboardLength());
-                int wrappedX = Math.floorMod(x, w);
-                int wrappedZ = Math.floorMod(z, l);
-                switch (rotation) {
-                    case 1 -> {
-                        x = origin.x() + wrappedZ;
-                        z = origin.z() + (w - 1 - wrappedX);
-                    }
-                    case 2 -> {
-                        x = origin.x() + (w - 1 - wrappedX);
-                        z = origin.z() + (l - 1 - wrappedZ);
-                    }
-                    case 3 -> {
-                        x = origin.x() + (l - 1 - wrappedZ);
-                        z = origin.z() + wrappedX;
-                    }
-                    default -> {
-                        x = origin.x() + wrappedX;
-                        z = origin.z() + wrappedZ;
-                    }
-                }
-                x -= origin.x();
-                z -= origin.z();
-            }
-            if (fullCopy) {
-                // Wrap into the clipboard bounds, FAWE's "#fullcopy" behaviour.
-                int w = Math.max(1, clipboardWidth());
-                int h = Math.max(1, clipboardHeight());
-                int l = Math.max(1, clipboardLength());
-                x = Math.floorMod(x, w);
-                y = Math.floorMod(y, h);
-                z = Math.floorMod(z, l);
-            }
-            return clipboard.getBlock(origin.x() + x, origin.y() + y, origin.z() + z);
-        }
-
-        private int clipboardWidth() {
-            return clipboard instanceof com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard c ? c.getWidth() : 1;
-        }
-
-        private int clipboardHeight() {
-            return clipboard instanceof com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard c ? c.getHeight() : 1;
-        }
-
-        private int clipboardLength() {
-            return clipboard instanceof com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard c ? c.getLength() : 1;
+            return clipboard.getBlock(Math.floorMod(x + offset.x(), width) + min.x(),
+                    Math.floorMod(y + offset.y(), height) + min.y(),
+                    Math.floorMod(z + offset.z(), length) + min.z());
         }
 
         @Override
         public Extent extent() {
             return clipboard;
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            return !randomRotation;
         }
     }
 
@@ -422,20 +373,34 @@ public final class Patterns {
         }
     }
 
-    /** {@code #rel} — coordinates relative to the player/click position. */
+    /**
+     * FAWE's {@code #relative[pattern]}: the pattern as it is at the position
+     * less the first position the pattern is asked about, so a clipboard or a
+     * noise starts where the edit does. It added the placement position to
+     * every position instead.
+     */
     public static final class Relative implements Pattern {
 
         private final Pattern delegate;
-        private final BlockVector3 origin;
+        private BlockVector3 origin;
 
-        public Relative(Pattern delegate, BlockVector3 origin) {
+        public Relative(Pattern delegate) {
             this.delegate = delegate;
-            this.origin = origin;
         }
 
         @Override
         public int apply(int x, int y, int z) {
-            return delegate.apply(x + origin.x(), y + origin.y(), z + origin.z());
+            BlockVector3 first = origin;
+            if (first == null) {
+                first = new BlockVector3(x, y, z);
+                origin = first;
+            }
+            return delegate.apply(x - first.x(), y - first.y(), z - first.z());
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return false;
         }
     }
 

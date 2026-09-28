@@ -46,7 +46,7 @@ public final class Suggestions {
     private static final List<String> MASKS = List.of(
             "#air", "#existing", "#solid", "#liquid", "#fullcube", "#wall", "#surface",
             "#angle[", "#surfaceangle[", "#roc[", "#beside[", "#extrema[", "#xaxis", "#yaxis",
-            "#zaxis", "#true", "#false", "#exposed", "#biome[", "#region", "#sel", "#dregion",
+            "#zaxis", "#true", "#false", "#exposed", "#hotbar", "#biome[", "#region", "#sel", "#dregion",
             "#dsel", "#offset[", "#simplex[", "%", "!", "=", ">", "<", "$", "^[", "^=[");
 
     private static final List<String> BOOLEANS = List.of("true", "false");

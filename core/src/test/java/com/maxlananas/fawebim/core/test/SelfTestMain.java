@@ -660,7 +660,7 @@ public final class SelfTestMain {
         check("region mask", new Masks.RegionMask(new com.maxlananas.fawebim.core.region.CuboidRegion(
                 new BlockVector3(0, 0, 0), new BlockVector3(4, 4, 4))).test(2, 2, 2));
         check("expression mask", new Masks.ExpressionMask("y > 60", session, new Random()).test(0, 61, 0));
-        check("hotbar mask", new Masks.HotbarMask(java.util.Set.of(stone)) != null);
+        check("hotbar mask", new Masks.HotbarMask(null, java.util.Set.of(stone)) != null);
         check("axis mask", new Masks.AxisMask(1, 8) != null);
         check("simplex mask", new Masks.SimplexMask(0.1, -0.5, 0.5) != null);
         check("angle mask", new Masks.AngleMask(session, 0, 1, false, 1) != null);

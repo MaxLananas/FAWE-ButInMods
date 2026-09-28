@@ -1306,18 +1306,31 @@ public final class Masks {
     }
 
     /** Mask matching the blocks currently in the player's hotbar ({@code /tool mask}). */
+    /**
+     * FAWE's {@code #hotbar}: the blocks of the hotbar's items, whatever their
+     * state - a log of any axis for the log in the hotbar.
+     */
     public static final class HotbarMask implements Mask {
 
-        private final Set<Integer> blocks;
+        private final Extent extent;
+        private final Set<String> blocks = new java.util.HashSet<>();
 
-        public HotbarMask(Set<Integer> blocks) {
-            this.blocks = blocks;
+        public HotbarMask(Extent extent, Set<Integer> states) {
+            this.extent = extent;
+            for (int state : states) {
+                blocks.add(BlockState.registry().name(state));
+            }
         }
 
         @Override
         public boolean test(int x, int y, int z) {
-            Extent ext = ExtentHolder.get();
-            return ext != null && blocks.contains(ext.getBlock(x, y, z));
+            Extent ext = resolve(extent);
+            return ext != null && blocks.contains(BlockState.registry().name(ext.getBlock(x, y, z)));
+        }
+
+        @Override
+        public Extent extent() {
+            return extent;
         }
     }
 }

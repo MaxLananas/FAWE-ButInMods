@@ -35,6 +35,7 @@ final class MaskSyntaxTests {
         biomesAreMasks(actor);
         anOffsetMaskTestsItsOwnMask(actor);
         blockTagsAreMasks(actor);
+        theHotbarIsAMask(actor);
         masksComplete();
         BlockStateRegistry previous = BlockState.registry();
         BlockState.setRegistry(new PropertyTestRegistry());
@@ -97,6 +98,11 @@ final class MaskSyntaxTests {
                 answer(actor, "//count #offset[a][0][0][air]").contains("whole number"));
     }
 
+    private static void theHotbarIsAMask(TestActor actor) {
+        // The test player's hotbar holds stone; the ground under the grass is stone.
+        check("#hotbar is the blocks of the hotbar", counts(actor, "#hotbar", 128));
+    }
+
     private static void blockTagsAreMasks(TestActor actor) {
         check("##minecraft:logs is the tag", counts(actor, "##minecraft:logs", 0));
         check("a tag the mod has no category for is a mask",
@@ -106,7 +112,7 @@ final class MaskSyntaxTests {
 
     private static void masksComplete() {
         check("the signs of the masks are offered", Suggestions.masks("").containsAll(
-                java.util.List.of(">", "<", "$", "^[")));
+                java.util.List.of(">", "<", "$", "^[", "#hotbar")));
         check("what follows > completes as a mask", Suggestions.masks(">gra").contains(">grass_block"));
         check("and what follows a negation", Suggestions.masks("!sto").contains("!stone"));
         check("$ completes the biomes", Suggestions.masks("$des").contains("$desert"));
