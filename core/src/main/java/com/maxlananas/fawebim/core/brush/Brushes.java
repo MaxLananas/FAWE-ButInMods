@@ -10,6 +10,7 @@ import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.pattern.MapColors;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.transform.Transforms;
@@ -903,6 +904,198 @@ public final class Brushes {
             vertex = null;
             start = select ? last : null;
             return changed;
+        }
+    }
+
+    /**
+     * {@code /brush image <image> [radius] [yscale] [-a] [-f]}, FAWE's: the
+     * image laid over the surface blocks around the click as the player sees
+     * it - flat on the ground looking down, upright on a wall looking at it -
+     * as wide as the brush, each block it covers becoming the block nearest the
+     * colour of the pixels it covers. With {@code -a} the image's transparency
+     * mixes it with the colours already there, a clear pixel leaving its block
+     * alone; {@code yscale} makes the image that much more opaque or clear and
+     * {@code -f} fades it out towards its edges, both with the transparency.
+     * The image is read from the schematic folder, as the heightmap brushes'.
+     *
+     * <p>It was a sphere of the brush's pattern, which it had not, so of air.</p>
+     */
+    public static final class ImageBrush extends BaseBrush {
+
+        /** Samples taken along a side of the pixels one block covers, at most. */
+        private static final int SAMPLES = 16;
+
+        private final com.maxlananas.fawebim.core.util.Images.PixelSource image;
+        private final double yScale;
+        private final boolean alpha;
+        private final boolean fade;
+
+        public ImageBrush(double radius, Mask mask, com.maxlananas.fawebim.core.util.Images.PixelSource image,
+                          double yScale, boolean alpha, boolean fade) {
+            super(radius, null, mask);
+            this.image = image;
+            this.yScale = yScale;
+            this.fade = fade;
+            this.alpha = alpha || fade || yScale != 1;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            double scale = Math.max(image.width(), image.height()) / Math.max(1, radius);
+            // FAWE's view transform, inverted: the yaw turns the offset around
+            // the vertical, then the pitch tilts the image plane up to the view.
+            double yaw = Math.toRadians(actor.yaw());
+            double tilt = Math.toRadians(90 - actor.pitch());
+            double[] view = {Math.cos(yaw), Math.sin(yaw), Math.cos(tilt), Math.sin(tilt)};
+            BlockStateRegistry registry = BlockState.registry();
+            LongSet visited = new LongSet();
+            LongQueue queue = new LongQueue();
+            long start = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.positionKey(position.x(),
+                    position.y(), position.z());
+            visited.add(start);
+            queue.add(start);
+            int changed = 0;
+            while (!queue.isEmpty()) {
+                long node = queue.poll();
+                int x = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyX(node);
+                int y = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyY(node);
+                int z = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyZ(node);
+                int painted = paint(session, registry, position, x, y, z, scale, view);
+                // The walk goes on over the surface the image covers, from the
+                // click whatever it is.
+                if (painted < 0 && node != start) {
+                    continue;
+                }
+                changed += Math.max(0, painted);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            int ny = y + dy;
+                            if ((dx | dy | dz) == 0 || ny < session.minY() || ny > session.maxY()) {
+                                continue;
+                            }
+                            long key = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.positionKey(x + dx,
+                                    ny, z + dz);
+                            if (visited.add(key)) {
+                                queue.add(key);
+                            }
+                        }
+                    }
+                }
+            }
+            return changed;
+        }
+
+        private static boolean surface(EditSession session, BlockStateRegistry registry, int x, int y, int z) {
+            if (!registry.isSolid(session.getBlock(x, y, z))) {
+                return false;
+            }
+            return !registry.isSolid(session.getBlock(x + 1, y, z)) || !registry.isSolid(session.getBlock(x - 1, y, z))
+                    || !registry.isSolid(session.getBlock(x, y, z + 1)) || !registry.isSolid(session.getBlock(x, y, z - 1))
+                    || y < session.maxY() && !registry.isSolid(session.getBlock(x, y + 1, z))
+                    || y > session.minY() && !registry.isSolid(session.getBlock(x, y - 1, z));
+        }
+
+        /**
+         * Paints one surface block the image covers: 1 when it changed, 0 when
+         * it did not, -1 when it is no surface block the image covers, where
+         * the walk stops.
+         */
+        private int paint(EditSession session, BlockStateRegistry registry, BlockVector3 center, int x, int y,
+                          int z, double scale, double[] view) {
+            if (!surface(session, registry, x, y, z)) {
+                return -1;
+            }
+            int dx = x - center.x();
+            int dy = y - center.y();
+            int dz = z - center.z();
+            double[] low = project(dx - 0.5, dy - 0.5, dz - 0.5, view);
+            double[] high = project(dx + 0.5, dy + 0.5, dz + 0.5, view);
+            int x1 = (int) (low[0] * scale + image.width() / 2d);
+            int z1 = (int) (low[1] * scale + image.height() / 2d);
+            int x2 = (int) (high[0] * scale + image.width() / 2d);
+            int z2 = (int) (high[1] * scale + image.height() / 2d);
+            if (x2 < x1) {
+                int swap = x1;
+                x1 = x2;
+                x2 = swap;
+            }
+            if (z2 < z1) {
+                int swap = z1;
+                z1 = z2;
+                z2 = swap;
+            }
+            if (x1 >= image.width() || x2 < 0 || z1 >= image.height() || z2 < 0) {
+                return -1;
+            }
+            int color = colour(session, registry, x, y, z, Math.max(0, x1), Math.max(0, z1),
+                    Math.min(image.width() - 1, x2), Math.min(image.height() - 1, z2));
+            if (color == -1 || mask != null && !mask.test(x, y, z)) {
+                return 0;
+            }
+            int block = MapColors.palette(registry).closest(color);
+            return block >= 0 && session.setBlock(x, y, z, block) ? 1 : 0;
+        }
+
+        /** An offset in the image's plane, as FAWE's inverted view transform takes it there. */
+        private static double[] project(double dx, double dy, double dz, double[] view) {
+            double ax = view[0] * dx + view[1] * dz;
+            double az = -view[1] * dx + view[0] * dz;
+            return new double[]{ax, view[3] * dy + view[2] * az};
+        }
+
+        /**
+         * The colour of the pixels a block covers, or -1 where they are clear:
+         * their average, mixed with the colour of the block by their average
+         * transparency when the brush reads it.
+         */
+        private int colour(EditSession session, BlockStateRegistry registry, int x, int y, int z,
+                           int x1, int z1, int x2, int z2) {
+            int stepX = Math.max(1, (x2 - x1 + 1) / SAMPLES);
+            int stepZ = Math.max(1, (z2 - z1 + 1) / SAMPLES);
+            long red = 0;
+            long green = 0;
+            long blue = 0;
+            long opacity = 0;
+            int count = 0;
+            for (int u = x1; u <= x2; u += stepX) {
+                for (int v = z1; v <= z2; v += stepZ) {
+                    int rgb = image.rgb(u, v);
+                    red += (rgb >> 16) & 0xFF;
+                    green += (rgb >> 8) & 0xFF;
+                    blue += rgb & 0xFF;
+                    opacity += alpha ? opacity(u, v) : 255;
+                    count++;
+                }
+            }
+            int r = (int) (red / count);
+            int g = (int) (green / count);
+            int b = (int) (blue / count);
+            int a = (int) (opacity / count);
+            if (a <= 0) {
+                return -1;
+            }
+            if (a >= 255) {
+                return (r << 16) | (g << 8) | b;
+            }
+            int existing = MapColors.colorOf(registry, session.getBlock(x, y, z));
+            int er = (existing >> 16) & 0xFF;
+            int eg = (existing >> 8) & 0xFF;
+            int eb = existing & 0xFF;
+            return ((r * a + er * (255 - a)) / 255 << 16) | ((g * a + eg * (255 - a)) / 255 << 8)
+                    | (b * a + eb * (255 - a)) / 255;
+        }
+
+        /** The transparency of a pixel as the brush reads it: scaled by yscale, faded out towards the edges. */
+        private int opacity(int u, int v) {
+            double value = image.opacity(u, v) * yScale;
+            if (fade) {
+                double cx = image.width() / 2d;
+                double cz = image.height() / 2d;
+                double distance = Math.sqrt(Math.pow((u - cx) / cx, 2) + Math.pow((v - cz) / cz, 2));
+                value *= Math.max(0, 1 - distance);
+            }
+            return (int) Math.max(0, Math.min(255, value));
         }
     }
 

@@ -37,6 +37,7 @@ final class BrushCommandTests {
         theLineBrushesJoinTwoClicks();
         theShatterBrushDrawsCracks();
         theSurfaceBrushPaintsAnySurface();
+        theImageBrushPaintsItsImage();
     }
 
     private static TestActor actor(String name) {
@@ -228,6 +229,56 @@ final class BrushCommandTests {
         }
         stroke(actor, 10, 67, 0);
         check("and a wall", world.getBlock(10, 68, 1) == gold && world.getBlock(10, 66, -1) == gold);
+    }
+
+    /**
+     * FAWE's image brush lays its image over the surface; it was a sphere of a
+     * pattern it had not, so of air.
+     */
+    private static void theImageBrushPaintsItsImage() {
+        TestActor actor = actor("ImageBrush");
+        TestWorld world = (TestWorld) actor.world();
+        java.nio.file.Path folder = com.maxlananas.fawebim.core.clipboard.Schematics.directory();
+        java.nio.file.Path file = folder.resolve("fawebim-test-image.png");
+        try {
+            java.nio.file.Files.createDirectories(folder);
+            java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(4, 4,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int x = 0; x < 4; x++) {
+                for (int z = 0; z < 4; z++) {
+                    image.setRGB(x, z, x < 2 ? 0xFFFF0000 : 0xFF0000FF);
+                }
+            }
+            javax.imageio.ImageIO.write(image, "png", file.toFile());
+        } catch (java.io.IOException e) {
+            check("the test image is written: " + e, false);
+            return;
+        }
+        // Looking straight down, facing south: the image lies on the ground,
+        // its x along the world's x.
+        actor.setPitch(90);
+        actor.setYaw(0);
+        try {
+            check("an image that is not there is refused",
+                    answer(actor, "/brush image nothing.png 2").contains("not found"));
+            answer(actor, "/brush image fawebim-test-image.png 2");
+            int changed = stroke(actor, 0, 63, 0);
+            check("the image brush paints the ground (" + changed + ")", changed > 0);
+            int west = com.maxlananas.fawebim.core.pattern.MapColors.colorOf(BlockState.registry(),
+                    world.getBlock(-1, 63, 0));
+            int east = com.maxlananas.fawebim.core.pattern.MapColors.colorOf(BlockState.registry(),
+                    world.getBlock(1, 63, 0));
+            check("red where the image is red", ((west >> 16) & 0xFF) > (west & 0xFF));
+            check("blue where it is blue", (east & 0xFF) > ((east >> 16) & 0xFF));
+            check("and no air carved", !BlockState.registry().isAirLike(world.getBlock(0, 62, 0))
+                    && !BlockState.registry().isAirLike(world.getBlock(0, 63, 0)));
+        } finally {
+            try {
+                java.nio.file.Files.deleteIfExists(file);
+            } catch (java.io.IOException ignored) {
+                // Left in the git-ignored folder.
+            }
+        }
     }
 
     private static void theScatterBrushesPickSurfacePointsApart() {

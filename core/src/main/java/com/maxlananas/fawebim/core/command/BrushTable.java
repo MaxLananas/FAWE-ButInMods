@@ -58,7 +58,7 @@ public final class BrushTable {
             {"gravity", "grav", "radius=5", "h", "height:h", "Gravity brush, simulates the effect of gravity"},
             {"height", "", "radius=5|yscale=1|image=|rotation=0", "r,l,s", "", "Raise or lower terrain using a heightmap"},
             {"heightmap", "", "imageName|radius=5|intensity=5", "e,f,r", "", "Heightmap brush, raises or lowers terrain using an image heightmap"},
-            {"image", "", "?|radius=5|yscale=1", "a,f", "", "Use a height map to paint a surface"},
+            {"image", "", "imageURL|radius=5|yscale=1", "a,f", "", "Use a height map to paint a surface"},
             {"item", "", "item|direction=up", "", "", "Use an item"},
             {"layer", "", "radius|patternLayers...", "", "", "Replaces terrain with a layer."},
             {"line", "l", "fill|radius=0", "h,s,f", "", "Create lines"},

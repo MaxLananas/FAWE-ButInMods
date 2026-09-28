@@ -282,8 +282,21 @@ public final class BrushFactory {
             }
             case "set" -> new Brushes.ShapeBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
                     shape(parameters));
-            case "image" -> new Brushes.SphereBrush(parameters.radius(), parameters.pattern(),
-                    parameters.mask());
+            case "image" -> {
+                String file = parameters.string("imageURL", "");
+                if (file.startsWith("http://") || file.startsWith("https://")) {
+                    throw CommandRegistry.error("Images are read from "
+                            + com.maxlananas.fawebim.core.clipboard.Schematics.directory()
+                            + ": put the image there and give its file name");
+                }
+                Images.PixelSource image = loadImage(file);
+                if (image == null) {
+                    throw CommandRegistry.error("Image '" + file + "' not found in "
+                            + com.maxlananas.fawebim.core.clipboard.Schematics.directory());
+                }
+                yield new Brushes.ImageBrush(parameters.radius(), parameters.mask(), image,
+                        parameters.number("yscale", 1), parameters.flag("a"), parameters.flag("f"));
+            }
             default -> null;
         };
     }

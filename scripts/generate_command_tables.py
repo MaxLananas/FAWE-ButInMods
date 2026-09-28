@@ -323,7 +323,7 @@ def write_brush_table(inventory: list[dict]) -> None:
                 # as WorldEdit's parser does for /brush set <shape> [radius] <pattern>.
                 # A list (the commands of /brush command, the layers of /brush
                 # layer) ends in "...": it takes the rest of the line.
-                argument = parameter["name"]
+                argument = parameter_name(parameter)
                 if (parameter.get("type") or "").strip().startswith("List<"):
                     argument += "..."
                 arguments.append([argument, ann.get("def")])
