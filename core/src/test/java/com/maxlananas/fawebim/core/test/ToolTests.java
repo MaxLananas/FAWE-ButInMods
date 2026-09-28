@@ -35,6 +35,7 @@ final class ToolTests {
         everyListedToolCanBeBound();
         eachToolIsASubCommandOfItsOwn();
         theFloatingTreeRemoverTakesOnlyAFloatingTree();
+        theBrushTargetFollowsItsSettings();
         theReplacerTakesItsPatternAndPicksWithItsData();
         theLongRangeBuilderPlacesAgainstTheFaceOrClears();
         theStackerRepeatsTheClickedBlockIntoAir();
@@ -248,6 +249,40 @@ final class ToolTests {
         use(actor, () -> fill.onRightClick(click(actor, 5, 69, 5, Direction.UP)));
         checkEquals("the flood fill fills", state("minecraft:gold_block"), world.getBlock(5, 69, 5));
         check("and says nothing, as upstream's", actor.messages().isEmpty());
+    }
+
+    /**
+     * A brush lands where FAWE's brush tool aims it: its range, its trace mask
+     * and its target offset say how. The clicks used the block under the
+     * crosshair within the most a brush may reach whatever they said.
+     */
+    private static void theBrushTargetFollowsItsSettings() {
+        TestActor actor = actor("BrushTarget");
+        TestWorld world = (TestWorld) actor.world();
+        com.maxlananas.fawebim.core.brush.BrushSettings settings = new com.maxlananas.fawebim.core.brush.BrushSettings();
+        BlockVector3 clicked = new BlockVector3(3, 64, 3);
+        checkEquals("by default a brush lands on the block clicked", clicked,
+                com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, clicked, range -> null));
+        int[] asked = new int[1];
+        settings.setRange(20);
+        com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, null, range -> {
+            asked[0] = range;
+            return clicked;
+        });
+        checkEquals("a click in the air looks as far as the brush's range", 20, asked[0]);
+        actor.setPosition(new BlockVector3(0, 70, 0));
+        settings.setTargetOffset(2);
+        checkEquals("the target offset moves it towards the player", new BlockVector3(8, 70, 0),
+                com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, new BlockVector3(10, 70, 0),
+                        range -> null));
+        settings.setTargetOffset(0);
+        // Looking east from 0,70,0: glass then stone at eye height.
+        world.setBlock(3, 71, 0, state("minecraft:glass"));
+        world.setBlock(6, 71, 0, state("minecraft:stone"));
+        settings.setTraceMask(new com.maxlananas.fawebim.core.mask.Masks.BlockMask(world, List.of("minecraft:stone")));
+        checkEquals("a trace mask aims through what it does not match", new BlockVector3(6, 71, 0),
+                com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, new BlockVector3(3, 71, 0),
+                        range -> null));
     }
 
     /** The list /tool offers named a "command" tool that /tool refused. */

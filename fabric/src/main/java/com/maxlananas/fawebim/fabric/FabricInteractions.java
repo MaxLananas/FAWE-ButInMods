@@ -9,6 +9,7 @@ import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.tool.SuperPickaxe;
 import com.maxlananas.fawebim.core.tool.Tool;
+import com.maxlananas.fawebim.core.tool.ToolTarget;
 import com.maxlananas.fawebim.core.tool.Tools;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.Str;
@@ -117,7 +118,7 @@ public final class FabricInteractions {
         // 1. The brush of the left click, FAWE's secondary brush, and tools.
         Brush brush = BrushFactory.currentSecondary(session, held);
         if (brush != null) {
-            return applyBrush(actor, brush, FabricMessages.blockVector(pos))
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, FabricMessages.blockVector(pos)))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
         Tool tool = Tools.forItem(session, held);
@@ -167,7 +168,7 @@ public final class FabricInteractions {
         String held = FabricMessages.heldItem(player);
         Brush brush = BrushFactory.currentSecondary(session, held);
         if (brush != null) {
-            return applyBrush(actor, brush, aimedBlock(player));
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, null));
         }
         Tool tool = Tools.forItem(session, held);
         if (tool != null) {
@@ -194,7 +195,7 @@ public final class FabricInteractions {
         // it, and so does a click beyond reach here, which is an item's click.
         Brush brush = BrushFactory.current(session, held);
         if (brush != null) {
-            return applyBrush(actor, brush, FabricMessages.blockVector(pos))
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, FabricMessages.blockVector(pos)))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
@@ -240,7 +241,7 @@ public final class FabricInteractions {
         // does; without it a click that lands one pixel above a block does nothing.
         Brush brush = BrushFactory.current(session, held);
         if (brush != null) {
-            return applyBrush(actor, brush, aimedBlock(player))
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, null))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
@@ -281,9 +282,24 @@ public final class FabricInteractions {
         return new Tool.ToolContext(actor, aimedBlock(player), null, null);
     }
 
+    /**
+     * Where a brush lands: the block a click is on, or the one under the
+     * crosshair within the brush's range, moved as its target settings say.
+     * See {@link ToolTarget#brush}.
+     */
+    private static BlockVector3 brushTarget(FabricActor actor, ServerPlayer player, Brush brush,
+                                            BlockVector3 clicked) {
+        return ToolTarget.brush(actor.world(), actor, brush.settings(), clicked,
+                range -> aimedBlock(player, Math.max(5.0, range)));
+    }
+
     /** The block under the crosshair, never the one the player stands in. */
     private static BlockVector3 aimedBlock(ServerPlayer player) {
-        double reach = Math.max(5.0, Config.get().maxBrushRange);
+        return aimedBlock(player, Math.max(5.0, Config.get().maxBrushRange));
+    }
+
+    /** The block under the crosshair within a distance, or the end of it when there is none. */
+    private static BlockVector3 aimedBlock(ServerPlayer player, double reach) {
         net.minecraft.world.phys.BlockHitResult aimed = aim(player, reach);
         if (aimed != null) {
             return FabricMessages.blockVector(aimed.getBlockPos());
