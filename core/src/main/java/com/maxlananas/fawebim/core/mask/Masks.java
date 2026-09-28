@@ -11,6 +11,7 @@ import com.maxlananas.fawebim.core.world.Extent;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
@@ -79,7 +80,18 @@ public final class Masks {
                     continue;
                 }
                 if (key.startsWith("##")) {
-                    categories.add(key.substring(2).toLowerCase(Locale.ROOT));
+                    // A category of the mod's, or else a block tag, as WorldEdit's
+                    // ##wool is the tag minecraft:wool.
+                    String name = key.substring(2).toLowerCase(Locale.ROOT);
+                    if (registry.categories().contains(name)) {
+                        categories.add(name);
+                    } else {
+                        String tag = name.indexOf(':') < 0 ? "minecraft:" + name : name;
+                        if (!registry.blockTags().contains(tag)) {
+                            throw new IllegalArgumentException("unknown block tag '" + name + "'");
+                        }
+                        tags.add(tag);
+                    }
                 } else if (key.startsWith("#")) {
                     tags.add(key.substring(1).toLowerCase(Locale.ROOT));
                 } else {
@@ -177,24 +189,24 @@ public final class Masks {
         }
     }
 
+    /**
+     * WorldEdit's {@code #existing}: the blocks that are not air - air, cave air
+     * and void air being the air. It took a flag with which it matched every
+     * block, air included, and {@code #existing}, {@code #wall} and so
+     * {@code !#existing} were parsed with it.
+     */
     public static final class ExistingMask implements Mask {
 
         private final Extent extent;
-        private final boolean ignoreAir;
 
-        public ExistingMask(Extent extent, boolean ignoreAir) {
+        public ExistingMask(Extent extent) {
             this.extent = extent;
-            this.ignoreAir = ignoreAir;
         }
 
         @Override
         public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            if (ext == null) {
-                return false;
-            }
-            int id = ext.getBlock(x, y, z);
-            return ignoreAir ? !BlockState.registry().isAirLike(id) : true;
+            return ext != null && !BlockState.registry().isAirLike(ext.getBlock(x, y, z));
         }
 
         @Override
@@ -263,20 +275,30 @@ public final class Masks {
         }
     }
 
+    /** The positions whose biome is one of a set, WorldEdit's {@code $biome} and FAWE's {@code #biome[...]}. */
     public static final class BiomeMask implements Mask {
 
         private final Extent extent;
-        private final int biomeId;
+        private final int[] biomeIds;
 
-        public BiomeMask(Extent extent, int biomeId) {
+        public BiomeMask(Extent extent, int... biomeIds) {
             this.extent = extent;
-            this.biomeId = biomeId;
+            this.biomeIds = biomeIds.clone();
         }
 
         @Override
         public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            return ext != null && ext.getBiome(x, y, z) == biomeId;
+            if (ext == null) {
+                return false;
+            }
+            int biome = ext.getBiome(x, y, z);
+            for (int id : biomeIds) {
+                if (id == biome) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         @Override
@@ -326,6 +348,66 @@ public final class Masks {
         @Override
         public boolean isRegion() {
             return true;
+        }
+    }
+
+    /**
+     * WorldEdit's block state mask, {@code ^[waterlogged=true]}: the blocks whose
+     * properties have the values given. A property a block does not have is not
+     * asked about, so a block with none of them matches - unless the mask is
+     * strict, {@code ^=[...]}, which wants at least one of them there.
+     */
+    public static final class BlockStateMask implements Mask {
+
+        private final Extent extent;
+        private final Map<String, String> states;
+        private final boolean strict;
+        /** The answer for a state never changes; a region has few states and many blocks. */
+        private final com.maxlananas.fawebim.core.util.IntSet accepted = new com.maxlananas.fawebim.core.util.IntSet();
+        private final com.maxlananas.fawebim.core.util.IntSet rejected = new com.maxlananas.fawebim.core.util.IntSet();
+
+        public BlockStateMask(Extent extent, Map<String, String> states, boolean strict) {
+            this.extent = extent;
+            this.states = Map.copyOf(states);
+            this.strict = strict;
+        }
+
+        @Override
+        public boolean test(int x, int y, int z) {
+            Extent ext = resolve(extent);
+            if (ext == null) {
+                return false;
+            }
+            int id = ext.getBlock(x, y, z);
+            if (accepted.contains(id)) {
+                return true;
+            }
+            if (rejected.contains(id)) {
+                return false;
+            }
+            boolean matches = matches(BlockState.registry().properties(id));
+            (matches ? accepted : rejected).add(id);
+            return matches;
+        }
+
+        private boolean matches(Map<String, String> properties) {
+            int present = 0;
+            for (Map.Entry<String, String> state : states.entrySet()) {
+                String value = properties.get(state.getKey());
+                if (value == null) {
+                    continue;
+                }
+                present++;
+                if (!value.equalsIgnoreCase(state.getValue())) {
+                    return false;
+                }
+            }
+            return !strict || present > 0;
+        }
+
+        @Override
+        public Extent extent() {
+            return extent;
         }
     }
 

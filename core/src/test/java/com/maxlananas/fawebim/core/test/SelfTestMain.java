@@ -176,6 +176,7 @@ public final class SelfTestMain {
         ShapeBrushTests.run();
         CompletionTests.run();
         BindingTests.run();
+        MaskSyntaxTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -640,9 +641,9 @@ public final class SelfTestMain {
         check("solid mask rejects air", !solid.test(3, 80, 3));
         Mask airMask = new Masks.AirMask(session, false);
         check("air mask", airMask.test(3, 80, 3));
-        check("existing mask", new Masks.ExistingMask(session, true).test(0, 60, 0));
+        check("existing mask", new Masks.ExistingMask(session).test(0, 60, 0));
         check("existing mask skips air",
-                !new Masks.ExistingMask(session, true).test(0, 200, 0));
+                !new Masks.ExistingMask(session).test(0, 200, 0));
         Mask liquid = new Masks.LiquidMask(session);
         world.setBlock(5, 71, 5, BlockState.registry().defaultState("minecraft:water"));
         check("liquid mask", liquid.test(5, 71, 5));

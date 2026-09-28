@@ -46,7 +46,7 @@ public final class Suggestions {
             "#air", "#existing", "#solid", "#liquid", "#fullcube", "#wall", "#surface",
             "#angle[", "#surfaceangle[", "#roc[", "#beside[", "#extrema[", "#xaxis", "#yaxis",
             "#zaxis", "#true", "#false", "#exposed", "#biome[", "#region", "#sel", "#dregion",
-            "#dsel", "#offset[", "#simplex[", "%", "!", "=");
+            "#dsel", "#offset[", "#simplex[", "%", "!", "=", ">", "<", "$", "^[", "^=[");
 
     private static final List<String> BOOLEANS = List.of("true", "false");
 
@@ -365,8 +365,24 @@ public final class Suggestions {
 
     /** The names one segment of a mask may be written with. */
     private static List<String> maskPart(String prefix) {
-        if (prefix.startsWith("!") || prefix.startsWith("%")) {
+        if (prefix.startsWith("%")) {
             return List.of();
+        }
+        // A negation and the masks of the block under or over one wrap a mask
+        // of their own: what follows the sign completes as one.
+        if (!prefix.isEmpty() && "!<>".indexOf(prefix.charAt(0)) >= 0) {
+            List<String> out = new ArrayList<>();
+            for (String inner : maskPart(prefix.substring(1))) {
+                out.add(prefix.charAt(0) + inner);
+            }
+            return out;
+        }
+        if (prefix.startsWith("$")) {
+            List<String> out = new ArrayList<>();
+            for (String biome : filtered(BlockState.registry().biomeNames(), prefix.substring(1))) {
+                out.add("$" + biome);
+            }
+            return out;
         }
         List<String> out = new ArrayList<>();
         out.addAll(literal(MASKS, prefix));

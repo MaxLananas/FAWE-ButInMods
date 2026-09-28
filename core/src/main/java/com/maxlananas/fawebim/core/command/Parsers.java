@@ -16,6 +16,7 @@ import com.maxlananas.fawebim.core.world.Extent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -595,11 +596,64 @@ public final class Parsers {
         if (trimmed.startsWith("/")) {
             return angleMask("angle", trimmed.substring(1), extOf(ctx));
         }
+        if (trimmed.startsWith(">") || trimmed.startsWith("<")) {
+            // WorldEdit's offset masks: ">stone" is a block over stone, "<stone"
+            // one under it, and alone the sign stands for any block.
+            Mask beside = trimmed.length() > 1 ? mask(trimmed.substring(1), ctx)
+                    : new Masks.ExistingMask(extOf(ctx));
+            return new Masks.OffsetMask(extOf(ctx), beside, 0, trimmed.charAt(0) == '>' ? -1 : 1, 0);
+        }
+        if (trimmed.startsWith("$")) {
+            return biomeMask(trimmed.substring(1), extOf(ctx));
+        }
         if (trimmed.startsWith("^")) {
-            return angleMask("angle", trimmed.substring(1), extOf(ctx));
+            return blockStateMask(trimmed, extOf(ctx));
         }
         // Plain block list, e.g. "stone,dirt,oak_log[axis=y]".
         return new Masks.BlockMask(extOf(ctx), List.of(trimmed));
+    }
+
+    /**
+     * WorldEdit's biome mask, {@code $plains}, or with FAWE's brackets several
+     * biomes at once, {@code $[plains,desert]}.
+     */
+    private static Mask biomeMask(String input, Extent extent) {
+        String list = input.startsWith("[") && input.endsWith("]") ? input.substring(1, input.length() - 1) : input;
+        List<String> names = Str.splitCommas(list);
+        int[] ids = new int[names.size()];
+        for (int i = 0; i < ids.length; i++) {
+            String name = names.get(i).trim();
+            ids[i] = BlockState.registry().biome(name);
+            if (ids[i] < 0) {
+                throw CommandRegistry.error("Unknown biome '" + name + "'");
+            }
+        }
+        if (ids.length == 0) {
+            throw CommandRegistry.error("Syntax: $<biome> or $[<biome>,<biome>]");
+        }
+        return new Masks.BiomeMask(extent, ids);
+    }
+
+    /**
+     * WorldEdit's block state mask: {@code ^[property=value,...]}, or strict,
+     * {@code ^=[...]}, where a block must have at least one of the properties.
+     */
+    private static Mask blockStateMask(String input, Extent extent) {
+        boolean strict = input.startsWith("^=");
+        String body = input.substring(strict ? 2 : 1).trim();
+        if (!body.startsWith("[") || !body.endsWith("]")) {
+            throw CommandRegistry.error("Syntax: ^[property=value,...] or ^=[property=value,...]");
+        }
+        Map<String, String> states = new java.util.LinkedHashMap<>();
+        for (String pair : Str.splitCommas(body.substring(1, body.length() - 1))) {
+            int equals = pair.indexOf('=');
+            if (equals <= 0 || equals == pair.length() - 1) {
+                throw CommandRegistry.error("Expected property=value in '" + input + "', got '" + pair.trim() + "'");
+            }
+            states.put(pair.substring(0, equals).trim().toLowerCase(Locale.ROOT),
+                    pair.substring(equals + 1).trim().toLowerCase(Locale.ROOT));
+        }
+        return new Masks.BlockStateMask(extent, states, strict);
     }
 
     /**
@@ -658,6 +712,14 @@ public final class Parsers {
         return key.substring(bracket + 1, key.length() - 1);
     }
 
+    private static int intArgument(String value) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a whole number, got '" + value.trim() + "'");
+        }
+    }
+
     private static double parseDouble(String value) {
         try {
             return Double.parseDouble(value);
@@ -685,7 +747,7 @@ public final class Parsers {
                 return new Masks.AirMask(extent, false);
             }
             case "existing" -> {
-                return new Masks.ExistingMask(extent, false);
+                return new Masks.ExistingMask(extent);
             }
             case "solid" -> {
                 return new Masks.SolidMask(extent);
@@ -698,7 +760,7 @@ public final class Parsers {
             }
             case "wall" -> {
                 // FAWE's #wall: a block that exists and has a horizontal air side.
-                return new Masks.IntersectionMask(List.of(new Masks.ExistingMask(extent, false),
+                return new Masks.IntersectionMask(List.of(new Masks.ExistingMask(extent),
                         new Masks.WallMask(new Masks.AirMask(extent, false), 1, 8)));
             }
             case "surface" -> {
@@ -748,15 +810,20 @@ public final class Parsers {
                 return new Masks.LazyRegionMask(() -> ctx.session().getSelection(ctx.world()));
             }
             case "offset" -> {
-                String[] parts = args.split(",");
-                int dx = parts.length > 0 && !parts[0].isEmpty() ? Integer.parseInt(parts[0]) : 0;
-                int dy = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
-                int dz = parts.length > 2 ? Integer.parseInt(parts[2]) : 0;
-                Mask delegate = ctx.session().getMask();
-                if (delegate == null) {
-                    throw CommandRegistry.error("#offset needs a sub-mask, e.g. #offset[0,1,0][stone]");
+                // FAWE's #offset[x][y][z][mask]: the mask tested that far away.
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() == 4) {
+                    return new Masks.OffsetMask(extent, mask(parts.get(3), ctx), intArgument(parts.get(0)),
+                            intArgument(parts.get(1)), intArgument(parts.get(2)));
                 }
-                return new Masks.OffsetMask(extent, delegate, dx, dy, dz);
+                // The older #offset[x,y,z], which offsets the global mask.
+                String[] offset = args.split(",");
+                Mask delegate = ctx.session().getMask();
+                if (parts.size() != 1 || offset.length != 3 || delegate == null) {
+                    throw CommandRegistry.error("Syntax: #offset[x][y][z][mask], e.g. #offset[0][-1][0][stone]");
+                }
+                return new Masks.OffsetMask(extent, delegate, intArgument(offset[0]), intArgument(offset[1]),
+                        intArgument(offset[2]));
             }
             case "simplex" -> {
                 List<String> parts = Str.bracketGroups(input);

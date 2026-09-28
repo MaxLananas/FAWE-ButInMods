@@ -705,7 +705,7 @@ public final class Commands {
                     // As in WorldEdit, a line with one argument names the pattern
                     // and replaces every block that is not air.
                     boolean masked = ctx.args().size() > 1;
-                    Mask mask = masked ? Parsers.mask(ctx.arg(0), ctx) : new Masks.ExistingMask(session, true);
+                    Mask mask = masked ? Parsers.mask(ctx.arg(0), ctx) : new Masks.ExistingMask(session);
                     Pattern pattern = Parsers.pattern(ctx.requiredJoined(masked ? 1 : 0), ctx);
                     fill(session, ctx.selection(), pattern, mask);
                     flush(ctx, session, "Replaced");
@@ -1049,7 +1049,7 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     int size = Math.max(1, ctx.sizeArg(0));
                     boolean masked = ctx.args().size() > 2;
-                    Mask mask = masked ? Parsers.mask(ctx.arg(1), ctx) : new Masks.ExistingMask(session, true);
+                    Mask mask = masked ? Parsers.mask(ctx.arg(1), ctx) : new Masks.ExistingMask(session);
                     Pattern pattern = Parsers.pattern(ctx.requiredJoined(masked ? 2 : 1), ctx);
                     BlockVector3 origin = ctx.placement();
                     int changed = 0;
@@ -1544,7 +1544,7 @@ public final class Commands {
         if (!ctx.hasFlag("a")) {
             return include;
         }
-        Mask existing = new com.maxlananas.fawebim.core.mask.Masks.ExistingMask(session, true);
+        Mask existing = new com.maxlananas.fawebim.core.mask.Masks.ExistingMask(session);
         return include == null ? existing
                 : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(include, existing));
     }
