@@ -66,6 +66,9 @@ final class Aliases {
             {"//deltree", "/deltree"},
             {"//lrbuild", "/lrbuild"},
             {"//unbind", "/unbind"},
+            // FAWE registers each tool sub-command at the top level under its
+            // own name as well: "none" is /none, the "unbind" spelling excepted.
+            {"/tool none", "/none"},
             {"//listbrush", "/listbrush"},
             {"//gsmask", "/gsmask", "//globalsourcemask", "/globalsourcemask"},
             {"//pos1", "//1", "/1"},

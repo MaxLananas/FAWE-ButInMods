@@ -53,7 +53,6 @@ final class ToolUtilCommands {
         primary();
         secondary();
         sourceMask();
-        inspect();
     }
 
     /**
@@ -447,19 +446,6 @@ final class ToolUtilCommands {
             ctx.session().setSourceMask(mask);
             ctx.actor().message(Msg.result("Brush source mask", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
-    }
-
-    /** {@code /tool inspect} — the block info tool, WorldEdit registers the same one. */
-    private void inspect() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool inspect");
-        if (entry == null) {
-            return;
-        }
-        entry.description =
-                "Block information tool";
-        entry.requiresPlayer = true;
-        entry.group = "tool";
-        entry.handler = ctx -> registry.dispatch(ctx.actor(), "tool info");
     }
 
     /** The brush bound to the held item, or FAWE's "no brush" error. */

@@ -41,6 +41,49 @@ final class BindingTests {
         unbindingTakesOffWhatTheHeldItemHolds();
         aPresetSavesTheBrushInHand();
         theBrushToolFiresTheBrushBoundLast();
+        aLineThatNamesNoToolOrBrushKeepsWhatTheItemHolds();
+    }
+
+    /**
+     * FAWE requires the tool after /tool and lists the tools when it is not
+     * there or not known. A bare /tool was taken for /tool none, so a player
+     * looking for the tools lost the brush in hand; and a word after /brush
+     * that named no brush was ignored, the brushes bound shown as if it were
+     * not there. FAWE's global /none, and /tool inspect with an item after it,
+     * did not answer as the other tools do.
+     */
+    private static void aLineThatNamesNoToolOrBrushKeepsWhatTheItemHolds() {
+        TestActor actor = actor("BindBareTool");
+        actor.setHeldItem(AXE);
+        answer(actor, "/brush sphere stone 2");
+        String bare = answer(actor, "/tool");
+        check("a bare /tool lists the tools (" + bare + ")",
+                bare.contains("No tool given. Options: none, selwand, navwand, info, inspect, tree,")
+                        && bare.endsWith("farwand, lrbuild"));
+        check("and keeps the brush in hand", BrushFactory.current(actor) instanceof Brushes.SphereBrush);
+        String unknown = answer(actor, "/tool nope");
+        check("an unknown tool is named, with the tools (" + unknown + ")",
+                unknown.contains("Unknown tool 'nope'. Options: none, selwand,"));
+        check("and binds nothing in place of the brush", BrushFactory.current(actor) instanceof Brushes.SphereBrush);
+
+        check("a mistyped brush is named back",
+                answer(actor, "/brush sphear 3").endsWith("Unknown brush 'sphear'. Did you mean /brush sphere?"));
+        check("two letters swapped as well",
+                answer(actor, "//brush shpere").endsWith("Unknown brush 'shpere'. Did you mean /brush sphere?"));
+        check("a word near no brush points to the list",
+                answer(actor, "/br zzz").endsWith("Unknown brush 'zzz'. See //help -s brush"));
+        check("none of them rebinds the item", BrushFactory.current(actor) instanceof Brushes.SphereBrush
+                && BrushFactory.current(actor).radius() == 2.0);
+        check("and a bare /brush still shows the brush in hand",
+                answer(actor, "/brush").contains("Right click: /brush sphere stone 2 (size 2)"));
+
+        check("/none takes it off, as FAWE's global spelling of /tool none does",
+                answer(actor, "/none").endsWith("Brush unbound from your current item")
+                        && actor.session().binding(AXE) == null);
+        String inspect = answer(actor, "/tool inspect minecraft:stick");
+        check("/tool inspect binds to the item named after it, as /tool info does (" + inspect + ")",
+                inspect.endsWith("Info tool bound to Stick") && actor.session().binding("minecraft:stick") != null
+                        && actor.session().binding(AXE) == null);
     }
 
     private static TestActor actor(String name) {

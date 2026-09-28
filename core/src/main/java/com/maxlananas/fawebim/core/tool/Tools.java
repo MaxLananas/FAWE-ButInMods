@@ -38,7 +38,7 @@ public final class Tools {
      * only listed when {@link #create} can build it.
      */
     public static final java.util.List<String> NAMES = java.util.List.of(
-            "none", "tree", "repl", "cycler", "floodfill", "info", "farwand", "navwand", "lrbuild",
+            "none", "tree", "repl", "cycler", "floodfill", "info", "inspect", "farwand", "navwand", "lrbuild",
             "stacker", "deltree", "brush", "selwand", "featureplacer", "structureplacer", "flood", "warwand");
 
     /**
@@ -55,6 +55,7 @@ public final class Tools {
             new Kind("selwand", java.util.List.of(), java.util.List.of(), "Selection wand tool", "Selection wand"),
             new Kind("navwand", java.util.List.of(), java.util.List.of(), "Navigation wand tool", "Navigation wand"),
             new Kind("info", java.util.List.of(), java.util.List.of(), "Block information tool", "Info tool"),
+            new Kind("inspect", java.util.List.of(), java.util.List.of(), "Block information tool", "Info tool"),
             new Kind("tree", java.util.List.of(), java.util.List.of("[type]"), "Tree generator tool", "Tree tool"),
             new Kind("featureplacer", java.util.List.of("featuretool"), java.util.List.of("feature"),
                     "Feature placer tool", "Feature placer tool"),
@@ -76,6 +77,18 @@ public final class Tools {
                     "Far wand tool"),
             new Kind("lrbuild", java.util.List.of(), java.util.List.of("primary", "secondary"),
                     "Long-range building tool", "Long-range building tool"));
+
+    /**
+     * The tools {@code /tool} binds, as FAWE lists them under a line that names
+     * none or one it does not know.
+     */
+    public static String options() {
+        java.util.StringJoiner options = new java.util.StringJoiner(", ", "none, ", "");
+        for (Kind kind : KINDS) {
+            options.add(kind.name());
+        }
+        return options.toString();
+    }
 
     /** The sub-command a name or another spelling of it stands for, or null. */
     public static Kind kind(String name) {

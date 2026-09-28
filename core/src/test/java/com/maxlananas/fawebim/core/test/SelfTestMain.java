@@ -4116,6 +4116,15 @@ public final class SelfTestMain {
         check("isDouble", Str.isDouble("4.2"));
         checkEquals("stripNamespace", "stone", Str.stripNamespace("minecraft:stone"));
         checkEquals("join", "a,b", Str.join(List.of("a", "b"), ","));
+        List<String> names = List.of("cylinder", "smooth", "snow", "sphere", "splatter");
+        checkEquals("closest: the name a word begins", "cylinder", Str.closest("cyl", names));
+        checkEquals("closest: a letter off", "smooth", Str.closest("smoth", names));
+        checkEquals("closest: two letters swapped", "sphere", Str.closest("shpere", names));
+        checkEquals("closest: two edits in a long word", "sphere", Str.closest("sphear", names));
+        checkEquals("closest: case does not matter", "snow", Str.closest("SNOW", names));
+        checkEquals("closest: a word under six letters takes one edit only", null, Str.closest("spehr", names));
+        checkEquals("closest: nothing near", null, Str.closest("zzz", names));
+        checkEquals("closest: a hostile word finds nothing", null, Str.closest("s".repeat(100_000), names));
         RandomCollection<String> collection = new RandomCollection<>();
         collection.add(1, "a");
         checkEquals("random collection", "a", collection.next(new Random(1)));

@@ -3345,6 +3345,13 @@ public final class Commands {
         e99.description = "Show the brushes of the item in hand";
         e99.group = "brush";
         e99.handler = ctx -> {
+                    // Each brush has an entry of its own: a word after /brush
+                    // that reaches this one names none of them.
+                    if (!ctx.args().isEmpty()) {
+                        String close = Str.closest(ctx.arg(0), brushNames());
+                        throw CommandRegistry.error("Unknown brush '" + ctx.arg(0) + "'. "
+                                + (close == null ? "See //help -s brush" : "Did you mean /brush " + close + "?"));
+                    }
                     com.maxlananas.fawebim.core.session.ItemBinding binding =
                             ctx.session().binding(ctx.actor().heldItem());
                     if (binding == null || !binding.hasBrush()) {
@@ -3365,6 +3372,24 @@ public final class Commands {
 
     }
 
+    /** The words that follow /brush, sorted, for the suggestion under one mistyped. */
+    private List<String> brushNames() {
+        java.util.TreeSet<String> names = new java.util.TreeSet<>();
+        for (CommandRegistry.Entry entry : registry.all()) {
+            addSubCommandWord(names, "/brush ", entry.name);
+            for (String alias : entry.aliases) {
+                addSubCommandWord(names, "/brush ", alias);
+            }
+        }
+        return new ArrayList<>(names);
+    }
+
+    private static void addSubCommandWord(java.util.Set<String> names, String container, String name) {
+        if (name.startsWith(container) && name.indexOf(' ', container.length()) < 0) {
+            names.add(name.substring(container.length()));
+        }
+    }
+
     /**
      * Binds the tool a name stands for to the held item, or to the item named
      * right after the tool's arguments, and says so as FAWE does.
@@ -3374,7 +3399,8 @@ public final class Commands {
     private void bindTool(Ctx ctx, String name, int first) {
         com.maxlananas.fawebim.core.tool.Tool tool = com.maxlananas.fawebim.core.tool.Tools.create(name, ctx, first);
         if (tool == null) {
-            throw CommandRegistry.error("Unknown tool '" + name + "'");
+            throw CommandRegistry.error("Unknown tool '" + name + "'. Options: "
+                    + com.maxlananas.fawebim.core.tool.Tools.options());
         }
         // The tool's own name, whichever spelling built it: /tool replace is the replacer.
         String item = com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(),
@@ -3402,13 +3428,16 @@ public final class Commands {
         e100.requiresPlayer = true;
         e100.arguments.add("[" + String.join("|", com.maxlananas.fawebim.core.tool.Tools.NAMES) + "]");
         e100.arguments.add("[target]");
+        // Each tool has an entry of its own below: a line reaches this one
+        // with no tool or with a name no entry answers. FAWE requires the
+        // tool and lists them; this took a bare /tool for /tool none, so a
+        // player looking for the tools lost the one in hand.
         e100.handler = ctx -> {
-                    String type = ctx.arg(0, "none").toLowerCase(Locale.ROOT);
-                    if (type.equals("none")) {
-                        unbindTool(ctx);
-                        return;
+                    if (ctx.args().isEmpty()) {
+                        throw CommandRegistry.error("No tool given. Options: "
+                                + com.maxlananas.fawebim.core.tool.Tools.options());
                     }
-                    bindTool(ctx, type, 1);
+                    bindTool(ctx, ctx.arg(0).toLowerCase(Locale.ROOT), 1);
                 };
 
         // Each tool is a sub-command of its own, as in FAWE, with the arguments

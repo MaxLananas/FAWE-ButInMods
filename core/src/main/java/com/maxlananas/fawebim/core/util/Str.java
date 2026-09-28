@@ -239,6 +239,57 @@ public final class Str {
     }
 
     /**
+     * The name a mistyped word most likely stands for, to suggest it back: the
+     * first name the word begins, else the nearest within one edit - two for a
+     * word of six letters or more, a swap of two letters counting as one - or
+     * null when none is that close. The first of equally near names wins, so a
+     * sorted list gives the same answer every time.
+     */
+    public static String closest(String typed, Iterable<String> names) {
+        String word = typed.toLowerCase(Locale.ROOT);
+        int allowed = word.length() >= 6 ? 2 : 1;
+        String best = null;
+        int bestDistance = allowed + 1;
+        for (String name : names) {
+            if (word.length() >= 2 && name.startsWith(word)) {
+                return name;
+            }
+            // Every edit changes the length by one at most: a name much shorter
+            // or longer is out of reach, and a hostile word costs nothing.
+            if (Math.abs(name.length() - word.length()) > allowed) {
+                continue;
+            }
+            int distance = editDistance(word, name);
+            if (distance < bestDistance) {
+                best = name;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    /** Insertions, deletions, substitutions and swaps of neighbours turning a into b. */
+    private static int editDistance(String a, String b) {
+        int[][] d = new int[a.length() + 1][b.length() + 1];
+        for (int i = 0; i <= a.length(); i++) {
+            d[i][0] = i;
+        }
+        for (int j = 0; j <= b.length(); j++) {
+            d[0][j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                d[i][j] = Math.min(Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1), d[i - 1][j - 1] + cost);
+                if (i > 1 && j > 1 && a.charAt(i - 1) == b.charAt(j - 2) && a.charAt(i - 2) == b.charAt(j - 1)) {
+                    d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+                }
+            }
+        }
+        return d[a.length()][b.length()];
+    }
+
+    /**
      * Parses a duration into milliseconds: groups of a number and a unit such
      * as {@code 30s}, {@code 1.5h}, {@code 8h5m12s} or {@code 2 weeks}, with
      * spaces allowed around the units. The units are seconds, minutes, hours,
