@@ -2154,53 +2154,49 @@ public final class Operations {
     }
 
     /**
-     * FAWE's {@code EditSession.makeBlob}: a sphere of the given size whose
-     * surface is pushed in and out by simplex noise, which is its "distorted
-     * sphere" generator.
+     * FAWE's {@code EditSession.makeBlob}, behind {@code //blob} and the rock
+     * brush: a ball of the given size whose surface simplex noise pushes in
+     * and out, the noise read from a random corner of FAWE's own field.
      *
-     * <p>At full sphericity the noise scales the whole radius; below it the
-     * radius is a blend of the round distance and a squashed box distance, so
-     * the blob may come out lumpy and angular. Above the size the caller reads
-     * the radii as the size of the box the blob has to fit in.</p>
+     * <p>At full sphericity the noise scales the squared distance, the axis
+     * radii dividing the squared offsets. Below it the distance is a blend of
+     * the round one and FAWE's "Manhattan" one - the sum and the largest of
+     * the axes, each stretched at random - measured on offsets turned by three
+     * random angles, and the noise is read at (x, z, z) as FAWE reads it.</p>
+     *
+     * <p>This read a simplex field of its own, turned the offsets about x first
+     * where FAWE turns them about z first, rounded them where FAWE floors them,
+     * and made three vectors for every block.</p>
+     *
+     * @param axes   the radius of each axis divided by the largest
+     * @param random where the corner of the noise and the angles come from
+     * @param place  sets one block and says whether it changed
+     * @return how many blocks changed
      */
-    public static int makeBlob(World world, EditSession session, BlockVector3 position,
-                               Pattern pattern, double size, double frequency, double amplitude,
-                               Vector3 radius, double sphericity) {
-        Random random = new Random();
+    public static int makeBlob(BlockVector3 position, double size, double frequency, double amplitude, Vector3 axes,
+                               double sphericity, Random random, BlockVisitor place) {
+        Noise noise = Noise.Simplex.classic();
         double seedX = random.nextDouble();
         double seedY = random.nextDouble();
         double seedZ = random.nextDouble();
-        int px = position.x();
-        int py = position.y();
-        int pz = position.z();
         double distort = frequency / size;
-        double modX = 1d / radius.x();
-        double modY = 1d / radius.y();
-        double modZ = 1d / radius.z();
-        int r = (int) size;
-        int radiusSqr = (int) (size * size);
-        int sizeInt = (int) size * 2;
-        // Upstream reads a shared simplex noise, so the shape only depends on
-        // the size, the frequency and the amplitude the caller passed.
-        Noise noiseGen = new Noise.Simplex(0);
+        double modX = 1 / axes.x();
+        double modY = 1 / axes.y();
+        double modZ = 1 / axes.z();
+        int reach = (int) size * 2;
         int changed = 0;
         if (sphericity == 1) {
-            for (int x = -sizeInt; x <= sizeInt; x++) {
-                double nx = seedX + x * distort;
-                double d1 = x * x * modX;
-                int xx = px + x;
-                for (int y = -sizeInt; y <= sizeInt; y++) {
-                    double d2 = d1 + y * y * modY;
-                    double ny = seedY + y * distort;
-                    int yy = py + y;
-                    for (int z = -sizeInt; z <= sizeInt; z++) {
-                        double nz = seedZ + z * distort;
-                        double distance = d2 + z * z * modZ;
-                        double noise = amplitude * noiseGen.noise(nx, ny, nz);
-                        int zz = pz + z;
-                        if (distance + distance * noise < radiusSqr
-                                && session.setBlock(xx, yy, zz, pattern.apply(
-                                        new BlockVector3(xx, yy, zz)))) {
+            int radiusSquared = (int) (size * size);
+            for (int x = -reach; x <= reach; x++) {
+                double dx = x * x * modX;
+                for (int y = -reach; y <= reach; y++) {
+                    double dxy = dx + y * y * modY;
+                    for (int z = -reach; z <= reach; z++) {
+                        double distance = dxy + z * z * modZ;
+                        double push = amplitude * noise.noise(seedX + x * distort, seedY + y * distort,
+                                seedZ + z * distort);
+                        if (distance + distance * push < radiusSquared
+                                && place.visit(position.x() + x, position.y() + y, position.z() + z)) {
                             changed++;
                         }
                     }
@@ -2208,37 +2204,39 @@ public final class Operations {
             }
             return changed;
         }
-        // FAWE turns the sample point with three random rotations before it
-        // measures it, which is what makes the low-sphericity blob asymmetric.
-        Transform spin = Transforms.rotate(BlockVector3.ZERO, Axis.X, random.nextInt(360))
-                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.Y, random.nextInt(360)))
-                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.Z, random.nextInt(360)));
-        double manScaleX = 1.25 + seedX * 0.5;
-        double manScaleY = 1.25 + seedY * 0.5;
-        double manScaleZ = 1.25 + seedZ * 0.5;
+        // Three whole-degree angles, drawn about x, y then z; the z turn is
+        // applied first. The three make one matrix for the whole ball.
+        int turnX = random.nextInt(360);
+        int turnY = random.nextInt(360);
+        int turnZ = random.nextInt(360);
+        Transform turn = Transforms.rotate(BlockVector3.ZERO, Axis.Z, turnZ)
+                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.Y, turnY))
+                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.X, turnX));
+        Vector3 alongX = turn.apply(new Vector3(1, 0, 0));
+        Vector3 alongY = turn.apply(new Vector3(0, 1, 0));
+        Vector3 alongZ = turn.apply(new Vector3(0, 0, 1));
+        double stretchX = 1.25 + seedX * 0.5;
+        double stretchY = 1.25 + seedY * 0.5;
+        double stretchZ = 1.25 + seedZ * 0.5;
         double roughness = 1 - sphericity;
-        for (int xr = -sizeInt; xr <= sizeInt; xr++) {
-            int xx = px + xr;
-            for (int yr = -sizeInt; yr <= sizeInt; yr++) {
-                int yy = py + yr;
-                for (int zr = -sizeInt; zr <= sizeInt; zr++) {
-                    int zz = pz + zr;
-                    Vector3 point = spin.apply(new Vector3(xr, yr, zr));
-                    int x = (int) Math.round(point.x());
-                    int y = (int) Math.round(point.y());
-                    int z = (int) Math.round(point.z());
-                    double xScaled = Math.abs(x) * modX;
-                    double yScaled = Math.abs(y) * modY;
-                    double zScaled = Math.abs(z) * modZ;
-                    double manDist = xScaled + yScaled + zScaled;
-                    double distSqr = x * x * modX + z * z * modZ + y * y * modY;
-                    double distance = Math.sqrt(distSqr) * sphericity
-                            + Math.max(manDist, Math.max(xScaled * manScaleX,
-                                    Math.max(yScaled * manScaleY, zScaled * manScaleZ))) * roughness;
-                    double noise = amplitude * noiseGen.noise(seedX + x * distort,
-                            seedZ + z * distort, seedZ + z * distort);
-                    if (distance + distance * noise < r
-                            && session.setBlock(xx, yy, zz, pattern.apply(xx, yy, zz))) {
+        int limit = (int) size;
+        for (int xr = -reach; xr <= reach; xr++) {
+            for (int yr = -reach; yr <= reach; yr++) {
+                for (int zr = -reach; zr <= reach; zr++) {
+                    int x = (int) Math.floor(xr * alongX.x() + yr * alongY.x() + zr * alongZ.x());
+                    int y = (int) Math.floor(xr * alongX.y() + yr * alongY.y() + zr * alongZ.y());
+                    int z = (int) Math.floor(xr * alongX.z() + yr * alongY.z() + zr * alongZ.z());
+                    double scaledX = Math.abs(x) * modX;
+                    double scaledY = Math.abs(y) * modY;
+                    double scaledZ = Math.abs(z) * modZ;
+                    double manhattan = scaledX + scaledY + scaledZ;
+                    double squared = x * x * modX + z * z * modZ + y * y * modY;
+                    double distance = Math.sqrt(squared) * sphericity + Math.max(Math.max(manhattan,
+                            scaledX * stretchX), Math.max(scaledY * stretchY, scaledZ * stretchZ)) * roughness;
+                    double push = amplitude * noise.noise(seedX + x * distort, seedZ + z * distort,
+                            seedZ + z * distort);
+                    if (distance + distance * push < limit
+                            && place.visit(position.x() + xr, position.y() + yr, position.z() + zr)) {
                         changed++;
                     }
                 }

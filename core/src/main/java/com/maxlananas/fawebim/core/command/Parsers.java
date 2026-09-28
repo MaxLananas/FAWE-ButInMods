@@ -514,7 +514,8 @@ public final class Parsers {
                 }
                 double scale = 1d / Math.max(1d, parseDouble(parts.get(0).trim()));
                 Noise noise = switch (id) {
-                    case "simplex" -> new Noise.Simplex(0);
+                    // FAWE's own field, so a pattern places what it places there.
+                    case "simplex" -> Noise.Simplex.classic();
                     case "perlin" -> new Noise.Perlin(0);
                     case "voronoi" -> new Noise.Voronoi(0);
                     default -> new Noise.RidgedMultiFractal(0, 3, 2, 0.5);

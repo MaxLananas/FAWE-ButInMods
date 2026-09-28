@@ -956,15 +956,15 @@ public final class Masks {
         }
     }
 
-    /** {@code #simplex}: simplex noise threshold, defaults to 50%. */
     /**
      * FAWE's {@code #simplex[scale][min][max]}: the mask passes where the noise
      * sits inside the band the two percentages describe, {@code 50} being the
-     * middle of the noise.
+     * middle of the noise. The noise is FAWE's own field, so the mask passes
+     * where FAWE's does.
      */
     public static final class SimplexMask implements Mask {
 
-        private final Noise noise = new Noise.Simplex(0);
+        private final Noise noise = Noise.Simplex.classic();
         private final double min;
         private final double max;
         private final double scale;

@@ -33,6 +33,7 @@ final class PatternSyntaxTests {
         tagPatterns();
         colourAndSwapPatterns();
         clipboardPatterns();
+        simplexIsFawesField();
         BlockStateRegistry previous = BlockState.registry();
         BlockState.setRegistry(new PropertyTestRegistry());
         try {
@@ -56,6 +57,65 @@ final class PatternSyntaxTests {
 
     private static int state(String name) {
         return BlockState.registry().defaultState(name);
+    }
+
+    /**
+     * {@code #simplex}, as a pattern and as a mask, reads FAWE's own simplex
+     * field - Ken Perlin's permutation - so a line copied from a FAWE server
+     * places the same blocks. It read a field shuffled from a seed of its own.
+     * The values below are FAWE's {@code SimplexNoise.noise} at those points.
+     */
+    private static void simplexIsFawesField() {
+        com.maxlananas.fawebim.core.util.noise.Noise field =
+                com.maxlananas.fawebim.core.util.noise.Noise.Simplex.classic();
+        checkEquals("FAWE's noise at (0.5, 0.25, 0.125)", 0.3434544772411079, field.noise(0.5, 0.25, 0.125));
+        checkEquals("at (10.3, -4.7, 2.2)", 0.24140302933333566, field.noise(10.3, -4.7, 2.2));
+        checkEquals("at (-33.1, 17.9, 0.4)", 0.18580949596707413, field.noise(-33.1, 17.9, 0.4));
+
+        TestActor actor = actor("Simplex");
+        TestWorld world = (TestWorld) actor.world();
+        actor.session().setMaxBlocksChanged(100_000);
+        answer(actor, "//pos1 0,70,0");
+        answer(actor, "//pos2 31,72,31");
+        answer(actor, "//set #simplex[5][stone,dirt]");
+        int stone = state("minecraft:stone");
+        int dirt = state("minecraft:dirt");
+        // FAWE multiplies by the inverse of the scale, as the parser does.
+        double scale = 1d / 5;
+        int agree = 0;
+        int cells = 0;
+        for (int x = 0; x <= 31; x++) {
+            for (int y = 70; y <= 72; y++) {
+                for (int z = 0; z <= 31; z++) {
+                    float value = (float) ((field.noise(x * scale, y * scale, z * scale) + 1) * 0.5);
+                    if (Math.abs(value - 0.5) < 1e-6) {
+                        continue;
+                    }
+                    cells++;
+                    if (world.getBlock(x, y, z) == (value < 0.5 ? stone : dirt)) {
+                        agree++;
+                    }
+                }
+            }
+        }
+        checkEquals("the pattern takes stone below the middle of FAWE's noise and dirt above", cells, agree);
+
+        answer(actor, "//set air");
+        answer(actor, "//set gold_block");
+        answer(actor, "//replace #simplex[5][50][100] air");
+        int passed = 0;
+        int expected = 0;
+        for (int x = 0; x <= 31; x++) {
+            for (int z = 0; z <= 31; z++) {
+                if (field.noise(x * scale, 71 * scale, z * scale) >= 0) {
+                    expected++;
+                }
+                if (world.getBlock(x, 71, z) == BlockState.registry().air()) {
+                    passed++;
+                }
+            }
+        }
+        checkEquals("the mask passes where FAWE's noise is over its middle", expected, passed);
     }
 
     private static void offsetsAndSpreads() {

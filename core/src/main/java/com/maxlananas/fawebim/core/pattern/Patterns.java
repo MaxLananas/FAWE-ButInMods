@@ -105,8 +105,10 @@ public final class Patterns {
 
         @Override
         public int apply(int x, int y, int z) {
-            double value = generator.unit(x * scale, y * scale, z * scale);
-            return choices.applyAt(x, y, z, value);
+            // FAWE's noise generators hand the value on as a float, and its
+            // noise random keeps a value that rounds to one just under it.
+            float value = (float) generator.unit(x * scale, y * scale, z * scale);
+            return choices.applyAt(x, y, z, value >= 1 ? 0x1.fffffffffffffp-1 : value);
         }
 
         @Override

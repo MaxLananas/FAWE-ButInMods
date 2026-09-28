@@ -524,8 +524,8 @@ final class RegionCommands {
             double max = Math.max(radius.x(), Math.max(radius.y(), radius.z()));
             BlockVector3 position = ctx.placement();
             EditSession session = ctx.editSession("blob");
-            int changed = Operations.makeBlob(ctx.world(), session, position, pattern, size,
-                    frequency, amplitude, radius.divide(max), sphericity);
+            int changed = Operations.makeBlob(position, size, frequency, amplitude, radius.divide(max), sphericity,
+                    new java.util.Random(), (x, y, z) -> session.setBlock(x, y, z, pattern.apply(x, y, z)));
             session.flushQueue();
             ctx.actor().message(Msg.success("Blob: " + Msg.blocks(changed) + " created"));
         };
