@@ -36,10 +36,11 @@ public final class Suggestions {
     private static final List<String> PATTERNS = List.of(
             "#clipboard", "#copy", "#existing", "#biome", "#hotbar", "#mask[", "#buffer[",
             "#buffer2d[", "#nx[", "#ny[", "#nz[", "#!x[", "#!y[", "#!z[", "#offset[",
-            "#spread[", "#solidspread[", "#surfacespread[", "#l[", "#linear[", "#l3d[", "#l2d[",
+            "#spread[", "#randomoffset[", "#solidspread[", "#surfacespread[", "#l[", "#linear[", "#l3d[",
+            "#linear3d[", "#l2d[", "#linear2d[",
             "#perlin[", "#simplex[", "#voronoi[", "#rmf[", "#ts[", "#typeswap[", "#swaptype[",
             "#rel[", "#~[", "#color[", "#colour[", "#averagecolor[", "#anglecolor[",
-            "#lighten[", "#darken[", "#saturate[", "#desaturate[", "##", "*", "=");
+            "#lighten[", "#darken[", "#saturate[", "#desaturate[", "##", "##*", "*", "=", "^", "^[");
 
     /** The mask names this build parses, {@code #} included. */
     private static final List<String> MASKS = List.of(

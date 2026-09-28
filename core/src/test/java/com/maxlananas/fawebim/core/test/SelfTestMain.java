@@ -177,6 +177,7 @@ public final class SelfTestMain {
         CompletionTests.run();
         BindingTests.run();
         MaskSyntaxTests.run();
+        PatternSyntaxTests.run();
 
         // A command that fails with anything but a refusal logs it as an error;
         // the sweeps above run every command with hostile arguments, so an error
@@ -766,7 +767,7 @@ public final class SelfTestMain {
         checkEquals("offset value", new BlockVector3(0, 1, 0), offset.offset());
         check("expression pattern", new Patterns.ExpressionPattern("y + 1").apply(new BlockVector3(0, 5, 0)) == 6);
         check("random state pattern", new Patterns.RandomState(new int[]{stone, dirt}) != null);
-        check("type apply pattern", new Patterns.TypeOrStateApplying(new Patterns.Single(stone)) != null);
+        check("type apply pattern", new Patterns.TypeOrStateApplying(stone, java.util.Map.of()) != null);
         colourPatterns();
 
         // A dye colour on its own is the wool of that colour: the shorthand FAWE

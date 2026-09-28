@@ -10,6 +10,7 @@ import com.maxlananas.fawebim.core.world.Extent;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /** All pattern implementations FAWE exposes ({@code //set <pattern>}). */
@@ -66,6 +67,16 @@ public final class Patterns {
         /** How many blocks the choice is spread over. */
         public int size() {
             return children.size();
+        }
+
+        /** The pattern of an entry, in the order the list was written. */
+        public Pattern get(int index) {
+            return children.get(index);
+        }
+
+        /** The weight of an entry: 50 for the 50%stone of 50%stone,50%dirt, 1 when none is written. */
+        public double weight(int index) {
+            return children.getWeight(index);
         }
 
         @Override
@@ -368,7 +379,12 @@ public final class Patterns {
         }
     }
 
-    /** {@code #spread} — random horizontal offset per block. */
+    /**
+     * FAWE's {@code #spread[pattern][x][y][z]} and {@code #solidspread}: the
+     * pattern as it is at a random position up to the distances away, so a
+     * pattern that depends on where it is - a clipboard, a noise - comes out
+     * jittered.
+     */
     public static final class RandomOffset implements Pattern {
 
         private final Pattern delegate;
@@ -391,17 +407,13 @@ public final class Patterns {
             int ox = dx == 0 ? 0 : random.nextInt(dx * 2 + 1) - dx;
             int oy = dy == 0 ? 0 : random.nextInt(dy * 2 + 1) - dy;
             int oz = dz == 0 ? 0 : random.nextInt(dz * 2 + 1) - dz;
-            BlockVector3 target = new BlockVector3(x + ox, y + oy, z + oz);
-            if (solid) {
-                // "#spread" with the solid flag: never carve into the terrain,
-                // only fill where the offset landed on an existing block.
-                Extent ext = delegate.extent();
-                if (ext != null && BlockState.registry().isAirLike(
-                        ext.getBlock(target.x(), target.y(), target.z()))) {
-                    return BlockState.registry().air();
-                }
+            int moved = delegate.apply(x + ox, y + oy, z + oz);
+            // FAWE's #solidspread: the block of the offset position when it is
+            // solid, else the block of the position itself.
+            if (solid && !BlockState.registry().isSolid(moved)) {
+                return delegate.apply(x, y, z);
             }
-            return delegate.apply(target);
+            return moved;
         }
 
         @Override
@@ -464,29 +476,199 @@ public final class Patterns {
         }
     }
 
-    /** {@code #l3d} / {@code #linear} — gradient between two patterns. */
-    public static final class Linear implements Pattern {
+        /**
+     * FAWE's {@code #linear[pattern]}: the entries of a list one after the other,
+     * a block each, in the order the edit visits them.
+     */
+    public static final class LinearCycle implements Pattern {
 
-        private final Pattern from;
-        private final Pattern to;
-        private final boolean alongX;
-        private final boolean alongY;
-        private final boolean alongZ;
+        private final Pattern[] entries;
+        private int index;
 
-        public Linear(Pattern from, Pattern to, boolean alongX, boolean alongY, boolean alongZ) {
-            this.from = from;
-            this.to = to;
-            this.alongX = alongX;
-            this.alongY = alongY;
-            this.alongZ = alongZ;
+        public LinearCycle(Pattern[] entries) {
+            this.entries = entries.clone();
         }
 
         @Override
         public int apply(int x, int y, int z) {
-            double t = Math.abs((x * (alongX ? 1 : 0)
-                    + y * (alongY ? 1 : 0)
-                    + z * (alongZ ? 1 : 0)) % 256) / 255.0;
-            return t < 0.5 ? from.apply(x, y, z) : to.apply(x, y, z);
+            index = (index + 1) % entries.length;
+            return entries[index].apply(x, y, z);
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return false;
+        }
+    }
+
+    /**
+     * FAWE's {@code #linear2d[pattern][xscale][zscale]} and
+     * {@code #linear3d[pattern][xscale][yscale][zscale]}: the entry of a list a
+     * position gets is a stripe of the sum of its coordinates, each divided by
+     * its scale, so the entries run across the edit in diagonal bands, as wide
+     * as their weights. A {@code yScale} of 0 leaves the height out.
+     */
+    public static final class LinearChoice implements Pattern {
+
+        /** The entries, each repeated as its weight is to the others', as FAWE lays them out. */
+        private final Pattern[] stripes;
+        /** The entries and their running weights, for weights that do not lay out so. */
+        private final Weighted weighted;
+        private final double[] cumulative;
+        private final double total;
+        private final int xScale;
+        private final int yScale;
+        private final int zScale;
+
+        public LinearChoice(Weighted choices, int xScale, int yScale, int zScale) {
+            if (xScale == 0 || zScale == 0) {
+                throw new IllegalArgumentException("a scale of 0");
+            }
+            this.xScale = xScale;
+            this.yScale = yScale;
+            this.zScale = zScale;
+            this.stripes = stripes(choices);
+            this.weighted = choices;
+            this.cumulative = new double[choices.size()];
+            double running = 0;
+            for (int i = 0; i < cumulative.length; i++) {
+                running += choices.weight(i);
+                cumulative[i] = running;
+            }
+            this.total = running;
+        }
+
+        /**
+         * FAWE's layout: every weight a hundredth at most, the entries repeated
+         * weight over the greatest common divisor times; null when a weight has
+         * finer parts or the stripes would be more than a hundred thousand.
+         */
+        private static Pattern[] stripes(Weighted choices) {
+            int[] counts = new int[choices.size()];
+            int gcd = 0;
+            int max = 0;
+            for (int i = 0; i < counts.length; i++) {
+                double hundredths = choices.weight(i) * 100;
+                counts[i] = (int) hundredths;
+                if (counts[i] != hundredths) {
+                    return null;
+                }
+                gcd = gcd(gcd, counts[i]);
+                max = Math.max(max, counts[i]);
+            }
+            if (gcd == 0 || max / gcd > 100_000) {
+                return null;
+            }
+            List<Pattern> out = new ArrayList<>();
+            for (int i = 0; i < counts.length; i++) {
+                for (int copy = 0; copy < counts[i] / gcd; copy++) {
+                    out.add(choices.get(i));
+                }
+            }
+            return out.toArray(new Pattern[0]);
+        }
+
+        private static int gcd(int a, int b) {
+            return b == 0 ? a : gcd(b, a % b);
+        }
+
+        @Override
+        public int apply(int x, int y, int z) {
+            if (stripes != null) {
+                int sum = Math.floorDiv(x, xScale) + Math.floorDiv(z, zScale)
+                        + (yScale == 0 ? 0 : Math.floorDiv(y, yScale));
+                return stripes[Math.floorMod(sum, stripes.length)].apply(x, y, z);
+            }
+            double value = Math.nextUp((double) x) / xScale + Math.nextUp((double) z) / zScale
+                    + (yScale == 0 ? 0 : Math.nextUp((double) y) / yScale);
+            value %= total;
+            if (value < 0) {
+                value += total;
+            }
+            for (int i = 0; i < cumulative.length; i++) {
+                if (cumulative[i] >= value) {
+                    return weighted.get(i).apply(x, y, z);
+                }
+            }
+            return weighted.get(cumulative.length - 1).apply(x, y, z);
+        }
+    }
+
+    /**
+     * FAWE's {@code #surfacespread[pattern][distance]}: from each position, up to
+     * {@code distance} random steps to a neighbour - diagonals included - that
+     * the pattern makes solid and that has a side the pattern leaves open, so the
+     * walk stays on the surface of what the pattern draws, and the pattern as it
+     * is where the walk ends. With {@code #existing} it walks the terrain itself.
+     */
+    public static final class SurfaceSpread implements Pattern {
+
+        private static final int[][] NEIGHBOURS = neighbours();
+
+        private final Pattern delegate;
+        private final int moves;
+        private final int minY;
+        private final int maxY;
+        private final Random random = new Random();
+
+        public SurfaceSpread(Pattern delegate, int distance, int minY, int maxY) {
+            this.delegate = delegate;
+            this.moves = Math.min(255, distance);
+            this.minY = minY;
+            this.maxY = maxY;
+        }
+
+        private static int[][] neighbours() {
+            List<int[]> out = new ArrayList<>();
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx != 0 || dy != 0 || dz != 0) {
+                            out.add(new int[]{dx, dy, dz});
+                        }
+                    }
+                }
+            }
+            return out.toArray(new int[0][]);
+        }
+
+        @Override
+        public int apply(int x, int y, int z) {
+            int[] allowed = new int[NEIGHBOURS.length];
+            for (int move = 0; move < moves; move++) {
+                int count = 0;
+                for (int i = 0; i < NEIGHBOURS.length; i++) {
+                    int[] step = NEIGHBOURS[i];
+                    if (allowed(x + step[0], y + step[1], z + step[2])) {
+                        allowed[count++] = i;
+                    }
+                }
+                if (count == 0) {
+                    break;
+                }
+                int[] step = NEIGHBOURS[allowed[random.nextInt(count)]];
+                x += step[0];
+                y += step[1];
+                z += step[2];
+            }
+            return delegate.apply(x, y, z);
+        }
+
+        private boolean allowed(int x, int y, int z) {
+            if (!BlockState.registry().isSolid(delegate.apply(x, y, z))) {
+                return false;
+            }
+            return y < maxY && open(x, y + 1, z) || y > minY && open(x, y - 1, z)
+                    || open(x + 1, y, z) || open(x - 1, y, z) || open(x, y, z + 1) || open(x, y, z - 1);
+        }
+
+        private boolean open(int x, int y, int z) {
+            return !BlockState.registry().isSolid(delegate.apply(x, y, z));
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return false;
         }
     }
 
@@ -563,33 +745,47 @@ public final class Patterns {
         }
     }
 
-    /** {@code ^} — applies the properties of the neighbouring block. */
+    /**
+     * WorldEdit's {@code ^} pattern. {@code ^oak_log} makes each block an oak
+     * log with those properties of the block it replaces that an oak log has -
+     * the axis of a log it replaces is kept - and {@code ^[facing=north]} keeps
+     * each block and gives it the properties named that it has;
+     * {@code ^oak_stairs[half=top]} does both. It copied the properties of the
+     * block below instead.
+     */
     public static final class TypeOrStateApplying implements Pattern {
 
-        private final Pattern delegate;
+        /** The default state of the type to apply, or -1 to keep each block's. */
+        private final int type;
+        private final Map<String, String> states;
 
-        public TypeOrStateApplying(Pattern delegate) {
-            this.delegate = delegate;
+        public TypeOrStateApplying(int type, Map<String, String> states) {
+            this.type = type;
+            this.states = Map.copyOf(states);
         }
 
         @Override
         public int apply(int x, int y, int z) {
             Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
-            int base = delegate.apply(x, y, z);
-            if (extent == null) {
-                return base;
-            }
             BlockStateRegistry registry = BlockState.registry();
-            // Copy matching properties from the block below (stairs' facing...).
-            int below = extent.getBlock(x, y - 1, z);
-            int result = base;
-            for (var entry : registry.properties(below).entrySet()) {
-                int updated = registry.withProperty(result, entry.getKey(), entry.getValue());
-                if (updated >= 0) {
-                    result = updated;
+            int old = extent == null ? registry.air() : extent.getBlock(x, y, z);
+            int result = old;
+            if (type >= 0) {
+                result = type;
+                for (Map.Entry<String, String> property : registry.properties(old).entrySet()) {
+                    result = with(registry, result, property.getKey(), property.getValue());
                 }
             }
+            for (Map.Entry<String, String> property : states.entrySet()) {
+                result = with(registry, result, property.getKey(), property.getValue());
+            }
             return result;
+        }
+
+        /** The state with a property set, or unchanged when its block has no such property or value. */
+        private static int with(BlockStateRegistry registry, int state, String property, String value) {
+            int updated = registry.withProperty(state, property, value);
+            return updated >= 0 ? updated : state;
         }
     }
 

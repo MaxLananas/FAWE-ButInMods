@@ -292,12 +292,14 @@ public final class Parsers {
         if (trimmed.startsWith("$")) {
             return biomePattern(trimmed.substring(1).trim(), ctx);
         }
+        if (trimmed.startsWith("##")) {
+            return tagPattern(trimmed.substring(2));
+        }
         if (trimmed.startsWith("#")) {
             return hashPattern(trimmed, ctx);
         }
         if (trimmed.startsWith("^")) {
-            Pattern inner = pattern(trimmed.substring(1), ctx);
-            return new Patterns.TypeOrStateApplying(inner);
+            return typeOrStatePattern(trimmed.substring(1), ctx);
         }
         if (trimmed.contains(",")) {
             Patterns.Weighted weighted = new Patterns.Weighted();
@@ -317,24 +319,77 @@ public final class Parsers {
         if (trimmed.startsWith("=")) {
             return new Patterns.ExpressionPattern(trimmed.substring(1));
         }
-        if (trimmed.startsWith("##")) {
-            // Category pattern: random block from the category.
-            List<String> names = new ArrayList<>();
-            BlockStateRegistry registry = BlockState.registry();
-            String category = trimmed.substring(2);
-            for (int id = 0; id < registry.stateCount(); id++) {
-                if (registry.matchesCategory(id, category)) {
-                    names.add(registry.describe(id));
-                }
-            }
-            if (names.isEmpty()) {
-                throw CommandRegistry.error("Unknown block category '" + category + "'");
-            }
-            Patterns.RandomState state = new Patterns.RandomState(
-                    names.stream().map(n -> BlockState.registry().parse(n)).filter(id -> id >= 0).toList());
-            return state;
-        }
         return new Patterns.Single(block(ctx, trimmed));
+    }
+
+    /**
+     * WorldEdit's {@code ##tag} pattern: a random block of a block tag, or of
+     * one of the mod's categories, in its default state, and with
+     * {@code ##*tag} in any of its states. It was never reached: the {@code #}
+     * patterns were asked first and did not know it.
+     */
+    private static Pattern tagPattern(String input) {
+        boolean anyState = input.startsWith("*");
+        String name = (anyState ? input.substring(1) : input).trim().toLowerCase(Locale.ROOT);
+        BlockStateRegistry registry = BlockState.registry();
+        boolean category = registry.categories().contains(name);
+        String tag = name.indexOf(':') < 0 ? "minecraft:" + name : name;
+        if (!category && !registry.blockTags().contains(tag)) {
+            throw CommandRegistry.error("Unknown block tag '" + name + "'");
+        }
+        List<Integer> states = new ArrayList<>();
+        for (String block : registry.blockNames()) {
+            int defaultState = registry.defaultState(block);
+            if (defaultState < 0 || !(category ? registry.matchesCategory(defaultState, name)
+                    : registry.hasTag(defaultState, tag))) {
+                continue;
+            }
+            if (anyState) {
+                states.addAll(registry.statesOf(block));
+            } else {
+                states.add(defaultState);
+            }
+        }
+        if (states.isEmpty()) {
+            throw CommandRegistry.error("The block tag '" + name + "' has no blocks");
+        }
+        return new Patterns.RandomState(states);
+    }
+
+    /**
+     * WorldEdit's {@code ^} pattern: {@code ^type} applies a block type and keeps
+     * the properties of each block it replaces, {@code ^[property=value,...]}
+     * applies properties and keeps each block, and {@code ^type[...]} both.
+     */
+    private static Pattern typeOrStatePattern(String input, Ctx ctx) {
+        int bracket = input.indexOf('[');
+        String type = (bracket < 0 ? input : input.substring(0, bracket)).trim();
+        Map<String, String> states = new java.util.LinkedHashMap<>();
+        if (bracket >= 0) {
+            if (!input.endsWith("]")) {
+                throw CommandRegistry.error("Missing ] in '^" + input + "'");
+            }
+            for (String pair : Str.splitCommas(input.substring(bracket + 1, input.length() - 1))) {
+                int equals = pair.indexOf('=');
+                if (equals <= 0 || equals == pair.length() - 1) {
+                    throw CommandRegistry.error("Expected property=value in '^" + input + "', got '"
+                            + pair.trim() + "'");
+                }
+                states.put(pair.substring(0, equals).trim().toLowerCase(Locale.ROOT),
+                        pair.substring(equals + 1).trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        if (type.isEmpty() && states.isEmpty()) {
+            throw CommandRegistry.error("Syntax: ^<block>, ^[property=value] or ^<block>[property=value]");
+        }
+        int typeState = -1;
+        if (!type.isEmpty()) {
+            typeState = BlockState.registry().defaultState(Str.withNamespace(type.toLowerCase(Locale.ROOT)));
+            if (typeState < 0) {
+                throw CommandRegistry.error("Unknown block '" + type + "'");
+            }
+        }
+        return new Patterns.TypeOrStateApplying(typeState, states);
     }
 
     private static Pattern hashPattern(String input, Ctx ctx) {
@@ -396,28 +451,37 @@ public final class Parsers {
                 int axis = id.endsWith("x") ? 0 : id.endsWith("y") ? 1 : 2;
                 return new Patterns.NoAxis(pattern(parts.get(0), ctx), axis);
             }
-            case "offset" -> {
-                String[] parts = args.isEmpty() ? new String[]{"0", "0", "0"} : args.split(",");
-                return new Patterns.Offset(new Patterns.Single(BlockState.registry().air()),
-                        new BlockVector3(Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim()),
-                                Integer.parseInt(parts[2].trim())));
-            }
-            case "spread", "randomoffset", "solidspread", "surfacespread" -> {
-                String[] parts = args.isEmpty() ? new String[]{"5", "5", "5"} : args.split(",");
-                int dx = Integer.parseInt(parts[0].trim());
-                int dy = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : dx;
-                int dz = parts.length > 2 ? Integer.parseInt(parts[2].trim()) : dx;
-                return new Patterns.RandomOffset(new Patterns.Single(BlockState.registry().air()), dx, dy, dz,
-                        id.contains("solid"));
-            }
-            case "l", "linear", "l3d", "l2d" -> {
-                List<String> parts = Str.splitCommas(args);
-                if (parts.size() < 2) {
-                    throw CommandRegistry.error("#linear needs two blocks, e.g. #l3d[stone][dirt]");
+            case "offset", "spread", "randomoffset", "solidspread" -> {
+                // FAWE's #offset[pattern][x][y][z] and #spread[pattern][x][y][z],
+                // or one distance for the three: [pattern][n].
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 2 && parts.size() != 4) {
+                    throw CommandRegistry.error("Syntax: #" + id + "[pattern][x][y][z] or #" + id
+                            + "[pattern][distance], e.g. #" + id + "[stone][2][0][4]");
                 }
-                Pattern from = pattern(parts.get(0).replace("[", "").replace("]", ""), ctx);
-                Pattern to = pattern(parts.get(1).replace("[", "").replace("]", ""), ctx);
-                return new Patterns.Linear(from, to, true, true, true);
+                Pattern inner = pattern(parts.get(0), ctx);
+                int dx = intArgument(parts.get(1));
+                int dy = parts.size() == 4 ? intArgument(parts.get(2)) : dx;
+                int dz = parts.size() == 4 ? intArgument(parts.get(3)) : dx;
+                if (id.equals("offset")) {
+                    return new Patterns.Offset(inner, new BlockVector3(dx, dy, dz));
+                }
+                if (dx < 0 || dy < 0 || dz < 0) {
+                    throw CommandRegistry.error("The distances of #" + id + " must not be negative");
+                }
+                return new Patterns.RandomOffset(inner, dx, dy, dz, id.equals("solidspread"));
+            }
+            case "surfacespread" -> {
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 2) {
+                    throw CommandRegistry.error("Syntax: #surfacespread[pattern][distance], e.g. "
+                            + "#surfacespread[#existing][4]");
+                }
+                return new Patterns.SurfaceSpread(pattern(parts.get(0), ctx), intArgument(parts.get(1)),
+                        ctx.world().minY(), ctx.world().maxY());
+            }
+            case "l", "linear", "l2d", "linear2d", "l3d", "linear3d" -> {
+                return linearPattern(id, input, ctx);
             }
             case "simplex", "perlin", "voronoi", "rmf" -> {
                 List<String> parts = Str.bracketGroups(input);
@@ -473,6 +537,53 @@ public final class Parsers {
             }
             default -> throw CommandRegistry.error("Unknown pattern '" + input + "'");
         }
+    }
+
+    /**
+     * FAWE's linear patterns over a list of blocks: {@code #linear[pattern]} the
+     * entries one after the other, {@code #linear2d[pattern][xscale][zscale]}
+     * and {@code #linear3d[pattern][xscale][yscale][zscale]} in bands across the
+     * edit. A single block is itself; anything but a list is refused.
+     */
+    private static Pattern linearPattern(String id, String input, Ctx ctx) {
+        List<String> parts = Str.bracketGroups(input);
+        boolean flat = id.contains("2d");
+        boolean sequence = !flat && !id.contains("3d");
+        int scales = sequence ? 0 : flat ? 2 : 3;
+        if (parts.isEmpty() || parts.size() > 1 + scales) {
+            throw CommandRegistry.error(sequence ? "Syntax: #linear[pattern], e.g. #linear[stone,dirt]"
+                    : "Syntax: #" + id + "[pattern]" + (flat ? "[xscale][zscale]" : "[xscale][yscale][zscale]")
+                    + ", e.g. #" + id + "[stone,dirt]");
+        }
+        Pattern inner = pattern(parts.get(0), ctx);
+        if (inner instanceof Patterns.Single) {
+            return inner;
+        }
+        if (!(inner instanceof Patterns.Weighted list)) {
+            throw CommandRegistry.error("Only a list of blocks can be used with #" + id + ", got '"
+                    + parts.get(0).trim() + "'");
+        }
+        if (sequence) {
+            // Upstream's list is a set: a block written twice is one entry.
+            List<Pattern> entries = new ArrayList<>();
+            java.util.Set<Integer> seen = new java.util.HashSet<>();
+            for (int i = 0; i < list.size(); i++) {
+                Pattern entry = list.get(i);
+                if (!(entry instanceof Patterns.Single single) || seen.add(single.stateId())) {
+                    entries.add(entry);
+                }
+            }
+            return new Patterns.LinearCycle(entries.toArray(new Pattern[0]));
+        }
+        int[] scale = {1, 1, 1};
+        for (int i = 1; i < parts.size(); i++) {
+            scale[i - 1] = intArgument(parts.get(i));
+            if (scale[i - 1] == 0) {
+                throw CommandRegistry.error("The scales of #" + id + " must not be 0");
+            }
+        }
+        return flat ? new Patterns.LinearChoice(list, scale[0], 0, scale[1])
+                : new Patterns.LinearChoice(list, scale[0], scale[1], scale[2]);
     }
 
     /**
