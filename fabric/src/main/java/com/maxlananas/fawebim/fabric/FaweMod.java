@@ -28,10 +28,7 @@ import net.minecraft.world.InteractionHand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -82,11 +79,52 @@ public final class FaweMod implements ModInitializer {
         registry = new FabricBlockStateRegistry();
         BlockState.setRegistry(registry);
         EditSession.BlockStateRegistryHolder.set(registry);
+        com.maxlananas.fawebim.core.pattern.MapColors.setProvider(registry::mapColor);
         CommandManager.get().initialise();
+    }
+
+    /** The version of a loaded mod, as its metadata gives it, or "unknown" when it is not loaded. */
+    private static String modVersion(String id) {
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer(id)
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("unknown");
+    }
+
+    /**
+     * Waits for the history and snapshot files handed to the writer so far.
+     *
+     * <p>The writer is one daemon thread: a server that stops does not wait for
+     * it, and the last edits of the session were lost from disk. The writer is
+     * shared by every server of the JVM - a single-player client opens several -
+     * so it is drained rather than shut down, and the wait is bounded so a dead
+     * disk cannot hold the stop up forever.</p>
+     */
+    private static void drainWriter() {
+        try {
+            WRITER.submit(() -> { }).get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            LOGGER.warn("History files were still being written after 30 seconds; the rest is skipped");
+        } catch (java.util.concurrent.ExecutionException e) {
+            LOGGER.warn("Could not wait for the history files", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override
     public void onInitialize() {
+        // Everything the engine logs lands in the mod's log, with its stack trace.
+        com.maxlananas.fawebim.core.platform.Log.install((level, message, error) -> {
+            switch (level) {
+                case INFO -> LOGGER.info(message, error);
+                case WARN -> LOGGER.warn(message, error);
+                case ERROR -> LOGGER.error(message, error);
+            }
+        });
+        LightTickets.register();
+        // What /we version and the reports name, read from the loader: they
+        // printed "Fabric 0.17.x" whatever the loader was.
+        Config.setPlatform("Fabric " + modVersion("fabricloader") + ", Fabric API " + modVersion("fabric-api"));
         // The game builds the command dispatcher while its server object is being
         // constructed, which happens before the starting event reaches the mod.
         // Everything the commands need to exist has to be ready by then, so the
@@ -128,8 +166,14 @@ public final class FaweMod implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             Config.get().save();
+            // Clearing the sessions logs the edits that were still open, which
+            // queues their files on the writer; then the schematic writes and
+            // the writer are waited for.
             SessionManager.get().clear();
+            FabricWorld.drainWorkers();
+            drainWriter();
             FabricRegistries.clear();
+            LightTickets.clear();
         });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -157,8 +201,10 @@ public final class FaweMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (server.getTickCount() % 5 != 0) {
-                // The selection preview only needs a few updates per second.
+            if (server.getTickCount() % 10 != 0) {
+                // The selection preview is drawn twice a second: a dust particle
+                // lasts about that long, so the outline stays up without doubling
+                // the packets.
                 return;
             }
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
@@ -174,6 +220,10 @@ public final class FaweMod implements ModInitializer {
                 return;
             }
             FabricActor actor = new FabricActor(handler.getPlayer());
+            if (!actor.mayEdit()) {
+                // The banner points at commands this player cannot run.
+                return;
+            }
             for (com.maxlananas.fawebim.core.platform.Welcome.Line line
                     : com.maxlananas.fawebim.core.platform.Welcome.lines()) {
                 if (line.openUrl() != null) {
@@ -226,12 +276,12 @@ public final class FaweMod implements ModInitializer {
                 continue;
             }
             LiteralArgumentBuilder<CommandSourceStack> builder = build(child);
-            // An operator, and anyone on a single-player world, may run them: the
-            // per-command permissions are checked by the engine when a command
-            // actually runs. A command block and a function are automated sources
-            // and are the ones command-block-support governs - they are the
-            // sources that refuse the success messages a console wants.
-            builder.requires(source -> (source.hasPermission(2) || !source.getServer().isDedicatedServer())
+            // Who may use the mod is decided in one place, FabricActor.mayEdit,
+            // which the clicks of the wand, the tools and the brushes answer to
+            // as well. A command block and a function are automated sources and
+            // are the ones command-block-support governs - they are the sources
+            // that refuse the success messages a console wants.
+            builder.requires(source -> FabricActor.mayEdit(source)
                     && (source.getEntity() != null || source.source.acceptsSuccess()
                         || Config.get().commandBlockSupport));
             dispatcher.register(builder);
@@ -288,7 +338,7 @@ public final class FaweMod implements ModInitializer {
         }
         builder.executes(context -> run(context.getSource(), node.entry.name));
         builder.then(argument("arguments", StringArgumentType.greedyString())
-                .suggests((context, suggestions) -> suggest(node.entry, suggestions))
+                .suggests((context, suggestions) -> suggest(node.entry, suggestions, context.getSource()))
                 .executes(context -> run(context.getSource(),
                         node.entry.name + " " + context.getArgument("arguments", String.class))));
         return builder;
@@ -323,58 +373,29 @@ public final class FaweMod implements ModInitializer {
 
     /**
      * The tab completions of a command: for the argument being typed, what its
-     * signature says may be written there — the blocks of a pattern, the masks of
-     * a filter, the biomes of a biome argument — plus whatever the command
-     * computes from the text typed so far, which is where the setting keys of
-     * {@code /fawebim} come from.
+     * signature says may be written there - the blocks of a pattern, the masks of
+     * a filter, the biomes of a biome argument, the features of a feature - plus
+     * whatever the command computes from the text typed so far, which is where
+     * the setting keys of {@code /fawebim} come from. See
+     * {@link com.maxlananas.fawebim.core.command.Suggestions#forLine}.
      */
-    private static CompletableFuture<Suggestions> suggest(CommandRegistry.Entry entry, SuggestionsBuilder builder) {
+    private static CompletableFuture<Suggestions> suggest(CommandRegistry.Entry entry, SuggestionsBuilder whole,
+                                                          CommandSourceStack source) {
         // Depending on where the cursor is Brigadier hands back the text from
         // the argument's start, which may still carry the separating space.
-        String remaining = builder.getRemaining();
+        String remaining = whole.getRemaining();
+        // Every completion is for the word being typed, and replaces that word
+        // only: offered on the builder of the whole tail, completing the second
+        // word of "//replace stone di" put "dirt" in place of "stone di".
+        SuggestionsBuilder builder = whole.createOffset(whole.getStart() + remaining.lastIndexOf(' ') + 1);
         if (remaining.startsWith(" ")) {
             remaining = remaining.substring(1);
         }
-        String[] tokens = remaining.split(" ", -1);
-        String typed = tokens[tokens.length - 1];
-        int index = tokens.length - 1;
-        String argument = index < entry.arguments.size() ? entry.arguments.get(index) : "";
-        boolean found = false;
-        for (String suggestion : com.maxlananas.fawebim.core.command.Suggestions.forArgument(argument, typed)) {
+        for (String suggestion : com.maxlananas.fawebim.core.command.Suggestions.forLine(entry, remaining,
+                () -> new FabricWorld(source.getLevel()))) {
             builder.suggest(suggestion);
-            found = true;
-        }
-        // An argument the engine cannot fill in - a radius, a count - still has
-        // the words its signature offers, e.g. the "list|info|distr" of
-        // //history, and those are worth completing.
-        if (!found) {
-            for (String suggestion : literalChoices(argument, typed)) {
-                builder.suggest(suggestion);
-            }
-        }
-        if (entry.suggestions != null) {
-            for (String suggestion : entry.suggestions.apply(remaining)) {
-                builder.suggest(suggestion);
-            }
         }
         return builder.buildFuture();
-    }
-
-    /** The {@code a|b|c} alternatives of an argument, filtered by what is typed. */
-    private static List<String> literalChoices(String argument, String typed) {
-        String plain = argument.replace("[", "").replace("]", "").replace("<", "").replace(">", "");
-        if (plain.indexOf('|') < 0) {
-            return List.of();
-        }
-        String prefix = typed.toLowerCase(java.util.Locale.ROOT);
-        List<String> choices = new java.util.ArrayList<>();
-        for (String choice : plain.split("\\|")) {
-            String word = choice.trim();
-            if (!word.isEmpty() && word.toLowerCase(java.util.Locale.ROOT).startsWith(prefix)) {
-                choices.add(word);
-            }
-        }
-        return choices;
     }
 
     private int run(CommandSourceStack source, String line) {
@@ -387,9 +408,11 @@ public final class FaweMod implements ModInitializer {
             }
             return 1;
         } catch (Throwable throwable) {
+            // The engine answers every exception of a command itself; what gets
+            // here is an Error, an out of memory or a stack overflow.
             LOGGER.error("Command '{}' failed", line, throwable);
-            source.sendFailure(net.minecraft.network.chat.Component.literal(
-                    "FAWE error: " + throwable.getMessage()));
+            source.sendFailure(FabricMessages.component(com.maxlananas.fawebim.core.util.Msg.error(
+                    "Command failed: " + throwable.getClass().getSimpleName() + ", see the server log")));
             return 0;
         }
     }

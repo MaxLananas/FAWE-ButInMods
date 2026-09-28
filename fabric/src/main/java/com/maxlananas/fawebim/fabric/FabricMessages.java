@@ -6,6 +6,7 @@ import com.maxlananas.fawebim.core.world.Direction;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.server.level.ServerLevel;
@@ -38,7 +39,10 @@ public final class FabricMessages {
      */
     public static Component component(Msg message, Style line) {
         String raw = message.raw();
-        Component result = Component.empty();
+        // One component the segments are appended to: copying the line for every
+        // segment, as the conversion did, made a gradient of n characters cost
+        // n copies of a growing list.
+        MutableComponent result = Component.empty();
         StringBuilder segment = new StringBuilder();
         Style style = line;
         TextColor colour = null;
@@ -50,7 +54,7 @@ public final class FabricMessages {
             char c = raw.charAt(i);
             if (c == '\u00a7' && i + 1 < raw.length()) {
                 if (segment.length() > 0) {
-                    result = result.copy().append(styled(segment.toString(), style, colour,
+                    result.append(styled(segment.toString(), style, colour,
                             bold, italic, underlined, strikethrough));
                     segment.setLength(0);
                 }
@@ -87,7 +91,7 @@ public final class FabricMessages {
             segment.append(c);
         }
         if (segment.length() > 0) {
-            result = result.copy().append(styled(segment.toString(), style, colour,
+            result.append(styled(segment.toString(), style, colour,
                     bold, italic, underlined, strikethrough));
         }
         return result;

@@ -10,7 +10,6 @@ import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.session.ClipboardHolder;
 import com.maxlananas.fawebim.core.util.Msg;
-import com.maxlananas.fawebim.core.world.BlockState;
 
 
 /**
@@ -55,46 +54,39 @@ final class ClipboardExtras {
             if (ctx.hasFlag("b")) {
                 com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
             }
+            clipboard.setOrigin(Commands.copyOrigin(ctx, clipboard));
             ctx.session().setClipboard(clipboard);
-            ctx.actor().message(Msg.result("Lazily copied", Msg.count(clipboard.volume())
-                    + "\u00a77 block(s) to the clipboard"
-                    + (ctx.hasFlag("e") ? "\u00a77 without entities" : "")));
+            ctx.actor().message(Msg.result("Lazily copied", Msg.blocks(clipboard.volume())
+                    + " to the clipboard"
+                    + (ctx.hasFlag("e") ? " without entities" : "")));
         };
     }
 
     /**
-     * {@code //lazycut} — the same as {@code //lazycopy}, then clears the region.
+     * {@code //lazycut} - cuts the selection into the clipboard, as
+     * {@code //cut} does, with FAWE's flags: {@code -e} leaves the entities out
+     * and {@code -b} takes the biomes.
+     *
+     * <p>FAWE's lazy cut reads the world when the clipboard is pasted, and
+     * clears each block as it reads it. This one cleared the selection at once
+     * and kept a clipboard that read the world at the paste, by which time the
+     * selection was air: the paste brought nothing back and the build was gone
+     * but for an undo. The blocks now go into the clipboard before the
+     * selection is cleared, in the one pass {@code //cut} makes.</p>
      */
     private void lazyCut() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("lazycut");
         if (entry == null) {
             return;
         }
-        entry.description = "Cut the selection to the clipboard without reading it";
+        entry.description = "Cut the selection to the clipboard";
         entry.group = "clipboard";
         entry.requiresSelection = true;
+        entry.confirmRegion = true;
         entry.booleanFlags.add("e");
         entry.booleanFlags.add("b");
-        entry.handler = ctx -> {
-            Region region = ctx.selection();
-            BlockArrayClipboard clipboard = BlockArrayClipboard.lazy(ctx.world(), region, "lazy");
-            if (ctx.hasFlag("b")) {
-                com.maxlananas.fawebim.core.clipboard.Clipboards.copyBiomes(ctx.world(), region, clipboard);
-            }
-            ctx.session().setClipboard(clipboard);
-            EditSession session = ctx.editSession("lazycut");
-            int air = BlockState.registry().air();
-            int cleared = 0;
-            for (BlockVector3 position : region) {
-                session.checkTimeout();
-                if (session.setBlock(position.x(), position.y(), position.z(), air)) {
-                    cleared++;
-                }
-            }
-            session.flushQueue();
-            ctx.actor().message(Msg.success("Lazily cut " + Msg.formatNumber(clipboard.volume())
-                    + " block(s), " + cleared + " removed"));
-        };
+        entry.handler = ctx -> Commands.cutSelection(ctx, !ctx.hasFlag("e"), ctx.hasFlag("b"), null,
+                Parsers.pattern("air", ctx));
     }
 
     /**
@@ -148,7 +140,7 @@ final class ClipboardExtras {
                 throw CommandRegistry.error("No clipboard: copy something first");
             }
             BlockArrayClipboard clipboard = holder.getClipboard();
-            BlockVector3 destination = ctx.hasFlag("o") ? clipboard.getOrigin() : ctx.placement();
+            BlockVector3 destination = ctx.hasFlag("o") ? clipboard.worldOrigin() : ctx.placement();
             EditSession session = ctx.editSession("place");
             Masks.ExtentHolder.set(session);
             boolean onlySelect = ctx.hasFlag("n");
@@ -161,16 +153,16 @@ final class ClipboardExtras {
             if (ctx.hasFlag("s") || onlySelect) {
                 var selector = ctx.session().getSelector(ctx.world());
                 var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
-                BlockVector3 max = destination.add(clipboard.getWidth(), clipboard.getHeight(),
-                        clipboard.getLength());
-                selector.selectPrimary(destination, limits);
-                selector.selectSecondary(max, limits);
+                BlockVector3[] bounds = Clipboards.pastedBounds(clipboard, destination,
+                        com.maxlananas.fawebim.core.transform.Transform.identity());
+                selector.selectPrimary(bounds[0], limits);
+                selector.selectSecondary(bounds[1], limits);
             }
             session.flushQueue();
             if (onlySelect) {
                 ctx.actor().message(Msg.success("Selected the clipboard region at " + destination));
             } else {
-                ctx.actor().message(Msg.success("Placed " + changed + " block(s) at " + destination));
+                ctx.actor().message(Msg.success("Placed " + Msg.blocks(changed) + " at " + destination));
             }
         };
     }

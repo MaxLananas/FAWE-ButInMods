@@ -258,6 +258,9 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
         if (tag.endsWith("logs")) {
             return name.contains("log") || name.contains("stem");
         }
+        if (tag.endsWith("leaves")) {
+            return name.endsWith("_leaves");
+        }
         if (tag.endsWith("wool")) {
             return name.contains("wool");
         }
@@ -300,7 +303,7 @@ public final class TestBlockStateRegistry implements BlockStateRegistry {
     public boolean isFullCube(int stateId) {
         String name = name(stateId);
         return isSolid(stateId) && !name.contains("stairs") && !name.contains("slab")
-                && !name.contains("torch") && !name.contains("sapling") && !name.contains("grass")
+                && !name.contains("torch") && !name.contains("sapling") && !name.endsWith("grass")
                 && !name.contains("fern") && !name.contains("poppy") && !name.contains("dandelion");
     }
 

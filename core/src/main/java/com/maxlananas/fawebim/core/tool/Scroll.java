@@ -221,7 +221,7 @@ public abstract class Scroll {
                 return false;
             }
             int index = wrap(pool.indexOf(current()) + amount, 0, pool.size() - 1);
-            session.setClipboard(pool.get(index));
+            session.setClipboardFromPool(pool.get(index));
             return true;
         }
 

@@ -86,7 +86,7 @@ public final class ConfigUi {
             return "Brushes";
         }
         if (path.startsWith("wand-item") || path.startsWith("navigation-wand.")
-                || path.startsWith("super-pickaxe.")) {
+                || path.startsWith("super-pickaxe.") || path.startsWith("selection.")) {
             return "Tools";
         }
         if (path.startsWith("history.") || path.startsWith("snapshots.")) {
@@ -205,7 +205,7 @@ public final class ConfigUi {
         return switch (setting.kind()) {
             case BOOLEAN -> "true or false";
             case INTEGER -> "a whole number";
-            case TEXT -> "text";
+            case TEXT -> setting.choices().isEmpty() ? "text" : "one of " + String.join(", ", setting.choices());
         };
     }
 }

@@ -129,8 +129,16 @@ public final class EditLog {
         return entry;
     }
 
-    /** Writes one edit to the history folder, named after who made it and when. */
-    public static synchronized void persist(Entry entry, History.Record record) {
+    /**
+     * Writes one edit to the history folder, named after who made it and when.
+     *
+     * <p>Runs on the writer thread and takes no lock: the record is sealed, the
+     * entry is immutable and the name is unique, so nothing here is shared with
+     * the server thread. It used to hold the log's lock for the whole
+     * serialisation, and every {@code /history} query and every finished edit
+     * on the server thread waited for the disk behind it.</p>
+     */
+    public static void persist(Entry entry, History.Record record) {
         Path folder = directory;
         if (folder == null) {
             return;
@@ -138,13 +146,15 @@ public final class EditLog {
         String name = entry.time + "-" + SEQUENCE.incrementAndGet() + "-"
                 + entry.actor.replaceAll("[^A-Za-z0-9_.-]", "_") + ".snap";
         try {
-            Files.createDirectories(folder);
             NbtCompound root = Snapshots.of(record, entry.actor, entry.time);
             root.putString("world", entry.world);
             // Gzipped, like every other file the mod reads back.
-            Files.write(folder.resolve(name), NbtIo.write(root, false, true));
-        } catch (IOException e) {
-            // A history that cannot be written must never take the edit down.
+            com.maxlananas.fawebim.core.util.AtomicFiles.write(folder.resolve(name),
+                    out -> NbtIo.write(root, out, false, true));
+        } catch (IOException | RuntimeException e) {
+            // A history that cannot be written must never take the edit down,
+            // but whoever runs the server has to hear about it.
+            com.maxlananas.fawebim.core.platform.Log.warn("Could not write the history file " + name, e);
         }
     }
 
@@ -167,6 +177,8 @@ public final class EditLog {
                     loaded.add(entry);
                 } catch (IOException | RuntimeException e) {
                     // A single unreadable file must not stop the rest.
+                    com.maxlananas.fawebim.core.platform.Log.warn("Skipped the unreadable history file "
+                            + path.getFileName(), e);
                 }
             }
         } catch (IOException e) {

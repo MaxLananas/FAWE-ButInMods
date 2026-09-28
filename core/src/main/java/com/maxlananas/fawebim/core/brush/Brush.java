@@ -41,9 +41,17 @@ public interface Brush extends Cloneable {
     /** Human readable description for {@code /brush} feedback. */
     String describe();
 
-    /** Whether a left-click applies this brush (some brushes do). */
-    default boolean leftClick() {
-        return false;
+    /**
+     * What binding the brush does to the session before its first stroke:
+     * nothing, but FAWE's copy paste brush empties the clipboard, so that its
+     * first click copies.
+     */
+    default void bound(com.maxlananas.fawebim.core.session.LocalSession session) {
+    }
+
+    /** A line on how to use the brush, said once when it is bound, or null. */
+    default String hint() {
+        return null;
     }
 
     BrushSettings settings();

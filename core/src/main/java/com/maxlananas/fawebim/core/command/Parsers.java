@@ -4,7 +4,6 @@ import com.maxlananas.fawebim.core.mask.Mask;
 import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
-import com.maxlananas.fawebim.core.pattern.MapColors;
 import com.maxlananas.fawebim.core.pattern.Patterns;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.util.RandomCollection;
@@ -17,6 +16,7 @@ import com.maxlananas.fawebim.core.world.Extent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -29,7 +29,82 @@ public final class Parsers {
     private Parsers() {
     }
 
-    // ------------------------------------------------------------------ blocks
+    /**
+     * The largest coordinate a command accepts on any axis. Minecraft's world
+     * border stops at 30 million blocks, and staying inside it keeps every sum
+     * and difference of two coordinates inside an {@code int}: a position of
+     * two billion made the next {@code max + 1} of a region wrap round.
+     */
+    public static final int MAX_COORDINATE = 30_000_000;
+
+    /**
+     * A number argument, refused unless it is a finite number: Java reads
+     * {@code NaN} and {@code Infinity} as numbers too, and a {@code NaN} radius
+     * or a count of infinity walked as zero or as the largest integer.
+     */
+    public static double finiteArg(String input, String what) {
+        double value;
+        try {
+            value = Double.parseDouble(input.trim());
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a number for " + what + " but got '" + input + "'");
+        }
+        if (!Double.isFinite(value)) {
+            throw CommandRegistry.error("Expected a finite number for " + what + " but got '" + input + "'");
+        }
+        return value;
+    }
+
+    /**
+     * An integer argument. A decimal is rounded, as the commands always did; a
+     * value past what an {@code int} holds is refused instead of wrapping round
+     * to a negative one.
+     */
+    public static int intArg(String input, String what) {
+        long rounded = Math.round(finiteArg(input, what));
+        if (rounded < Integer.MIN_VALUE || rounded > Integer.MAX_VALUE) {
+            throw CommandRegistry.error("The " + what + " '" + input + "' is out of range");
+        }
+        return (int) rounded;
+    }
+
+    /** A whole number that has to fit a {@code long}, such as a seed. */
+    public static long longArg(String input, String what) {
+        try {
+            return Long.parseLong(input.trim());
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a whole number for " + what + " but got '" + input + "'");
+        }
+    }
+
+    /** One of the six directions, by name or first letter. */
+    public static com.maxlananas.fawebim.core.world.Direction direction(String input) {
+        try {
+            return com.maxlananas.fawebim.core.world.Direction.parse(input.trim());
+        } catch (IllegalArgumentException e) {
+            throw CommandRegistry.error("Unknown direction '" + input
+                    + "'; use north, south, east, west, up or down");
+        }
+    }
+
+    /** An axis, by letter or by a direction along it. */
+    public static com.maxlananas.fawebim.core.transform.Axis axis(String input) {
+        try {
+            return com.maxlananas.fawebim.core.transform.Axis.parse(input.trim());
+        } catch (IllegalArgumentException e) {
+            throw CommandRegistry.error("Unknown direction '" + input
+                    + "'; use x, y, z or a direction such as north or up");
+        }
+    }
+
+    /** Refuses a coordinate outside the world border. */
+    public static int coordinate(double value, String input) {
+        if (!Double.isFinite(value) || Math.abs(value) > MAX_COORDINATE) {
+            throw CommandRegistry.error("'" + input + "' is outside the world (coordinates stop at "
+                    + com.maxlananas.fawebim.core.util.Msg.formatNumber(MAX_COORDINATE) + ")");
+        }
+        return (int) Math.floor(value);
+    }
 
     /**
      * A radii argument: one number, or a comma separated pair, which is how
@@ -151,7 +226,46 @@ public final class Parsers {
         return id;
     }
 
-    // ---------------------------------------------------------------- patterns
+    /**
+     * A tree type as WorldEdit names them - oak, redwood, random - in its
+     * canonical spelling, or a worldgen feature id, which grows what it names:
+     * {@code /tool tree minecraft:azalea_tree}.
+     */
+    public static String treeType(String input) {
+        String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(input);
+        if (type != null) {
+            return type;
+        }
+        if (input != null && input.indexOf(':') > 0) {
+            return input.trim().toLowerCase(Locale.ROOT);
+        }
+        throw CommandRegistry.error("Unknown tree type '" + input + "'. Try: "
+                + com.maxlananas.fawebim.core.world.TreeTypes.names());
+    }
+
+    /**
+     * A worldgen feature id, namespaced as the game names it, refused when the
+     * world knows its features and this is not one of them.
+     */
+    public static String feature(com.maxlananas.fawebim.core.world.World world, String input) {
+        return registryId(world == null ? List.of() : world.featureIds(), input, "feature");
+    }
+
+    /** A worldgen structure id, as {@link #feature}. */
+    public static String structure(com.maxlananas.fawebim.core.world.World world, String input) {
+        return registryId(world == null ? List.of() : world.structureIds(), input, "structure");
+    }
+
+    private static String registryId(List<String> known, String input, String kind) {
+        String id = input.trim().toLowerCase(Locale.ROOT);
+        if (id.indexOf(':') < 0) {
+            id = "minecraft:" + id;
+        }
+        if (input.isBlank() || !known.isEmpty() && java.util.Collections.binarySearch(known, id) < 0) {
+            throw CommandRegistry.error("Unknown " + kind + " '" + input.trim() + "'");
+        }
+        return id;
+    }
 
     /** Parses a pattern: blocks, weighted lists, {@code #clipboard}, {@code ^} ... */
     public static Pattern pattern(String input, Ctx ctx) {
@@ -178,12 +292,14 @@ public final class Parsers {
         if (trimmed.startsWith("$")) {
             return biomePattern(trimmed.substring(1).trim(), ctx);
         }
+        if (trimmed.startsWith("##")) {
+            return tagPattern(trimmed.substring(2));
+        }
         if (trimmed.startsWith("#")) {
             return hashPattern(trimmed, ctx);
         }
         if (trimmed.startsWith("^")) {
-            Pattern inner = pattern(trimmed.substring(1), ctx);
-            return new Patterns.TypeOrStateApplying(inner);
+            return typeOrStatePattern(trimmed.substring(1), ctx);
         }
         if (trimmed.contains(",")) {
             Patterns.Weighted weighted = new Patterns.Weighted();
@@ -203,43 +319,121 @@ public final class Parsers {
         if (trimmed.startsWith("=")) {
             return new Patterns.ExpressionPattern(trimmed.substring(1));
         }
-        if (trimmed.startsWith("##")) {
-            // Category pattern: random block from the category.
-            List<String> names = new ArrayList<>();
-            BlockStateRegistry registry = BlockState.registry();
-            String category = trimmed.substring(2);
-            for (int id = 0; id < registry.stateCount(); id++) {
-                if (registry.matchesCategory(id, category)) {
-                    names.add(registry.describe(id));
-                }
-            }
-            if (names.isEmpty()) {
-                throw CommandRegistry.error("Unknown block category '" + category + "'");
-            }
-            Patterns.RandomState state = new Patterns.RandomState(
-                    names.stream().map(n -> BlockState.registry().parse(n)).filter(id -> id >= 0).toList());
-            return state;
-        }
         return new Patterns.Single(block(ctx, trimmed));
+    }
+
+    /**
+     * WorldEdit's {@code #clipboard} and {@code #copy}, the clipboard repeated
+     * across the world, with {@code @[x,y,z]} to shift it. FAWE's
+     * {@code #fullcopy} pastes the whole clipboard where it is applied, which a
+     * pattern of one block cannot; it is the same repetition here.
+     */
+    private static Pattern clipboardPattern(String key, Ctx ctx) {
+        BlockVector3 offset = BlockVector3.ZERO;
+        int at = key.indexOf('@');
+        String name = at < 0 ? key : key.substring(0, at);
+        if (!name.equals("clipboard") && !name.equals("copy") && !name.equals("c") && !name.equals("fullcopy")) {
+            throw CommandRegistry.error("Unknown pattern '#" + key + "'");
+        }
+        if (at >= 0) {
+            String coords = key.substring(at + 1);
+            String[] parts = coords.startsWith("[") && coords.endsWith("]")
+                    ? coords.substring(1, coords.length() - 1).split(",") : new String[0];
+            if (parts.length != 3) {
+                throw CommandRegistry.error("Syntax: #" + name + "@[x,y,z], e.g. #" + name + "@[0,-1,0]");
+            }
+            offset = new BlockVector3(intArgument(parts[0]), intArgument(parts[1]), intArgument(parts[2]));
+        }
+        if (!ctx.session().hasClipboard()) {
+            throw CommandRegistry.error("No clipboard: copy something first");
+        }
+        var clipboard = ctx.session().getClipboard().getClipboard();
+        return new Patterns.ClipboardPattern(clipboard, clipboard.getBox(), offset);
+    }
+
+    /**
+     * WorldEdit's {@code ##tag} pattern: a random block of a block tag, or of
+     * one of the mod's categories, in its default state, and with
+     * {@code ##*tag} in any of its states. It was never reached: the {@code #}
+     * patterns were asked first and did not know it.
+     */
+    private static Pattern tagPattern(String input) {
+        boolean anyState = input.startsWith("*");
+        String name = (anyState ? input.substring(1) : input).trim().toLowerCase(Locale.ROOT);
+        BlockStateRegistry registry = BlockState.registry();
+        boolean category = registry.categories().contains(name);
+        String tag = name.indexOf(':') < 0 ? "minecraft:" + name : name;
+        if (!category && !registry.blockTags().contains(tag)) {
+            throw CommandRegistry.error("Unknown block tag '" + name + "'");
+        }
+        List<Integer> states = new ArrayList<>();
+        for (String block : registry.blockNames()) {
+            int defaultState = registry.defaultState(block);
+            if (defaultState < 0 || !(category ? registry.matchesCategory(defaultState, name)
+                    : registry.hasTag(defaultState, tag))) {
+                continue;
+            }
+            if (anyState) {
+                states.addAll(registry.statesOf(block));
+            } else {
+                states.add(defaultState);
+            }
+        }
+        if (states.isEmpty()) {
+            throw CommandRegistry.error("The block tag '" + name + "' has no blocks");
+        }
+        return new Patterns.RandomState(states);
+    }
+
+    /**
+     * WorldEdit's {@code ^} pattern: {@code ^type} applies a block type and keeps
+     * the properties of each block it replaces, {@code ^[property=value,...]}
+     * applies properties and keeps each block, and {@code ^type[...]} both.
+     */
+    private static Pattern typeOrStatePattern(String input, Ctx ctx) {
+        int bracket = input.indexOf('[');
+        String type = (bracket < 0 ? input : input.substring(0, bracket)).trim();
+        Map<String, String> states = new java.util.LinkedHashMap<>();
+        if (bracket >= 0) {
+            if (!input.endsWith("]")) {
+                throw CommandRegistry.error("Missing ] in '^" + input + "'");
+            }
+            for (String pair : Str.splitCommas(input.substring(bracket + 1, input.length() - 1))) {
+                int equals = pair.indexOf('=');
+                if (equals <= 0 || equals == pair.length() - 1) {
+                    throw CommandRegistry.error("Expected property=value in '^" + input + "', got '"
+                            + pair.trim() + "'");
+                }
+                states.put(pair.substring(0, equals).trim().toLowerCase(Locale.ROOT),
+                        pair.substring(equals + 1).trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        if (type.isEmpty() && states.isEmpty()) {
+            throw CommandRegistry.error("Syntax: ^<block>, ^[property=value] or ^<block>[property=value]");
+        }
+        int typeState = -1;
+        if (!type.isEmpty()) {
+            typeState = BlockState.registry().defaultState(Str.withNamespace(type.toLowerCase(Locale.ROOT)));
+            if (typeState < 0) {
+                throw CommandRegistry.error("Unknown block '" + type + "'");
+            }
+        }
+        return new Patterns.TypeOrStateApplying(typeState, states);
     }
 
     private static Pattern hashPattern(String input, Ctx ctx) {
         String key = input.substring(1);
         String lower = key.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("clipboard") || lower.startsWith("copy") || lower.equals("c")
+                || lower.startsWith("fullcopy")) {
+            return clipboardPattern(lower, ctx);
+        }
         int bracket = lower.indexOf('[');
         String id = bracket < 0 ? lower : lower.substring(0, bracket);
         String args = bracketArguments(key, bracket);
 
         Extent extent = ctx.hasSelection() ? extOf(ctx) : ctx.world();
         switch (id) {
-            case "clipboard", "copy", "c", "fullcopy" -> {
-                if (!ctx.session().hasClipboard()) {
-                    throw CommandRegistry.error("No clipboard: copy something first");
-                }
-                var holder = ctx.session().getClipboard();
-                BlockVector3 origin = holder.getClipboard().getOrigin();
-                return new Patterns.ClipboardPattern(holder.getClipboard(), origin, id.equals("fullcopy"), false);
-            }
             case "existing" -> {
                 return new Patterns.Existing(extent);
             }
@@ -280,28 +474,37 @@ public final class Parsers {
                 int axis = id.endsWith("x") ? 0 : id.endsWith("y") ? 1 : 2;
                 return new Patterns.NoAxis(pattern(parts.get(0), ctx), axis);
             }
-            case "offset" -> {
-                String[] parts = args.isEmpty() ? new String[]{"0", "0", "0"} : args.split(",");
-                return new Patterns.Offset(new Patterns.Single(BlockState.registry().air()),
-                        new BlockVector3(Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim()),
-                                Integer.parseInt(parts[2].trim())));
-            }
-            case "spread", "randomoffset", "solidspread", "surfacespread" -> {
-                String[] parts = args.isEmpty() ? new String[]{"5", "5", "5"} : args.split(",");
-                int dx = Integer.parseInt(parts[0].trim());
-                int dy = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : dx;
-                int dz = parts.length > 2 ? Integer.parseInt(parts[2].trim()) : dx;
-                return new Patterns.RandomOffset(new Patterns.Single(BlockState.registry().air()), dx, dy, dz,
-                        id.contains("solid"));
-            }
-            case "l", "linear", "l3d", "l2d" -> {
-                List<String> parts = Str.splitCommas(args);
-                if (parts.size() < 2) {
-                    throw CommandRegistry.error("#linear needs two blocks, e.g. #l3d[stone][dirt]");
+            case "offset", "spread", "randomoffset", "solidspread" -> {
+                // FAWE's #offset[pattern][x][y][z] and #spread[pattern][x][y][z],
+                // or one distance for the three: [pattern][n].
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 2 && parts.size() != 4) {
+                    throw CommandRegistry.error("Syntax: #" + id + "[pattern][x][y][z] or #" + id
+                            + "[pattern][distance], e.g. #" + id + "[stone][2][0][4]");
                 }
-                Pattern from = pattern(parts.get(0).replace("[", "").replace("]", ""), ctx);
-                Pattern to = pattern(parts.get(1).replace("[", "").replace("]", ""), ctx);
-                return new Patterns.Linear(from, to, true, true, true);
+                Pattern inner = pattern(parts.get(0), ctx);
+                int dx = intArgument(parts.get(1));
+                int dy = parts.size() == 4 ? intArgument(parts.get(2)) : dx;
+                int dz = parts.size() == 4 ? intArgument(parts.get(3)) : dx;
+                if (id.equals("offset")) {
+                    return new Patterns.Offset(inner, new BlockVector3(dx, dy, dz));
+                }
+                if (dx < 0 || dy < 0 || dz < 0) {
+                    throw CommandRegistry.error("The distances of #" + id + " must not be negative");
+                }
+                return new Patterns.RandomOffset(inner, dx, dy, dz, id.equals("solidspread"));
+            }
+            case "surfacespread" -> {
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 2) {
+                    throw CommandRegistry.error("Syntax: #surfacespread[pattern][distance], e.g. "
+                            + "#surfacespread[#existing][4]");
+                }
+                return new Patterns.SurfaceSpread(pattern(parts.get(0), ctx), intArgument(parts.get(1)),
+                        ctx.world().minY(), ctx.world().maxY());
+            }
+            case "l", "linear", "l2d", "linear2d", "l3d", "linear3d" -> {
+                return linearPattern(id, input, ctx);
             }
             case "simplex", "perlin", "voronoi", "rmf" -> {
                 List<String> parts = Str.bracketGroups(input);
@@ -311,7 +514,8 @@ public final class Parsers {
                 }
                 double scale = 1d / Math.max(1d, parseDouble(parts.get(0).trim()));
                 Noise noise = switch (id) {
-                    case "simplex" -> new Noise.Simplex(0);
+                    // FAWE's own field, so a pattern places what it places there.
+                    case "simplex" -> Noise.Simplex.classic();
                     case "perlin" -> new Noise.Perlin(0);
                     case "voronoi" -> new Noise.Voronoi(0);
                     default -> new Noise.RidgedMultiFractal(0, 3, 2, 0.5);
@@ -329,34 +533,103 @@ public final class Parsers {
                         + ", got '" + parts.get(1).trim() + "'");
             }
             case "swaptype", "ts", "typeswap" -> {
-                return new Patterns.TypeSwap();
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 2 || parts.get(0).isBlank()) {
+                    throw CommandRegistry.error("Syntax: #" + id + "[input][output], e.g. #" + id + "[spruce][oak]");
+                }
+                return new Patterns.TypeSwap(parts.get(0).trim().toLowerCase(Locale.ROOT),
+                        parts.get(1).trim().toLowerCase(Locale.ROOT));
             }
             case "rel", "r", "relative", "~" -> {
-                BlockVector3 origin = ctx.placement();
-                return new Patterns.Relative(pattern(args, ctx), origin);
-            }
-            case "color", "colour", "averagecolor", "anglecolor" -> {
-                List<String> parts = Str.splitCommas(args);
-                int rgb = 0xFFFFFF;
-                if (parts.size() >= 3) {
-                    rgb = (Integer.parseInt(parts.get(0).trim()) << 16)
-                            | (Integer.parseInt(parts.get(1).trim()) << 8)
-                            | Integer.parseInt(parts.get(2).trim());
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 1) {
+                    throw CommandRegistry.error("Syntax: #relative[pattern], e.g. #relative[#clipboard]");
                 }
-                return new Patterns.Color(rgb, MapColors.palette(BlockState.registry()));
+                return new Patterns.Relative(pattern(parts.get(0), ctx));
             }
-            case "lighten", "darken", "saturate", "desaturate" -> {
-                double amount = args.isEmpty() ? 0.1 : Double.parseDouble(args);
-                Patterns.ColorAdjust.Mode mode = switch (id) {
-                    case "lighten" -> Patterns.ColorAdjust.Mode.LIGHTEN;
-                    case "darken" -> Patterns.ColorAdjust.Mode.DARKEN;
-                    case "saturate" -> Patterns.ColorAdjust.Mode.SATURATE;
-                    default -> Patterns.ColorAdjust.Mode.DESATURATE;
-                };
-                return new Patterns.ColorAdjust(extOf(ctx), mode, amount);
+            case "color", "colour" -> {
+                return new Patterns.Color(colourArguments(id, input));
+            }
+            case "averagecolor", "averagecolour" -> {
+                return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.AVERAGE, 0,
+                        colourArguments(id, input));
+            }
+            case "saturate" -> {
+                // FAWE's #saturate[r][g][b][a] multiplies by a colour; a lone
+                // number is the older saturation step.
+                if (Str.bracketGroups(input).size() == 1 && Str.isDouble(args.trim())) {
+                    return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.SATURATE,
+                            parseDouble(args.trim()));
+                }
+                return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.MULTIPLY, 0,
+                        colourArguments(id, input));
+            }
+            case "desaturate" -> {
+                double percent = args.isBlank() ? 10 : parseDouble(args.trim());
+                return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.DESATURATE, percent / 100);
+            }
+            case "lighten", "darken" -> {
+                double amount = args.isBlank() ? 0.1 : parseDouble(args.trim());
+                return new Patterns.ColorAdjust(extOf(ctx), id.equals("lighten") ? Patterns.ColorAdjust.Mode.LIGHTEN
+                        : Patterns.ColorAdjust.Mode.DARKEN, amount);
+            }
+            case "anglecolor", "anglecolour" -> {
+                List<String> parts = Str.bracketGroups(input);
+                int distance = parts.size() == 1 ? intArgument(parts.get(0)) : 0;
+                if (distance <= 0) {
+                    throw CommandRegistry.error("Syntax: #anglecolor[distance], e.g. #anglecolor[10]");
+                }
+                return new Patterns.AngleColor(distance, ctx.world().minY(), ctx.world().maxY());
             }
             default -> throw CommandRegistry.error("Unknown pattern '" + input + "'");
         }
+    }
+
+    /**
+     * FAWE's linear patterns over a list of blocks: {@code #linear[pattern]} the
+     * entries one after the other, {@code #linear2d[pattern][xscale][zscale]}
+     * and {@code #linear3d[pattern][xscale][yscale][zscale]} in bands across the
+     * edit. A single block is itself; anything but a list is refused.
+     */
+    private static Pattern linearPattern(String id, String input, Ctx ctx) {
+        List<String> parts = Str.bracketGroups(input);
+        boolean flat = id.contains("2d");
+        boolean sequence = !flat && !id.contains("3d");
+        int scales = sequence ? 0 : flat ? 2 : 3;
+        if (parts.isEmpty() || parts.size() > 1 + scales) {
+            throw CommandRegistry.error(sequence ? "Syntax: #linear[pattern], e.g. #linear[stone,dirt]"
+                    : "Syntax: #" + id + "[pattern]" + (flat ? "[xscale][zscale]" : "[xscale][yscale][zscale]")
+                    + ", e.g. #" + id + "[stone,dirt]");
+        }
+        Pattern inner = pattern(parts.get(0), ctx);
+        if (inner instanceof Patterns.Single) {
+            return inner;
+        }
+        if (!(inner instanceof Patterns.Weighted list)) {
+            throw CommandRegistry.error("Only a list of blocks can be used with #" + id + ", got '"
+                    + parts.get(0).trim() + "'");
+        }
+        if (sequence) {
+            // Upstream's list is a set: a block written twice is one entry.
+            List<Pattern> entries = new ArrayList<>();
+            java.util.Set<Integer> seen = new java.util.HashSet<>();
+            for (int i = 0; i < list.size(); i++) {
+                Pattern entry = list.get(i);
+                if (!(entry instanceof Patterns.Single single) || seen.add(single.stateId())) {
+                    entries.add(entry);
+                }
+            }
+            return new Patterns.LinearCycle(entries.toArray(new Pattern[0]));
+        }
+        int[] scale = {1, 1, 1};
+        for (int i = 1; i < parts.size(); i++) {
+            scale[i - 1] = intArgument(parts.get(i));
+            if (scale[i - 1] == 0) {
+                throw CommandRegistry.error("The scales of #" + id + " must not be 0");
+            }
+        }
+        return flat ? new Patterns.LinearChoice(list, scale[0], 0, scale[1])
+                : new Patterns.LinearChoice(list, scale[0], scale[1], scale[2]);
     }
 
     /**
@@ -384,12 +657,15 @@ public final class Parsers {
         return new Patterns.Biome(biomeId, extOf(ctx));
     }
 
+    /**
+     * What a parsed mask or pattern reads: the extent of the operation that
+     * parses it when that operation set one, else the session's reader of the
+     * world the player edits, which a mask kept for later keeps following.
+     */
     private static Extent extOf(Ctx ctx) {
         Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
-        return extent == null ? ctx.readSession() : extent;
+        return extent == null ? ctx.session().worldReader() : extent;
     }
-
-    // ------------------------------------------------------------------- masks
 
     /** Parses a mask expression: unions ({@code ,}), intersections ({@code &}) and {@code #id}s. */
     public static Mask mask(String input, Ctx ctx) {
@@ -477,11 +753,64 @@ public final class Parsers {
         if (trimmed.startsWith("/")) {
             return angleMask("angle", trimmed.substring(1), extOf(ctx));
         }
+        if (trimmed.startsWith(">") || trimmed.startsWith("<")) {
+            // WorldEdit's offset masks: ">stone" is a block over stone, "<stone"
+            // one under it, and alone the sign stands for any block.
+            Mask beside = trimmed.length() > 1 ? mask(trimmed.substring(1), ctx)
+                    : new Masks.ExistingMask(extOf(ctx));
+            return new Masks.OffsetMask(extOf(ctx), beside, 0, trimmed.charAt(0) == '>' ? -1 : 1, 0);
+        }
+        if (trimmed.startsWith("$")) {
+            return biomeMask(trimmed.substring(1), extOf(ctx));
+        }
         if (trimmed.startsWith("^")) {
-            return angleMask("angle", trimmed.substring(1), extOf(ctx));
+            return blockStateMask(trimmed, extOf(ctx));
         }
         // Plain block list, e.g. "stone,dirt,oak_log[axis=y]".
         return new Masks.BlockMask(extOf(ctx), List.of(trimmed));
+    }
+
+    /**
+     * WorldEdit's biome mask, {@code $plains}, or with FAWE's brackets several
+     * biomes at once, {@code $[plains,desert]}.
+     */
+    private static Mask biomeMask(String input, Extent extent) {
+        String list = input.startsWith("[") && input.endsWith("]") ? input.substring(1, input.length() - 1) : input;
+        List<String> names = Str.splitCommas(list);
+        int[] ids = new int[names.size()];
+        for (int i = 0; i < ids.length; i++) {
+            String name = names.get(i).trim();
+            ids[i] = BlockState.registry().biome(name);
+            if (ids[i] < 0) {
+                throw CommandRegistry.error("Unknown biome '" + name + "'");
+            }
+        }
+        if (ids.length == 0) {
+            throw CommandRegistry.error("Syntax: $<biome> or $[<biome>,<biome>]");
+        }
+        return new Masks.BiomeMask(extent, ids);
+    }
+
+    /**
+     * WorldEdit's block state mask: {@code ^[property=value,...]}, or strict,
+     * {@code ^=[...]}, where a block must have at least one of the properties.
+     */
+    private static Mask blockStateMask(String input, Extent extent) {
+        boolean strict = input.startsWith("^=");
+        String body = input.substring(strict ? 2 : 1).trim();
+        if (!body.startsWith("[") || !body.endsWith("]")) {
+            throw CommandRegistry.error("Syntax: ^[property=value,...] or ^=[property=value,...]");
+        }
+        Map<String, String> states = new java.util.LinkedHashMap<>();
+        for (String pair : Str.splitCommas(body.substring(1, body.length() - 1))) {
+            int equals = pair.indexOf('=');
+            if (equals <= 0 || equals == pair.length() - 1) {
+                throw CommandRegistry.error("Expected property=value in '" + input + "', got '" + pair.trim() + "'");
+            }
+            states.put(pair.substring(0, equals).trim().toLowerCase(Locale.ROOT),
+                    pair.substring(equals + 1).trim().toLowerCase(Locale.ROOT));
+        }
+        return new Masks.BlockStateMask(extent, states, strict);
     }
 
     /**
@@ -540,6 +869,34 @@ public final class Parsers {
         return key.substring(bracket + 1, key.length() - 1);
     }
 
+    /**
+     * The colour of FAWE's colour patterns, {@code [r][g][b][a]} - the alpha
+     * does not change which block is nearest - or the older {@code [r,g,b]},
+     * each channel held to 0 to 255.
+     */
+    private static int colourArguments(String id, String input) {
+        List<String> parts = Str.bracketGroups(input);
+        if (parts.size() == 1) {
+            parts = Str.splitCommas(parts.get(0));
+        }
+        if (parts.size() != 3 && parts.size() != 4) {
+            throw CommandRegistry.error("Syntax: #" + id + "[r][g][b][a], e.g. #" + id + "[156][100][0][120]");
+        }
+        int rgb = 0;
+        for (int i = 0; i < 3; i++) {
+            rgb = (rgb << 8) | Math.max(0, Math.min(255, intArgument(parts.get(i))));
+        }
+        return rgb;
+    }
+
+    private static int intArgument(String value) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a whole number, got '" + value.trim() + "'");
+        }
+    }
+
     private static double parseDouble(String value) {
         try {
             return Double.parseDouble(value);
@@ -567,7 +924,7 @@ public final class Parsers {
                 return new Masks.AirMask(extent, false);
             }
             case "existing" -> {
-                return new Masks.ExistingMask(extent, false);
+                return new Masks.ExistingMask(extent);
             }
             case "solid" -> {
                 return new Masks.SolidMask(extent);
@@ -580,7 +937,7 @@ public final class Parsers {
             }
             case "wall" -> {
                 // FAWE's #wall: a block that exists and has a horizontal air side.
-                return new Masks.IntersectionMask(List.of(new Masks.ExistingMask(extent, false),
+                return new Masks.IntersectionMask(List.of(new Masks.ExistingMask(extent),
                         new Masks.WallMask(new Masks.AirMask(extent, false), 1, 8)));
             }
             case "surface" -> {
@@ -610,6 +967,14 @@ public final class Parsers {
             case "false" -> {
                 return new Masks.ConstantMask(false);
             }
+            case "hotbar" -> {
+                // FAWE's #hotbar: the blocks of the items in the hotbar, in any state.
+                List<Integer> hotbar = ctx.actor().hotbarBlocks();
+                if (hotbar.isEmpty()) {
+                    throw CommandRegistry.error("#hotbar needs blocks in the hotbar");
+                }
+                return new Masks.HotbarMask(extent, new java.util.HashSet<>(hotbar));
+            }
             case "exposed" -> {
                 return new Masks.ExposedMask(extent);
             }
@@ -630,15 +995,20 @@ public final class Parsers {
                 return new Masks.LazyRegionMask(() -> ctx.session().getSelection(ctx.world()));
             }
             case "offset" -> {
-                String[] parts = args.split(",");
-                int dx = parts.length > 0 && !parts[0].isEmpty() ? Integer.parseInt(parts[0]) : 0;
-                int dy = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
-                int dz = parts.length > 2 ? Integer.parseInt(parts[2]) : 0;
-                Mask delegate = ctx.session().getMask();
-                if (delegate == null) {
-                    throw CommandRegistry.error("#offset needs a sub-mask, e.g. #offset[0,1,0][stone]");
+                // FAWE's #offset[x][y][z][mask]: the mask tested that far away.
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() == 4) {
+                    return new Masks.OffsetMask(extent, mask(parts.get(3), ctx), intArgument(parts.get(0)),
+                            intArgument(parts.get(1)), intArgument(parts.get(2)));
                 }
-                return new Masks.OffsetMask(extent, delegate, dx, dy, dz);
+                // The older #offset[x,y,z], which offsets the global mask.
+                String[] offset = args.split(",");
+                Mask delegate = ctx.session().getMask();
+                if (parts.size() != 1 || offset.length != 3 || delegate == null) {
+                    throw CommandRegistry.error("Syntax: #offset[x][y][z][mask], e.g. #offset[0][-1][0][stone]");
+                }
+                return new Masks.OffsetMask(extent, delegate, intArgument(offset[0]), intArgument(offset[1]),
+                        intArgument(offset[2]));
             }
             case "simplex" -> {
                 List<String> parts = Str.bracketGroups(input);

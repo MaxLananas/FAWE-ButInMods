@@ -37,6 +37,10 @@ public final class BlockArrayClipboard implements Extent {
     private Partial lastPartial;
     private int maxY = Integer.MIN_VALUE;
     private World lazyWorld;
+    /** The outline of a copy that was not a box, or {@code null}: the cells a paste writes. */
+    private com.maxlananas.fawebim.core.region.Region shape;
+    /** The schematic file the clipboard was read from, or {@code null} for a copy. */
+    private java.nio.file.Path source;
 
     public BlockArrayClipboard(BlockVector3 origin) {
         this.origin = origin;
@@ -49,13 +53,34 @@ public final class BlockArrayClipboard implements Extent {
      * copying a huge selection costs no memory.
      */
     public static BlockArrayClipboard lazy(World world, com.maxlananas.fawebim.core.region.Region region, String name) {
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(region.getMinimumPoint());
-        clipboard.box.set(region.getMinimumPoint().x(), region.getMinimumPoint().y(), region.getMinimumPoint().z(),
-                region.getMaximumPoint().x(), region.getMaximumPoint().y(), region.getMaximumPoint().z());
-        clipboard.minY = region.getMinimumPoint().y();
-        clipboard.maxY = region.getMaximumPoint().y();
+        BlockArrayClipboard clipboard = of(region);
         clipboard.lazyWorld = world;
         clipboard.name = name;
+        return clipboard;
+    }
+
+    /**
+     * An empty clipboard for a copy of a region, as FAWE makes one: its box is
+     * the region's whatever the region holds, so a paste covers what was
+     * selected - the air in it included, which is what clears the place it
+     * lands on - and a shape other than a box keeps its outline, so the paste
+     * writes nothing outside it.
+     *
+     * <p>The box used to grow with the blocks the copy stored, and the copy
+     * stores no air: a selection with air along its sides, or sections of sky
+     * above a build, pasted as a smaller box that left the ground it landed on
+     * standing there, and a copy of nothing but air pasted one block.</p>
+     */
+    public static BlockArrayClipboard of(com.maxlananas.fawebim.core.region.Region region) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        BlockArrayClipboard clipboard = new BlockArrayClipboard(min);
+        clipboard.box.set(min.x(), min.y(), min.z(), max.x(), max.y(), max.z());
+        clipboard.minY = min.y();
+        clipboard.maxY = max.y();
+        if (!(region instanceof com.maxlananas.fawebim.core.region.CuboidRegion)) {
+            clipboard.shape = region.copy();
+        }
         return clipboard;
     }
 
@@ -82,6 +107,19 @@ public final class BlockArrayClipboard implements Extent {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    /**
+     * The schematic file this clipboard was read from, as FAWE's clipboard
+     * keeps its URI: {@code //schem move}, {@code //schem unload} and
+     * {@code //schem delete *} go by it. Null for a copy.
+     */
+    public java.nio.file.Path getSource() {
+        return source;
+    }
+
+    public void setSource(java.nio.file.Path source) {
+        this.source = source;
     }
 
     public List<EntityData> getEntitiesCopy() {
@@ -113,29 +151,116 @@ public final class BlockArrayClipboard implements Extent {
         return blockEntities;
     }
 
-    // ------------------------------------------------------------------ biomes
+    /**
+     * The block entities a paste or a save uses: the stored ones, or for a lazy
+     * clipboard the ones its region holds now, read from the world like its
+     * blocks are. On the server thread, as every read of a lazy clipboard.
+     */
+    public java.util.Map<BlockVector3, com.maxlananas.fawebim.core.util.NbtCompound> readBlockEntities() {
+        World world = lazyWorld;
+        if (world == null) {
+            return blockEntities;
+        }
+        java.util.Map<BlockVector3, com.maxlananas.fawebim.core.util.NbtCompound> read = new java.util.HashMap<>();
+        world.forEachBlockEntity(box.minX(), box.minY(), box.minZ(), box.maxX(), box.maxY(), box.maxZ(),
+                (x, y, z) -> {
+                    com.maxlananas.fawebim.core.util.NbtCompound nbt = world.getBlockEntity(x, y, z);
+                    if (nbt != null) {
+                        read.put(new BlockVector3(x, y, z), nbt);
+                    }
+                });
+        return read;
+    }
 
+    /**
+     * The biomes, one per cell of the game's 4x4x4 biome grid, keyed by
+     * {@link #positionKey(int, int, int)} of the cell. The game has nothing
+     * finer to copy, and a biome per block stored the same value up to
+     * sixty-four times.
+     */
     private final java.util.Map<Long, Integer> biomes = new java.util.HashMap<>();
+    /** Where the grid lies: position x is in cell {@code (x + biomeShiftX) >> 2}. */
+    private int biomeShiftX;
+    private int biomeShiftY;
+    private int biomeShiftZ;
+    private BlockVector3 worldOffset = BlockVector3.ZERO;
 
-    /** Stores the biome of a position, filled by {@code //copy -b}. */
+    /**
+     * Says where this clipboard's position 0,0,0 was in the world it came
+     * from. A copy keeps the world's coordinates and needs no call; a
+     * schematic loads with its lowest corner at 0 and says where that corner
+     * was, when the file knows. It is what puts {@code //paste -o} back where
+     * the build stood and the biomes back on the cells of the game's grid.
+     */
+    public void setWorldOffset(BlockVector3 offset) {
+        worldOffset = offset;
+        biomeShiftX = Math.floorMod(offset.x(), 4);
+        biomeShiftY = Math.floorMod(offset.y(), 4);
+        biomeShiftZ = Math.floorMod(offset.z(), 4);
+    }
+
+    /** Where position 0,0,0 was in the world, as {@link #setWorldOffset} left it. */
+    public BlockVector3 worldOffset() {
+        return worldOffset;
+    }
+
+    /** Where the origin was in the world: the destination of {@code //paste -o}. */
+    public BlockVector3 worldOrigin() {
+        return origin.add(worldOffset);
+    }
+
+    /** Stores the biome of the cell holding a position, filled by {@code //copy -b}. */
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
-        biomes.put(positionKey(x, y, z), biomeId);
+        biomes.put(biomeCell(x, y, z), biomeId);
         return true;
     }
 
-    /** The stored biome of a position, or {@code -1} when there is none. */
+    /** The stored biome of the cell holding a position, or {@code -1} when there is none. */
     public int getBiome(int x, int y, int z) {
-        return biomes.getOrDefault(positionKey(x, y, z), -1);
+        return biomes.getOrDefault(biomeCell(x, y, z), -1);
+    }
+
+    private long biomeCell(int x, int y, int z) {
+        return positionKey((x + biomeShiftX) >> 2, (y + biomeShiftY) >> 2, (z + biomeShiftZ) >> 2);
     }
 
     public boolean hasBiomes() {
         return !biomes.isEmpty();
     }
 
-    /** Every stored biome, keyed by {@link #positionKey(int, int, int)}. */
-    public java.util.Set<java.util.Map.Entry<Long, Integer>> biomeEntries() {
-        return biomes.entrySet();
+    /** A stored biome and the part of the clipboard's box its cell covers, as {@link #forEachBiomeCell} gives it. */
+    @FunctionalInterface
+    public interface BiomeCell {
+        void accept(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, int biomeId);
+    }
+
+    /**
+     * Every stored biome with the positions of the box its cell covers, always
+     * in the same order, so that where several cells land in one cell of the
+     * world, every paste of the clipboard picks the same one.
+     */
+    public void forEachBiomeCell(BiomeCell action) {
+        long[] keys = new long[biomes.size()];
+        int count = 0;
+        for (long key : biomes.keySet()) {
+            keys[count++] = key;
+        }
+        java.util.Arrays.sort(keys);
+        for (long key : keys) {
+            int x = (keyX(key) << 2) - biomeShiftX;
+            int y = (keyY(key) << 2) - biomeShiftY;
+            int z = (keyZ(key) << 2) - biomeShiftZ;
+            int minX = Math.max(x, box.minX());
+            int minY = Math.max(y, box.minY());
+            int minZ = Math.max(z, box.minZ());
+            int maxX = Math.min(x + 3, box.maxX());
+            int maxY = Math.min(y + 3, box.maxY());
+            int maxZ = Math.min(z + 3, box.maxZ());
+            if (minX <= maxX && minY <= maxY && minZ <= maxZ) {
+                action.accept(minX, minY, minZ, maxX, maxY, maxZ, biomes.get(key));
+            }
+        }
     }
 
     /** Packs the coordinates of a biome cell the way Minecraft packs a block position. */
@@ -206,12 +331,12 @@ public final class BlockArrayClipboard implements Extent {
         int localX = (x & 15) - part.startX();
         int localZ = (z & 15) - part.startZ();
         int localY = (y & 15) - part.startY();
-        if (localX < 0 || localZ < 0 || localY < 0 || localX >= part.stride()
-                || localZ >= part.stride() || localY > part.endY() - part.startY()) {
+        if (localX < 0 || localZ < 0 || localY < 0 || localZ >= part.depth()
+                || localY > part.endY() - part.startY()) {
             return 0;
         }
-        int[] row = part.rows()[localY * part.stride() + localZ];
-        return row == null ? 0 : row[localX];
+        int[] row = part.rows()[localY * part.depth() + localZ];
+        return row == null || localX >= row.length ? 0 : row[localX];
     }
 
     public int getBlock(BlockVector3 position) {
@@ -246,8 +371,8 @@ public final class BlockArrayClipboard implements Extent {
                     if (run == null) {
                         continue;
                     }
-                    int localY = part.startY() + row / part.stride();
-                    int localZ = part.startZ() + row % part.stride();
+                    int localY = part.startY() + row / part.depth();
+                    int localZ = part.startZ() + row % part.depth();
                     System.arraycopy(run, 0, section,
                             (localY << 8) | (localZ << 4) | part.startX(), run.length);
                 }
@@ -280,8 +405,10 @@ public final class BlockArrayClipboard implements Extent {
         int baseZ = sectionZ << 4;
         long key = sectionKey(baseX, baseY, baseZ);
         sections.put(key, data);
+        partial.remove(key);
         lastSectionKey = key;
         lastSection = data;
+        lastPartial = null;
         // A section is 16 blocks along each axis, so the extent it adds to the
         // box is known without walking it.
         box.set(Math.min(box.minX(), baseX), Math.min(box.minY(), baseY),
@@ -301,6 +428,11 @@ public final class BlockArrayClipboard implements Extent {
      * rows of the box are recorded as the runs they are, and the cells outside
      * the box are left as air. A section the selection covers only partly is
      * then one small object per row instead of one per block.</p>
+     *
+     * <p>A row is one line along x at one (y, z), so the box holds
+     * {@code depth * height} of them, {@code depth} being its extent along z. A
+     * run always starts at the box's first x, and only the air at its far end
+     * is left out: the start of a run is where its first cell goes.</p>
      */
     public void adoptBox(int chunkX, int sectionY, int chunkZ, int[] data,
                          int fromX, int fromY, int fromZ, int toX, int toY, int toZ) {
@@ -312,32 +444,23 @@ public final class BlockArrayClipboard implements Extent {
         int startY = fromY - baseY;
         int endY = toY - baseY;
         int stride = endX - startX + 1;
-        int rows = stride * (endY - startY + 1);
-        int[][] recorded = new int[rows][];
+        int depth = endZ - startZ + 1;
+        int[][] recorded = new int[depth * (endY - startY + 1)][];
         int row = 0;
         for (int y = startY; y <= endY; y++) {
             int rowBase = y << 8;
             for (int z = startZ; z <= endZ; z++) {
                 int at = rowBase | (z << 4) | startX;
-                int run = 0;
-                while (run < stride && data[at + run] == 0) {
-                    run++;
-                }
-                if (run == stride) {
-                    recorded[row++] = null;
-                    continue;
-                }
-                int first = run;
-                run = stride;
-                while (run > first && data[at + run - 1] == 0) {
+                int run = stride;
+                while (run > 0 && data[at + run - 1] == 0) {
                     run--;
                 }
-                recorded[row++] = java.util.Arrays.copyOfRange(data, at + first, at + run);
+                recorded[row++] = run == 0 ? null : java.util.Arrays.copyOfRange(data, at, at + run);
             }
         }
         long key = sectionKey(chunkX << 4, baseY, chunkZ << 4);
         partial.put(key, new Partial(recorded, chunkX << 4, baseY, chunkZ << 4,
-                startX, startZ, startY, endY, stride));
+                startX, startZ, startY, endY, depth));
         sections.remove(key);
         lastSectionKey = key;
         lastSection = null;
@@ -352,9 +475,13 @@ public final class BlockArrayClipboard implements Extent {
         maxY = Math.max(maxY, baseY + endY);
     }
 
-    /** The runs a partly read section holds, and where they start. */
+    /**
+     * The runs a partly read section holds, and where they start: row
+     * {@code (y - startY) * depth + (z - startZ)} is the line at that (y, z),
+     * and its first cell is at {@code startX}.
+     */
     private record Partial(int[][] rows, int baseX, int baseY, int baseZ, int startX, int startZ,
-                           int startY, int endY, int stride) {
+                           int startY, int endY, int depth) {
     }
 
     @Override
@@ -383,16 +510,6 @@ public final class BlockArrayClipboard implements Extent {
         return box.volume();
     }
 
-    /** Iterates the clipboard in the region's natural order. */
-    public Iterable<BlockVector3> positions() {
-        List<BlockVector3> positions = new ArrayList<>();
-        forEachPosition((x, y, z, state) -> {
-            positions.add(new BlockVector3(x, y, z));
-            return false;
-        });
-        return positions;
-    }
-
     /** Receives one clipboard cell: its position and the state stored there. */
     @FunctionalInterface
     public interface CellVisitor {
@@ -408,6 +525,9 @@ public final class BlockArrayClipboard implements Extent {
      * @return how many visits reported true
      */
     public int forEachPosition(CellVisitor visitor) {
+        if (shape != null) {
+            return (int) shape.forEachPosition((x, y, z) -> visitor.visit(x, y, z, getBlock(x, y, z)));
+        }
         int visited = 0;
         for (int y = box.minY(); y <= box.maxY(); y++) {
             for (int z = box.minZ(); z <= box.maxZ(); z++) {
@@ -427,7 +547,7 @@ public final class BlockArrayClipboard implements Extent {
      * <p>The number of blocks a copy really stored, which is what the command
      * answers with: a selection of air stores nothing, however large it is.</p>
      */
-    public int filled(com.maxlananas.fawebim.core.world.BlockStateRegistry registry) {
+    public int filled(BlockStateRegistry registry) {
         int filled = 0;
         for (int[] section : sections.values()) {
             for (int state : section) {
@@ -465,7 +585,9 @@ public final class BlockArrayClipboard implements Extent {
     public int forEachStored(int air, CellVisitor visitor) {
         int visited = 0;
         if (lazyWorld != null) {
-            return forEachPosition(visitor);
+            // The world holds the blocks, air as much as the rest: its air is
+            // left out here as the stored air is below.
+            return forEachPosition((x, y, z, state) -> state != 0 && state != air && visitor.visit(x, y, z, state));
         }
         long[] keys = sections.keys();
         for (long key : keys) {
@@ -492,8 +614,8 @@ public final class BlockArrayClipboard implements Extent {
                 if (run == null) {
                     continue;
                 }
-                int y = part.baseY() + part.startY() + row / part.stride();
-                int z = part.baseZ() + part.startZ() + row % part.stride();
+                int y = part.baseY() + part.startY() + row / part.depth();
+                int z = part.baseZ() + part.startZ() + row % part.depth();
                 for (int index = 0; index < run.length; index++) {
                     int state = run[index];
                     if (state == 0 || state == air) {
@@ -506,18 +628,6 @@ public final class BlockArrayClipboard implements Extent {
             }
         }
         return visited;
-    }
-
-    /** True when the clipboard contains no non-air blocks (nothing to paste). */
-    public boolean isEmpty(BlockStateRegistry registry) {
-        for (int[] section : sections.values()) {
-            for (int state : section) {
-                if (!registry.isAirLike(state)) {
-                    return false;
-                }
-            }
-        }
-        return true;
     }
 
     /** Shifts the clipboard so that its origin becomes the minimum corner. */

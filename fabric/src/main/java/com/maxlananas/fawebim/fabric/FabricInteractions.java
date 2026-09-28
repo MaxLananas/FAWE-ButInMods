@@ -2,17 +2,18 @@ package com.maxlananas.fawebim.fabric;
 
 import com.maxlananas.fawebim.core.brush.Brush;
 import com.maxlananas.fawebim.core.brush.BrushFactory;
-import com.maxlananas.fawebim.core.command.CommandManager;
+import com.maxlananas.fawebim.core.command.CommandRegistry;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
-import com.maxlananas.fawebim.core.region.SelectorLimits;
 import com.maxlananas.fawebim.core.session.LocalSession;
+import com.maxlananas.fawebim.core.tool.SuperPickaxe;
 import com.maxlananas.fawebim.core.tool.Tool;
+import com.maxlananas.fawebim.core.tool.ToolTarget;
 import com.maxlananas.fawebim.core.tool.Tools;
 import com.maxlananas.fawebim.core.util.Msg;
+import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.world.BlockState;
-import com.maxlananas.fawebim.core.world.Direction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -67,20 +68,20 @@ public final class FabricInteractions {
     }
 
     /**
-     * The item a brush or a tool is waiting for when the player holds another.
-     * WorldEdit keeps one tool per item, so a click with the wrong item does
+     * The item bound last when the player clicks with one nothing is bound to.
+     * WorldEdit keeps one tool per item, so a click with another item does
      * nothing at all; naming the item turns that silence into a state the player
      * can act on.
      */
     private static String waitingItem(LocalSession session, String held) {
-        Map<String, Object> bindings = session.getBindings();
-        if (bindings.containsKey("brush") && !held.equals(bindings.get("brush-item"))) {
-            return String.valueOf(bindings.get("brush-item"));
+        if (held == null || session.binding(held) != null) {
+            return null;
         }
-        if (bindings.containsKey("tool") && !held.equals(bindings.get("tool-item"))) {
-            return String.valueOf(bindings.get("tool-item"));
+        String last = null;
+        for (String item : session.bindings().keySet()) {
+            last = item;
         }
-        return null;
+        return last;
     }
 
     private static void noteWaiting(FabricActor actor, String held) {
@@ -88,13 +89,16 @@ public final class FabricInteractions {
         if (player == null) {
             return;
         }
-        String waiting = waitingItem(actor.session(), held);
+        LocalSession session = actor.session();
+        String waiting = waitingItem(session, held);
         if (waiting == null) {
             LAST_NOTICE.remove(player.getUUID());
             return;
         }
         if (!waiting.equals(LAST_NOTICE.put(player.getUUID(), waiting))) {
-            actor.message(Msg.warn("The brush is bound to " + waiting + ", you are holding " + held + "."));
+            String what = session.binding(waiting).hasBrush() ? "The brush" : "The tool";
+            actor.message(Msg.warn(what + " is bound to " + Str.itemName(waiting) + ", you are holding "
+                    + Str.itemName(held) + "."));
         }
     }
 
@@ -105,20 +109,23 @@ public final class FabricInteractions {
             return InteractionResult.PASS;
         }
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return InteractionResult.PASS;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
-        // 1. Left-click brushes (shatter, erode, ...) and tools.
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && brush.leftClick() && bound(session, "brush-item", held)) {
-            return applyBrush(actor, brush, FabricMessages.blockVector(pos))
+        // 1. The brush of the left click, FAWE's secondary brush, and tools.
+        Brush brush = BrushFactory.currentSecondary(session, held);
+        if (brush != null) {
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, FabricMessages.blockVector(pos)))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
-        Tool tool = Tools.current(session);
-        if (tool != null && bound(session, "tool-item", held)) {
+        Tool tool = Tools.forItem(session, held);
+        if (tool != null) {
             Tool.ToolContext context = new Tool.ToolContext(actor, FabricMessages.blockVector(pos),
                     FabricMessages.direction(face), null);
-            if (tool.onLeftClick(context)) {
+            if (CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onLeftClick(context))) {
                 return handled(player);
             }
         }
@@ -127,17 +134,16 @@ public final class FabricInteractions {
         // it only acts once it has been turned on. A left click with anything
         // else - the wand included - falls through to the selection.
         if (session.isSuperPickaxeEnabled() && isPickaxe(held)) {
-            return superPickaxe(actor, FabricMessages.blockVector(pos)) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+            BlockVector3 start = FabricMessages.blockVector(pos);
+            return CommandRegistry.interact(actor, "super pickaxe", () -> superPickaxe(actor, start))
+                    ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
-        // 3. The selection wand: first corner.
-        if (held != null && held.equals(Config.get().wandItem)) {
+        // 3. The selection wand: the primary position of the shape.
+        if (held != null && held.equals(Config.get().wandItem) && session.isSelectionWandEnabled()) {
             session.setLastClickedPosition(FabricMessages.blockVector(pos));
             session.setLastClickedFace(FabricMessages.direction(face));
-            session.getSelector(actor.world()).selectPrimary(FabricMessages.blockVector(pos),
-                    SelectorLimits.unlimited());
-            actor.message(Msg.success("Position 1: ").append(Msg.value(FabricMessages.blockVector(pos))));
-            actor.updateSelectionOutline();
+            Tools.select(actor, FabricMessages.blockVector(pos), true, false);
             return handled(player);
         }
         // Anything else falls through to the arm swing, exactly like WorldEdit's
@@ -148,21 +154,26 @@ public final class FabricInteractions {
     /**
      * Left click in the air, or the swing that follows a left click.
      *
-     * <p>The mixin on the swing packet calls this: FAWE's shatter, erode and
-     * blob brushes act on a left click even when the player is aiming at
-     * nothing, and {@code /tool} bindings can use the swing too.</p>
+     * <p>The mixin on the swing packet calls this: the brush of the left click
+     * - FAWE's secondary brush - acts on a left click even when the player is
+     * aiming at nothing, as the one of the right click does, and {@code /tool}
+     * bindings can use the swing too.</p>
      */
     public static boolean onLeftClickAir(ServerPlayer player) {
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return false;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && brush.leftClick() && bound(session, "brush-item", held)) {
-            return applyBrush(actor, brush, aimedBlock(player));
+        Brush brush = BrushFactory.currentSecondary(session, held);
+        if (brush != null) {
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, null));
         }
-        Tool tool = Tools.current(session);
-        if (tool != null && bound(session, "tool-item", held)) {
-            return tool.onSwing(new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null));
+        Tool tool = Tools.forItem(session, held);
+        if (tool != null) {
+            Tool.ToolContext context = aimedContext(actor, player);
+            return CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onSwing(context));
         }
         return false;
     }
@@ -173,34 +184,37 @@ public final class FabricInteractions {
             return InteractionResult.PASS;
         }
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return InteractionResult.PASS;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
-        // 1. Brushes.
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && bound(session, "brush-item", held)) {
-            return applyBrush(actor, brush, landing(player, pos, face))
+        // 1. The brush of the right click, on the clicked block: FAWE's brush
+        // tool fires on the block its trace meets, not on the air in front of
+        // it, and so does a click beyond reach here, which is an item's click.
+        Brush brush = BrushFactory.current(session, held);
+        if (brush != null) {
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, FabricMessages.blockVector(pos)))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
         // 2. Tools.
-        Tool tool = Tools.current(session);
-        if (tool != null && bound(session, "tool-item", held)) {
+        Tool tool = Tools.forItem(session, held);
+        if (tool != null) {
             Tool.ToolContext context = new Tool.ToolContext(actor, FabricMessages.blockVector(pos),
                     FabricMessages.direction(face), null);
-            if (tool.onRightClick(context)) {
+            if (CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onRightClick(context))) {
                 return handled(player);
             }
         }
 
         // 3. Far wand: right-click extends the selection.
-        if (held != null && held.equals(Config.get().wandItem) && !player.isShiftKeyDown()) {
+        if (held != null && held.equals(Config.get().wandItem) && session.isSelectionWandEnabled()
+                && !player.isShiftKeyDown()) {
             session.setLastClickedPosition(FabricMessages.blockVector(pos));
             session.setLastClickedFace(FabricMessages.direction(face));
-            session.getSelector(actor.world()).selectSecondary(FabricMessages.blockVector(pos),
-                    SelectorLimits.unlimited());
-            actor.message(Msg.success("Position 2: ").append(Msg.value(FabricMessages.blockVector(pos))));
-            actor.updateSelectionOutline();
+            Tools.select(actor, FabricMessages.blockVector(pos), false, false);
             return handled(player);
         }
 
@@ -216,25 +230,29 @@ public final class FabricInteractions {
             return InteractionResult.PASS;
         }
         FabricActor actor = new FabricActor(player);
+        if (!actor.mayEdit()) {
+            return InteractionResult.PASS;
+        }
         LocalSession session = actor.session();
         String held = FabricMessages.heldItem(player);
 
         // A right click in the air with a brush of the held item acts on what the
         // player is looking at, which is what WorldEdit's right-click-air branch
         // does; without it a click that lands one pixel above a block does nothing.
-        Brush brush = BrushFactory.current(session);
-        if (brush != null && bound(session, "brush-item", held)) {
-            return applyBrush(actor, brush, aimedBlock(player))
+        Brush brush = BrushFactory.current(session, held);
+        if (brush != null) {
+            return applyBrush(actor, brush, brushTarget(actor, player, brush, null))
                     ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
 
-        Tool tool = Tools.current(session);
-        if (tool == null || !bound(session, "tool-item", held)) {
+        Tool tool = Tools.forItem(session, held);
+        if (tool == null) {
             noteWaiting(actor, held);
             return InteractionResult.PASS;
         }
-        Tool.ToolContext context = new Tool.ToolContext(actor, aimedBlock(player), actor.facing(), null);
-        return tool.onRightClick(context) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+        Tool.ToolContext context = aimedContext(actor, player);
+        return CommandRegistry.interact(actor, "tool " + tool.name(), () -> tool.onRightClick(context))
+                ? InteractionResult.SUCCESS : InteractionResult.PASS;
     }
 
     /**
@@ -249,22 +267,39 @@ public final class FabricInteractions {
         return hit instanceof net.minecraft.world.phys.BlockHitResult block ? block : null;
     }
 
-    /** Where a click lands: the block under the crosshair, or the clicked face's neighbour. */
-    private static BlockVector3 landing(ServerPlayer player, BlockPos pos,
-                                        net.minecraft.core.Direction face) {
+    /**
+     * What a click in the air is about, for a tool: the block under the
+     * crosshair and the face of it the crosshair meets, or, with no block in
+     * reach, the end of the reach and no face.
+     */
+    private static Tool.ToolContext aimedContext(FabricActor actor, ServerPlayer player) {
         double reach = Math.max(5.0, Config.get().maxBrushRange);
         net.minecraft.world.phys.BlockHitResult aimed = aim(player, reach);
-        if (aimed != null) {
-            net.minecraft.core.Direction side = aimed.getDirection();
-            return FabricMessages.blockVector(aimed.getBlockPos())
-                    .add(side.getStepX(), side.getStepY(), side.getStepZ());
+        if (aimed != null && aimed.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+            return new Tool.ToolContext(actor, FabricMessages.blockVector(aimed.getBlockPos()),
+                    FabricMessages.direction(aimed.getDirection()), null);
         }
-        return FabricMessages.blockVector(pos).add(face.getStepX(), face.getStepY(), face.getStepZ());
+        return new Tool.ToolContext(actor, aimedBlock(player), null, null);
+    }
+
+    /**
+     * Where a brush lands: the block a click is on, or the one under the
+     * crosshair within the brush's range, moved as its target settings say.
+     * See {@link ToolTarget#brush}.
+     */
+    private static BlockVector3 brushTarget(FabricActor actor, ServerPlayer player, Brush brush,
+                                            BlockVector3 clicked) {
+        return ToolTarget.brush(actor.world(), actor, brush.settings(), clicked,
+                range -> aimedBlock(player, Math.max(5.0, range)));
     }
 
     /** The block under the crosshair, never the one the player stands in. */
     private static BlockVector3 aimedBlock(ServerPlayer player) {
-        double reach = Math.max(5.0, Config.get().maxBrushRange);
+        return aimedBlock(player, Math.max(5.0, Config.get().maxBrushRange));
+    }
+
+    /** The block under the crosshair within a distance, or the end of it when there is none. */
+    private static BlockVector3 aimedBlock(ServerPlayer player, double reach) {
         net.minecraft.world.phys.BlockHitResult aimed = aim(player, reach);
         if (aimed != null) {
             return FabricMessages.blockVector(aimed.getBlockPos());
@@ -276,29 +311,36 @@ public final class FabricInteractions {
         return new BlockVector3((int) Math.floor(end.x), (int) Math.floor(end.y), (int) Math.floor(end.z));
     }
 
-    /** True when the session's binding for {@code key} matches the held item. */
-    private static boolean bound(LocalSession session, String key, String held) {
-        Object value = session.getBindings().get(key);
-        return held != null && held.equals(value);
+    /**
+     * Runs a brush stroke with the guarantees of a command: its edit is closed
+     * whatever happens, and a failure - the block limit, a missing clipboard, a
+     * bug - is answered in chat instead of escaping into the packet handler.
+     */
+    private static boolean applyBrush(FabricActor actor, Brush brush, BlockVector3 position) {
+        return CommandRegistry.interact(actor, "brush", () -> stroke(actor, brush, position));
     }
 
-    private static boolean applyBrush(FabricActor actor, Brush brush, BlockVector3 position) {
+    /**
+     * One stroke of a brush. It answers nothing when it went well, as in
+     * WorldEdit: a player painting with a brush clicks hundreds of times, and a
+     * line per click buried the chat. A failure - the block limit, a missing
+     * clipboard - still answers, through {@link #applyBrush}.
+     *
+     * <p>The click is the brush's whatever the stroke changed: a stroke that
+     * changed nothing must not fall through to the game, which would place the
+     * block in hand or run the brush a second time from the item callback.</p>
+     */
+    private static boolean stroke(FabricActor actor, Brush brush, BlockVector3 position) {
         EditSession session = new EditSession(actor.world(), actor.session(), "brush");
-        int changed = com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, position, actor);
-        session.flushQueue();
-        if (changed > 0 && actor.player() != null) {
+        try {
+            com.maxlananas.fawebim.core.brush.Brushes.apply(brush, session, position, actor);
+        } finally {
+            session.close();
+        }
+        if (actor.player() != null) {
             markHandled(actor.player());
         }
-        if (changed > 0) {
-            actor.message(Msg.success("Brush changed ")
-                    .append(Msg.value(Msg.formatNumber(changed) + " block(s)"))
-                    .append(" around ").append(Msg.value(position)));
-        } else {
-            // A brush that ran and changed nothing used to be completely silent,
-            // which is indistinguishable from a click that never arrived.
-            actor.message(Msg.warn("The brush changed no block around ").append(Msg.value(position)));
-        }
-        return changed > 0;
+        return true;
     }
 
     /** The six items WorldEdit's {@code Player#isHoldingPickAxe} answers for. */
@@ -309,33 +351,66 @@ public final class FabricInteractions {
                 || item.equals("minecraft:netherite_pickaxe"));
     }
 
-    /** FAWE's super-pickaxe: instant break of an area or a whole tree. */
+    /**
+     * The super pickaxe: breaks what {@link SuperPickaxe} plans for the click
+     * through an edit session, so {@code //undo} puts it back like any edit,
+     * and drops what it broke the way breaking the block would when the
+     * configuration asks for drops - {@code super-pickaxe-drop} for the single
+     * pick, {@code super-pickaxe-many-drop} for the other two, as WorldEdit
+     * reads them.
+     */
     private static boolean superPickaxe(FabricActor actor, BlockVector3 start) {
+        ServerPlayer player = actor.player();
         LocalSession session = actor.session();
-        if (session.getSuperPickaxeMode() == 2) {
-            // Recursive mode removes whole trees, like FAWE's recursive pickaxe.
-            return CommandManager.get().dispatch(actor, "//deltree");
+        int mode = session.getSuperPickaxeMode();
+        // The ceiling is read again at the click: it may have been lowered since
+        // the mode was chosen.
+        int ceiling = Math.min(Config.get().maxSuperPickaxeSize, SuperPickaxe.MAX_RANGE);
+        double range = Math.max(0, Math.min(session.getSuperPickaxeRange(), ceiling));
+        int[] targets = SuperPickaxe.targets(actor.world(), mode, range, start.x(), start.y(), start.z());
+        if (targets.length == 0 || player == null) {
+            return false;
         }
-        EditSession edit = new EditSession(actor.world(), session, "superpickaxe", false);
-        int radius = Math.max(0, session.getSuperPickaxeRadius());
-        for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
-                for (int z = -radius; z <= radius; z++) {
-                    edit.setBlock(start.x() + x, start.y() + y, start.z() + z, BlockState.registry().air());
+        ServerLevel level = (ServerLevel) player.level();
+        boolean drops = mode == SuperPickaxe.SINGLE ? Config.get().superPickaxeDrop
+                : Config.get().superPickaxeManyDrop;
+        int count = targets.length / 3;
+        net.minecraft.world.level.block.state.BlockState[] states =
+                new net.minecraft.world.level.block.state.BlockState[count];
+        net.minecraft.world.level.block.entity.BlockEntity[] blockEntities =
+                drops ? new net.minecraft.world.level.block.entity.BlockEntity[count] : null;
+        boolean[] broken = new boolean[count];
+        int air = BlockState.registry().air();
+        EditSession edit = new EditSession(actor.world(), session, "superpickaxe");
+        try {
+            for (int i = 0; i < count; i++) {
+                BlockPos pos = new BlockPos(targets[3 * i], targets[3 * i + 1], targets[3 * i + 2]);
+                // The block is read before its own write: the edit only buffers
+                // it, so the world still holds it and its block entity.
+                states[i] = level.getBlockState(pos);
+                if (drops) {
+                    blockEntities[i] = level.getBlockEntity(pos);
+                }
+                broken[i] = edit.setBlock(pos.getX(), pos.getY(), pos.getZ(), air);
+            }
+        } finally {
+            // A change limit reached halfway stops the loop: what was broken
+            // before it is written, and drops, and the limit is still reported.
+            edit.close();
+            for (int i = 0; i < count; i++) {
+                if (!broken[i]) {
+                    continue;
+                }
+                BlockPos pos = new BlockPos(targets[3 * i], targets[3 * i + 1], targets[3 * i + 2]);
+                if (drops) {
+                    net.minecraft.world.level.block.Block.dropResources(states[i], level, pos, blockEntities[i]);
+                }
+                // The breaking particles and sound, for the clicked block only:
+                // one per block of an area would be a packet per block.
+                if (pos.getX() == start.x() && pos.getY() == start.y() && pos.getZ() == start.z()) {
+                    level.levelEvent(2001, pos, net.minecraft.world.level.block.Block.getId(states[i]));
                 }
             }
-        }
-        edit.flushQueue();
-        ServerPlayer player = actor.player();
-        // A single break drops what it broke; an area break only drops everything
-        // when many-drop-items is on, which is how WorldEdit reads the pair.
-        boolean drops = radius == 0 ? Config.get().superPickaxeDrop
-                : Config.get().superPickaxeDrop && Config.get().superPickaxeManyDrop;
-        if (drops && player != null) {
-            // Break particles/sound, exactly like a vanilla block break.
-            player.level().levelEvent(2001, new BlockPos(start.x(), start.y(), start.z()),
-                    net.minecraft.world.level.block.Block.getId(
-                            player.level().getBlockState(new BlockPos(start.x(), start.y(), start.z()))));
         }
         return true;
     }
@@ -351,9 +426,11 @@ public final class FabricInteractions {
             return false;
         }
         FabricActor actor = new FabricActor(player);
-        LocalSession session = actor.session();
-        Brush brush = BrushFactory.current(session);
-        if (brush == null || !bound(session, "brush-item", FabricMessages.heldItem(player))) {
+        if (!actor.mayEdit()) {
+            return false;
+        }
+        Brush brush = BrushFactory.current(actor.session(), FabricMessages.heldItem(player));
+        if (brush == null) {
             return false;
         }
         com.maxlananas.fawebim.core.tool.Scroll scroll = brush.settings().getScrollAction();
@@ -365,10 +442,10 @@ public final class FabricInteractions {
         return scroll.increment(amount);
     }
 
-    /** Used by {@code /brush command} and the tool bindings. */
+    /** Redraws the selection of a player who has the preview on; the server calls it twice a second. */
     public static void tick(ServerPlayer player) {
         FabricActor actor = new FabricActor(player);
-        if (actor.session().isDrawSelection()) {
+        if (actor.mayEdit() && actor.session().isDrawSelection()) {
             SelectionPreview.refresh(actor);
         }
     }

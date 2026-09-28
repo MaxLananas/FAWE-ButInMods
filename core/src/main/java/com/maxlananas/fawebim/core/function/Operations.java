@@ -4,25 +4,31 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.math.KochanekBartels;
 import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.transform.Axis;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.transform.Transforms;
+import com.maxlananas.fawebim.core.util.Buffers;
+import com.maxlananas.fawebim.core.util.LongQueue;
+import com.maxlananas.fawebim.core.util.LongSet;
+import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.noise.Noise;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.expression.Expression;
+import com.maxlananas.fawebim.core.region.CuboidRegion;
 import com.maxlananas.fawebim.core.region.Region;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.World;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.BitSet;
-import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.function.IntPredicate;
+import java.util.function.IntUnaryOperator;
 
 /**
  * The block operations behind the commands and brushes (FAWE's
@@ -43,6 +49,28 @@ public final class Operations {
      * six caps of its bounding box.</p>
      */
     public static int faces(EditSession session, Region region, Pattern pattern) {
+        if (region instanceof CuboidRegion) {
+            // A box's cells with a neighbour outside it are its six faces: they
+            // are written plane by plane instead of walking the inside to find
+            // them, which was the whole volume for a hollow of its surface.
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            int changed = 0;
+            for (int y = min.y(); y <= max.y(); y++) {
+                if (y != min.y() && y != max.y()) {
+                    changed += ring(session, min, max, y, pattern);
+                    continue;
+                }
+                for (int z = min.z(); z <= max.z(); z++) {
+                    for (int x = min.x(); x <= max.x(); x++) {
+                        if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                            changed++;
+                        }
+                    }
+                }
+            }
+            return changed;
+        }
         int[] changed = {0};
         region.forEachPosition((x, y, z) -> {
             for (int side = 0; side < NEIGHBOURS.length; side += 3) {
@@ -63,23 +91,89 @@ public final class Operations {
     private static final int[] NEIGHBOURS = {1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1};
 
     /**
-     * {@code //thaw}: melts the snow and ice of a cylinder around a position.
-     *
-     * <p>WorldEdit's own algorithm: each column of the disc is walked downwards
-     * and the first block that is not air decides the column - ice becomes
-     * water, a snow layer is removed, and anything else is left alone.</p>
+     * {@code //walls}: the pattern on every cell of the region with a neighbour
+     * outside it on its own layer - FAWE's {@code WallMakeMask} - so the walls of
+     * a cylinder are its curved side and not the planes of the box around it. A
+     * cuboid is written as its four sides.
      */
-    public static int thaw(World world, EditSession session, BlockVector3 center, double radius, int height) {
-        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+    public static int walls(EditSession session, Region region, Pattern pattern) {
+        if (region instanceof CuboidRegion) {
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            int changed = 0;
+            for (int y = min.y(); y <= max.y(); y++) {
+                changed += ring(session, min, max, y, pattern);
+            }
+            return changed;
+        }
+        int[] changed = {0};
+        region.forEachPosition((x, y, z) -> {
+            if (!region.contains(x + 1, y, z) || !region.contains(x - 1, y, z)
+                    || !region.contains(x, y, z + 1) || !region.contains(x, y, z - 1)) {
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    changed[0]++;
+                }
+            }
+            return false;
+        });
+        return changed[0];
+    }
+
+    /**
+     * The border of one layer of a box, each cell once, as FAWE writes it: the
+     * two rows along X, then the two along Z between them, and one row where the
+     * box is one block thick. A row walks sixteen blocks of a chunk before it
+     * moves to the next one; alternating the two sides of the box put every
+     * write in another chunk than the one before.
+     */
+    private static int ring(EditSession session, BlockVector3 min, BlockVector3 max, int y, Pattern pattern) {
+        int changed = 0;
+        for (int x = min.x(); x <= max.x(); x++) {
+            if (session.setBlock(x, y, min.z(), pattern.apply(x, y, min.z()))) {
+                changed++;
+            }
+        }
+        if (max.z() != min.z()) {
+            for (int x = min.x(); x <= max.x(); x++) {
+                if (session.setBlock(x, y, max.z(), pattern.apply(x, y, max.z()))) {
+                    changed++;
+                }
+            }
+        }
+        for (int z = min.z() + 1; z < max.z(); z++) {
+            if (session.setBlock(min.x(), y, z, pattern.apply(min.x(), y, z))) {
+                changed++;
+            }
+        }
+        if (max.x() != min.x()) {
+            for (int z = min.z() + 1; z < max.z(); z++) {
+                if (session.setBlock(max.x(), y, z, pattern.apply(max.x(), y, z))) {
+                    changed++;
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * {@code //thaw}, FAWE's {@code thaw}: each column of the disc is walked
+     * down through the air, and the first other block decides it - ice becomes
+     * water, snow of any depth goes and the block it lay on stops being snowy,
+     * anything else stays. The height counts up and down from the position,
+     * brought inside the world first.
+     */
+    public static int thaw(EditSession session, BlockVector3 center, double radius, int height) {
+        BlockStateRegistry registry = BlockState.registry();
         int ice = registry.defaultState("minecraft:ice");
-        int snow = registry.defaultState("minecraft:snow");
         int water = registry.defaultState("minecraft:water");
         int air = registry.air();
+        IntPredicate snow = remembered(state -> registry.name(state).equals("minecraft:snow"));
+        int centerY = Math.max(session.minY(), Math.min(session.maxY(), center.y()));
+        int bottom = Math.max(session.minY(), centerY - height);
+        int top = Math.min(session.maxY(), centerY + height);
         int affected = 0;
         double radiusSq = radius * radius;
         int ceilRadius = (int) Math.ceil(radius);
-        int minY = Math.max(world.minY(), center.y() - height);
-        int maxY = Math.min(world.maxY(), center.y() + height);
         for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
             for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
                 int dx = x - center.x();
@@ -87,14 +181,21 @@ public final class Operations {
                 if (dx * dx + dz * dz > radiusSq) {
                     continue;
                 }
-                for (int y = maxY; y > minY; y--) {
+                for (int y = top; y > bottom; y--) {
                     int state = session.getBlock(x, y, z);
                     if (state == ice) {
                         if (session.setBlock(x, y, z, water)) {
                             affected++;
                         }
-                    } else if (state == snow) {
+                    } else if (snow.test(state)) {
                         if (session.setBlock(x, y, z, air)) {
+                            if (y > session.minY()) {
+                                int below = session.getBlock(x, y - 1, z);
+                                int bare = registry.withProperty(below, "snowy", "false");
+                                if (bare >= 0 && session.setBlock(x, y - 1, z, bare)) {
+                                    affected++;
+                                }
+                            }
                             affected++;
                         }
                     } else if (registry.isAirLike(state)) {
@@ -108,25 +209,29 @@ public final class Operations {
     }
 
     /**
-     * {@code //green}: turns the dirt of a cylinder around a position into grass.
-     *
-     * <p>WorldEdit's own algorithm: the topmost block of each column is looked
-     * at, dirt (and coarse dirt with {@code -f}) becomes grass, and water, lava
-     * and anything solid stop the column.</p>
+     * {@code //green}, FAWE's {@code green}: each column of the disc is walked
+     * down to its first dirt - coarse dirt too unless {@code onlyNormalDirt} -
+     * which becomes grass; water, lava or a block that stops movement ends the
+     * column first.
      */
-    public static int green(World world, EditSession session, BlockVector3 center, double radius, int height,
+    public static int green(EditSession session, BlockVector3 center, double radius, int height,
                             boolean onlyNormalDirt) {
-        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
-        int dirt = registry.defaultState("minecraft:dirt");
-        int coarseDirt = registry.defaultState("minecraft:coarse_dirt");
+        BlockStateRegistry registry = BlockState.registry();
         int grass = registry.defaultState("minecraft:grass_block");
-        int water = registry.defaultState("minecraft:water");
-        int lava = registry.defaultState("minecraft:lava");
+        IntPredicate dirt = remembered(state -> {
+            String name = registry.name(state);
+            return name.equals("minecraft:dirt") || !onlyNormalDirt && name.equals("minecraft:coarse_dirt");
+        });
+        IntPredicate stops = remembered(state -> {
+            String name = registry.name(state);
+            return name.equals("minecraft:water") || name.equals("minecraft:lava") || registry.isSolid(state);
+        });
+        int centerY = Math.max(session.minY(), Math.min(session.maxY(), center.y()));
+        int bottom = Math.max(session.minY(), centerY - height);
+        int top = Math.min(session.maxY(), centerY + height);
         int affected = 0;
         double radiusSq = radius * radius;
         int ceilRadius = (int) Math.ceil(radius);
-        int minY = Math.max(world.minY(), center.y() - height);
-        int maxY = Math.min(world.maxY(), center.y() + height);
         for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
             for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
                 int dx = x - center.x();
@@ -134,15 +239,15 @@ public final class Operations {
                 if (dx * dx + dz * dz > radiusSq) {
                     continue;
                 }
-                for (int y = maxY; y > minY; y--) {
+                for (int y = top; y > bottom; y--) {
                     int state = session.getBlock(x, y, z);
-                    if (state == dirt || (!onlyNormalDirt && state == coarseDirt)) {
+                    if (dirt.test(state)) {
                         if (session.setBlock(x, y, z, grass)) {
                             affected++;
                         }
                         break;
                     }
-                    if (state == water || state == lava || registry.isSolid(state)) {
+                    if (stops.test(state)) {
                         break;
                     }
                 }
@@ -152,68 +257,88 @@ public final class Operations {
     }
 
     /**
-     * {@code //snow}: covers a cylinder around a position in snow the way the
-     * weather would.
-     *
-     * <p>WorldEdit's {@code SnowSimulator}: a water block at sea level freezes,
-     * and everything else the column holds gets a snow layer on top of it. With
-     * {@code -s} the layers pile up - a full layer becomes a snow block - instead
-     * of a single layer per run.</p>
+     * {@code //snow}, FAWE's: its snow simulation over the cylinder of the
+     * radius - grown by half a block, as WorldEdit grows every cylinder - that
+     * the height spans up and down from the position.
      */
     public static int simulateSnow(World world, EditSession session, BlockVector3 center, double radius, int height,
                                    boolean stack) {
-        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
-        int snow = registry.defaultState("minecraft:snow");
-        int snowBlock = registry.defaultState("minecraft:snow_block");
+        // The ends are kept one past the world at most: the height is typed,
+        // and the column walk only needs to know the top is above the world.
+        int bottom = (int) Math.max((long) center.y() - height, session.minY() - 1L);
+        int top = (int) Math.min((long) center.y() + height, session.maxY() + 1L);
+        return simulateSnow(world, session, new com.maxlananas.fawebim.core.region.CylinderRegion(
+                new com.maxlananas.fawebim.core.math.Vector2(center.x() + 0.5, center.z() + 0.5), radius, radius,
+                bottom, top), stack);
+    }
+
+    /**
+     * FAWE's {@code SnowSimulator} laid over a region, as its //snow and its
+     * snow brush lay it: every column of the region's {@link #inFootprint
+     * footprint} is walked down from the top of the region.
+     *
+     * <p>The walk stops at the column's ground: the first block that is
+     * water or stops movement - air and what does not stop movement, flowers
+     * and tall grass, are passed, and so is snow when {@code stack} adds to it.
+     * Still water with less than 10 block light freezes. Otherwise a layer of
+     * snow goes on the ground if the block above it is air, or snow to stack
+     * on, and snow can lie on the ground as the game has it lie: a full block,
+     * a top slab, a closed top trapdoor, upside-down stairs, eight layers of
+     * snow, the blocks the game lets it lie on and none it keeps it off. The
+     * ground then turns snowy if it can. A column whose block just above the
+     * region is ground is under cover and left alone.</p>
+     */
+    public static int simulateSnow(World world, EditSession session, Region region, boolean stack) {
+        BlockStateRegistry registry = BlockState.registry();
+        int snowLayer = registry.defaultState("minecraft:snow");
         int ice = registry.defaultState("minecraft:ice");
-        int water = registry.defaultState("minecraft:water");
+        IntPredicate snow = remembered(state -> registry.name(state).equals("minecraft:snow"));
+        IntPredicate water = remembered(state -> registry.name(state).equals("minecraft:water"));
+        IntPredicate ground = remembered(state -> !registry.isAirLike(state) && !(stack && snow.test(state))
+                && (water.test(state) || registry.isSolid(state)));
+        IntPredicate holdsSnow = remembered(state -> holdsSnow(registry, state, snow.test(state)));
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int top = Math.min(max.y(), session.maxY());
+        int bottom = Math.max(min.y(), session.minY());
+        boolean coverInWorld = max.y() < session.maxY() && max.y() + 1 >= session.minY();
         int affected = 0;
-        double radiusSq = radius * radius;
-        int ceilRadius = (int) Math.ceil(radius);
-        int minY = Math.max(world.minY(), center.y() - height);
-        int maxY = Math.min(world.maxY(), center.y() + height);
-        for (int x = center.x() - ceilRadius; x <= center.x() + ceilRadius; x++) {
-            for (int z = center.z() - ceilRadius; z <= center.z() + ceilRadius; z++) {
-                int dx = x - center.x();
-                int dz = z - center.z();
-                if (dx * dx + dz * dz > radiusSq) {
+        for (int x = min.x(); x <= max.x(); x++) {
+            for (int z = min.z(); z <= max.z(); z++) {
+                if (!inFootprint(region, x, min.y(), z)
+                        || coverInWorld && ground.test(session.getBlock(x, max.y() + 1, z))) {
                     continue;
                 }
-                for (int y = maxY; y > minY; y--) {
+                for (int y = top; y >= bottom; y--) {
                     int state = session.getBlock(x, y, z);
-                    // The ground of a column is the first block that is not air,
-                    // and not an existing layer when they are being stacked.
-                    if (registry.isAirLike(state) || (stack && state == snow)) {
+                    if (!ground.test(state)) {
                         continue;
                     }
-                    if (state == water) {
-                        if ("0".equals(registry.properties(state).get("level"))) {
-                            if (session.setBlock(x, y, z, ice)) {
-                                affected++;
-                            }
+                    if (water.test(state)) {
+                        if ("0".equals(registry.properties(state).get("level"))
+                                && world.blockLight(x, y, z) < 10 && session.setBlock(x, y, z, ice)) {
+                            affected++;
                         }
                         break;
                     }
-                    // A layer is placed on the block above the ground, at most one
-                    // block below the top of the region.
-                    if (y == maxY) {
+                    if (y == session.maxY()) {
                         break;
                     }
                     int above = session.getBlock(x, y + 1, z);
-                    boolean aboveAir = registry.isAirLike(above);
-                    boolean aboveSnow = above == snow;
-                    if (!aboveAir && !(stack && aboveSnow)) {
+                    boolean onSnow = stack && snow.test(above);
+                    if ((!registry.isAirLike(above) && !onSnow) || !holdsSnow.test(state)) {
                         break;
                     }
-                    if (stack && aboveSnow) {
+                    int placed = snowLayer;
+                    if (onSnow) {
                         int layers = Integer.parseInt(registry.properties(above).getOrDefault("layers", "1"));
-                        int next = layers + 1;
-                        int placed = next >= 8 ? snowBlock
-                                : registry.withProperty(snow, "layers", Integer.toString(next));
-                        if (placed >= 0 && session.setBlock(x, y + 1, z, placed)) {
-                            affected++;
+                        placed = layers >= 8 ? -1 : registry.withProperty(above, "layers", Integer.toString(layers + 1));
+                    }
+                    if (placed >= 0 && session.setBlock(x, y + 1, z, placed)) {
+                        int snowy = registry.withProperty(state, "snowy", "true");
+                        if (snowy >= 0) {
+                            session.setBlock(x, y, z, snowy);
                         }
-                    } else if (session.setBlock(x, y + 1, z, snow)) {
                         affected++;
                     }
                     break;
@@ -224,28 +349,115 @@ public final class Operations {
     }
 
     /**
-     * {@code //extinguish}: removes every block a mask accepts inside a cube
-     * around a position, which is WorldEdit's {@code removeNear}.
+     * Whether a column is part of the footprint a layer is laid over, as
+     * WorldEdit's {@code Regions.asFlatRegion} reads a region: the outline of a
+     * cylinder or a polygon, and the bounding box of any other region - a
+     * sphere lays its layer over the square around it.
      */
-    public static int removeNear(World world, EditSession session, BlockVector3 center, int apothem,
-                                 Mask mask) {
-        int affected = 0;
-        for (int y = center.y() - apothem; y <= center.y() + apothem; y++) {
-            if (y < world.minY() || y > world.maxY()) {
-                continue;
-            }
-            for (int z = center.z() - apothem; z <= center.z() + apothem; z++) {
-                for (int x = center.x() - apothem; x <= center.x() + apothem; x++) {
-                    if (!mask.test(x, y, z)) {
-                        continue;
-                    }
-                    if (session.setBlock(x, y, z, BlockState.registry().air())) {
-                        affected++;
+    private static boolean inFootprint(Region region, int x, int minY, int z) {
+        return !(region instanceof com.maxlananas.fawebim.core.region.CylinderRegion
+                || region instanceof com.maxlananas.fawebim.core.region.Polygonal2DRegion)
+                || region.contains(x, minY, z);
+    }
+
+    /**
+     * Whether a layer of snow can lie on a block, as FAWE simplifies the game's
+     * rule: its tags first, then a full block, eight layers of snow, or a block
+     * whose top face is full by its state - a top slab, a closed trapdoor or
+     * stairs on their upper half.
+     */
+    private static boolean holdsSnow(BlockStateRegistry registry, int state, boolean snow) {
+        if (registry.hasTag(state, "minecraft:snow_layer_cannot_survive_on")) {
+            return false;
+        }
+        if (registry.hasTag(state, "minecraft:snow_layer_can_survive_on") || registry.isFullCube(state)) {
+            return true;
+        }
+        Map<String, String> properties = registry.properties(state);
+        if (snow) {
+            return "8".equals(properties.get("layers"));
+        }
+        if (properties.containsKey("type")) {
+            return "top".equals(properties.get("type"));
+        }
+        if ("true".equals(properties.get("open"))) {
+            return false;
+        }
+        return "top".equals(properties.get("half"));
+    }
+
+    /**
+     * {@code //removenear} and {@code //extinguish}, FAWE's {@code removeNear}:
+     * what the mask accepts in the cube of the apothem around the position -
+     * {@code apothem - 1} blocks each way, so an apothem of 1 is the position
+     * alone - becomes air. The part of the cube outside the world is left out.
+     */
+    public static int removeNear(EditSession session, BlockVector3 center, int apothem, Mask mask) {
+        int reach = apothem - 1;
+        int bottom = (int) Math.max((long) center.y() - reach, session.minY());
+        int top = (int) Math.min((long) center.y() + reach, session.maxY());
+        int air = BlockState.registry().air();
+        int changed = 0;
+        for (int x = from(center.x(), reach), maxX = to(center.x(), reach); x <= maxX; x++) {
+            for (int z = from(center.z(), reach), maxZ = to(center.z(), reach); z <= maxZ; z++) {
+                for (int y = bottom; y <= top; y++) {
+                    session.limiter().check(1);
+                    if (mask.test(x, y, z) && session.setBlock(x, y, z, air)) {
+                        changed++;
                     }
                 }
             }
         }
-        return affected;
+        return changed;
+    }
+
+    /**
+     * {@code //removeabove}, FAWE's {@code removeAbove}: the square of the
+     * apothem around the position, from the position's level up through
+     * {@code height} levels, becomes air - inside the world only.
+     */
+    public static int removeAbove(EditSession session, BlockVector3 position, int apothem, int height) {
+        return removeColumns(session, position, apothem, position.y(), (long) position.y() + height - 1);
+    }
+
+    /** {@code //removebelow}: the same square, from the position's level down through {@code height} levels. */
+    public static int removeBelow(EditSession session, BlockVector3 position, int apothem, int height) {
+        return removeColumns(session, position, apothem, (long) position.y() - height + 1, position.y());
+    }
+
+    private static int removeColumns(EditSession session, BlockVector3 position, int apothem, long lowest,
+                                     long highest) {
+        int reach = apothem - 1;
+        int bottom = (int) Math.max(lowest, session.minY());
+        int top = (int) Math.min(highest, session.maxY());
+        int air = BlockState.registry().air();
+        int changed = 0;
+        for (int x = from(position.x(), reach), maxX = to(position.x(), reach); x <= maxX; x++) {
+            for (int z = from(position.z(), reach), maxZ = to(position.z(), reach); z <= maxZ; z++) {
+                for (int y = bottom; y <= top; y++) {
+                    session.limiter().check(1);
+                    if (session.setBlock(x, y, z, air)) {
+                        changed++;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Minecraft's world border. No block lies past it, and a reach that the
+     * radius limit leaves unbounded is cut there rather than carried past the
+     * range of an int.
+     */
+    private static final int BORDER = 30_000_000;
+
+    private static int from(int center, int reach) {
+        return (int) Math.max((long) center - reach, -BORDER);
+    }
+
+    private static int to(int center, int reach) {
+        return (int) Math.min((long) center + reach, BORDER);
     }
 
     /** A hollow allocates a bit per cell of the selection; past this it refuses. */
@@ -276,7 +488,7 @@ public final class Operations {
         int length = max.z() - min.z() + 1;
         long volume = (long) width * height * length;
         if (volume <= 0 || volume > MAX_HOLLOW_CELLS) {
-            throw new IllegalArgumentException("A selection of " + volume + " blocks is too large to hollow");
+            throw new com.maxlananas.fawebim.core.util.InputException("A selection of " + volume + " blocks is too large to hollow");
         }
         // A shell thicker than the selection is the selection: every layer of the
         // growth is a layer further in, so once the growth has crossed the region
@@ -402,8 +614,6 @@ public final class Operations {
         return ((y + 1) * padLength + (z + 1)) * padWidth + (x + 1);
     }
 
-    // ------------------------------------------------------------------ shapes
-
     /** {@code //sphere} and {@code /brush sphere}. */
     public static int sphere(EditSession session, BlockVector3 center, double radius, Pattern pattern, boolean hollow) {
         return sphere(session, center, new double[]{radius, radius, radius}, pattern, hollow);
@@ -418,6 +628,18 @@ public final class Operations {
      */
     public static int sphere(EditSession session, BlockVector3 center, double[] radii, Pattern pattern,
                              boolean hollow) {
+        return forEachInEllipsoid(center, radii, hollow, session.minY(), session.maxY(),
+                (x, y, z) -> session.setBlock(x, y, z, pattern.apply(x, y, z)));
+    }
+
+    /**
+     * The cells of {@link #sphere(EditSession, BlockVector3, double[], Pattern, boolean)}
+     * between two heights, for a caller that decides what a cell gets.
+     *
+     * @return how many cells the visitor answered true for
+     */
+    public static int forEachInEllipsoid(BlockVector3 center, double[] radii, boolean hollow, int minY, int maxY,
+                                         BlockVisitor visitor) {
         double radiusX = radii[0] + 0.5;
         double radiusY = radii[1] + 0.5;
         double radiusZ = radii[2] + 0.5;
@@ -427,8 +649,6 @@ public final class Operations {
         int ceilX = (int) Math.ceil(radiusX);
         int ceilY = (int) Math.ceil(radiusY);
         int ceilZ = (int) Math.ceil(radiusZ);
-        int minY = session.minY();
-        int maxY = session.maxY();
         int changed = 0;
         for (int x = -ceilX; x <= ceilX; x++) {
             double dx = square(x * invX);
@@ -454,9 +674,7 @@ public final class Operations {
                             && dx + square(y * invY) + square((Math.abs(z) + 1) * invZ) <= 1) {
                         continue;
                     }
-                    int blockX = center.x() + x;
-                    int blockZ = center.z() + z;
-                    if (session.setBlock(blockX, blockY, blockZ, pattern.apply(blockX, blockY, blockZ))) {
+                    if (visitor.visit(center.x() + x, blockY, center.z() + z)) {
                         changed++;
                     }
                 }
@@ -547,10 +765,14 @@ public final class Operations {
     /** {@code //pyramid}. */
     public static int pyramid(EditSession session, BlockVector3 center, int size, Pattern pattern, boolean hollow) {
         int changed = 0;
-        int base = center.y() - size / 2;
-        for (int layer = 0; layer <= size; layer++) {
-            int y = base + layer;
-            int r = size - layer;
+        // The layers are walked in long arithmetic and only where the world is:
+        // a size near the int range would otherwise wrap the layer counter.
+        long base = (long) center.y() - size / 2;
+        long from = Math.max(base, session.minY());
+        long to = Math.min(base + size, session.maxY());
+        for (long level = from; level <= to; level++) {
+            int y = (int) level;
+            int r = (int) (size - (level - base));
             for (int z = -r; z <= r; z++) {
                 for (int x = -r; x <= r; x++) {
                     boolean edge = Math.abs(x) == r || Math.abs(z) == r;
@@ -568,35 +790,562 @@ public final class Operations {
         return changed;
     }
 
-    // ------------------------------------------------------------- lines/curves
+    /**
+     * Straight segments through the points, as WorldEdit's drawLine behind
+     * {@code //line}: each segment takes one block per step along its longest
+     * axis, the others rounded; each block becomes a ball of {@code radius},
+     * and without {@code filled} only the blocks of the result with a face
+     * outside it are kept. Each block is written once.
+     *
+     * <p>The line was sampled every half block with every block of the ball
+     * around each sample written again, some a hundred times over, which gave
+     * a random pattern that many draws per block; the shell switch was read and
+     * ignored.</p>
+     */
+    public static int drawLine(EditSession session, List<BlockVector3> points, double radius, boolean filled,
+                               Pattern pattern) {
+        return drawLine(session, points, radius, filled, false, pattern);
+    }
 
-    /** {@code //line}. */
-    public static int line(EditSession session, BlockVector3 from, BlockVector3 to, Pattern pattern, double thickness,
-                           boolean shell) {
+    /**
+     * {@link #drawLine(EditSession, List, double, boolean, Pattern)}, or with
+     * {@code flat}, FAWE's flat line: each block of the line a disc of
+     * {@code radius} at its height instead of a ball, and without
+     * {@code filled} only the blocks of the discs with a side outside them.
+     */
+    public static int drawLine(EditSession session, List<BlockVector3> points, double radius, boolean filled,
+                               boolean flat, Pattern pattern) {
+        ShapeCells tips = new ShapeCells("The line");
+        for (int i = 0; i + 1 < points.size(); i++) {
+            BlockVector3 from = points.get(i);
+            BlockVector3 to = points.get(i + 1);
+            int dx = Math.abs(to.x() - from.x());
+            int dy = Math.abs(to.y() - from.y());
+            int dz = Math.abs(to.z() - from.z());
+            int signX = to.x() > from.x() ? 1 : -1;
+            int signY = to.y() > from.y() ? 1 : -1;
+            int signZ = to.z() > from.z() ? 1 : -1;
+            int steps = Math.max(dx, Math.max(dy, dz));
+            if (steps == 0) {
+                tips.add(from.x(), from.y(), from.z());
+                continue;
+            }
+            for (int step = 0; step <= steps; step++) {
+                // WorldEdit rounds the coordinate itself, halves up, so a line
+                // and its reverse can differ by a block where a step falls on
+                // a half.
+                tips.add((int) Math.round(from.x() + (double) step * dx / steps * signX),
+                        (int) Math.round(from.y() + (double) step * dy / steps * signY),
+                        (int) Math.round(from.z() + (double) step * dz / steps * signZ));
+            }
+        }
+        if (flat) {
+            return tips.stretch(radius, "The line").writeOutline(session, pattern, !filled);
+        }
+        return tips.balloon(radius, "The line").write(session, pattern, !filled);
+    }
+
+    /**
+     * {@code /brush surfacespline}, as FAWE's SurfaceSpline brush: a
+     * Kochanek-Bartels spline through the nodes, walked {@code quality} times
+     * per block of its length, with every column it passes and, for a radius,
+     * every column within that radius of it set on the surface. Each column is
+     * written once.
+     *
+     * <p>The curve was sampled {@code quality} times per segment whatever its
+     * length, so a long segment came out as a dotted line, and the radius was
+     * not used.</p>
+     */
+    public static int surfaceSpline(EditSession session, List<BlockVector3> points, Pattern pattern,
+                                    double tension, double bias, double continuity, int quality, double radius) {
+        if (points.size() < 2 || quality <= 0) {
+            return 0;
+        }
+        List<Vector3> nodes = new ArrayList<>(points.size());
+        for (BlockVector3 point : points) {
+            nodes.add(point.toVector3());
+        }
+        KochanekBartels spline = new KochanekBartels(nodes, tension, bias, continuity);
+        World world = session.getWorld();
+        ShapeCells cells = new ShapeCells("The spline");
+        double step = 1D / spline.arcLength() / quality;
+        int reach = (int) Math.ceil(Math.max(0, radius));
+        double reachSquared = radius * radius;
+        for (double position = 0; position <= 1; position += step) {
+            Vector3 tip = spline.position(position);
+            int tipX = (int) Math.floor(tip.x() + 0.5);
+            int tipZ = (int) Math.floor(tip.z() + 0.5);
+            for (int x = tipX - reach; x <= tipX + reach; x++) {
+                for (int z = tipZ - reach; z <= tipZ + reach; z++) {
+                    int dx = x - tipX;
+                    int dz = z - tipZ;
+                    if (dx * dx + dz * dz <= reachSquared) {
+                        cells.add(x, world.getHighestBlockY(x, z), z);
+                    }
+                }
+            }
+        }
+        return cells.write(session, pattern, false);
+    }
+
+    /**
+     * The blocks of a line or a curve, each once, in the order they were first
+     * reached. A curve is walked many times per block and the balls around
+     * neighbouring blocks overlap, so most of what a shape reaches it has
+     * reached before; the set is what writes each block once, and it holds
+     * packed longs rather than an object per block.
+     */
+    private static final class ShapeCells {
+
+        private final String what;
+        private final LongSet seen = new LongSet();
+        private final LongQueue order = new LongQueue();
+        private final long limit = Buffers.budget() / 24;
+
+        ShapeCells(String what) {
+            this.what = what;
+        }
+
+        /** The blocks within {@code radius} of one of these, as WorldEdit's getBallooned; empties this set. */
+        ShapeCells balloon(double radius, String name) {
+            int reach = (int) Math.ceil(Math.max(0, radius));
+            double reachSquared = radius * radius;
+            ShapeCells ballooned = new ShapeCells(name);
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int tipX = BlockArrayClipboard.keyX(key);
+                int tipY = BlockArrayClipboard.keyY(key);
+                int tipZ = BlockArrayClipboard.keyZ(key);
+                for (int x = tipX - reach; x <= tipX + reach; x++) {
+                    for (int y = tipY - reach; y <= tipY + reach; y++) {
+                        for (int z = tipZ - reach; z <= tipZ + reach; z++) {
+                            int dx = x - tipX;
+                            int dy = y - tipY;
+                            int dz = z - tipZ;
+                            if (dx * dx + dy * dy + dz * dz <= reachSquared) {
+                                ballooned.add(x, y, z);
+                            }
+                        }
+                    }
+                }
+            }
+            return ballooned;
+        }
+
+        /**
+         * The blocks within {@code radius} of one of these at its own height, as
+         * FAWE's getStretched; a radius under one leaves them as they are.
+         * Empties this set.
+         */
+        ShapeCells stretch(double radius, String name) {
+            if (radius < 1) {
+                return this;
+            }
+            int reach = (int) Math.ceil(radius);
+            double reachSquared = radius * radius;
+            ShapeCells stretched = new ShapeCells(name);
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int tipX = BlockArrayClipboard.keyX(key);
+                int tipY = BlockArrayClipboard.keyY(key);
+                int tipZ = BlockArrayClipboard.keyZ(key);
+                for (int x = tipX - reach; x <= tipX + reach; x++) {
+                    for (int z = tipZ - reach; z <= tipZ + reach; z++) {
+                        int dx = x - tipX;
+                        int dz = z - tipZ;
+                        if (dx * dx + dz * dz <= reachSquared) {
+                            stretched.add(x, tipY, z);
+                        }
+                    }
+                }
+            }
+            return stretched;
+        }
+
+        /** Writes every block, or with {@code outline} those with a side outside the set, as FAWE's getOutline. */
+        int writeOutline(EditSession session, Pattern pattern, boolean outline) {
+            int changed = 0;
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int x = BlockArrayClipboard.keyX(key);
+                int y = BlockArrayClipboard.keyY(key);
+                int z = BlockArrayClipboard.keyZ(key);
+                if (outline && contains(x + 1, y, z) && contains(x - 1, y, z) && contains(x, y, z + 1)
+                        && contains(x, y, z - 1)) {
+                    continue;
+                }
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    changed++;
+                }
+            }
+            return changed;
+        }
+
+        void add(int x, int y, int z) {
+            long key = BlockArrayClipboard.positionKey(x, y, z);
+            if (seen.add(key)) {
+                order.add(key);
+                if (order.size() > limit) {
+                    throw new com.maxlananas.fawebim.core.util.InputException(what + " would hold more than "
+                            + Msg.formatNumber(limit) + " blocks in memory");
+                }
+            }
+        }
+
+        boolean contains(int x, int y, int z) {
+            return seen.contains(BlockArrayClipboard.positionKey(x, y, z));
+        }
+
+        /** Writes every block, or with {@code shell} those with a face outside the set. */
+        int write(EditSession session, Pattern pattern, boolean shell) {
+            int changed = 0;
+            while (!order.isEmpty()) {
+                long key = order.poll();
+                int x = BlockArrayClipboard.keyX(key);
+                int y = BlockArrayClipboard.keyY(key);
+                int z = BlockArrayClipboard.keyZ(key);
+                if (shell && contains(x + 1, y, z) && contains(x - 1, y, z) && contains(x, y + 1, z)
+                        && contains(x, y - 1, z) && contains(x, y, z + 1) && contains(x, y, z - 1)) {
+                    continue;
+                }
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    changed++;
+                }
+            }
+            return changed;
+        }
+    }
+
+    /**
+     * A spline through the nodes, as WorldEdit's drawSpline behind
+     * {@code //curve}: a Kochanek-Bartels curve through the centres of the
+     * nodes' blocks, walked {@code quality} times per block of its length; each
+     * block it passes becomes a ball of {@code radius}, and without
+     * {@code filled} only the blocks of the result with a face outside it are
+     * kept. Each block is written once.
+     *
+     * <p>The curve was sampled eight times per segment whatever its length, so
+     * a long one came out dotted, and {@code //curve -h} drew a solid tube along
+     * the curve and another along the straight lines between the nodes.</p>
+     */
+    public static int drawSpline(EditSession session, List<BlockVector3> points, double tension, double bias,
+                                 double continuity, double quality, double radius, boolean filled,
+                                 Pattern pattern) {
+        if (points.isEmpty() || !(quality > 0)) {
+            return 0;
+        }
+        List<Vector3> nodes = new ArrayList<>(points.size());
+        for (BlockVector3 point : points) {
+            nodes.add(point.toVector3().add(0.5, 0.5, 0.5));
+        }
+        KochanekBartels spline = new KochanekBartels(nodes, tension, bias, continuity);
+        ShapeCells tips = new ShapeCells("The curve");
+        double step = 1D / spline.arcLength() / quality;
+        for (double position = 0; position <= 1; position += step) {
+            Vector3 tip = spline.position(position);
+            tips.add((int) Math.floor(tip.x()), (int) Math.floor(tip.y()), (int) Math.floor(tip.z()));
+        }
+        return tips.balloon(radius, "The curve").write(session, pattern, !filled);
+    }
+
+    /**
+     * The lowest point of a wire hung between two points, FAWE's CatenaryBrush
+     * vertex: the wire {@code lengthFactor} times as long as the distance, a
+     * catenary through both ends, the midpoint when it is no longer than the
+     * distance or the ends are one above the other.
+     */
+    public static BlockVector3 catenaryVertex(BlockVector3 from, BlockVector3 to, double lengthFactor) {
+        Vector3 a = from.toVector3();
+        Vector3 b = to.toVector3();
+        double dy = b.y() - a.y();
+        double dx = b.x() - a.x();
+        double dz = b.z() - a.z();
+        double dh = Math.sqrt(dx * dx + dz * dz);
+        if (lengthFactor <= 1 || dh == 0) {
+            return new BlockVector3((int) Math.round((a.x() + b.x()) / 2), (int) Math.round((a.y() + b.y()) / 2),
+                    (int) Math.round((a.z() + b.z()) / 2));
+        }
+        double curveLength = a.distance(b) * lengthFactor;
+        double g = Math.sqrt(curveLength * curveLength - dy * dy) / 2;
+        double scale = 0.00001;
+        while (g < scale * Math.sinh(dh / (2 * scale))) {
+            scale *= 1.00001;
+        }
+        double vertexX = (dh - scale * Math.log((curveLength + dy) / (curveLength - dy))) / 2.0;
+        double half = (dh / 2) / scale;
+        double offsetY = (dy - curveLength * (Math.cosh(half) / Math.sinh(half))) / 2;
+        double vertexY = scale + offsetY;
+        double along = vertexX / dh;
+        return new BlockVector3((int) Math.round(a.x() + dx * along), (int) Math.round(a.y() + dy * along + vertexY),
+                (int) Math.round(a.z() + dz * along));
+    }
+
+    /** The six directions in their declared order, read without copying the enum's array per block. */
+    private static final com.maxlananas.fawebim.core.world.Direction[] DIRECTIONS =
+            com.maxlananas.fawebim.core.world.Direction.values();
+
+    private static long distanceSq(int x, int y, int z, BlockVector3 origin) {
+        long dx = (long) x - origin.x();
+        long dy = (long) y - origin.y();
+        long dz = (long) z - origin.z();
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    /**
+     * The first click of {@code /brush copypaste}, FAWE's: the blocks that are
+     * not air, joined to the start through their faces, no lower than it and
+     * accepted by the mask, found layer by layer. FAWE's walk stops after the
+     * layer of the depth but still asks the neighbours of that layer, and its
+     * mask is what copies, so the copy reaches one step past the depth. The
+     * walk starts from the start whatever it holds.
+     *
+     * <p>This measured the depth as a distance from the start, which cut a
+     * tree trunk or a winding branch where FAWE's steps do not.</p>
+     *
+     * @param depth the brush radius, as FAWE's visitor counts its steps
+     * @param mask  the mask of the edit, or null
+     */
+    public static com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard copyConnected(
+            World world, EditSession session, BlockVector3 start, int depth, Mask mask) {
+        BlockStateRegistry registry = BlockState.registry();
+        com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard clipboard =
+                new com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard(start);
+        int lowest = start.y();
+        int top = world.maxY();
+        BlockVisitor copy = (x, y, z) -> {
+            if (y < lowest || mask != null && !mask.test(x, y, z)) {
+                return false;
+            }
+            int state = world.getBlock(x, y, z);
+            if (registry.isAirLike(state)) {
+                return false;
+            }
+            clipboard.setBlock(x, y, z, state);
+            session.limiter().check(1);
+            return true;
+        };
+        copy.visit(start.x(), start.y(), start.z());
+        LongSet visited = new LongSet();
+        LongQueue layer = new LongQueue();
+        LongQueue next = new LongQueue();
+        long first = BlockArrayClipboard.positionKey(start.x(), start.y(), start.z());
+        visited.add(first);
+        layer.add(first);
+        for (int step = 0; !layer.isEmpty() && step <= depth; step++) {
+            while (!layer.isEmpty()) {
+                long current = layer.poll();
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                    int nx = x + direction.x();
+                    int ny = y + direction.y();
+                    int nz = z + direction.z();
+                    if (ny < world.minY() || ny > top) {
+                        continue;
+                    }
+                    long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                    if (!visited.contains(key) && copy.visit(nx, ny, nz)) {
+                        visited.add(key);
+                        next.add(key);
+                    }
+                }
+            }
+            LongQueue swap = layer;
+            layer = next;
+            next = swap;
+        }
+        com.maxlananas.fawebim.core.clipboard.Clipboards.copyBlockEntities(world, clipboard);
+        return clipboard;
+    }
+
+    /**
+     * {@code //fill}, FAWE's {@code fillDirection}. Downwards, the default, is
+     * {@link #fillXz}; any other direction fills the air of the sphere joined
+     * to the origin without ever stepping against the direction, whatever the
+     * depth.
+     */
+    public static int fillDirection(EditSession session, BlockVector3 origin, Pattern pattern, double radius,
+                                    int depth, BlockVector3 direction) {
+        if (direction.x() == 0 && direction.y() < 0 && direction.z() == 0) {
+            return fillXz(session, origin, pattern, radius, depth, false);
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        long reach = (long) (radius * radius);
+        Mask joins = (x, y, z) -> distanceSq(x, y, z, origin) <= reach
+                && registry.isAirLike(session.getBlock(x, y, z));
+        Moves along = (fromY, dx, dy, dz) -> (dx == 0 || direction.x() == 0 || direction.x() == dx)
+                && (dy == 0 || direction.y() == 0 || direction.y() == dy)
+                && (dz == 0 || direction.z() == 0 || direction.z() == dz);
+        return walk(session, origin, along, (int) (radius * 2 + 1), joins, pattern);
+    }
+
+    /**
+     * FAWE's {@code fillXZ}: the air joined to the origin inside the sphere of
+     * the radius, no higher than the origin and at most {@code depth} levels
+     * down. {@code //fillr} walks it in every direction; {@code //fill} spreads
+     * across the origin's level only, and from there straight down, which fills
+     * the hole under the player and not the caves beside it.
+     */
+    public static int fillXz(EditSession session, BlockVector3 origin, Pattern pattern, double radius, int depth,
+                             boolean recursive) {
+        BlockStateRegistry registry = BlockState.registry();
+        // Long arithmetic: the default depth of /fillr is the int range, and
+        // below y 0 the lowest level wrapped round to the top of it.
+        int lowest = (int) Math.max((long) origin.y() - depth + 1, session.minY());
+        int highest = Math.min(session.maxY(), origin.y());
+        long reach = (long) (radius * radius);
+        Mask joins = (x, y, z) -> y >= lowest && y <= highest && distanceSq(x, y, z, origin) <= reach
+                && registry.isAirLike(session.getBlock(x, y, z));
+        int level = origin.y();
+        Moves moves = recursive ? ANY_MOVE : (fromY, dx, dy, dz) -> dy < 0 || dy == 0 && fromY == level;
+        return walk(session, origin, moves, (int) (radius * 2 + 1), joins, pattern);
+    }
+
+    /**
+     * {@code //drain}, FAWE's {@code drainArea}: the water, lava and bubble
+     * columns - with {@code plants} the kelp and sea grass too - joined to the
+     * cube of 3x3x3 cells around the origin become air, inside the sphere of the
+     * radius and at most twice the radius plus one steps away. A waterlogged
+     * block is a block and stays as it is, unless {@code waterlogged} asks for
+     * it: then it is part of the pool and only loses its water.
+     */
+    public static int drain(EditSession session, BlockVector3 origin, double radius, boolean waterlogged,
+                            boolean plants) {
+        BlockStateRegistry registry = BlockState.registry();
+        java.util.Set<String> liquids = plants ? DRAINED_WITH_PLANTS : DRAINED;
+        IntPredicate soaked = remembered(state -> "true".equals(registry.properties(state).get("waterlogged")));
+        IntPredicate pool = remembered(state -> liquids.contains(registry.name(state))
+                || waterlogged && soaked.test(state));
+        long reach = (long) (radius * radius);
+        Mask joins = (x, y, z) -> distanceSq(x, y, z, origin) <= reach && pool.test(session.getBlock(x, y, z));
+        int air = registry.air();
+        Pattern drained = (x, y, z) -> {
+            int state = session.getBlock(x, y, z);
+            if (!waterlogged || !soaked.test(state)) {
+                return air;
+            }
+            int dry = registry.withProperty(state, "waterlogged", "false");
+            return dry >= 0 ? dry : air;
+        };
+        return walk(session, around(session, origin, joins), ANY_MOVE, (int) (radius * 2 + 1), joins, drained);
+    }
+
+    private static final java.util.Set<String> DRAINED =
+            java.util.Set.of("minecraft:water", "minecraft:lava", "minecraft:bubble_column");
+    private static final java.util.Set<String> DRAINED_WITH_PLANTS = java.util.Set.of("minecraft:water",
+            "minecraft:lava", "minecraft:bubble_column", "minecraft:kelp_plant", "minecraft:kelp",
+            "minecraft:seagrass", "minecraft:tall_seagrass");
+
+    /**
+     * {@code //fixwater} and {@code //fixlava}, FAWE's {@code fixLiquid}: from
+     * the liquid in the cube of 3x3x3 cells around the origin, the liquid and
+     * the air joined to it inside the sphere of the radius, never above the
+     * origin and never climbing, become still source blocks - the flowing
+     * edges of a lake and the holes in its surface alike.
+     *
+     * @param liquid the block, {@code minecraft:water} or {@code minecraft:lava}
+     */
+    public static int fixLiquid(EditSession session, BlockVector3 origin, double radius, String liquid) {
+        BlockStateRegistry registry = BlockState.registry();
+        int source = registry.defaultState(liquid);
+        if (source < 0) {
+            return 0;
+        }
+        IntPredicate ofLiquid = remembered(state -> registry.name(state).equals(liquid));
+        long reach = (long) (radius * radius);
+        int highest = Math.min(origin.y(), session.maxY());
+        Mask joins = (x, y, z) -> {
+            if (y > highest || distanceSq(x, y, z, origin) > reach) {
+                return false;
+            }
+            int state = session.getBlock(x, y, z);
+            return ofLiquid.test(state) || registry.isAirLike(state);
+        };
+        Mask seeds = (x, y, z) -> ofLiquid.test(session.getBlock(x, y, z));
+        return walk(session, around(session, origin, seeds), NOT_UP, Integer.MAX_VALUE, joins,
+                new FixedPattern(source));
+    }
+
+    /** The moves a walk takes from a cell at height {@code fromY}: FAWE's visitor directions and their filters. */
+    @FunctionalInterface
+    private interface Moves {
+        boolean allow(int fromY, int dx, int dy, int dz);
+    }
+
+    private static final Moves ANY_MOVE = (fromY, dx, dy, dz) -> true;
+    private static final Moves NOT_UP = (fromY, dx, dy, dz) -> dy <= 0;
+
+    /** The cells of the cube of 3x3x3 around the origin that {@code seeds} accepts, as FAWE's liquid walks start. */
+    private static LongQueue around(EditSession session, BlockVector3 origin, Mask seeds) {
+        LongQueue start = new LongQueue(32);
+        for (int y = origin.y() - 1; y <= origin.y() + 1; y++) {
+            if (y < session.minY() || y > session.maxY()) {
+                continue;
+            }
+            for (int z = origin.z() - 1; z <= origin.z() + 1; z++) {
+                for (int x = origin.x() - 1; x <= origin.x() + 1; x++) {
+                    if (seeds.test(x, y, z)) {
+                        start.add(BlockArrayClipboard.positionKey(x, y, z));
+                    }
+                }
+            }
+        }
+        return start;
+    }
+
+    private static int walk(EditSession session, BlockVector3 origin, Moves moves, int maxDepth, Mask joins,
+                            Pattern pattern) {
+        LongQueue start = new LongQueue(8);
+        start.add(BlockArrayClipboard.positionKey(origin.x(), origin.y(), origin.z()));
+        return walk(session, start, moves, maxDepth, joins, pattern);
+    }
+
+    /**
+     * FAWE's breadth-first visitor. The seeds are written whatever they hold;
+     * each layer is written before the next is found, and the walk ends after
+     * the layer {@code maxDepth} steps from the seeds. A neighbour joins when
+     * the move to it is allowed and {@code joins} accepts it - one refused is
+     * not marked, so another cell may offer it again.
+     */
+    private static int walk(EditSession session, LongQueue queue, Moves moves, int maxDepth, Mask joins,
+                            Pattern pattern) {
+        int minY = session.minY();
+        int maxY = session.maxY();
+        LongSet visited = new LongSet();
+        int seeds = queue.size();
+        for (int i = 0; i < seeds; i++) {
+            long seed = queue.poll();
+            if (visited.add(seed)) {
+                queue.add(seed);
+            }
+        }
         int changed = 0;
-        Vector3 direction = new Vector3(to.x() - from.x(), to.y() - from.y(), to.z() - from.z());
-        double length = Math.max(1, direction.length());
-        Vector3 step = direction.divide(length);
-        int extra = (int) Math.ceil(thickness);
-        for (double t = 0; t <= length; t += 0.5) {
-            double x = from.x() + step.x() * t;
-            double y = from.y() + step.y() * t;
-            double z = from.z() + step.z() * t;
-            for (int dy = -extra; dy <= extra; dy++) {
-                for (int dz = -extra; dz <= extra; dz++) {
-                    for (int dx = -extra; dx <= extra; dx++) {
-                        if (thickness > 0 && Math.sqrt(dx * dx + dy * dy + dz * dz) > thickness) {
-                            continue;
-                        }
-                        if (thickness == 0 && (dx != 0 || dy != 0 || dz != 0)) {
-                            continue;
-                        }
-                        int bx = (int) Math.floor(x) + dx;
-                        int by = (int) Math.floor(y) + dy;
-                        int bz = (int) Math.floor(z) + dz;
-                        if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
-                            changed++;
-                        }
+        for (int depth = 0; !queue.isEmpty(); depth++) {
+            for (int remaining = queue.size(); remaining > 0; remaining--) {
+                long current = queue.poll();
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                    changed++;
+                }
+                session.limiter().check(1);
+                if (depth == maxDepth) {
+                    continue;
+                }
+                for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                    int dy = direction.y();
+                    int ny = y + dy;
+                    if (ny < minY || ny > maxY || !moves.allow(y, direction.x(), dy, direction.z())) {
+                        continue;
+                    }
+                    int nx = x + direction.x();
+                    int nz = z + direction.z();
+                    long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                    if (!visited.contains(next) && joins.test(nx, ny, nz)) {
+                        visited.add(next);
+                        queue.add(next);
                     }
                 }
             }
@@ -604,396 +1353,230 @@ public final class Operations {
         return changed;
     }
 
-    /**
-     * A cubic Hermite spline with the tension, bias and continuity controls
-     * {@code /brush surfacespline} exposes, drawn on the surface below the path.
-     */
-    public static int surfaceSpline(EditSession session, List<BlockVector3> points, Pattern pattern,
-                                    double tension, double bias, double continuity, int quality) {
-        if (points.size() < 2) {
-            return 0;
-        }
-        int steps = Math.max(1, quality);
-        int changed = 0;
-        for (int i = 0; i < points.size() - 1; i++) {
-            BlockVector3 p0 = points.get(Math.max(0, i - 1));
-            BlockVector3 p1 = points.get(i);
-            BlockVector3 p2 = points.get(i + 1);
-            BlockVector3 p3 = points.get(Math.min(points.size() - 1, i + 2));
-            for (int step = 0; step < steps; step++) {
-                double t = (double) step / steps;
-                // Kochanek-Bartels: the tangent leaving p1 and the one entering
-                // p2 are scaled by tension, tilted by bias and mixed by
-                // continuity.
-                double mx1 = (1 - tension) * (1 + bias) * (1 + continuity) / 2 * (p2.x() - p1.x())
-                        + (1 - tension) * (1 - bias) * (1 - continuity) / 2 * (p1.x() - p0.x());
-                double mz1 = (1 - tension) * (1 + bias) * (1 + continuity) / 2 * (p2.z() - p1.z())
-                        + (1 - tension) * (1 - bias) * (1 - continuity) / 2 * (p1.z() - p0.z());
-                double mx2 = (1 - tension) * (1 + bias) * (1 - continuity) / 2 * (p2.x() - p1.x())
-                        + (1 - tension) * (1 - bias) * (1 + continuity) / 2 * (p3.x() - p2.x());
-                double mz2 = (1 - tension) * (1 + bias) * (1 - continuity) / 2 * (p2.z() - p1.z())
-                        + (1 - tension) * (1 - bias) * (1 + continuity) / 2 * (p3.z() - p2.z());
-                double t2 = t * t;
-                double t3 = t2 * t;
-                double h1 = 2 * t3 - 3 * t2 + 1;
-                double h2 = -2 * t3 + 3 * t2;
-                double h3 = t3 - 2 * t2 + t;
-                double h4 = t3 - t2;
-                int x = (int) Math.floor(h1 * p1.x() + h2 * p2.x() + h3 * mx1 + h4 * mx2);
-                int z = (int) Math.floor(h1 * p1.z() + h2 * p2.z() + h3 * mz1 + h4 * mz2);
-                int y = session.getWorld().getHighestBlockY(x, z);
-                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                    changed++;
-                }
+    /** {@code test}, asked once per block state and remembered for the rest of the command. */
+    private static IntPredicate remembered(IntPredicate test) {
+        byte[] known = new byte[Math.max(1, BlockState.registry().stateCount())];
+        return state -> {
+            if (state < 0 || state >= known.length) {
+                return test.test(state);
             }
-        }
-        return changed;
+            if (known[state] == 0) {
+                known[state] = (byte) (test.test(state) ? 1 : 2);
+            }
+            return known[state] == 1;
+        };
     }
 
     /**
-     * {@code //curve -h}: only the outer layer of the tube the path would fill is
-     * written, which is FAWE's shell mode.
-     */
-    public static int splineShell(EditSession session, List<BlockVector3> points, Pattern pattern, double thickness) {
-        if (points.size() < 2 || thickness < 1) {
-            return spline(session, points, pattern, thickness);
-        }
-        List<BlockVector3> positions = new ArrayList<>();
-        for (int i = 0; i < points.size() - 1; i++) {
-            BlockVector3 from = points.get(i);
-            BlockVector3 to = points.get(i + 1);
-            int steps = (int) Math.max(1, from.distance(to));
-            for (int step = 0; step <= steps; step++) {
-                double t = (double) step / steps;
-                positions.add(new BlockVector3(
-                        (int) Math.floor(from.x() + (to.x() - from.x()) * t),
-                        (int) Math.floor(from.y() + (to.y() - from.y()) * t),
-                        (int) Math.floor(from.z() + (to.z() - from.z()) * t)));
-            }
-        }
-        // The tube of a path overlaps itself where the path bends, and a block
-        // that two spheres share must be written once. The positions live in a
-        // primitive set keyed by the world position, not in a set of objects.
-        com.maxlananas.fawebim.core.util.LongObjectMap<Boolean> written =
-                new com.maxlananas.fawebim.core.util.LongObjectMap<>();
-        int radius = (int) Math.ceil(thickness);
-        int[] shellCounter = {0};
-        for (BlockVector3 position : positions) {
-            forEachInSphere(position, radius, false, (x, y, z) -> {
-                long key = (((long) x & 0x3FFFFFF) << 38) | (((long) y & 0xFFF) << 26) | ((long) z & 0x3FFFFFF);
-                if (written.get(key) != null) {
-                    return false;
-                }
-                written.put(key, Boolean.TRUE);
-                if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                    shellCounter[0]++;
-                }
-                return false;
-            });
-        }
-        return shellCounter[0];
-    }
-
-    /** {@code //curve} — Catmull-Rom spline through the given points. */
-    public static int spline(EditSession session, List<BlockVector3> points, Pattern pattern, double thickness) {
-        return spline(session, points, pattern, thickness, 8);
-    }
-
-    /**
-     * A Catmull-Rom spline through the given points. {@code subdivisions} is the
-     * number of blocks drawn between two control points, so FAWE's
-     * {@code quality} argument maps straight onto it.
-     */
-    public static int spline(EditSession session, List<BlockVector3> points, Pattern pattern, double thickness,
-                             int subdivisions) {
-        if (points.size() < 2) {
-            return 0;
-        }
-        int steps = Math.max(1, subdivisions);
-        int changed = 0;
-        for (int i = 0; i < points.size() - 1; i++) {
-            BlockVector3 p0 = points.get(Math.max(0, i - 1));
-            BlockVector3 p1 = points.get(i);
-            BlockVector3 p2 = points.get(i + 1);
-            BlockVector3 p3 = points.get(Math.min(points.size() - 1, i + 2));
-            for (double t = 0; t < 1; t += 1.0 / steps) {
-                double t2 = t * t;
-                double t3 = t2 * t;
-                double x = 0.5 * ((2 * p1.x()) + (-p0.x() + p2.x()) * t
-                        + (2 * p0.x() - 5 * p1.x() + 4 * p2.x() - p3.x()) * t2
-                        + (-p0.x() + 3 * p1.x() - 3 * p2.x() + p3.x()) * t3);
-                double y = 0.5 * ((2 * p1.y()) + (-p0.y() + p2.y()) * t
-                        + (2 * p0.y() - 5 * p1.y() + 4 * p2.y() - p3.y()) * t2
-                        + (-p0.y() + 3 * p1.y() - 3 * p2.y() + p3.y()) * t3);
-                double z = 0.5 * ((2 * p1.z()) + (-p0.z() + p2.z()) * t
-                        + (2 * p0.z() - 5 * p1.z() + 4 * p2.z() - p3.z()) * t2
-                        + (-p0.z() + 3 * p1.z() - 3 * p2.z() + p3.z()) * t3);
-                int bx = (int) Math.floor(x);
-                int by = (int) Math.floor(y);
-                int bz = (int) Math.floor(z);
-                if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
-                    changed++;
-                }
-                if (thickness >= 1) {
-                    changed += sphere(session, new BlockVector3(bx, by, bz), thickness, pattern, false);
-                }
-            }
-        }
-        return changed;
-    }
-
-    /** {@code /brush catenary} — a sagging rope between two points. */
-    public static int catenary(EditSession session, BlockVector3 from, BlockVector3 to, Pattern pattern,
-                               double lengthFactor, double thickness) {
-        int changed = 0;
-        double distance = from.distance(to);
-        double sag = distance * lengthFactor;
-        int steps = (int) Math.max(2, distance * 2);
-        for (int i = 0; i <= steps; i++) {
-            double t = (double) i / steps;
-            double x = from.x() + (to.x() - from.x()) * t;
-            double z = from.z() + (to.z() - from.z()) * t;
-            double y = from.y() + (to.y() - from.y()) * t - sag * Math.sin(Math.PI * t);
-            int bx = (int) Math.floor(x);
-            int by = (int) Math.floor(y);
-            int bz = (int) Math.floor(z);
-            if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
-                changed++;
-            }
-        }
-        return changed;
-    }
-
-    // ---------------------------------------------------------------- flood fill
-
-    /** {@code //fill}/{@code //drain} — 3D flood fill of the connected blocks. */
-    public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
-                                boolean hollow) {
-        return floodFill(world, session, start, pattern, radius, hollow, null);
-    }
-
-    public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
-                                boolean hollow, Mask replaceMask) {
-        return floodFill(world, session, start, pattern, radius, hollow, replaceMask, 0);
-    }
-
-    /**
-     * A flood fill that also stops {@code depth} blocks below the start, which is
-     * how WorldEdit's {@code /fillr} keeps a recursive fill from following a hole
-     * to the bottom of the world.
+     * FAWE's blend ball. Each block of the ball takes the block type its 26
+     * neighbours hold most, when that type outnumbers its own by
+     * {@code minFreqDiff} and no other ties with it; air counts as a type too,
+     * so a block standing out into the air goes and a pit fills. With
+     * {@code onlyAir} a block turns to air when its air neighbours outnumber
+     * the others by {@code minFreqDiff}, and air takes the most common
+     * neighbour when they are the ones outnumbered.
      *
-     * @param depth how many blocks below the start may be filled, 0 for no limit
-     */
-    public static int floodFill(World world, EditSession session, BlockVector3 start, Pattern pattern, int radius,
-                                boolean hollow, Mask replaceMask, int depth) {
-        BlockStateRegistry registry = BlockState.registry();
-        int targetState = world.getBlock(start.x(), start.y(), start.z());
-        if (!registry.isAirLike(targetState) && replaceMask == null) {
-            // Filling a solid block only replaces that same block type.
-            replaceMask = new com.maxlananas.fawebim.core.mask.Masks.BlockMask(session,
-                    List.of(registry.describe(targetState)));
-        }
-        int lowest = depth > 0 ? start.y() - depth + 1 : Integer.MIN_VALUE;
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
-        int changed = 0;
-        while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
-            if (!visited.add(current)) {
-                continue;
-            }
-            if (current.distance(start) > radius || current.y() < lowest) {
-                continue;
-            }
-            Mask reject = replaceMask;
-            if (reject != null && !reject.test(current)) {
-                continue;
-            }
-            boolean shouldPlace = !hollow || isEdge(world, current, replaceMask);
-            if (shouldPlace && session.setBlock(current.x(), current.y(), current.z(),
-                    pattern.apply(current.x(), current.y(), current.z()))) {
-                changed++;
-            }
-            session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                BlockVector3 next = current.add(direction.toVector());
-                if (!visited.contains(next) && next.distance(start) <= radius && next.y() >= lowest) {
-                    queue.add(next);
-                }
-            }
-        }
-        return changed;
-    }
-
-    /**
-     * Collects the connected non-air blocks under a position into a clipboard,
-     * which is what the first click of {@code /brush copypaste} does: FAWE walks
-     * the blob with a recursive visitor limited to the brush radius and to the
-     * height of the click, so the copy never grows downwards into the ground.
+     * <p>{@code limit} is FAWE's {@code -m}: a block it refuses is left as it
+     * is and counts as air to its neighbours. {@code mask}, the brush's own,
+     * only keeps a block from being written.</p>
      *
-     * @param limit the brush radius, which also caps how far the walk goes
-     * @param mask  the brush mask, applied on top of "the block is not air"
+     * <p>Every block is decided on the terrain as it stood before the stroke,
+     * as FAWE's filter reads it: the layers are read once, three at a time,
+     * the masks are asked before anything is written, and the changes are
+     * written last. Reading the neighbours back through the edit let a block
+     * see those changed before it, so the ball drifted along the order of the
+     * scan; air was never chosen, and with {@code -a} every block was compared
+     * with itself and none changed.</p>
      */
-    public static com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard copyConnected(
-            World world, EditSession session, BlockVector3 start, int limit, Mask mask) {
-        BlockStateRegistry registry = BlockState.registry();
-        com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard clipboard =
-                new com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard(start);
-        if (registry.isAirLike(world.getBlock(start.x(), start.y(), start.z()))) {
-            return clipboard;
-        }
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
-        while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
-            if (!visited.add(current)) {
-                continue;
-            }
-            if (current.y() < start.y() || current.distance(start) > limit) {
-                continue;
-            }
-            int state = world.getBlock(current.x(), current.y(), current.z());
-            if (registry.isAirLike(state) || mask != null && !mask.test(current.x(), current.y(), current.z())) {
-                continue;
-            }
-            clipboard.setBlock(current.x(), current.y(), current.z(), state);
-            com.maxlananas.fawebim.core.util.NbtCompound nbt = world.getBlockEntity(current.x(), current.y(), current.z());
-            if (nbt != null) {
-                clipboard.addBlockEntity(current, nbt);
-            }
-            session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction
-                    : com.maxlananas.fawebim.core.world.Direction.values()) {
-                BlockVector3 next = current.add(direction.toVector());
-                if (!visited.contains(next)) {
-                    queue.add(next);
-                }
-            }
-        }
-        return clipboard;
-    }
-
-    private static boolean isEdge(World world, BlockVector3 position, Mask mask) {
-        for (com.maxlananas.fawebim.core.world.Direction direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-            BlockVector3 next = position.add(direction.toVector());
-            if (mask != null && !mask.test(next)) {
-                return true;
-            }
-            if (mask == null && !BlockState.registry()
-                    .isAirLike(world.getBlock(next.x(), next.y(), next.z()))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** {@code //drain} — removes connected liquid. */
-    public static int drain(World world, EditSession session, BlockVector3 start, Mask liquidMask, int radius) {
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
-        int changed = 0;
-        int air = BlockState.registry().air();
-        while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
-            if (!visited.add(current) || current.distance(start) > radius) {
-                continue;
-            }
-            if (visited.size() > 1_000_000) {
-                break;
-            }
-            if (!liquidMask.test(current)) {
-                continue;
-            }
-            if (session.setBlock(current.x(), current.y(), current.z(), air)) {
-                changed++;
-            }
-            session.limiter().check(1);
-            for (com.maxlananas.fawebim.core.world.Direction direction
-                    : com.maxlananas.fawebim.core.world.Direction.values()) {
-                if (direction == com.maxlananas.fawebim.core.world.Direction.UP) {
-                    continue;
-                }
-                queue.add(current.add(direction.toVector()));
-            }
-        }
-        return changed;
-    }
-
-    /** {@code //fixwater}, {@code //fixlava} — makes liquid flow to its neighbours. */
-    public static int fixLiquid(World world, EditSession session, Region region, String liquid, int radius) {
-        BlockStateRegistry registry = BlockState.registry();
-        int source = registry.parse("minecraft:" + liquid);
-        if (source < 0) {
-            return 0;
-        }
-        String name = "minecraft:" + liquid;
-        return region.forEachPosition((x, y, z) -> registry.name(world.getBlock(x, y, z)).equals(name)
-                && session.setBlock(x, y, z, source));
-    }
-
-    // ------------------------------------------------------------------- smooth
-
-    /** {@code /brush blendball} — blends the brush area with its surroundings. */
-    public static int blendBall(EditSession session, BlockVector3 center, int radius, Mask mask) {
-        return blendBall(session, center, radius, mask, false, 1);
-    }
-
-    /**
-     * FAWE's blend ball. With {@code onlyAir} the comparison only looks at
-     * whether a position is air or not, which evens out cliffs without touching
-     * the material mix; otherwise a block changes when its neighbours agree on
-     * another block at least {@code minFreqDiff} times more often than on the
-     * current one.
-     */
-    public static int blendBall(EditSession session, BlockVector3 center, int radius, Mask mask,
+    public static int blendBall(EditSession session, BlockVector3 center, double size, Mask mask, Mask limit,
                                 boolean onlyAir, int minFreqDiff) {
         BlockStateRegistry registry = BlockState.registry();
-        int changed = 0;
-        for (int y = -radius; y <= radius; y++) {
-            for (int z = -radius; z <= radius; z++) {
-                for (int x = -radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + y * y + z * z) > radius) {
+        int outset = (int) (size + 1);
+        int squared = (int) (size * size);
+        int side = 2 * outset + 3;
+        Buffers.checkInts(3L * side * side, 3, "A blend ball of radius " + Msg.formatNumber((long) size));
+        IntUnaryOperator typeOf = rememberedType(registry);
+        IntPredicate airLike = remembered(registry::isAirLike);
+        int air = registry.air();
+        int airType = typeOf.applyAsInt(air);
+        BlendLayer below = new BlendLayer(outset + 1, limit != null);
+        BlendLayer here = new BlendLayer(outset + 1, limit != null);
+        BlendLayer above = new BlendLayer(outset + 1, limit != null);
+        below.read(session, center, -outset - 1, limit, typeOf, airLike);
+        here.read(session, center, -outset, limit, typeOf, airLike);
+        // Up to 26 types around a block: a tally in two small arrays reused
+        // for every block, in the order FAWE walks the neighbours, which is
+        // the order its ties and its choice of state depend on.
+        int[] tallyTypes = new int[26];
+        int[] tallyCounts = new int[26];
+        int[] changes = new int[64];
+        int pending = 0;
+        for (int y = -outset; y <= outset; y++) {
+            above.read(session, center, y + 1, limit, typeOf, airLike);
+            for (int z = -outset; z <= outset && !here.outside; z++) {
+                for (int x = -outset; x <= outset; x++) {
+                    if (x * x + y * y + z * z >= squared) {
                         continue;
+                    }
+                    int index = here.index(x, z);
+                    if (here.refused != null && here.refused[index]) {
+                        continue;
+                    }
+                    int current = here.state[index];
+                    int currentType = here.type[index];
+                    int highest = 1;
+                    int currentFrequency = 1;
+                    int highestState = current;
+                    int airCount = 0;
+                    int total = 26;
+                    boolean tie = false;
+                    int distinct = 0;
+                    for (int ox = -1; ox <= 1; ox++) {
+                        for (int oz = -1; oz <= 1; oz++) {
+                            for (int oy = -1; oy <= 1; oy++) {
+                                if (ox == 0 && oy == 0 && oz == 0) {
+                                    continue;
+                                }
+                                BlendLayer layer = oy < 0 ? below : oy > 0 ? above : here;
+                                if (layer.outside) {
+                                    total--;
+                                    continue;
+                                }
+                                int neighbour = layer.index(x + ox, z + oz);
+                                boolean refused = layer.refused != null && layer.refused[neighbour];
+                                int state = refused ? air : layer.state[neighbour];
+                                int type = refused ? airType : layer.type[neighbour];
+                                if (refused || layer.air[neighbour]) {
+                                    airCount++;
+                                }
+                                if (type == currentType) {
+                                    currentFrequency++;
+                                }
+                                int slot = 0;
+                                while (slot < distinct && tallyTypes[slot] != type) {
+                                    slot++;
+                                }
+                                if (slot == distinct) {
+                                    tallyTypes[distinct] = type;
+                                    tallyCounts[distinct++] = 0;
+                                }
+                                int count = ++tallyCounts[slot];
+                                if (count - highest >= minFreqDiff) {
+                                    highest = count;
+                                    highestState = state;
+                                    tie = false;
+                                } else if (count == highest) {
+                                    tie = true;
+                                }
+                            }
+                        }
+                    }
+                    int next = current;
+                    if (onlyAir) {
+                        if (airCount * 2 - total >= minFreqDiff) {
+                            if (!here.air[index]) {
+                                next = air;
+                            }
+                        } else if (here.air[index] && total - 2 * airCount >= minFreqDiff) {
+                            next = highestState;
+                        }
+                    } else if (highest - currentFrequency >= minFreqDiff && !tie) {
+                        next = highestState;
                     }
                     int bx = center.x() + x;
                     int by = center.y() + y;
                     int bz = center.z() + z;
-                    if (mask != null && !mask.test(bx, by, bz)) {
+                    if (next == current || (mask != null && !mask.test(bx, by, bz))) {
                         continue;
                     }
-                    int current = session.getBlock(bx, by, bz);
-                    java.util.Map<Integer, Integer> counts = new java.util.HashMap<>();
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dy = -1; dy <= 1; dy++) {
-                            for (int dz = -1; dz <= 1; dz++) {
-                                int state = session.getBlock(bx + dx, by + dy, bz + dz);
-                                if (onlyAir) {
-                                    state = registry.isAirLike(state) ? registry.air() : current;
-                                }
-                                counts.merge(state, 1, Integer::sum);
-                            }
-                        }
+                    if (pending + 4 > changes.length) {
+                        changes = java.util.Arrays.copyOf(changes, changes.length * 2);
                     }
-                    int best = current;
-                    int bestCount = 0;
-                    for (var entry : counts.entrySet()) {
-                        if (entry.getValue() > bestCount && !registry.isAirLike(entry.getKey())) {
-                            bestCount = entry.getValue();
-                            best = entry.getKey();
-                        }
-                    }
-                    int currentCount = counts.getOrDefault(current, 0);
-                    if (best != current && bestCount - currentCount >= minFreqDiff
-                            && session.setBlock(bx, by, bz, best)) {
-                        changed++;
+                    changes[pending++] = bx;
+                    changes[pending++] = by;
+                    changes[pending++] = bz;
+                    changes[pending++] = next;
+                }
+            }
+            BlendLayer spare = below;
+            below = here;
+            here = above;
+            above = spare;
+        }
+        int changed = 0;
+        for (int i = 0; i < pending; i += 4) {
+            if (session.setBlock(changes[i], changes[i + 1], changes[i + 2], changes[i + 3])) {
+                changed++;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * One horizontal layer of the blocks around a blend ball, as they stood
+     * before the stroke: each state, its block type, whether it is air and
+     * whether the ball's own mask refuses it.
+     */
+    private static final class BlendLayer {
+
+        private final int half;
+        private final int side;
+        final int[] state;
+        final int[] type;
+        final boolean[] air;
+        final boolean[] refused;
+        boolean outside;
+
+        BlendLayer(int half, boolean limited) {
+            this.half = half;
+            this.side = 2 * half + 1;
+            this.state = new int[side * side];
+            this.type = new int[side * side];
+            this.air = new boolean[side * side];
+            this.refused = limited ? new boolean[side * side] : null;
+        }
+
+        int index(int x, int z) {
+            return (z + half) * side + x + half;
+        }
+
+        /** Reads the layer {@code y} blocks above the centre; a layer outside the world has no block. */
+        void read(EditSession session, BlockVector3 center, int y, Mask limit, IntUnaryOperator typeOf,
+                  IntPredicate airLike) {
+            int by = center.y() + y;
+            outside = by < session.minY() || by > session.maxY();
+            if (outside) {
+                return;
+            }
+            for (int z = -half; z <= half; z++) {
+                for (int x = -half; x <= half; x++) {
+                    int bx = center.x() + x;
+                    int bz = center.z() + z;
+                    int i = index(x, z);
+                    int block = session.getBlock(bx, by, bz);
+                    state[i] = block;
+                    type[i] = typeOf.applyAsInt(block);
+                    air[i] = airLike.test(block);
+                    if (refused != null) {
+                        refused[i] = !limit.test(bx, by, bz);
                     }
                 }
             }
         }
-        return changed;
+    }
+
+    /** The block type of a state - the default state of its block - asked once per state. */
+    static IntUnaryOperator rememberedType(BlockStateRegistry registry) {
+        int[] known = new int[Math.max(1, registry.stateCount())];
+        return state -> {
+            if (state < 0 || state >= known.length) {
+                return registry.defaultState(registry.name(state));
+            }
+            if (known[state] == 0) {
+                known[state] = registry.defaultState(registry.name(state)) + 1;
+            }
+            return known[state] - 1;
+        };
     }
 
     /** {@code /brush gravity} — drops blocks straight down. */
@@ -1056,64 +1639,82 @@ public final class Operations {
         return changed;
     }
 
-    // ------------------------------------------------------------- deform/generate
+    /**
+     * The coordinates a deform expression works in: a block at {@code p} is
+     * given to it as {@code (p - zero) / unit}.
+     */
+    public record DeformFrame(Vector3 zero, Vector3 unit) {
 
-    /** {@code //deform} — moves blocks according to an expression. */
-    public static int deform(World world, EditSession session, Region region, String expressionInput) {
-        return deform(world, session, region, expressionInput, 0, 0, 0);
+        /** The game's coordinates, {@code -r}. */
+        public static final DeformFrame RAW = new DeformFrame(Vector3.ZERO, Vector3.ONE);
+
+        /** Blocks counted from {@code zero}: {@code -o} from the placement, {@code -c} from the centre. */
+        public static DeformFrame offset(Vector3 zero) {
+            return new DeformFrame(zero, Vector3.ONE);
+        }
+
+        /**
+         * WorldEdit's default: the region spans -1 to 1 on each axis, and an
+         * axis only a block thick counts in blocks.
+         */
+        public static DeformFrame unitCube(Region region) {
+            Vector3 min = region.getMinimumPoint().toVector3();
+            Vector3 max = region.getMaximumPoint().toVector3();
+            Vector3 zero = max.add(min).multiply(0.5);
+            Vector3 unit = max.subtract(zero);
+            return new DeformFrame(zero, new Vector3(unit.x() == 0 ? 1 : unit.x(), unit.y() == 0 ? 1 : unit.y(),
+                    unit.z() == 0 ? 1 : unit.z()));
+        }
     }
 
     /**
-     * Deforms the region with an expression evaluated with {@code ox}, {@code oy}
-     * and {@code oz} as the origin, which is what the deform brush's {@code -o}
-     * switch asks for; the plain form uses the world origin.
+     * {@code //deform} and the deform brush, as WorldEdit's deformRegion: the
+     * expression is given each block of the region in the frame's coordinates,
+     * and the block becomes the one of the world at the position it leaves in
+     * x, y and z, brought back the same way and rounded to the nearest block.
+     * Every source is read before any block is written, so the result does not
+     * depend on the order of the walk. Variables the expression keeps carry
+     * from one block to the next, as in WorldEdit.
+     *
+     * <p>Blocks were pushed the other way before: each went to the position the
+     * expression gave, counted in blocks from the corner of the selection,
+     * after the whole region had been cleared to air, so {@code //deform
+     * y-=0.2} barely changed anything and a stretch left holes.</p>
      */
     public static int deform(World world, EditSession session, Region region, String expressionInput,
-                             int ox, int oy, int oz) {
+                             DeformFrame frame) {
         Expression expression = Expression.compile(expressionInput);
         BlockVector3 min = region.getMinimumPoint();
         BlockVector3 max = region.getMaximumPoint();
-        int width = max.x() - min.x() + 1;
-        int height = max.y() - min.y() + 1;
-        int length = max.z() - min.z() + 1;
-        int[] source = new int[width * height * length];
-        int index = 0;
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    source[index++] = world.getBlock(min.x() + x, min.y() + y, min.z() + z);
-                }
-            }
-        }
-        BlockStateRegistry registry = BlockState.registry();
-        for (BlockVector3 position : region) {
-            session.setBlock(position.x(), position.y(), position.z(), registry.air());
-        }
-        int changed = 0;
-        index = 0;
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    int state = source[index++];
-                    if (registry.isAirLike(state)) {
-                        continue;
-                    }
-                    Expression.Variables variables = new Expression.Variables();
-                    variables.set("x", x).set("y", y).set("z", z);
-                    variables.set("ox", min.x() + x - ox).set("oy", min.y() + y - oy).set("oz", min.z() + z - oz);
-                    variables.set("cx", width / 2.0).set("cy", height / 2.0).set("cz", length / 2.0);
-                    // The expression stores the displacement in x/y/z.
-                    expression.evaluate(variables);
-                    int tx = (int) Math.floor(min.x() + variables.get("x"));
-                    int ty = (int) Math.floor(min.y() + variables.get("y"));
-                    int tz = (int) Math.floor(min.z() + variables.get("z"));
-                    if (session.setBlock(tx, ty, tz, state)) {
-                        changed++;
-                    }
-                }
-            }
-        }
-        return changed;
+        long bounds = (long) (max.x() - min.x() + 1) * (max.y() - min.y() + 1) * (max.z() - min.z() + 1);
+        Buffers.checkInts(bounds, 1, "Deforming " + Msg.formatNumber(bounds) + " blocks");
+        int[] sources = new int[(int) region.forEachPosition((x, y, z) -> true)];
+        Vector3 zero = frame.zero();
+        Vector3 unit = frame.unit();
+        Expression.Variables variables = new Expression.Variables();
+        int[] cursor = {0};
+        region.forEachPosition((x, y, z) -> {
+            // The expression picks where each block is read from, as far away
+            // as it likes, and a chunk that is not loaded is loaded, or
+            // generated, to answer: /cancel and the watchdog have to be able
+            // to stop a formula that sends every block somewhere new.
+            session.checkTimeout();
+            variables.set("x", (x - zero.x()) / unit.x());
+            variables.set("y", (y - zero.y()) / unit.y());
+            variables.set("z", (z - zero.z()) / unit.z());
+            expression.evaluate(variables);
+            sources[cursor[0]++] = world.getBlock(nearest(variables.get("x") * unit.x() + zero.x()),
+                    nearest(variables.get("y") * unit.y() + zero.y()),
+                    nearest(variables.get("z") * unit.z() + zero.z()));
+            return false;
+        });
+        cursor[0] = 0;
+        return (int) region.forEachPosition((x, y, z) -> session.setBlock(x, y, z, sources[cursor[0]++]));
+    }
+
+    /** The block a coordinate rounds to, halves up, as WorldEdit's expression environment does. */
+    private static int nearest(double coordinate) {
+        return (int) Math.floor(coordinate + 0.5);
     }
 
     /**
@@ -1175,70 +1776,168 @@ public final class Operations {
     }
 
     /**
-     * {@code //forest} — plants trees over the region.
+     * {@code //forest} and {@code //forestgen}, WorldEdit's makeForest: a
+     * {@link #paint} of trees, each grown as {@link #growTree} grows it.
      *
-     * <p>WorldEdit picks a column of the region at the density it was given, finds
-     * the surface and plants the tree type it was asked for; a tree that does not
-     * fit (a spot too small, a plant the world does not know) is skipped.</p>
+     * @param density the share of the columns a tree is tried on, 0 to 1
+     * @return the trees that grew
      */
-    public static int forest(World world, EditSession session, Region region, String treeType, double density) {
+    public static int forest(EditSession session, Region region, String treeType, double density) {
         Random random = new Random();
-        BlockStateRegistry registry = BlockState.registry();
-        int changed = 0;
-        for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-            for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                if (random.nextDouble() > density) {
-                    continue;
-                }
-                int y = world.getHighestBlockY(x, z);
-                if (y < region.getMinimumPoint().y() || y + 1 > region.getMaximumPoint().y()) {
-                    continue;
-                }
-                if (registry.isAirLike(world.getBlock(x, y + 1, z))
-                        && world.generateTree(new BlockVector3(x, y + 1, z), treeType, random)) {
-                    changed++;
-                }
-            }
-        }
-        return changed;
+        return paint(session, region, density, random,
+                (x, y, z, ground) -> growTree(session, x, y, z, ground, treeType, random));
     }
 
-    /** {@code //deltree} — removes a tree starting from its trunk. */
-    public static int removeTree(World world, EditSession session, BlockVector3 start) {
-        Deque<BlockVector3> queue = new ArrayDeque<>();
-        java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-        queue.add(start);
-        int changed = 0;
-        int air = BlockState.registry().air();
-        while (!queue.isEmpty()) {
-            BlockVector3 current = queue.poll();
-            if (!visited.add(current) || visited.size() > 20000) {
-                continue;
-            }
-            String name = BlockState.registry()
-                    .name(world.getBlock(current.x(), current.y(), current.z()));
-            if (!name.contains("log") && !name.contains("leaves") && !name.contains("wood")) {
-                continue;
-            }
-            if (session.setBlock(current.x(), current.y(), current.z(), air)) {
-                changed++;
-            }
-            for (com.maxlananas.fawebim.core.world.Direction direction
-                    : com.maxlananas.fawebim.core.world.Direction.values()) {
-                queue.add(current.add(direction.toVector()));
-            }
-        }
-        return changed;
+    /** What {@link #paint} does on the ground of a column: grows a tree, places a feature. */
+    @FunctionalInterface
+    public interface GroundFunction {
+
+        /** @return true when something was placed on the ground block at x, y, z, which holds {@code ground} */
+        boolean apply(int x, int y, int z, int ground);
     }
 
     /**
-     * {@code //ores} — scatters ore veins through the selection.
+     * WorldEdit's Paint, which its //forest and its forest, feature and
+     * structure brushes are made of: every column of the region's footprint
+     * that a draw at the density lets through is walked down from the top of
+     * the region to its first block that is not air - the ground - and the
+     * function runs there. A column whose block just above the region is not
+     * air is under cover and left alone.
      *
-     * @param mask      blocks a vein may replace
-     * @param size      blocks per vein
-     * @param frequency one vein per this many blocks
-     * @param rarity    1 in {@code rarity} veins is actually placed
+     * <p>The columns are those of the region's {@link #inFootprint footprint}.
+     * The blocks are read through the session, so what the function placed in
+     * one column is ground for the next.</p>
+     *
+     * @param density the share of the columns tried, 0 to 1
+     * @return how many times the function placed something
      */
+    public static int paint(EditSession session, Region region, double density, Random random,
+                            GroundFunction function) {
+        BlockStateRegistry registry = BlockState.registry();
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int top = Math.min(max.y(), session.maxY());
+        int bottom = Math.max(min.y(), session.minY());
+        boolean coverInWorld = max.y() < session.maxY() && max.y() + 1 >= session.minY();
+        int placed = 0;
+        for (int x = min.x(); x <= max.x(); x++) {
+            for (int z = min.z(); z <= max.z(); z++) {
+                if (!inFootprint(region, x, min.y(), z) || random.nextFloat() > density) {
+                    continue;
+                }
+                if (coverInWorld && !registry.isAirLike(session.getBlock(x, max.y() + 1, z))) {
+                    continue;
+                }
+                for (int y = top; y >= bottom; y--) {
+                    int state = session.getBlock(x, y, z);
+                    if (!registry.isAirLike(state)) {
+                        if (function.apply(x, y, z, state)) {
+                            placed++;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        return placed;
+    }
+
+    /**
+     * WorldEdit's ForestGenerator: a tree grows on top of solid ground; a plant
+     * a tree may take the place of - grass, a fern - is cleared, the tree grows
+     * where it stood, and it is put back when no tree fits; anything else holds
+     * no tree.
+     */
+    public static boolean growTree(EditSession session, int x, int y, int z, int ground, String treeType,
+                                   Random random) {
+        BlockStateRegistry registry = BlockState.registry();
+        World world = session.getWorld();
+        if (registry.isSolid(ground)) {
+            return world.generateTree(session, new BlockVector3(x, y + 1, z), treeType, random);
+        }
+        if (!registry.hasTag(ground, "minecraft:replaceable")) {
+            return false;
+        }
+        session.setBlock(x, y, z, registry.air());
+        if (world.generateTree(session, new BlockVector3(x, y, z), treeType, random)) {
+            return true;
+        }
+        session.setBlock(x, y, z, ground);
+        return false;
+    }
+
+    /** How far from the clicked block the floating tree remover walks, as WorldEdit's. */
+    private static final long FLOATING_TREE_RANGE_SQ = 100L * 100L;
+
+    /** The blocks WorldEdit's floating tree remover counts as tree besides leaves and logs. */
+    private static final java.util.Set<String> TREE_BLOCKS = java.util.Set.of(
+            "minecraft:red_mushroom_block", "minecraft:brown_mushroom_block", "minecraft:mushroom_stem",
+            "minecraft:vine", "minecraft:nether_wart_block", "minecraft:warped_wart_block",
+            "minecraft:crimson_stem", "minecraft:warped_stem");
+
+    /**
+     * Whether a block is part of a tree for the floating tree remover: leaves,
+     * logs, the blocks of a huge mushroom or fungus, and vines.
+     */
+    public static boolean isTreeBlock(int state) {
+        BlockStateRegistry registry = BlockState.registry();
+        return registry.hasTag(state, "minecraft:leaves") || registry.hasTag(state, "minecraft:logs")
+                || TREE_BLOCKS.contains(registry.name(state));
+    }
+
+    /**
+     * The positions of the floating tree a block belongs to, found as
+     * WorldEdit's {@code FloatingTreeRemover} finds them: the tree blocks
+     * joined to it face to face, no farther than 100 blocks from it, reached
+     * through air and snow. A log, a stem or a mushroom block of it that
+     * touches any other block stands on something, and the answer is null:
+     * that tree is not floating. Leaves and vines may touch other blocks.
+     *
+     * <p>The positions walked are all answered, air included, as upstream's;
+     * only the tree blocks among them are the tree.</p>
+     */
+    public static long[] floatingTree(World world, BlockVector3 origin) {
+        LongSet visited = new LongSet();
+        LongQueue queue = new LongQueue();
+        long start = BlockArrayClipboard.positionKey(origin.x(), origin.y(), origin.z());
+        visited.add(start);
+        queue.add(start);
+        BlockStateRegistry registry = BlockState.registry();
+        while (!queue.isEmpty()) {
+            long current = queue.poll();
+            int x = BlockArrayClipboard.keyX(current);
+            int y = BlockArrayClipboard.keyY(current);
+            int z = BlockArrayClipboard.keyZ(current);
+            for (com.maxlananas.fawebim.core.world.Direction direction : DIRECTIONS) {
+                int nx = x + direction.x();
+                int ny = y + direction.y();
+                int nz = z + direction.z();
+                if (distanceSq(nx, ny, nz, origin) > FLOATING_TREE_RANGE_SQ) {
+                    continue;
+                }
+                long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                if (!visited.add(next)) {
+                    continue;
+                }
+                int state = world.getBlock(nx, ny, nz);
+                if (registry.isAirLike(state) || registry.name(state).equals("minecraft:snow")) {
+                    continue;
+                }
+                if (isTreeBlock(state)) {
+                    queue.add(next);
+                    continue;
+                }
+                // Something solid: the tree stands on it unless the block it
+                // was reached from is a leaf or a vine.
+                int from = world.getBlock(x, y, z);
+                if (!registry.hasTag(from, "minecraft:leaves") && !registry.name(from).equals("minecraft:vine")) {
+                    return null;
+                }
+            }
+        }
+        return visited.toArray();
+    }
+
     /**
      * FAWE's {@code addOre}: scatters veins of the pattern through the selection.
      *
@@ -1474,53 +2173,49 @@ public final class Operations {
     }
 
     /**
-     * FAWE's {@code EditSession.makeBlob}: a sphere of the given size whose
-     * surface is pushed in and out by simplex noise, which is its "distorted
-     * sphere" generator.
+     * FAWE's {@code EditSession.makeBlob}, behind {@code //blob} and the rock
+     * brush: a ball of the given size whose surface simplex noise pushes in
+     * and out, the noise read from a random corner of FAWE's own field.
      *
-     * <p>At full sphericity the noise scales the whole radius; below it the
-     * radius is a blend of the round distance and a squashed box distance, so
-     * the blob may come out lumpy and angular. Above the size the caller reads
-     * the radii as the size of the box the blob has to fit in.</p>
+     * <p>At full sphericity the noise scales the squared distance, the axis
+     * radii dividing the squared offsets. Below it the distance is a blend of
+     * the round one and FAWE's "Manhattan" one - the sum and the largest of
+     * the axes, each stretched at random - measured on offsets turned by three
+     * random angles, and the noise is read at (x, z, z) as FAWE reads it.</p>
+     *
+     * <p>This read a simplex field of its own, turned the offsets about x first
+     * where FAWE turns them about z first, rounded them where FAWE floors them,
+     * and made three vectors for every block.</p>
+     *
+     * @param axes   the radius of each axis divided by the largest
+     * @param random where the corner of the noise and the angles come from
+     * @param place  sets one block and says whether it changed
+     * @return how many blocks changed
      */
-    public static int makeBlob(World world, EditSession session, BlockVector3 position,
-                               Pattern pattern, double size, double frequency, double amplitude,
-                               Vector3 radius, double sphericity) {
-        Random random = new Random();
+    public static int makeBlob(BlockVector3 position, double size, double frequency, double amplitude, Vector3 axes,
+                               double sphericity, Random random, BlockVisitor place) {
+        Noise noise = Noise.Simplex.classic();
         double seedX = random.nextDouble();
         double seedY = random.nextDouble();
         double seedZ = random.nextDouble();
-        int px = position.x();
-        int py = position.y();
-        int pz = position.z();
         double distort = frequency / size;
-        double modX = 1d / radius.x();
-        double modY = 1d / radius.y();
-        double modZ = 1d / radius.z();
-        int r = (int) size;
-        int radiusSqr = (int) (size * size);
-        int sizeInt = (int) size * 2;
-        // Upstream reads a shared simplex noise, so the shape only depends on
-        // the size, the frequency and the amplitude the caller passed.
-        Noise noiseGen = new Noise.Simplex(0);
+        double modX = 1 / axes.x();
+        double modY = 1 / axes.y();
+        double modZ = 1 / axes.z();
+        int reach = (int) size * 2;
         int changed = 0;
         if (sphericity == 1) {
-            for (int x = -sizeInt; x <= sizeInt; x++) {
-                double nx = seedX + x * distort;
-                double d1 = x * x * modX;
-                int xx = px + x;
-                for (int y = -sizeInt; y <= sizeInt; y++) {
-                    double d2 = d1 + y * y * modY;
-                    double ny = seedY + y * distort;
-                    int yy = py + y;
-                    for (int z = -sizeInt; z <= sizeInt; z++) {
-                        double nz = seedZ + z * distort;
-                        double distance = d2 + z * z * modZ;
-                        double noise = amplitude * noiseGen.noise(nx, ny, nz);
-                        int zz = pz + z;
-                        if (distance + distance * noise < radiusSqr
-                                && session.setBlock(xx, yy, zz, pattern.apply(
-                                        new BlockVector3(xx, yy, zz)))) {
+            int radiusSquared = (int) (size * size);
+            for (int x = -reach; x <= reach; x++) {
+                double dx = x * x * modX;
+                for (int y = -reach; y <= reach; y++) {
+                    double dxy = dx + y * y * modY;
+                    for (int z = -reach; z <= reach; z++) {
+                        double distance = dxy + z * z * modZ;
+                        double push = amplitude * noise.noise(seedX + x * distort, seedY + y * distort,
+                                seedZ + z * distort);
+                        if (distance + distance * push < radiusSquared
+                                && place.visit(position.x() + x, position.y() + y, position.z() + z)) {
                             changed++;
                         }
                     }
@@ -1528,37 +2223,39 @@ public final class Operations {
             }
             return changed;
         }
-        // FAWE turns the sample point with three random rotations before it
-        // measures it, which is what makes the low-sphericity blob asymmetric.
-        Transform spin = Transforms.rotate(BlockVector3.ZERO, Axis.X, random.nextInt(360))
-                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.Y, random.nextInt(360)))
-                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.Z, random.nextInt(360)));
-        double manScaleX = 1.25 + seedX * 0.5;
-        double manScaleY = 1.25 + seedY * 0.5;
-        double manScaleZ = 1.25 + seedZ * 0.5;
+        // Three whole-degree angles, drawn about x, y then z; the z turn is
+        // applied first. The three make one matrix for the whole ball.
+        int turnX = random.nextInt(360);
+        int turnY = random.nextInt(360);
+        int turnZ = random.nextInt(360);
+        Transform turn = Transforms.rotate(BlockVector3.ZERO, Axis.Z, turnZ)
+                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.Y, turnY))
+                .combine(Transforms.rotate(BlockVector3.ZERO, Axis.X, turnX));
+        Vector3 alongX = turn.apply(new Vector3(1, 0, 0));
+        Vector3 alongY = turn.apply(new Vector3(0, 1, 0));
+        Vector3 alongZ = turn.apply(new Vector3(0, 0, 1));
+        double stretchX = 1.25 + seedX * 0.5;
+        double stretchY = 1.25 + seedY * 0.5;
+        double stretchZ = 1.25 + seedZ * 0.5;
         double roughness = 1 - sphericity;
-        for (int xr = -sizeInt; xr <= sizeInt; xr++) {
-            int xx = px + xr;
-            for (int yr = -sizeInt; yr <= sizeInt; yr++) {
-                int yy = py + yr;
-                for (int zr = -sizeInt; zr <= sizeInt; zr++) {
-                    int zz = pz + zr;
-                    Vector3 point = spin.apply(new Vector3(xr, yr, zr));
-                    int x = (int) Math.round(point.x());
-                    int y = (int) Math.round(point.y());
-                    int z = (int) Math.round(point.z());
-                    double xScaled = Math.abs(x) * modX;
-                    double yScaled = Math.abs(y) * modY;
-                    double zScaled = Math.abs(z) * modZ;
-                    double manDist = xScaled + yScaled + zScaled;
-                    double distSqr = x * x * modX + z * z * modZ + y * y * modY;
-                    double distance = Math.sqrt(distSqr) * sphericity
-                            + Math.max(manDist, Math.max(xScaled * manScaleX,
-                                    Math.max(yScaled * manScaleY, zScaled * manScaleZ))) * roughness;
-                    double noise = amplitude * noiseGen.noise(seedX + x * distort,
-                            seedZ + z * distort, seedZ + z * distort);
-                    if (distance + distance * noise < r
-                            && session.setBlock(xx, yy, zz, pattern.apply(new BlockVector3(xx, yy, zz)))) {
+        int limit = (int) size;
+        for (int xr = -reach; xr <= reach; xr++) {
+            for (int yr = -reach; yr <= reach; yr++) {
+                for (int zr = -reach; zr <= reach; zr++) {
+                    int x = (int) Math.floor(xr * alongX.x() + yr * alongY.x() + zr * alongZ.x());
+                    int y = (int) Math.floor(xr * alongX.y() + yr * alongY.y() + zr * alongZ.y());
+                    int z = (int) Math.floor(xr * alongX.z() + yr * alongY.z() + zr * alongZ.z());
+                    double scaledX = Math.abs(x) * modX;
+                    double scaledY = Math.abs(y) * modY;
+                    double scaledZ = Math.abs(z) * modZ;
+                    double manhattan = scaledX + scaledY + scaledZ;
+                    double squared = x * x * modX + z * z * modZ + y * y * modY;
+                    double distance = Math.sqrt(squared) * sphericity + Math.max(Math.max(manhattan,
+                            scaledX * stretchX), Math.max(scaledY * stretchY, scaledZ * stretchZ)) * roughness;
+                    double push = amplitude * noise.noise(seedX + x * distort, seedZ + z * distort,
+                            seedZ + z * distort);
+                    if (distance + distance * push < limit
+                            && place.visit(position.x() + xr, position.y() + yr, position.z() + zr)) {
                         changed++;
                     }
                 }
@@ -1567,8 +2264,80 @@ public final class Operations {
         return changed;
     }
 
+    /**
+     * FAWE's {@code EditSession.makeCircle}, behind the circle brush: the
+     * blocks of the ball of the radius, or of its shell when not filled, that
+     * lie within half a block of the plane through the centre square to the
+     * normal. The radius grows by half a block before it is measured, as the
+     * sphere's does, and the ball is walked an eighth at a time.
+     *
+     * @param normal the direction the circle faces, of length one
+     * @param place  sets one block and says whether it changed
+     * @return how many blocks changed
+     */
+    public static int circle(BlockVector3 center, double radius, boolean filled, Vector3 normal, BlockVisitor place) {
+        double grown = radius + 0.5;
+        double inverse = 1 / grown;
+        int ceil = (int) Math.ceil(grown);
+        int changed = 0;
+        double nextXn = 0;
+        forX:
+        for (int x = 0; x <= ceil; x++) {
+            double xn = nextXn;
+            double dx = xn * xn;
+            nextXn = (x + 1) * inverse;
+            double nextXnSq = nextXn * nextXn;
+            double nextYn = 0;
+            double alongX = x * normal.x();
+            forY:
+            for (int y = 0; y <= ceil; y++) {
+                double yn = nextYn;
+                double dy = yn * yn;
+                double dxy = dx + dy;
+                nextYn = (y + 1) * inverse;
+                double nextYnSq = nextYn * nextYn;
+                double nextZn = 0;
+                double alongY = y * normal.y();
+                for (int z = 0; z <= ceil; z++) {
+                    double zn = nextZn;
+                    double dz = zn * zn;
+                    double dxyz = dxy + dz;
+                    nextZn = (z + 1) * inverse;
+                    if (dxyz > 1) {
+                        if (z == 0) {
+                            if (y == 0) {
+                                break forX;
+                            }
+                            break forY;
+                        }
+                        break;
+                    }
+                    if (!filled && nextXnSq + dy + dz <= 1 && nextYnSq + dx + dz <= 1
+                            && nextZn * nextZn + dxy <= 1) {
+                        continue;
+                    }
+                    double alongZ = z * normal.z();
+                    // The eight mirrors of the offset, each placed when it lies
+                    // close enough to the plane; an offset of zero on an axis is
+                    // its own mirror there.
+                    for (int sx = 1; sx >= -1 && (sx > 0 || x != 0); sx -= 2) {
+                        for (int sy = 1; sy >= -1 && (sy > 0 || y != 0); sy -= 2) {
+                            for (int sz = 1; sz >= -1 && (sz > 0 || z != 0); sz -= 2) {
+                                if (Math.abs(sx * alongX + sy * alongY + sz * alongZ) < 0.5
+                                        && place.visit(center.x() + sx * x, center.y() + sy * y, center.z() + sz * z)) {
+                                    changed++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
     /** {@code //fall} — drops every block in the region to the ground. */
-    public static int fall(World world, EditSession session, Region region) {
+    public static long fall(World world, EditSession session, Region region) {
         return fall(world, session, region, false, null);
     }
 
@@ -1581,8 +2350,8 @@ public final class Operations {
      *                        rather than the floor of the world
      * @param replace         the block left behind, or {@code null} for air
      */
-    public static int fall(World world, EditSession session, Region region, boolean withinSelection,
-                           int[] replace) {
+    public static long fall(World world, EditSession session, Region region, boolean withinSelection,
+                            int[] replace) {
         BlockStateRegistry registry = BlockState.registry();
         int left = replace == null ? registry.air() : replace[0];
         int floor = withinSelection ? region.getMinimumPoint().y() : world.minY();
@@ -1601,93 +2370,6 @@ public final class Operations {
             session.setBlock(x, y, z, left);
             return session.setBlock(x, landing, z, state);
         });
-    }
-
-    /**
-     * WorldEdit's {@code EditSession.fillXZ}: fills the air of a sphere around
-     * the placement, down to {@code depth} blocks, walking from the origin
-     * downwards so a cell is only written once.
-     */
-    public static int fillXz(World world, EditSession session, BlockVector3 origin, Pattern pattern,
-                             double radius, int depth) {
-        BlockStateRegistry registry = BlockState.registry();
-        int fromY = Math.max(world.minY(), origin.y() - depth + 1);
-        int toY = Math.min(world.maxY(), origin.y());
-        int spread = (int) Math.ceil(radius);
-        int radiusSq = (int) (radius * radius);
-        int changed = 0;
-        for (int y = toY; y >= fromY; y--) {
-            session.checkTimeout();
-            int dy = y - origin.y();
-            int dy2 = dy * dy;
-            for (int x = origin.x() - spread; x <= origin.x() + spread; x++) {
-                int dx = x - origin.x();
-                int dx2 = dx * dx;
-                if (dx2 + dy2 > radiusSq) {
-                    continue;
-                }
-                for (int z = origin.z() - spread; z <= origin.z() + spread; z++) {
-                    int dz = z - origin.z();
-                    if (dx2 + dy2 + dz * dz > radiusSq) {
-                        continue;
-                    }
-                    if (!registry.isAirLike(world.getBlock(x, y, z))) {
-                        continue;
-                    }
-                    if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                        changed++;
-                    }
-                }
-            }
-        }
-        return changed;
-    }
-
-    /**
-     * FAWE's {@code EditSession.fillDirection}: the same fill, moved along the
-     * direction it was given. Downwards is the common case and takes the walk
-     * above; any other direction follows the sphere from the origin outwards.
-     */
-    public static int fillDirection(World world, EditSession session, BlockVector3 origin, Pattern pattern,
-                                    double radius, int depth, BlockVector3 direction) {
-        if (direction.y() < 0 && direction.x() == 0 && direction.z() == 0) {
-            return fillXz(world, session, origin, pattern, radius, depth);
-        }
-        BlockStateRegistry registry = BlockState.registry();
-        int spread = (int) Math.ceil(radius);
-        int radiusSq = (int) (radius * radius);
-        int changed = 0;
-        for (int step = 0; step < Math.max(1, (int) (radius * 2 + 1)); step++) {
-            session.checkTimeout();
-            BlockVector3 centre = origin.add(direction.multiply(step));
-            for (int x = centre.x() - spread; x <= centre.x() + spread; x++) {
-                int dx = x - origin.x();
-                int dx2 = dx * dx;
-                if (dx2 > radiusSq) {
-                    continue;
-                }
-                for (int y = centre.y() - spread; y <= centre.y() + spread; y++) {
-                    int dy = y - origin.y();
-                    int dxy2 = dx2 + dy * dy;
-                    if (dxy2 > radiusSq) {
-                        continue;
-                    }
-                    for (int z = centre.z() - spread; z <= centre.z() + spread; z++) {
-                        int dz = z - origin.z();
-                        if (dxy2 + dz * dz > radiusSq) {
-                            continue;
-                        }
-                        if (!registry.isAirLike(world.getBlock(x, y, z))) {
-                            continue;
-                        }
-                        if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
-                            changed++;
-                        }
-                    }
-                }
-            }
-        }
-        return changed;
     }
 
     /**
@@ -1745,70 +2427,334 @@ public final class Operations {
         return session.setBlock(x, y, z, pattern.apply(x, y, z)) ? 1 : 0;
     }
 
-    /** {@code /brush scatter} — scatters a pattern over the surface. */
-    public static int scatter(EditSession session, BlockVector3 center, int radius, Pattern pattern, Random random,
-                              boolean overwrite) {
-        return scatter(session, center, radius, 1, radius, pattern, random, overwrite, null);
-    }
-
     /**
-     * {@code /brush scatter <pattern> [radius] [points] [distance] [-o]}: drops a
-     * number of points on the surface around the click, each of them somewhere
-     * within {@code distance} blocks of where it was aimed. With {@code overlay}
-     * the block is placed on top of the surface, otherwise a point that is not
-     * already air is skipped.
+     * {@code /brush scatter <pattern> [radius] [points] [distance] [-o]}, FAWE's:
+     * {@code points} of the surface blocks around the click, none closer than
+     * {@code distance} to another, take the pattern - with {@code -o} the block
+     * beside each of them that stops nothing does, which lays it on the surface.
+     * The points are those of {@link #scatterPoints}, the brush's mask kept to.
+     *
+     * <p>It dropped the pattern on top of random columns of a disc whatever
+     * {@code -o} said, and took the distance for a height to shake them by.</p>
      */
     public static int scatter(EditSession session, BlockVector3 center, int points, int distance, double radius,
                               Pattern pattern, Random random, boolean overlay, Mask mask) {
-        BlockStateRegistry registry = BlockState.registry();
         int changed = 0;
-        int spread = (int) Math.max(1, radius);
-        for (int i = 0; i < Math.max(1, points); i++) {
-            int x = random.nextInt(spread * 2 + 1) - spread;
-            int z = random.nextInt(spread * 2 + 1) - spread;
-            if (Math.sqrt(x * x + z * z) > spread) {
-                continue;
+        for (BlockVector3 point : scatterPoints(session, center, radius, points, distance, mask, random)) {
+            int x = point.x();
+            int y = point.y();
+            int z = point.z();
+            if (overlay) {
+                int[] side = openSide(session, x, y, z);
+                if (side == null) {
+                    continue;
+                }
+                x += side[0];
+                y += side[1];
+                z += side[2];
             }
-            int y = spread;
-            while (y > -spread
-                    && registry.isAirLike(session.getBlock(center.x() + x, center.y() + y, center.z() + z))) {
-                y--;
-            }
-            int jitter = Math.max(0, distance - 1);
-            int by = center.y() + y + 1 + (jitter == 0 ? 0 : random.nextInt(jitter * 2 + 1) - jitter);
-            int bx = center.x() + x;
-            int bz = center.z() + z;
-            if (mask != null && !mask.test(bx, by, bz)) {
-                continue;
-            }
-            if (!overlay && !registry.isAirLike(session.getBlock(bx, by, bz))) {
-                continue;
-            }
-            if (session.setBlock(bx, by, bz, pattern.apply(bx, by, bz))) {
+            if (session.setBlock(x, y, z, pattern.apply(x, y, z))) {
                 changed++;
             }
         }
         return changed;
     }
 
+    /** The sides of a block in the order FAWE's surface mask asks them: east, west, south, north, up, down. */
+    private static final int[][] SURFACE_SIDES = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}, {0, -1, 0}};
+
     /**
-     * Removes the water of every waterlogged block of the region, {@code //drain -w}.
-     * The block itself stays, only its {@code waterlogged} property is cleared.
+     * The side of a block where the block beside it stops nothing - air or a
+     * block one walks through - in FAWE's order, or null when it has none.
      */
-    public static int drainWaterlogged(EditSession session, Region region) {
-        BlockStateRegistry registry = BlockState.registry();
-        return region.forEachPosition((x, y, z) -> {
-            int state = session.getBlock(x, y, z);
-            if (state == registry.air()) {
-                return false;
+    private static int[] openSide(EditSession session, int x, int y, int z) {
+        for (int[] side : SURFACE_SIDES) {
+            int ny = y + side[1];
+            if (ny < session.minY() || ny > session.maxY()) {
+                continue;
             }
-            Map<String, String> properties = registry.properties(state);
-            if (!"true".equals(properties.get("waterlogged"))) {
-                return false;
+            if (!BlockState.registry().isSolid(session.getBlock(x + side[0], ny, z + side[2]))) {
+                return side;
             }
-            int cleared = registry.withProperty(state, "waterlogged", "false");
-            return cleared >= 0 && session.setBlock(x, y, z, cleared);
-        });
+        }
+        return null;
+    }
+
+    /**
+     * The points of FAWE's scatter brushes: the surface blocks - blocks that
+     * stop movement with a side that does not - joined to the click, diagonals
+     * included, no farther than the radius from it; {@code count} of them picked
+     * at random, each at least {@code distance} blocks (or the radius, if less)
+     * from those picked before it, a thousand misses at most. The click itself
+     * is one of the blocks picked from, as in FAWE's walk, and the mask - the
+     * brush's and the edit's - has to accept a point.
+     */
+    public static List<BlockVector3> scatterPoints(EditSession session, BlockVector3 center, double radius, int count,
+                                                   int distance, Mask mask, Random random) {
+        int size = (int) radius;
+        int spacing = Math.min(size, distance);
+        long maxSq = (long) size * size;
+        List<BlockVector3> surface = new ArrayList<>();
+        LongSet visited = new LongSet();
+        LongQueue queue = new LongQueue();
+        long start = BlockArrayClipboard.positionKey(center.x(), center.y(), center.z());
+        visited.add(start);
+        queue.add(start);
+        surface.add(center);
+        while (!queue.isEmpty() && size > 0) {
+            long current = queue.poll();
+            int x = BlockArrayClipboard.keyX(current);
+            int y = BlockArrayClipboard.keyY(current);
+            int z = BlockArrayClipboard.keyZ(current);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue;
+                        }
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        int nz = z + dz;
+                        if (ny < session.minY() || ny > session.maxY() || distanceSq(nx, ny, nz, center) > maxSq) {
+                            continue;
+                        }
+                        long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (visited.contains(next) || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                || openSide(session, nx, ny, nz) == null) {
+                            continue;
+                        }
+                        visited.add(next);
+                        queue.add(next);
+                        surface.add(new BlockVector3(nx, ny, nz));
+                    }
+                }
+            }
+        }
+        Mask edit = session.getMask();
+        List<BlockVector3> picked = new ArrayList<>();
+        int misses = 1000;
+        for (int i = 0; i < count; i++) {
+            BlockVector3 point = surface.get(random.nextInt(surface.size()));
+            if ((mask != null && !mask.test(point.x(), point.y(), point.z()))
+                    || (edit != null && !edit.test(point.x(), point.y(), point.z()))) {
+                continue;
+            }
+            if (withinCube(picked, point, spacing)) {
+                if (misses-- <= 0) {
+                    break;
+                }
+                i--;
+                continue;
+            }
+            picked.add(point);
+        }
+        return picked;
+    }
+
+    /**
+     * {@code /brush splatter <pattern> [radius] [points] [recursion] [solid]},
+     * FAWE's: a splotch at each of {@code points} surface points - the points of
+     * {@link #scatterPoints}, a block apart - grown over the surface from its
+     * point, level after level up to {@code recursion} levels, each block
+     * reaching at most two new ones, each of those taken two times in five,
+     * none farther than the radius from the point or taken before. The pattern
+     * is asked once per splotch when {@code solid}, which gives each splotch one
+     * block, and once per block otherwise.
+     */
+    public static int splatter(EditSession session, BlockVector3 center, double radius, int points, int recursion,
+                               boolean solid, Pattern pattern, Mask mask, Random random) {
+        long sizeSq = (long) (radius * radius);
+        LongSet placed = new LongSet();
+        int changed = 0;
+        for (BlockVector3 seed : scatterPoints(session, center, radius, points, 1, mask, random)) {
+            Pattern fill = solid ? new FixedPattern(pattern.apply(seed.x(), seed.y(), seed.z())) : pattern;
+            LongSet visited = new LongSet();
+            List<Long> level = new ArrayList<>();
+            long start = BlockArrayClipboard.positionKey(seed.x(), seed.y(), seed.z());
+            visited.add(start);
+            level.add(start);
+            for (int depth = 0; !level.isEmpty() && depth <= recursion; depth++) {
+                List<Long> next = new ArrayList<>();
+                for (long node : level) {
+                    int x = BlockArrayClipboard.keyX(node);
+                    int y = BlockArrayClipboard.keyY(node);
+                    int z = BlockArrayClipboard.keyZ(node);
+                    if (session.setBlock(x, y, z, fill.apply(x, y, z))) {
+                        changed++;
+                    }
+                    int reached = 0;
+                    for (int dx = -1; dx <= 1 && reached < 2; dx++) {
+                        for (int dy = -1; dy <= 1 && reached < 2; dy++) {
+                            for (int dz = -1; dz <= 1 && reached < 2; dz++) {
+                                if (dx == 0 && dy == 0 && dz == 0) {
+                                    continue;
+                                }
+                                int nx = x + dx;
+                                int ny = y + dy;
+                                int nz = z + dz;
+                                if (ny < session.minY() || ny > session.maxY()) {
+                                    continue;
+                                }
+                                long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                                if (visited.contains(key) || distanceSq(nx, ny, nz, seed) >= sizeSq
+                                        || placed.contains(key) || random.nextInt(5) >= 2
+                                        || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                        || openSide(session, nx, ny, nz) == null) {
+                                    continue;
+                                }
+                                placed.add(key);
+                                visited.add(key);
+                                next.add(key);
+                                reached++;
+                            }
+                        }
+                    }
+                }
+                level = next;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * {@code /brush surface <pattern> [radius]}, FAWE's SurfaceSphereBrush: the
+     * surface blocks - blocks that stop movement with a side that does not -
+     * joined to the click, diagonals included, no farther than the radius from
+     * it, take the pattern, the click included, so it paints any surface, a
+     * wall or a cave's as well as the ground.
+     */
+    public static int surfaceSphere(EditSession session, BlockVector3 center, double radius, Pattern pattern,
+                                    Mask mask) {
+        long radiusSq = (long) ((int) radius) * (int) radius;
+        LongSet visited = new LongSet();
+        LongQueue queue = new LongQueue();
+        long start = BlockArrayClipboard.positionKey(center.x(), center.y(), center.z());
+        visited.add(start);
+        queue.add(start);
+        int changed = 0;
+        while (!queue.isEmpty()) {
+            long node = queue.poll();
+            int x = BlockArrayClipboard.keyX(node);
+            int y = BlockArrayClipboard.keyY(node);
+            int z = BlockArrayClipboard.keyZ(node);
+            if ((mask == null || mask.test(x, y, z)) && session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                changed++;
+            }
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue;
+                        }
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        int nz = z + dz;
+                        if (ny < session.minY() || ny > session.maxY() || distanceSq(nx, ny, nz, center) > radiusSq) {
+                            continue;
+                        }
+                        long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (visited.contains(key) || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                || openSide(session, nx, ny, nz) == null) {
+                            continue;
+                        }
+                        visited.add(key);
+                        queue.add(key);
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * {@code /brush shatter <pattern> [radius] [count]}, FAWE's: {@code count}
+     * points on the surface - the points of {@link #scatterPoints}, a block
+     * apart - each grows a patch over the surface within the radius, at random
+     * speed, and where two patches meet the pattern draws the crack between
+     * them, which breaks the surface into pieces.
+     */
+    public static int shatter(EditSession session, BlockVector3 center, double radius, int count, Pattern pattern,
+                              Mask mask, Random random) {
+        List<BlockVector3> seeds = scatterPoints(session, center, radius, count, 1, mask, random);
+        long radiusSq = (long) (radius * radius);
+        LongSet claimed = new LongSet();
+        List<LongSet> reached = new ArrayList<>(seeds.size());
+        List<List<Long>> frontiers = new ArrayList<>(seeds.size());
+        for (BlockVector3 seed : seeds) {
+            long key = BlockArrayClipboard.positionKey(seed.x(), seed.y(), seed.z());
+            claimed.add(key);
+            LongSet own = new LongSet();
+            own.add(key);
+            reached.add(own);
+            List<Long> frontier = new ArrayList<>();
+            frontier.add(key);
+            frontiers.add(frontier);
+        }
+        Mask edit = session.getMask();
+        int changed = 0;
+        boolean growing = true;
+        while (growing) {
+            growing = false;
+            for (int i = 0; i < frontiers.size(); i++) {
+                List<Long> frontier = frontiers.get(i);
+                growing |= !frontier.isEmpty();
+                LongSet own = reached.get(i);
+                List<Long> next = new ArrayList<>();
+                for (long node : frontier) {
+                    // A patch grows at random speed: half its edge waits a turn.
+                    if (random.nextInt(2) == 0) {
+                        next.add(node);
+                        continue;
+                    }
+                    int x = BlockArrayClipboard.keyX(node);
+                    int y = BlockArrayClipboard.keyY(node);
+                    int z = BlockArrayClipboard.keyZ(node);
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dy = -1; dy <= 1; dy++) {
+                            for (int dz = -1; dz <= 1; dz++) {
+                                if (dx == 0 && dy == 0 && dz == 0) {
+                                    continue;
+                                }
+                                int nx = x + dx;
+                                int ny = y + dy;
+                                int nz = z + dz;
+                                if (ny < session.minY() || ny > session.maxY()
+                                        || distanceSq(nx, ny, nz, center) > radiusSq
+                                        || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                        || openSide(session, nx, ny, nz) == null
+                                        || mask != null && !mask.test(nx, ny, nz)
+                                        || edit != null && !edit.test(nx, ny, nz)) {
+                                    continue;
+                                }
+                                long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                                if (!claimed.add(key)) {
+                                    // Another patch was there first: the crack.
+                                    if (!own.contains(key) && session.setBlock(nx, ny, nz, pattern.apply(nx, ny, nz))) {
+                                        changed++;
+                                    }
+                                } else {
+                                    own.add(key);
+                                    next.add(key);
+                                }
+                            }
+                        }
+                    }
+                }
+                frontiers.set(i, next);
+            }
+        }
+        return changed;
+    }
+
+    /** Whether a point is within the cube of {@code radius} around one of the points, as FAWE's set tests it. */
+    private static boolean withinCube(List<BlockVector3> points, BlockVector3 point, int radius) {
+        for (BlockVector3 other : points) {
+            if (Math.abs(other.x() - point.x()) <= radius && Math.abs(other.y() - point.y()) <= radius
+                    && Math.abs(other.z() - point.z()) <= radius) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A pattern that always returns the same state. */

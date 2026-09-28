@@ -8,6 +8,8 @@ import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.region.Region;
+import com.maxlananas.fawebim.core.tool.Tools;
+import com.maxlananas.fawebim.core.util.Buffers;
 import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
@@ -15,7 +17,6 @@ import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.io.IOException;
-import java.util.Locale;
 import java.util.Random;
 
 /**
@@ -53,6 +54,7 @@ final class GenerationCommands {
         }
         entry.description = "Generates a cave network";
         entry.group = "generation";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.arguments.add("[size]");
         entry.arguments.add("[frequency]");
@@ -66,13 +68,32 @@ final class GenerationCommands {
         entry.arguments.add("[pocketMax]");
         entry.handler = ctx -> {
             Region region = ctx.selection();
+            // Every number sizes a loop or a random draw of the generator: the
+            // size is how many chunks around each one seed caves into it, the
+            // frequencies how many caves and branches a chunk starts. Out of
+            // these ranges a draw throws or the carving never ends.
+            int size = ctx.intArg(0, 8, 2, 32, "size");
+            int frequency = ctx.intArg(1, 40, 1, 1000, "frequency");
+            int rarity = ctx.intArg(2, 7, 0, 100, "rarity");
+            int minY = Math.max(ctx.intArg(3, 8), ctx.world().minY());
+            int maxY = Math.min(ctx.intArg(4, 127), ctx.world().maxY());
+            if (minY > maxY) {
+                throw CommandRegistry.error("minY must not be above maxY, inside the world's height");
+            }
+            int systemFrequency = ctx.intArg(5, 1, 0, 100, "systemFrequency");
+            int individualRarity = ctx.intArg(6, 25, 0, 100, "individualRarity");
+            int pocketChance = ctx.intArg(7, 0, 0, 100, "pocketChance");
+            int pocketMin = ctx.intArg(8, 0, 0, 100, "pocketMin");
+            int pocketMax = ctx.intArg(9, 3, 0, 100, "pocketMax");
+            if (pocketMin > pocketMax) {
+                throw CommandRegistry.error("pocketMin must not be above pocketMax");
+            }
             EditSession session = ctx.editSession("caves");
-            CaveGen gen = new CaveGen(ctx.intArg(0, 8), ctx.intArg(1, 40), ctx.intArg(2, 7),
-                    ctx.intArg(3, 8), ctx.intArg(4, 127), ctx.intArg(5, 1), ctx.intArg(6, 25),
-                    ctx.intArg(7, 0), ctx.intArg(8, 0), ctx.intArg(9, 3), new Random());
+            CaveGen gen = new CaveGen(size, frequency, rarity, minY, maxY, systemFrequency, individualRarity,
+                    pocketChance, pocketMin, pocketMax, new Random());
             int changed = gen.generate(ctx.world(), session, region);
             session.flushQueue();
-            ctx.actor().message(Msg.result("Generated", Msg.count(changed) + "\u00a77 block(s) affected"));
+            ctx.actor().message(Msg.result("Generated", Msg.blocks(changed) + " affected"));
         };
     }
 
@@ -111,19 +132,23 @@ final class GenerationCommands {
             EditSession session = ctx.editSession("img");
             int changed = ImageGen.place(session, image, ctx.placement(), threshold, randomize);
             session.flushQueue();
-            ctx.actor().message(Msg.result("Image applied", Msg.count(changed) + "\u00a77 block(s) changed"));
+            ctx.actor().message(Msg.result("Image applied", Msg.blocks(changed) + " changed"));
         };
     }
 
     /** The {@code x,z} size {@code //img} scales its image to. */
     private static int[] parseDimensions(String value) {
         String[] parts = value.split(",", -1);
-        if (parts.length == 2) {
-            return new int[]{Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim())};
+        if (parts.length != 2) {
+            parts = value.split("x", -1);
         }
-        String[] cross = value.split("x", -1);
-        if (cross.length == 2) {
-            return new int[]{Integer.parseInt(cross[0].trim()), Integer.parseInt(cross[1].trim())};
+        if (parts.length == 2) {
+            int width = Parsers.intArg(parts[0].trim(), "the image width");
+            int length = Parsers.intArg(parts[1].trim(), "the image length");
+            if (width < 1 || length < 1) {
+                throw CommandRegistry.error("The image size must be at least 1x1, got '" + value + "'");
+            }
+            return new int[]{width, length};
         }
         throw CommandRegistry.error("Expected the image size as x,z, got '" + value + "'");
     }
@@ -140,6 +165,7 @@ final class GenerationCommands {
         }
         entry.description = "Sets biome according to a formula";
         entry.group = "generation";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         // -c scales the formula around the centre of the selection, -o around the
         // player, -r is the plain world origin and the default scales the
@@ -190,7 +216,7 @@ final class GenerationCommands {
                 }
             }
             session.flushQueue();
-            ctx.actor().message(Msg.result("Biome set", "for " + Msg.count(changed) + "\u00a77 biome cell(s)"));
+            ctx.actor().message(Msg.result("Biome set", "for " + Msg.count(changed, "biome cell", "biome cells")));
         };
     }
 
@@ -223,111 +249,100 @@ final class GenerationCommands {
                 Math.max(1, Math.max(origin[2] - min.z(), max.z() - origin[2]))};
     }
 
+    /**
+     * {@code //forestgen [size] [type] [density]}, WorldEdit's: a forest in the
+     * box that reaches {@code size} blocks each way from where the player
+     * stands, grown as //forest grows one. It planted over the selection - a
+     * command WorldEdit runs without one - and read the size as the size of a
+     * tree.
+     */
     private void forestGen() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//forestgen", "/forestgen");
         if (entry == null) {
             return;
         }
-        entry.description = "Generate a forest in the selection";
+        entry.description = "Generate a forest";
         entry.group = "generation";
-        entry.requiresSelection = true;
         entry.arguments.add("[size]");
         entry.arguments.add("[type]");
         entry.arguments.add("[density]");
         entry.handler = ctx -> {
-            int size = ctx.intArg(0, 10);
-            String type = ctx.arg(1, "tree").toLowerCase(Locale.ROOT);
-            double density = ctx.doubleArg(2, 5) / 100.0;
-            if (size < 1 || size > 50) {
-                throw CommandRegistry.error("Tree size must be between 1 and 50");
+            int size = ctx.sizeArg(0, 10);
+            String type = Parsers.treeType(ctx.arg(1, "tree"));
+            double density = ctx.doubleArg(2, 5);
+            if (!(density >= 0 && density <= 100)) {
+                throw CommandRegistry.error("Density must be between 0 and 100");
             }
-            String canonical = com.maxlananas.fawebim.core.world.TreeTypes.canonical(type);
-            if (canonical == null) {
-                throw CommandRegistry.error("Unknown tree type '" + type + "'. Try: "
-                        + com.maxlananas.fawebim.core.world.TreeTypes.names());
-            }
-            type = canonical;
-            if (density <= 0 || density > 0.5) {
-                throw CommandRegistry.error("Density is a percentage between 0.1 and 50");
-            }
-            Region region = ctx.selection();
-            World world = ctx.world();
-            Random random = new Random();
-            BlockVector3 min = region.getMinimumPoint();
-            BlockVector3 max = region.getMaximumPoint();
-            int attempts = (int) (region.getVolume() * density);
-            int planted = 0;
-            for (int i = 0; i < attempts; i++) {
-                int x = min.x() + random.nextInt(max.x() - min.x() + 1);
-                int z = min.z() + random.nextInt(max.z() - min.z() + 1);
-                int ground = world.getHighestBlockY(x, z);
-                if (ground < min.y() || ground > max.y()) {
-                    continue;
-                }
-                if (world.generateTree(new BlockVector3(x, ground + 1, z), type, random)) {
-                    planted++;
-                }
-            }
-            ctx.actor().message(Msg.result("Planted", Msg.count(planted) + "\u00a77 tree(s) out of "
-                    + Msg.count(attempts) + "\u00a77 attempt(s)"));
+            BlockVector3 center = ctx.placement();
+            Region region = new com.maxlananas.fawebim.core.region.CuboidRegion(center.add(-size, -size, -size),
+                    center.add(size, size, size));
+            int planted = com.maxlananas.fawebim.core.function.Operations.forest(ctx.editSession(), region, type,
+                    density / 100);
+            ctx.actor().message(Msg.result("Planted", Msg.count(planted, "tree", "trees")));
         };
     }
 
     /**
-     * {@code //feature} — places a configured worldgen feature, i.e. anything
-     * the server's {@code PlacedFeature} registry knows: trees, ores, geodes,
-     * lakes, ...
+     * {@code //feature <feature> [position]}, FAWE's: a worldgen feature - a
+     * tree, an ore vein, a geode - generated at the placement position, or at
+     * the position given, through the edit, and counted in blocks as FAWE
+     * counts it.
+     *
+     * <p>It generated at the block in sight, took only placed features, the
+     * ones FAWE does not name, and answered "Unknown feature" for a feature
+     * that did not fit.</p>
      */
     private void feature() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//feature");
         if (entry == null) {
             return;
         }
-        entry.description = "Generate a feature at your position";
+        entry.description = "Generate Minecraft features";
         entry.group = "generation";
         entry.arguments.add("feature");
         entry.arguments.add("[position]");
         entry.handler = ctx -> {
-            String name = ctx.arg(0);
-            BlockVector3 position = ctx.args().size() > 1
-                    ? ctx.blockVector(1) : ctx.targetBlock(100);
-            if (!ctx.world().generateFeature(position, name, new Random())) {
-                throw CommandRegistry.error("Unknown feature '" + name
-                        + "'. Use a namespaced feature id such as minecraft:trees_oak or minecraft:ore_gold");
+            String feature = Parsers.feature(ctx.world(), ctx.arg(0));
+            BlockVector3 position = ctx.args().size() > 1 ? ctx.blockVector(1) : ctx.placement();
+            EditSession session = ctx.editSession();
+            long before = session.getBlocksChanged();
+            ctx.world().generateFeature(session, position, feature, new Random());
+            long placed = session.getBlocksChanged() - before;
+            if (placed == 0) {
+                throw CommandRegistry.error(Tools.FEATURE_FAILED);
             }
-            ctx.actor().message(Msg.result("Placed feature", Msg.value(name).raw() + "\u00a77 at "
-                    + Msg.value(position).raw()));
+            ctx.actor().message(Msg.result("Feature created", Msg.blocks(placed) + " placed"));
         };
     }
 
-    /** {@code //structure} — generates a worldgen structure over the selection. */
+    /**
+     * {@code //structure <structure>}, FAWE's: a worldgen structure - a village,
+     * an igloo - generated at the placement position as the game's /place
+     * structure generates it, through the edit.
+     *
+     * <p>It wanted a selection and generated at its lowest corner.</p>
+     */
     private void structure() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//structure", "/struct");
         if (entry == null) {
             return;
         }
-        entry.description = "Generate a structure over the selection";
+        entry.description = "Generate Minecraft structures";
         entry.group = "generation";
-        entry.requiresSelection = true;
         entry.arguments.add("structure");
         entry.handler = ctx -> {
-            String name = ctx.arg(0);
-            Region region = ctx.selection();
-            BlockVector3 min = region.getMinimumPoint();
-            if (!ctx.world().generateStructure(name, min, new Random())) {
-                throw CommandRegistry.error("Unknown structure '" + name
-                        + "'. Try a worldgen structure id such as minecraft:village_plains");
+            String structure = Parsers.structure(ctx.world(), ctx.arg(0));
+            EditSession session = ctx.editSession();
+            long before = session.getBlocksChanged();
+            ctx.world().generateStructure(session, structure, ctx.placement(), new Random());
+            long placed = session.getBlocksChanged() - before;
+            if (placed == 0) {
+                throw CommandRegistry.error(Tools.STRUCTURE_FAILED);
             }
-            ctx.actor().message(Msg.result("Generated structure", Msg.value(name).raw() + "\u00a77 at "
-                    + Msg.value(min).raw()));
+            ctx.actor().message(Msg.result("Structure created", Msg.blocks(placed) + " placed"));
         };
     }
 
-    /**
-     * {@code //generate} — fills the selection with a pattern, optionally only
-     * where a formula is true. Without a formula the pattern replaces the whole
-     * selection, which is what {@code //g <pattern>} does in FAWE.
-     */
     /**
      * {@code //generate} — builds the part of the selection a formula picks out.
      *
@@ -353,6 +368,7 @@ final class GenerationCommands {
         }
         entry.description = "Generates a shape according to a formula";
         entry.group = "generation";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         // -h writes the shell, -r/-o/-c choose what the formula's coordinates
         // are measured from.
@@ -389,7 +405,13 @@ final class GenerationCommands {
             int pad = hollow ? 1 : 0;
             int padWidth = width + 2 * pad;
             int padLength = length + 2 * pad;
-            long[] inside = hollow ? new long[(padWidth * (height + 2) * padLength + 63) >>> 6] : null;
+            long[] inside = null;
+            if (hollow) {
+                // The bit index is an int, so the padded box has to fit one too.
+                long paddedCells = (long) padWidth * (height + 2) * padLength;
+                Buffers.checkBits(paddedCells, "A hollow shape in " + Msg.formatNumber(volume) + " blocks");
+                inside = new long[(int) ((paddedCells + 63) >>> 6)];
+            }
             Expression.Variables variables = new Expression.Variables();
             World world = ctx.world();
             variables.set("miny", world.minY());
@@ -427,7 +449,7 @@ final class GenerationCommands {
                         }
                         int state = expressionState(variables);
                         if (state < 0) {
-                            state = pattern.apply(new BlockVector3(x, y, z));
+                            state = pattern.apply(x, y, z);
                         }
                         if (session.setBlock(x, y, z, state)) {
                             changed++;
@@ -436,7 +458,7 @@ final class GenerationCommands {
                 }
             }
             session.flushQueue();
-            ctx.actor().message(Msg.result("Generated", Msg.count(changed) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Generated", Msg.blocks(changed)));
         };
     }
 

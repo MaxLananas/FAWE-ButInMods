@@ -16,8 +16,8 @@ public record BlockVector2(int x, int z) implements Comparable<BlockVector2> {
         return new BlockVector2(x - o.x, z - o.z);
     }
     public double distance(BlockVector2 o) {
-        int dx = x - o.x;
-        int dz = z - o.z;
+        long dx = (long) x - o.x;
+        long dz = (long) z - o.z;
         return Math.sqrt(dx * dx + dz * dz);
     }
 

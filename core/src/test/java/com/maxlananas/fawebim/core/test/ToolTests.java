@@ -1,0 +1,531 @@
+package com.maxlananas.fawebim.core.test;
+
+import com.maxlananas.fawebim.core.command.CommandManager;
+import com.maxlananas.fawebim.core.extent.EditSession;
+import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.tool.Tool;
+import com.maxlananas.fawebim.core.tool.Tools;
+import com.maxlananas.fawebim.core.util.NbtCompound;
+import com.maxlananas.fawebim.core.world.BlockState;
+import com.maxlananas.fawebim.core.world.BlockStateRegistry;
+import com.maxlananas.fawebim.core.world.Direction;
+
+import java.util.List;
+
+import static com.maxlananas.fawebim.core.test.SelfTestMain.check;
+import static com.maxlananas.fawebim.core.test.SelfTestMain.checkEquals;
+import static com.maxlananas.fawebim.core.test.SelfTestMain.section;
+
+/**
+ * The {@code /tool} bindings do what WorldEdit's do with the arguments
+ * WorldEdit gives them, and the masks kept in a session read the world the
+ * player edits.
+ *
+ * <p>The replacer, the long range builder and the stacker took no argument:
+ * their pattern was taken for the item to bind to, the builder carved spheres
+ * of air and the stacker pasted the clipboard.</p>
+ */
+final class ToolTests {
+
+    private ToolTests() {
+    }
+
+    static void run() {
+        section("tools");
+        everyListedToolCanBeBound();
+        eachToolIsASubCommandOfItsOwn();
+        theFloatingTreeRemoverTakesOnlyAFloatingTree();
+        theBrushTargetFollowsItsSettings();
+        theReplacerTakesItsPatternAndPicksWithItsData();
+        theLongRangeBuilderPlacesAgainstTheFaceOrClears();
+        theStackerRepeatsTheClickedBlockIntoAir();
+        theWandsNeedABlockInSight();
+        theNavigationWandJumpsAndTheCompassIsOne();
+        jumpToLandsOnFreeSpaceAboveTheTarget();
+        theTreeToolPlantsOnTheClickedBlock();
+        keptMasksReadTheWorldThePlayerEdits();
+        theRecurseBrushFollowsItsMask();
+        BlockStateRegistry previous = BlockState.registry();
+        BlockState.setRegistry(new PropertyTestRegistry());
+        try {
+            theCyclerSelectsAPropertyAndCyclesIt();
+        } finally {
+            BlockState.setRegistry(previous);
+        }
+    }
+
+    /**
+     * FAWE's recurse brush sets the blocks connected to the click through
+     * blocks its mask accepts: breadth first up to the radius in steps, depth
+     * first within the radius in blocks. It went through every block that was
+     * not air, whatever the mask, and stopped at 5000 changes.
+     */
+    private static void theRecurseBrushFollowsItsMask() {
+        TestActor actor = actor("RecurseBrush");
+        TestWorld world = (TestWorld) actor.world();
+        int stone = BlockState.registry().defaultState("minecraft:stone");
+        int dirt = BlockState.registry().defaultState("minecraft:dirt");
+        int gold = BlockState.registry().defaultState("minecraft:gold_block");
+        int air = BlockState.registry().air();
+        // A row of stone along x at y 90, broken by a dirt block at x 5.
+        for (int x = 0; x <= 10; x++) {
+            world.setBlock(x, 90, 0, x == 5 ? dirt : stone);
+        }
+        com.maxlananas.fawebim.core.mask.Mask onlyStone =
+                new com.maxlananas.fawebim.core.mask.Masks.BlockMask(world, List.of("minecraft:stone"));
+        com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush brush =
+                new com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush(8,
+                        new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold), onlyStone);
+        EditSession edit = new EditSession(world, actor.session(), "brush");
+        int changed;
+        try {
+            changed = brush.apply(edit, new BlockVector3(0, 90, 0), actor);
+        } finally {
+            edit.close();
+        }
+        checkEquals("the brush sets the stone connected through stone, and stops at the dirt", 5, changed);
+        check("the stone past the dirt is not reached", world.getBlock(6, 90, 0) == stone
+                && world.getBlock(5, 90, 0) == dirt && world.getBlock(4, 90, 0) == gold);
+
+        for (int x = 0; x <= 10; x++) {
+            world.setBlock(x, 91, 0, stone);
+        }
+        brush = new com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush(3,
+                new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold), onlyStone);
+        edit = new EditSession(world, actor.session(), "brush");
+        try {
+            changed = brush.apply(edit, new BlockVector3(0, 91, 0), actor);
+        } finally {
+            edit.close();
+        }
+        checkEquals("breadth first, the radius counts steps from the click", 4, changed);
+
+        // Without a mask, the walk follows the clicked block's type.
+        for (int x = 0; x <= 10; x++) {
+            world.setBlock(x, 95, 0, x < 4 ? dirt : stone);
+        }
+        brush = new com.maxlananas.fawebim.core.brush.Brushes.RecurseBrush(8,
+                new com.maxlananas.fawebim.core.pattern.Patterns.Single(gold), null);
+        edit = new EditSession(world, actor.session(), "brush");
+        try {
+            changed = brush.apply(edit, new BlockVector3(0, 95, 0), actor);
+        } finally {
+            edit.close();
+        }
+        checkEquals("without a mask the brush follows the clicked block's type", 4, changed);
+        check("the air around is left", world.getBlock(0, 96, 0) == air && world.getBlock(4, 95, 0) == stone);
+
+        EditSession clicked = new EditSession(world, actor.session(), "brush");
+        try {
+            checkEquals("a click on air sets nothing", 0, brush.apply(clicked, new BlockVector3(0, 120, 0), actor));
+        } finally {
+            clicked.close();
+        }
+        check("and leaves the air", world.getBlock(0, 120, 0) == air);
+    }
+
+    private static TestActor actor(String name) {
+        TestWorld world = new TestWorld(name);
+        world.fillFlat(70);
+        return new TestActor(name, world, new BlockVector3(0, 71, 0));
+    }
+
+    private static String answer(TestActor actor, String line) {
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, line);
+        return String.join("\n", actor.messages()).replaceAll("\u00a7.", "");
+    }
+
+    private static int state(String name) {
+        return BlockState.registry().defaultState(name);
+    }
+
+    private static Tool.ToolContext click(TestActor actor, int x, int y, int z, Direction face) {
+        return new Tool.ToolContext(actor, new BlockVector3(x, y, z), face, null);
+    }
+
+    /** Runs a click the way the platform does: inside the dispatcher's guard, which answers failures. */
+    private static boolean use(TestActor actor, java.util.function.BooleanSupplier action) {
+        return com.maxlananas.fawebim.core.command.CommandRegistry.interact(actor, "tool", action);
+    }
+
+    /** The item bound last, which the tool bound last is on. */
+    private static String bound(TestActor actor) {
+        String last = null;
+        for (String item : actor.session().bindings().keySet()) {
+            last = item;
+        }
+        return String.valueOf(last);
+    }
+
+    /**
+     * FAWE declares each tool as a sub-command of /tool with its arguments and
+     * its description, and says which tool is bound to which item. Here every
+     * tool was the one /tool with a list of names and a "[target]", so //help
+     * //repl and the completion of //tree offered the names of the tools, and
+     * the bind line said "Tool 'tree' bound to your held item".
+     */
+    private static void eachToolIsASubCommandOfItsOwn() {
+        TestActor actor = actor("ToolSubCommands");
+        String repl = answer(actor, "//help //repl");
+        check("//help //repl shows its pattern and FAWE's description (" + repl + ")",
+                repl.contains("//repl: Block replacer tool") && repl.contains("Usage: //repl <pattern>"));
+        String tree = answer(actor, "//help //tree");
+        check("and //help //tree its tree type",
+                tree.contains("//tree: Tree generator tool") && tree.contains("Usage: //tree [type]"));
+        check("the long range builder its two patterns", answer(actor, "//help lrbuild")
+                .contains("/tool lrbuild <primary> <secondary> - Long-range building tool"));
+        check("the bind line is FAWE's, with the item",
+                answer(actor, "/tool tree birch").endsWith("Tree tool bound to Wooden Axe"));
+        check("its other spellings run it",
+                answer(actor, "/tool flood stone 5").endsWith("Block flood fill tool bound to Wooden Axe"));
+        check("so do the global ones", answer(actor, "//warwand").endsWith("Far wand tool bound to Wooden Axe"));
+        check("the placers say theirs",
+                answer(actor, "/tool featureplacer oak").endsWith("Feature placer tool bound to Wooden Axe"));
+        check("the item named after the arguments is the one bound",
+                answer(actor, "/tool repl stone minecraft:stick").endsWith("Block replacer tool bound to Stick"));
+        check("whichever spelling names the tool",
+                answer(actor, "/tool replace stone minecraft:stick").endsWith("Block replacer tool bound to Stick"));
+        check("unbinding says FAWE's line",
+                answer(actor, "/tool none").endsWith("Tool unbound from your current item"));
+        check("as /tool unbind does", answer(actor, "/tool unbind").endsWith("Tool unbound from your current item"));
+        check("and nothing is bound any more", Tools.current(actor) == null);
+        answer(actor, "/brush sphere stone 2");
+        check("a brush on the held item is said to be unbound",
+                answer(actor, "//unbind").endsWith("Brush unbound from your current item"));
+    }
+
+    /**
+     * WorldEdit's floating tree remover takes away a tree that stands on
+     * nothing, leaves a tree standing on the ground, and says nothing when it
+     * removed one. It took every log and leaf joined to the click, whatever
+     * they stood on, and //deltree did it at once instead of binding the tool.
+     */
+    private static void theFloatingTreeRemoverTakesOnlyAFloatingTree() {
+        TestActor actor = actor("FloatingTree");
+        TestWorld world = (TestWorld) actor.world();
+        int log = state("minecraft:oak_log");
+        int leaves = state("minecraft:oak_leaves");
+        int stone = state("minecraft:stone");
+        // A trunk of three logs in the air, with a crown of leaves, one of which
+        // touches a stone pillar: leaves may touch other blocks.
+        for (int y = 80; y <= 82; y++) {
+            world.setBlock(0, y, 0, log);
+        }
+        world.setBlock(0, 83, 0, leaves);
+        world.setBlock(1, 82, 0, leaves);
+        world.setBlock(2, 82, 0, stone);
+        // A tree of the same shape standing on the grass, the top of the ground at 69.
+        for (int y = 70; y <= 72; y++) {
+            world.setBlock(10, y, 10, log);
+        }
+        world.setBlock(10, 73, 10, leaves);
+
+        check("//deltree binds the tool, as FAWE's does",
+                answer(actor, "//deltree").endsWith("Floating tree remover tool bound to Wooden Axe"));
+        Tool tool = Tools.current(actor);
+        actor.clearMessages();
+        use(actor, () -> tool.onRightClick(click(actor, 0, 81, 0, Direction.UP)));
+        check("a floating tree is taken away", BlockState.registry().isAirLike(world.getBlock(0, 80, 0))
+                && BlockState.registry().isAirLike(world.getBlock(0, 82, 0))
+                && BlockState.registry().isAirLike(world.getBlock(0, 83, 0))
+                && BlockState.registry().isAirLike(world.getBlock(1, 82, 0)));
+        checkEquals("but not the block its leaves touched", stone, world.getBlock(2, 82, 0));
+        check("and nothing is said", actor.messages().isEmpty());
+        use(actor, () -> tool.onRightClick(click(actor, 10, 71, 10, Direction.UP)));
+        check("a tree on the ground is not floating", String.join(" ", actor.messages())
+                .contains("That's not a floating tree."));
+        checkEquals("and stays", log, world.getBlock(10, 71, 10));
+        checkEquals("its leaves too", leaves, world.getBlock(10, 73, 10));
+        actor.clearMessages();
+        use(actor, () -> tool.onRightClick(click(actor, 5, 69, 5, Direction.UP)));
+        check("the ground is not a tree", String.join(" ", actor.messages()).contains("That's not a tree."));
+        answer(actor, "//undo");
+        checkEquals("the removal is undone as an edit", log, world.getBlock(0, 81, 0));
+
+        answer(actor, "/tool floodfill gold_block 2");
+        Tool fill = Tools.current(actor);
+        actor.clearMessages();
+        use(actor, () -> fill.onRightClick(click(actor, 5, 69, 5, Direction.UP)));
+        checkEquals("the flood fill fills", state("minecraft:gold_block"), world.getBlock(5, 69, 5));
+        check("and says nothing, as upstream's", actor.messages().isEmpty());
+    }
+
+    /**
+     * A brush lands where FAWE's brush tool aims it: its range, its trace mask
+     * and its target offset say how. The clicks used the block under the
+     * crosshair within the most a brush may reach whatever they said.
+     */
+    private static void theBrushTargetFollowsItsSettings() {
+        TestActor actor = actor("BrushTarget");
+        TestWorld world = (TestWorld) actor.world();
+        com.maxlananas.fawebim.core.brush.BrushSettings settings = new com.maxlananas.fawebim.core.brush.BrushSettings();
+        BlockVector3 clicked = new BlockVector3(3, 64, 3);
+        checkEquals("by default a brush lands on the block clicked", clicked,
+                com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, clicked, range -> null));
+        int[] asked = new int[1];
+        settings.setRange(20);
+        com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, null, range -> {
+            asked[0] = range;
+            return clicked;
+        });
+        checkEquals("a click in the air looks as far as the brush's range", 20, asked[0]);
+        actor.setPosition(new BlockVector3(0, 70, 0));
+        settings.setTargetOffset(2);
+        checkEquals("the target offset moves it towards the player", new BlockVector3(8, 70, 0),
+                com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, new BlockVector3(10, 70, 0),
+                        range -> null));
+        settings.setTargetOffset(0);
+        // Looking east from 0,70,0: glass then stone at eye height.
+        world.setBlock(3, 71, 0, state("minecraft:glass"));
+        world.setBlock(6, 71, 0, state("minecraft:stone"));
+        settings.setTraceMask(new com.maxlananas.fawebim.core.mask.Masks.BlockMask(world, List.of("minecraft:stone")));
+        checkEquals("a trace mask aims through what it does not match", new BlockVector3(6, 71, 0),
+                com.maxlananas.fawebim.core.tool.ToolTarget.brush(world, actor, settings, new BlockVector3(3, 71, 0),
+                        range -> null));
+    }
+
+    /** The list /tool offers named a "command" tool that /tool refused. */
+    private static void everyListedToolCanBeBound() {
+        TestActor actor = actor("ToolNames");
+        for (String name : Tools.NAMES) {
+            if (name.equals("none")) {
+                continue;
+            }
+            String arguments = switch (name) {
+                case "repl" -> " stone";
+                case "lrbuild" -> " stone air";
+                case "featureplacer" -> " oak";
+                case "structureplacer" -> " minecraft:oak_log";
+                default -> "";
+            };
+            actor.session().unbind(actor.heldItem());
+            String reply = answer(actor, "/tool " + name + arguments);
+            check("/tool " + name + " binds a tool (" + reply + ")", Tools.current(actor) != null);
+            check("/tool " + name + " binds it to the held item", bound(actor).equals(actor.heldItem()));
+        }
+    }
+
+    private static void theReplacerTakesItsPatternAndPicksWithItsData() {
+        TestActor actor = actor("ToolReplacer");
+        TestWorld world = (TestWorld) actor.world();
+        actor.session().unbind(actor.heldItem());
+        check("the replacer needs its pattern", answer(actor, "/tool repl").contains("Usage: /tool repl <pattern>"));
+        check("and binds nothing without it", Tools.current(actor) == null);
+        check("a pattern that does not parse is refused",
+                answer(actor, "/tool repl notablock").contains("notablock"));
+        check("and binds nothing either", Tools.current(actor) == null);
+
+        answer(actor, "/tool repl gold_block");
+        Tool tool = Tools.current(actor);
+        check("the replacer is bound to the held item, not to its pattern", bound(actor).equals(actor.heldItem()));
+        // WorldEdit's replacer: the left click - the one that breaks a block -
+        // replaces it with the pattern, and the right click picks.
+        use(actor, () -> tool.onLeftClick(click(actor, 0, 68, 0, Direction.UP)));
+        checkEquals("a left click replaces the block with the pattern", state("minecraft:gold_block"),
+                world.getBlock(0, 68, 0));
+        use(actor, () -> tool.onLeftClick(new Tool.ToolContext(actor, new BlockVector3(0, 90, 0), null, null)));
+        check("nothing in sight places nothing", BlockState.registry().isAirLike(world.getBlock(0, 90, 0)));
+        use(actor, () -> tool.onRightClick(new Tool.ToolContext(actor, new BlockVector3(0, 90, 0), null, null)));
+        use(actor, () -> tool.onLeftClick(click(actor, 1, 68, 0, Direction.UP)));
+        checkEquals("and picks nothing either", state("minecraft:gold_block"), world.getBlock(1, 68, 0));
+
+        EditSession edit = new EditSession(world, actor.session(), "chest", false);
+        try {
+            edit.setBlock(5, 70, 5, state("minecraft:chest"));
+            NbtCompound item = new NbtCompound().putByte("Slot", 0).putString("id", "minecraft:diamond")
+                    .putInt("count", 7);
+            edit.setBlockEntity(5, 70, 5, new NbtCompound().putString("id", "minecraft:chest")
+                    .putList("Items", List.of(item)));
+        } finally {
+            edit.close();
+        }
+        use(actor, () -> tool.onRightClick(click(actor, 5, 70, 5, Direction.UP)));
+        use(actor, () -> tool.onLeftClick(click(actor, 8, 69, 8, Direction.UP)));
+        checkEquals("a right click picks the clicked block", state("minecraft:chest"), world.getBlock(8, 69, 8));
+        NbtCompound copied = world.getBlockEntity(8, 69, 8);
+        check("with its data", copied != null && copied.getCompoundList("Items").size() == 1
+                && copied.getCompoundList("Items").get(0).getString("id", "").equals("minecraft:diamond"));
+
+        actor.session().unbind(actor.heldItem());
+        answer(actor, "/tool repl stone minecraft:stick");
+        checkEquals("the item after the pattern is the one bound", "minecraft:stick", bound(actor));
+    }
+
+    private static void theLongRangeBuilderPlacesAgainstTheFaceOrClears() {
+        TestActor actor = actor("ToolLongRange");
+        TestWorld world = (TestWorld) actor.world();
+        check("the builder needs both patterns",
+                answer(actor, "/tool lrbuild stone").contains("Usage: /tool lrbuild"));
+        answer(actor, "/tool lrbuild air gold_block");
+        Tool tool = Tools.current(actor);
+        use(actor, () -> tool.onRightClick(click(actor, 3, 69, 3, Direction.UP)));
+        checkEquals("a right click places against the clicked face", state("minecraft:gold_block"),
+                world.getBlock(3, 70, 3));
+        checkEquals("and leaves the clicked block", state("minecraft:grass_block"), world.getBlock(3, 69, 3));
+        use(actor, () -> tool.onSwing(click(actor, 3, 70, 3, Direction.UP)));
+        check("a pattern of air clears the block in sight", BlockState.registry().isAirLike(world.getBlock(3, 70, 3)));
+        checkEquals("and only that block", state("minecraft:grass_block"), world.getBlock(3, 69, 3));
+        use(actor, () -> tool.onRightClick(click(actor, 3, 69, 3, Direction.EAST)));
+        checkEquals("the face decides the side", state("minecraft:gold_block"), world.getBlock(4, 69, 3));
+        actor.clearMessages();
+        use(actor, () -> tool.onSwing(new Tool.ToolContext(actor, new BlockVector3(3, 150, 3), null, null)));
+        check("nothing in sight is said", String.join(" ", actor.messages()).contains("No block in sight"));
+        int changed = 0;
+        for (int y = 70; y < 160; y++) {
+            if (!BlockState.registry().isAirLike(world.getBlock(3, y, 3))) {
+                changed++;
+            }
+        }
+        checkEquals("and changes nothing", 0, changed);
+    }
+
+    private static void theStackerRepeatsTheClickedBlockIntoAir() {
+        TestActor actor = actor("ToolStacker");
+        TestWorld world = (TestWorld) actor.world();
+        check("a range above the brush range is refused",
+                answer(actor, "/tool stacker 100000").contains("between 1 and"));
+        answer(actor, "/tool stacker 3");
+        Tool tool = Tools.current(actor);
+        int grass = state("minecraft:grass_block");
+        use(actor, () -> tool.onRightClick(click(actor, 0, 69, 0, Direction.UP)));
+        checkEquals("the clicked block is repeated", grass, world.getBlock(0, 70, 0));
+        checkEquals("as many times as the range", grass, world.getBlock(0, 72, 0));
+        check("and no more", BlockState.registry().isAirLike(world.getBlock(0, 73, 0)));
+
+        world.setBlock(2, 72, 0, state("minecraft:stone"));
+        use(actor, () -> tool.onRightClick(click(actor, 2, 69, 0, Direction.UP)));
+        checkEquals("it stacks up to the first block that is not air", grass, world.getBlock(2, 71, 0));
+        checkEquals("which stays", state("minecraft:stone"), world.getBlock(2, 72, 0));
+
+        answer(actor, "/tool stacker 2 stone");
+        Tool masked = Tools.current(actor);
+        use(actor, () -> masked.onRightClick(click(actor, 0, 67, 0, Direction.DOWN)));
+        checkEquals("a mask says what it may stack into", state("minecraft:stone"), world.getBlock(0, 66, 0));
+        use(actor, () -> masked.onRightClick(click(actor, 0, 69, 0, Direction.EAST)));
+        checkEquals("and what it may not", state("minecraft:grass_block"), world.getBlock(1, 69, 0));
+    }
+
+    private static void theWandsNeedABlockInSight() {
+        TestActor actor = actor("ToolFarWand");
+        answer(actor, "/tool farwand");
+        Tool tool = Tools.current(actor);
+        use(actor, () -> tool.onSwing(click(actor, 40, 69, 40, Direction.UP)));
+        use(actor, () -> tool.onRightClick(click(actor, 45, 69, 41, Direction.UP)));
+        com.maxlananas.fawebim.core.region.Region region = actor.session().getSelector(actor.world()).getRegion();
+        checkEquals("a left click in the air selects the block in sight", new BlockVector3(40, 69, 40),
+                region.getMinimumPoint());
+        checkEquals("a right click the second corner", new BlockVector3(45, 69, 41), region.getMaximumPoint());
+        actor.clearMessages();
+        use(actor, () -> tool.onSwing(new Tool.ToolContext(actor, new BlockVector3(0, 200, 0), null, null)));
+        check("nothing in sight is said", String.join(" ", actor.messages()).contains("No block in sight"));
+        checkEquals("and selects nothing", new BlockVector3(40, 69, 40),
+                actor.session().getSelector(actor.world()).getRegion().getMinimumPoint());
+    }
+
+    private static void theNavigationWandJumpsAndTheCompassIsOne() {
+        TestActor actor = actor("ToolNavigation");
+        actor.session().unbind(actor.heldItem());
+        Tool compass = Tools.forItem(actor.session(),
+                com.maxlananas.fawebim.core.platform.Config.get().navigationWandItem);
+        check("the navigation wand item is the navigation wand", compass != null && compass.name().equals("navwand"));
+        check("another item is no tool", Tools.forItem(actor.session(), "minecraft:stick") == null);
+        use(actor, () -> compass.onLeftClick(click(actor, 20, 69, 20, Direction.UP)));
+        checkEquals("a left click jumps onto the block in sight", new BlockVector3(20, 70, 20), actor.position());
+        answer(actor, "/tool farwand");
+        check("a tool bound to the item comes first", Tools.forItem(actor.session(), actor.heldItem()) != null
+                && Tools.forItem(actor.session(), actor.heldItem()).name().equals("farwand"));
+    }
+
+    /** //jumpto dropped the player on top of the target, inside whatever was above it. */
+    private static void jumpToLandsOnFreeSpaceAboveTheTarget() {
+        TestActor actor = actor("ToolJumpTo");
+        answer(actor, "//jumpto 5,60,5");
+        checkEquals("the player lands on the first free space above the target", new BlockVector3(5, 70, 5),
+                actor.position());
+        answer(actor, "//jumpto 5,60,5 -f");
+        checkEquals("-f goes to the target itself", new BlockVector3(5, 60, 5), actor.position());
+    }
+
+    private static void theTreeToolPlantsOnTheClickedBlock() {
+        TestActor actor = actor("ToolTree");
+        TestWorld world = (TestWorld) actor.world();
+        answer(actor, "/tool tree");
+        Tool tool = Tools.current(actor);
+        use(actor, () -> tool.onRightClick(click(actor, 10, 69, 10, Direction.NORTH)));
+        checkEquals("the trunk starts on the clicked block, whatever the face", state("minecraft:oak_log"),
+                world.getBlock(10, 70, 10));
+    }
+
+    /**
+     * A mask parsed in one world read that world for as long as it was kept:
+     * //set under //gmask stone, after a trip to another dimension, filled the
+     * air there because the overworld had stone at the same place.
+     */
+    private static void keptMasksReadTheWorldThePlayerEdits() {
+        TestWorld overworld = new TestWorld("MaskWorldHere");
+        overworld.fillFlat(70);
+        TestWorld nether = new TestWorld("MaskWorldThere");
+        TestActor here = new TestActor("MaskTraveller", overworld, new BlockVector3(0, 71, 0));
+        TestActor there = new TestActor("MaskTraveller", nether, new BlockVector3(0, 71, 0));
+        answer(here, "//gmask stone");
+        answer(there, "//pos1 0,60,0");
+        answer(there, "//pos2 3,62,3");
+        answer(there, "//set gold_block");
+        int gold = state("minecraft:gold_block");
+        int written = 0;
+        for (int x = 0; x <= 3; x++) {
+            for (int y = 60; y <= 62; y++) {
+                for (int z = 0; z <= 3; z++) {
+                    if (nether.getBlock(x, y, z) == gold) {
+                        written++;
+                    }
+                }
+            }
+        }
+        checkEquals("the global mask tests the blocks of the world being edited", 0, written);
+        answer(here, "//pos1 0,60,0");
+        answer(here, "//pos2 3,62,3");
+        answer(here, "//set gold_block");
+        checkEquals("and still those of the first world back there", gold, overworld.getBlock(1, 61, 1));
+        answer(here, "//gmask");
+
+        // Bound in the overworld, where the blocks above y 64 are ground, and
+        // used in the other world, where they are air.
+        answer(here, "/tool stacker 3 air");
+        nether.setBlock(9, 64, 9, state("minecraft:stone"));
+        Tool stacker = Tools.current(there);
+        use(there, () -> stacker.onRightClick(click(there, 9, 64, 9, Direction.UP)));
+        checkEquals("a tool's mask reads the world it is used in", state("minecraft:stone"),
+                nether.getBlock(9, 67, 9));
+    }
+
+    private static void theCyclerSelectsAPropertyAndCyclesIt() {
+        TestWorld world = new TestWorld("ToolCycler");
+        TestActor actor = new TestActor("ToolCycler", world, new BlockVector3(0, 71, 0));
+        BlockStateRegistry registry = BlockState.registry();
+        int stairs = registry.defaultState("minecraft:oak_stairs");
+        world.setBlock(0, 64, 0, stairs);
+        answer(actor, "/tool cycler");
+        Tool tool = Tools.current(actor);
+        String firstName = registry.properties(stairs).keySet().iterator().next();
+        String before = registry.properties(stairs).get(firstName);
+        use(actor, () -> tool.onRightClick(click(actor, 0, 64, 0, Direction.UP)));
+        check("a right click cycles the first property",
+                !registry.properties(world.getBlock(0, 64, 0)).get(firstName).equals(before));
+        use(actor, () -> tool.onLeftClick(click(actor, 0, 64, 0, Direction.UP)));
+        List<String> names = new java.util.ArrayList<>(registry.properties(stairs).keySet());
+        String second = names.get(1);
+        java.util.Map<String, String> beforeSecond = registry.properties(world.getBlock(0, 64, 0));
+        use(actor, () -> tool.onRightClick(click(actor, 0, 64, 0, Direction.UP)));
+        java.util.Map<String, String> after = registry.properties(world.getBlock(0, 64, 0));
+        check("a left click selects the next property, which the right click then cycles",
+                !after.get(second).equals(beforeSecond.get(second)));
+        checkEquals("leaving the first one", beforeSecond.get(firstName), after.get(firstName));
+        world.setBlock(1, 64, 0, registry.defaultState("minecraft:stone"));
+        actor.clearMessages();
+        use(actor, () -> tool.onRightClick(click(actor, 1, 64, 0, Direction.UP)));
+        check("a block without properties is said to be one",
+                String.join(" ", actor.messages()).contains("no property"));
+    }
+}

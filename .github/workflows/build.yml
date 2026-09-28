@@ -143,6 +143,9 @@ jobs:
       # server over rcon: it is the only check that the mixin applies, that the
       # commands are registered with the game, and that a value written from the
       # chat ends up in the configuration file.
+      # A server with nobody on it stops ticking after a minute, and the light
+      # engine, which runs from the chunk tick, with it: the smoke run reads light
+      # back, so the server keeps ticking with no player on.
       - name: Prepare the server directory
         run: |
           for dir in fabric/run run; do
@@ -160,6 +163,7 @@ jobs:
               'simulation-distance=3' \
               'max-players=2' \
               'sync-chunk-writes=false' \
+              'pause-when-empty-seconds=0' \
               'motd=FAWE-BIM smoke test' > "$dir/server.properties"
           done
 

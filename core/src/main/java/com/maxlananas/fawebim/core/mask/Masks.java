@@ -11,6 +11,7 @@ import com.maxlananas.fawebim.core.world.Extent;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
@@ -48,8 +49,6 @@ public final class Masks {
         }
     }
 
-    // -------------------------------------------------------------- block masks
-
     /** Matches any of the given blocks/states/tags/categories. */
     public static final class BlockMask implements Mask {
 
@@ -81,7 +80,18 @@ public final class Masks {
                     continue;
                 }
                 if (key.startsWith("##")) {
-                    categories.add(key.substring(2).toLowerCase(Locale.ROOT));
+                    // A category of the mod's, or else a block tag, as WorldEdit's
+                    // ##wool is the tag minecraft:wool.
+                    String name = key.substring(2).toLowerCase(Locale.ROOT);
+                    if (registry.categories().contains(name)) {
+                        categories.add(name);
+                    } else {
+                        String tag = name.indexOf(':') < 0 ? "minecraft:" + name : name;
+                        if (!registry.blockTags().contains(tag)) {
+                            throw new IllegalArgumentException("unknown block tag '" + name + "'");
+                        }
+                        tags.add(tag);
+                    }
                 } else if (key.startsWith("#")) {
                     tags.add(key.substring(1).toLowerCase(Locale.ROOT));
                 } else {
@@ -179,24 +189,24 @@ public final class Masks {
         }
     }
 
+    /**
+     * WorldEdit's {@code #existing}: the blocks that are not air - air, cave air
+     * and void air being the air. It took a flag with which it matched every
+     * block, air included, and {@code #existing}, {@code #wall} and so
+     * {@code !#existing} were parsed with it.
+     */
     public static final class ExistingMask implements Mask {
 
         private final Extent extent;
-        private final boolean ignoreAir;
 
-        public ExistingMask(Extent extent, boolean ignoreAir) {
+        public ExistingMask(Extent extent) {
             this.extent = extent;
-            this.ignoreAir = ignoreAir;
         }
 
         @Override
         public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            if (ext == null) {
-                return false;
-            }
-            int id = ext.getBlock(x, y, z);
-            return ignoreAir ? !BlockState.registry().isAirLike(id) : true;
+            return ext != null && !BlockState.registry().isAirLike(ext.getBlock(x, y, z));
         }
 
         @Override
@@ -265,20 +275,30 @@ public final class Masks {
         }
     }
 
+    /** The positions whose biome is one of a set, WorldEdit's {@code $biome} and FAWE's {@code #biome[...]}. */
     public static final class BiomeMask implements Mask {
 
         private final Extent extent;
-        private final int biomeId;
+        private final int[] biomeIds;
 
-        public BiomeMask(Extent extent, int biomeId) {
+        public BiomeMask(Extent extent, int... biomeIds) {
             this.extent = extent;
-            this.biomeId = biomeId;
+            this.biomeIds = biomeIds.clone();
         }
 
         @Override
         public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
-            return ext != null && ext.getBiome(x, y, z) == biomeId;
+            if (ext == null) {
+                return false;
+            }
+            int biome = ext.getBiome(x, y, z);
+            for (int id : biomeIds) {
+                if (id == biome) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         @Override
@@ -286,8 +306,6 @@ public final class Masks {
             return extent;
         }
     }
-
-    // ------------------------------------------------------------- geometry masks
 
     public static final class RegionMask implements Mask {
 
@@ -330,6 +348,66 @@ public final class Masks {
         @Override
         public boolean isRegion() {
             return true;
+        }
+    }
+
+    /**
+     * WorldEdit's block state mask, {@code ^[waterlogged=true]}: the blocks whose
+     * properties have the values given. A property a block does not have is not
+     * asked about, so a block with none of them matches - unless the mask is
+     * strict, {@code ^=[...]}, which wants at least one of them there.
+     */
+    public static final class BlockStateMask implements Mask {
+
+        private final Extent extent;
+        private final Map<String, String> states;
+        private final boolean strict;
+        /** The answer for a state never changes; a region has few states and many blocks. */
+        private final com.maxlananas.fawebim.core.util.IntSet accepted = new com.maxlananas.fawebim.core.util.IntSet();
+        private final com.maxlananas.fawebim.core.util.IntSet rejected = new com.maxlananas.fawebim.core.util.IntSet();
+
+        public BlockStateMask(Extent extent, Map<String, String> states, boolean strict) {
+            this.extent = extent;
+            this.states = Map.copyOf(states);
+            this.strict = strict;
+        }
+
+        @Override
+        public boolean test(int x, int y, int z) {
+            Extent ext = resolve(extent);
+            if (ext == null) {
+                return false;
+            }
+            int id = ext.getBlock(x, y, z);
+            if (accepted.contains(id)) {
+                return true;
+            }
+            if (rejected.contains(id)) {
+                return false;
+            }
+            boolean matches = matches(BlockState.registry().properties(id));
+            (matches ? accepted : rejected).add(id);
+            return matches;
+        }
+
+        private boolean matches(Map<String, String> properties) {
+            int present = 0;
+            for (Map.Entry<String, String> state : states.entrySet()) {
+                String value = properties.get(state.getKey());
+                if (value == null) {
+                    continue;
+                }
+                present++;
+                if (!value.equalsIgnoreCase(state.getValue())) {
+                    return false;
+                }
+            }
+            return !strict || present > 0;
+        }
+
+        @Override
+        public Extent extent() {
+            return extent;
         }
     }
 
@@ -878,15 +956,15 @@ public final class Masks {
         }
     }
 
-    /** {@code #simplex}: simplex noise threshold, defaults to 50%. */
     /**
      * FAWE's {@code #simplex[scale][min][max]}: the mask passes where the noise
      * sits inside the band the two percentages describe, {@code 50} being the
-     * middle of the noise.
+     * middle of the noise. The noise is FAWE's own field, so the mask passes
+     * where FAWE's does.
      */
     public static final class SimplexMask implements Mask {
 
-        private final Noise noise = new Noise.Simplex(0);
+        private final Noise noise = Noise.Simplex.classic();
         private final double min;
         private final double max;
         private final double scale;
@@ -1073,9 +1151,25 @@ public final class Masks {
 
     public static final class ExpressionMask implements Mask {
 
+        /** The variables a test sets, in the order of their slots. */
+        private static final String[] INPUTS = {"x", "y", "z", "bx", "by", "bz", "block", "random"};
+
         private final com.maxlananas.fawebim.core.expression.Expression compiled;
         private final Extent extent;
         private final Random random;
+        /**
+         * The variables of one thread's tests, reused from block to block: a
+         * new set per test cost three allocations and a search per input.
+         * Whatever the expression assigns is forgotten before the next block,
+         * as it was with a new set.
+         */
+        private final ThreadLocal<Expression.Variables> variables = ThreadLocal.withInitial(() -> {
+            Expression.Variables vars = new Expression.Variables();
+            for (String input : INPUTS) {
+                vars.slot(input);
+            }
+            return vars;
+        });
 
         public ExpressionMask(String input, Extent extent, Random random) {
             this.extent = extent;
@@ -1087,12 +1181,16 @@ public final class Masks {
         public boolean test(int x, int y, int z) {
             Extent ext = resolve(extent);
             int blockId = ext == null ? 0 : ext.getBlock(x, y, z);
-            com.maxlananas.fawebim.core.expression.Expression.Variables vars = new com.maxlananas.fawebim.core.expression
-                    .Expression.Variables();
-            vars.set("x", x).set("y", y).set("z", z);
-            vars.set("bx", x & 15).set("by", y & 15).set("bz", z & 15);
-            vars.set("block", blockId);
-            vars.set("random", random.nextDouble());
+            Expression.Variables vars = variables.get();
+            vars.keepFirst(INPUTS.length);
+            vars.set(0, x);
+            vars.set(1, y);
+            vars.set(2, z);
+            vars.set(3, x & 15);
+            vars.set(4, y & 15);
+            vars.set(5, z & 15);
+            vars.set(6, blockId);
+            vars.set(7, random.nextDouble());
             return compiled.evaluate(vars) != 0;
         }
 
@@ -1101,8 +1199,6 @@ public final class Masks {
             return extent;
         }
     }
-
-    // ------------------------------------------------------------------ combinators
 
     public static final class UnionMask implements Mask {
 
@@ -1210,18 +1306,31 @@ public final class Masks {
     }
 
     /** Mask matching the blocks currently in the player's hotbar ({@code /tool mask}). */
+    /**
+     * FAWE's {@code #hotbar}: the blocks of the hotbar's items, whatever their
+     * state - a log of any axis for the log in the hotbar.
+     */
     public static final class HotbarMask implements Mask {
 
-        private final Set<Integer> blocks;
+        private final Extent extent;
+        private final Set<String> blocks = new java.util.HashSet<>();
 
-        public HotbarMask(Set<Integer> blocks) {
-            this.blocks = blocks;
+        public HotbarMask(Extent extent, Set<Integer> states) {
+            this.extent = extent;
+            for (int state : states) {
+                blocks.add(BlockState.registry().name(state));
+            }
         }
 
         @Override
         public boolean test(int x, int y, int z) {
-            Extent ext = ExtentHolder.get();
-            return ext != null && blocks.contains(ext.getBlock(x, y, z));
+            Extent ext = resolve(extent);
+            return ext != null && blocks.contains(BlockState.registry().name(ext.getBlock(x, y, z)));
+        }
+
+        @Override
+        public Extent extent() {
+            return extent;
         }
     }
 }

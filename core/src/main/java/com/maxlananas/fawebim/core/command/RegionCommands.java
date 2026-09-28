@@ -18,7 +18,6 @@ import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.EntityData;
-import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.util.LinkedHashSet;
@@ -68,17 +67,18 @@ final class RegionCommands {
         }
         entry.description = "Sets all the blocks in the region to air";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.handler = ctx -> {
             EditSession session = ctx.editSession();
             Region region = ctx.selection();
             Pattern air = new Patterns.Single(BlockState.registry().air());
-            int changed = region.forEachPosition((x, y, z) -> {
+            long changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
                 return session.setBlock(x, y, z, air.apply(x, y, z));
             });
             session.flushQueue();
-            ctx.actor().message(Msg.result("Set to air", Msg.count(changed) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Set to air", Msg.blocks(changed)));
         };
     }
 
@@ -94,28 +94,45 @@ final class RegionCommands {
         entry.handler = ctx -> ctx.actor().message(Msg.info("test: " + ctx.arg(0)));
     }
 
-    /** {@code //fixlighting} — relights the selection after a bulk edit. */
+    /**
+     * {@code //fixlighting} — relights every chunk the selection touches, from
+     * the bottom of the world to the top, as FAWE does. A chunk that is not
+     * loaded is left out rather than loaded, or generated, for it.
+     */
     private void fixLighting() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//fixlighting");
         if (entry == null) {
             return;
         }
-        entry.description = "Propagate lighting through the selection";
+        entry.description = "Relight the chunks of the selection";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
-        entry.handler = ctx -> relight(ctx, "Lighting fixed");
+        entry.handler = ctx -> {
+            List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
+            ctx.world().relight(chunks);
+            ctx.actor().message(Msg.result("Lighting propagated", Msg.count(chunks.size(), "chunk", "chunks")));
+        };
     }
 
-    /** {@code //removelighting} — drops the cached light of the selection. */
+    /**
+     * {@code //removelighting} — zeroes the light of every chunk the selection
+     * touches, as FAWE does; {@code //fixlighting} brings it back.
+     */
     private void removeLighting() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//removelighting", "/removelight");
         if (entry == null) {
             return;
         }
-        entry.description = "Remove lighting data from the selection";
+        entry.description = "Remove the lighting of the chunks of the selection";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
-        entry.handler = ctx -> relight(ctx, "Lighting removed and recomputed");
+        entry.handler = ctx -> {
+            List<BlockVector2> chunks = loadedChunks(ctx.world(), ctx.selection());
+            ctx.world().removeLight(chunks);
+            ctx.actor().message(Msg.result("Lighting removed", Msg.count(chunks.size(), "chunk", "chunks")));
+        };
     }
 
     private void setBlockLight() {
@@ -123,17 +140,10 @@ final class RegionCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the block light level in the selection";
+        entry.description = "Set block lighting in a selection (deprecated, use light blocks)";
         entry.group = "region";
         entry.requiresSelection = true;
-        entry.arguments.add("level");
-        entry.handler = ctx -> {
-            int level = ctx.intArg(0, 15);
-            if (level < 0 || level > 15) {
-                throw CommandRegistry.error("Light level must be between 0 and 15");
-            }
-            relight(ctx, "Block light set to " + level);
-        };
+        entry.handler = RegionCommands::lightBlocksInstead;
     }
 
     private void setSkyLight() {
@@ -141,36 +151,38 @@ final class RegionCommands {
         if (entry == null) {
             return;
         }
-        entry.description = "Set the sky light level in the selection";
+        entry.description = "Set sky lighting in a selection (deprecated, use light blocks)";
         entry.group = "region";
         entry.requiresSelection = true;
-        entry.arguments.add("level");
-        entry.handler = ctx -> {
-            int level = ctx.intArg(0, 15);
-            if (level < 0 || level > 15) {
-                throw CommandRegistry.error("Light level must be between 0 and 15");
-            }
-            relight(ctx, "Sky light set to " + level);
-        };
+        entry.handler = RegionCommands::lightBlocksInstead;
     }
 
     /**
-     * Lighting is computed by the engine since 1.18: a mod cannot pin an exact
-     * level, so the light data of the affected chunks is invalidated and rebuilt,
-     * which is the only operation that has a visible effect.
+     * FAWE deprecated the two commands that wrote light levels and only
+     * answers them with this: the game recomputes light from blocks, and a
+     * light block is a source it keeps.
      */
-    private void relight(Ctx ctx, String message) {
-        Region region = ctx.selection();
-        World world = ctx.world();
-        for (var chunk : region.getChunks()) {
-            world.relight(List.of(chunk));
-        }
-        for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x += 16) {
-            for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z += 16) {
-                world.queueBlockUpdate(x, region.getMinimumPoint().y(), z);
+    private static void lightBlocksInstead(Ctx ctx) {
+        ctx.actor().message(Msg.warn("Light levels are not set directly; light blocks are more reliable:"
+                + " //replace air light[level=15]"));
+    }
+
+    /**
+     * The loaded chunks between the corners of a selection, every one of them
+     * for any shape, which is the set FAWE relights.
+     */
+    private static List<BlockVector2> loadedChunks(World world, Region region) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        List<BlockVector2> chunks = new java.util.ArrayList<>();
+        for (int x = min.x() >> 4; x <= max.x() >> 4; x++) {
+            for (int z = min.z() >> 4; z <= max.z() >> 4; z++) {
+                if (world.isChunkLoaded(x, z)) {
+                    chunks.add(new BlockVector2(x, z));
+                }
             }
         }
-        ctx.actor().message(Msg.result(message, "light is engine-managed since 1.18, chunks relit"));
+        return chunks;
     }
 
     /** {@code //nbtinfo} — dumps the block entity of the targeted block. */
@@ -193,7 +205,7 @@ final class RegionCommands {
             }
             ctx.actor().message(Msg.info("NBT at " + target + ":"));
             for (var value : nbt.entries().entrySet()) {
-                ctx.actor().message(Msg.of("§7" + value.getKey() + "§r: §f" + value.getValue()));
+                ctx.actor().message(Msg.keyValue(value.getKey(), value.getValue()));
             }
         };
     }
@@ -210,12 +222,13 @@ final class RegionCommands {
         }
         entry.description = "Fixes all blocks in the region to the correct shape and connections";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         entry.handler = ctx -> {
             World world = ctx.world();
             Region region = ctx.selection();
             EditSession session = ctx.editSession("fixblocks");
-            int changed = region.forEachPosition((x, y, z) -> {
+            long changed = region.forEachPosition((x, y, z) -> {
                 session.checkTimeout();
                 int state = world.getBlock(x, y, z);
                 if (state == BlockState.registry().air()) {
@@ -228,7 +241,7 @@ final class RegionCommands {
                 return wrote;
             });
             session.flushQueue();
-            ctx.actor().message(Msg.result("Updated", Msg.count(changed) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Updated", Msg.blocks(changed)));
         };
     }
 
@@ -312,6 +325,7 @@ final class RegionCommands {
         }
         entry.description = "Smooth the elevation in the selection with snow layers";
         entry.group = "region";
+        entry.confirmRegion = true;
         entry.requiresSelection = true;
         // -l is the snow height to place back, -m restricts the pass to a mask.
         entry.valueFlags.add("l");
@@ -330,7 +344,7 @@ final class RegionCommands {
             EditSession session = ctx.editSession("snowsmooth");
             int changed = HeightMaps.snowSmooth(ctx.world(), session, region, iterations, layerBlocks, heightMask);
             session.flushQueue();
-            ctx.actor().message(Msg.success("Smoothed " + changed + " snow block(s)"));
+            ctx.actor().message(Msg.success("Smoothed " + Msg.count(changed, "snow block", "snow blocks")));
         };
     }
 
@@ -408,52 +422,42 @@ final class RegionCommands {
             if (radius < -1) {
                 throw CommandRegistry.error("Use -1 to remove all entities in loaded chunks");
             }
-            World world = ctx.world();
-            List<EntityData> candidates;
-            double centerX = 0;
-            double centerZ = 0;
-            if (radius < 0) {
-                candidates = world.getEntities();
-            } else {
-                BlockVector3 center = ctx.placement();
-                centerX = center.x() + 0.5;
-                centerZ = center.z() + 0.5;
-                candidates = world.getEntities(new Extent.Region3i(
-                        (int) Math.floor(centerX - radius), world.minY(), (int) Math.floor(centerZ - radius),
-                        (int) Math.ceil(centerX + radius), world.maxY(), (int) Math.ceil(centerZ + radius)));
-            }
-            // The cylinder test runs on the squared distance so no square root is
-            // taken per entity, and it applies before the type test because most
-            // entities of a busy world sit outside the radius.
-            double radiusSq = (double) radius * radius;
+            EditSession session = ctx.editSession();
             int removed = 0;
-            for (EntityData entity : candidates) {
+            for (EntityData entity : entitiesWithin(ctx, radius)) {
                 if (!entity.isSpawnable() || !type.matches(entity.type())) {
                     continue;
                 }
-                if (radius >= 0) {
-                    double dx = entity.position().x() - centerX;
-                    double dz = entity.position().z() - centerZ;
-                    if (dx * dx + dz * dz > radiusSq) {
-                        continue;
-                    }
-                }
-                world.removeEntity(entity);
+                // Through the edit session, so //undo brings the entity back.
+                session.removeEntity(entity);
                 removed++;
             }
-            ctx.actor().message(Msg.result("Butcher", Msg.count(removed)
-                    + "\u00a77 entit(y/ies) have been marked for removal"));
+            ctx.actor().message(Msg.result("Removed", Msg.count(removed, "entity", "entities")));
         };
     }
 
     /**
-     * {@code //butcher} — kills the entities matching the flags within a radius.
+     * The entities within a radius of the player's placement, or every entity
+     * of the loaded chunks for {@code -1}. The position is asked for only when
+     * a radius needs it, which lets the console run the command with -1.
+     */
+    private static List<EntityData> entitiesWithin(Ctx ctx, int radius) {
+        return radius < 0 ? ctx.world().getEntities() : ctx.world().getEntitiesWithin(ctx.placement(), radius);
+    }
+
+    /**
+     * {@code //butcher} - kills the entities matching the flags within a radius.
      *
      * <p>Without a flag only the hostile mobs are killed, which is the default
      * FAWE documents; {@code -p} adds pets, {@code -n} NPCs, {@code -g} golems,
      * {@code -a} animals, {@code -b} ambient mobs, {@code -t} named entities,
      * {@code -r} armor stands and {@code -w} water mobs. {@code -f} is the
      * shortcut for <code>-abgnpt</code>.</p>
+     *
+     * <p>The radius is FAWE's: a cylinder around the player by the height of
+     * the world, {@code -1} for every loaded chunk, and the configured maximum
+     * as a ceiling rather than a refusal. It was a square, whose corners reach
+     * a radius and a half away, and {@code -1} was read as no radius at all.</p>
      */
     private void butcher() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("butcher", "/butcher");
@@ -465,33 +469,31 @@ final class RegionCommands {
         entry.arguments.add("[radius]");
         entry.booleanFlags.addAll(List.of("p", "n", "g", "a", "b", "t", "f", "r", "w"));
         entry.handler = ctx -> {
-            int radius = ctx.args().isEmpty() || ctx.arg(0).startsWith("-")
-                    ? com.maxlananas.fawebim.core.platform.Config.get().butcherDefaultRadius
-                    : ctx.intArg(0, com.maxlananas.fawebim.core.platform.Config.get().butcherDefaultRadius);
-            if (radius > com.maxlananas.fawebim.core.platform.Config.get().butcherMaxRadius) {
-                throw CommandRegistry.error("Maximum butcher radius is "
-                        + com.maxlananas.fawebim.core.platform.Config.get().butcherMaxRadius);
+            com.maxlananas.fawebim.core.platform.Config config = com.maxlananas.fawebim.core.platform.Config.get();
+            int radius = ctx.intArg(0, config.butcherDefaultRadius);
+            if (radius < -1) {
+                throw CommandRegistry.error("Use -1 to remove all mobs in loaded chunks");
             }
-            BlockVector3 origin = ctx.arg(0, "").contains(",")
-                    ? ctx.blockVector(0) : ctx.placement();
-            World world = ctx.world();
-            Extent.Region3i box = new Extent.Region3i(
-                    origin.x() - radius, world.minY(), origin.z() - radius,
-                    origin.x() + radius, world.maxY(), origin.z() + radius);
+            int maximum = config.butcherMaxRadius;
+            if (maximum >= 0 && (radius < 0 || radius > maximum)) {
+                radius = maximum;
+            }
             java.util.Set<Creatures.Category> categories = ctx.hasFlag("f")
                     ? Creatures.of(true, true, true, true, true, true, ctx.hasFlag("r"), true)
                     : Creatures.of(ctx.hasFlag("p"), ctx.hasFlag("n"), ctx.hasFlag("g"), ctx.hasFlag("a"),
                     ctx.hasFlag("b"), ctx.hasFlag("t"), ctx.hasFlag("r"), ctx.hasFlag("w"));
             int killed = 0;
-            for (EntityData entity : world.getEntities(box)) {
+            EditSession session = ctx.editSession();
+            for (EntityData entity : entitiesWithin(ctx, radius)) {
                 if (!entity.isSpawnable() || !Creatures.matches(entity, categories)) {
                     continue;
                 }
-                world.removeEntity(entity);
+                // Through the edit session, so //undo brings the entity back.
+                session.removeEntity(entity);
                 killed++;
             }
-            ctx.actor().message(Msg.result("Butcher", Msg.count(killed) + "\u00a77 entit(y/ies) removed"
-                    + " within " + Msg.count(radius) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Killed", Msg.count(killed, "entity", "entities")
+                    + (radius < 0 ? " in the loaded chunks" : " within " + Msg.blocks(radius))));
         };
     }
 
@@ -522,10 +524,10 @@ final class RegionCommands {
             double max = Math.max(radius.x(), Math.max(radius.y(), radius.z()));
             BlockVector3 position = ctx.placement();
             EditSession session = ctx.editSession("blob");
-            int changed = Operations.makeBlob(ctx.world(), session, position, pattern, size,
-                    frequency, amplitude, radius.divide(max), sphericity);
+            int changed = Operations.makeBlob(position, size, frequency, amplitude, radius.divide(max), sphericity,
+                    new java.util.Random(), (x, y, z) -> session.setBlock(x, y, z, pattern.apply(x, y, z)));
             session.flushQueue();
-            ctx.actor().message(Msg.success("Blob: " + changed + " block(s) created"));
+            ctx.actor().message(Msg.success("Blob: " + Msg.blocks(changed) + " created"));
         };
     }
 }

@@ -134,4 +134,9 @@ public final class TreeTypes {
     public static String names() {
         return String.join(", ", TYPES.keySet());
     }
+
+    /** Every canonical name, in the order upstream lists them, for tab completion. */
+    public static List<String> canonicalNames() {
+        return List.copyOf(TYPES.keySet());
+    }
 }

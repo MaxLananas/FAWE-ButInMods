@@ -14,3 +14,31 @@ accessible field net/minecraft/commands/CommandSourceStack source Lnet/minecraft
 # work back to the server thread.
 accessible class net/minecraft/server/level/ServerChunkCache$MainThreadExecutor
 accessible field net/minecraft/server/level/ServerChunkCache mainThreadProcessor Lnet/minecraft/server/level/ServerChunkCache$MainThreadExecutor;
+
+# LevelChunk#setBlockState rebinds the ticker of a block entity whose block
+# only changed state. The bulk write keeps the block entities itself, so it
+# needs the same method.
+accessible method net/minecraft/world/level/chunk/LevelChunk updateBlockEntityTicker (Lnet/minecraft/world/level/block/entity/BlockEntity;)V
+
+# //regen generates its chunks in a temporary level with the live level's
+# generator, as WorldEdit's Fabric world does: a seed given to the command
+# goes into the primary level data for the time of the generation, reached
+# through the derived data of the other dimensions. WorldEdit widens the same
+# two fields.
+accessible field net/minecraft/world/level/storage/PrimaryLevelData worldOptions Lnet/minecraft/world/level/levelgen/WorldOptions;
+mutable field net/minecraft/world/level/storage/PrimaryLevelData worldOptions Lnet/minecraft/world/level/levelgen/WorldOptions;
+accessible field net/minecraft/world/level/storage/DerivedLevelData wrapped Lnet/minecraft/world/level/storage/ServerLevelData;
+
+# A bulk write hands the light engine the positions it changed a batch per task
+# instead of a task per block (LightChecks): the batch goes through the
+# engine's own task queue and makes the calls vanilla's per-block task makes on
+# the light thread, on the block and the sky engine.
+accessible class net/minecraft/server/level/ThreadedLevelLightEngine$TaskType
+accessible method net/minecraft/server/level/ThreadedLevelLightEngine addTask (IILnet/minecraft/server/level/ThreadedLevelLightEngine$TaskType;Ljava/lang/Runnable;)V
+accessible field net/minecraft/world/level/lighting/LevelLightEngine blockEngine Lnet/minecraft/world/level/lighting/LightEngine;
+accessible field net/minecraft/world/level/lighting/LevelLightEngine skyEngine Lnet/minecraft/world/level/lighting/LightEngine;
+
+# The saves of a chunk wait for the light work an edit queued for it, as they
+# wait for a chunk still being generated: the game takes the saved light back
+# when it loads the chunk (FabricWorld#lightPending).
+accessible method net/minecraft/server/level/ChunkHolder addSaveDependency (Ljava/util/concurrent/CompletableFuture;)V

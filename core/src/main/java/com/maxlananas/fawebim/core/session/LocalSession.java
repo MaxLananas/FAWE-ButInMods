@@ -30,8 +30,8 @@ public final class LocalSession {
     // FAWE starts with the super pickaxe off: the pickaxe only breaks areas
     // after //togglepickaxe (or //, ) turns it on.
     private boolean superPickaxeEnabled = false;
-    private int superPickaxeMode = 1; // 0 = single, 1 = area, 2 = recursive
-    private int superPickaxeRadius = 1;
+    private int superPickaxeMode = com.maxlananas.fawebim.core.tool.SuperPickaxe.AREA;
+    private double superPickaxeRange = 1;
     private int maxBlocksChanged = -1;
     private int timeout = -1;
     // -1 means "whatever the configuration says", so a setting changed in
@@ -40,15 +40,33 @@ public final class LocalSession {
     private double maxBrushRange = -1;
     private int changeLimit = -1;
     private SideEffectSet sideEffectSet = SideEffectSet.defaults();
-    private int wandItemId = -1;
+    private boolean selectionWandEnabled = true;
     private String lastFailedMessage;
     private boolean includeAir = false;
     private boolean tracing = false;
-    private boolean drawSelection = true;
-    private final java.util.Map<String, Object> bindings = new java.util.HashMap<>();
-    private String toolBindingName;
+    /** Whether the selection is drawn with particles: {@code //cui} turns it on and off. */
+    private boolean drawSelection = com.maxlananas.fawebim.core.platform.Config.get().selectionPreview;
+    /** Item id to what it is bound to, the item bound last at the end. */
+    private final java.util.LinkedHashMap<String, ItemBinding> bindings = new java.util.LinkedHashMap<>();
     private Mask sourceMask;
-    private boolean cancelled;
+    /**
+     * Weak: the reference only matters while an edit of that world runs, and
+     * the edit holds the world itself; a session kept after its player left
+     * must not keep a dimension alive after the server unloaded it.
+     */
+    private java.lang.ref.WeakReference<World> activeWorld;
+    private WorldReader worldReader;
+    /**
+     * Set by {@code /cancel} while a command of this session runs; read by the
+     * edit on every checkpoint. Volatile because the flag is the one piece of
+     * session state meant to be written while an edit is in progress.
+     */
+    private volatile boolean cancelled;
+    /**
+     * How many commands of this session are running, nested ones included. Only
+     * the thread running the commands writes it.
+     */
+    private volatile int runningCommands;
     private boolean tips;
     private boolean watchdog = true;
     private java.time.ZoneId timezone = java.time.ZoneId.systemDefault();
@@ -56,8 +74,9 @@ public final class LocalSession {
     private java.nio.file.Path activeSnapshot;
     private com.maxlananas.fawebim.core.clipboard.ListFilter listFilter =
             com.maxlananas.fawebim.core.clipboard.ListFilter.ALL;
-    private Runnable pendingCommand;
-    private String pendingDescription;
+    /** The command line waiting for {@code //confirm}, and the {@link System#nanoTime()} it was parked at. */
+    private String pendingCommand;
+    private long pendingSince;
     private BlockVector3 lastClickedPosition;
     private com.maxlananas.fawebim.core.world.Direction lastClickedFace = com.maxlananas.fawebim.core.world.Direction.NORTH;
 
@@ -100,15 +119,24 @@ public final class LocalSession {
      * Enabled by the session manager once the owner name is known.
      */
     public void enableSnapshots() {
-        history.setRecordListener(record -> {
-            // Every finished edit goes into the shared log, which is what
-            // /history find, rollback and restore search.
-            com.maxlananas.fawebim.core.history.EditLog.add(ownerName,
-                    record.world == null ? lastWorldName : record.world, record);
-            if (com.maxlananas.fawebim.core.platform.Config.get().snapshotsEnabled) {
-                com.maxlananas.fawebim.core.history.Snapshots.saveAsync(record, ownerName);
-            }
-        });
+        history.setRecordListener(LocalSession::logFinishedEdit);
+    }
+
+    /**
+     * Every finished edit goes into the shared log, which is what {@code /history
+     * find}, {@code rollback} and {@code restore} search, and to the snapshot
+     * folder when snapshots are on.
+     *
+     * <p>The owner and the world are the record's own: a history shared by every
+     * session has one listener, installed by whichever session came last, and
+     * naming that session's player logged everyone's edits as theirs.</p>
+     */
+    private static void logFinishedEdit(History.Record record) {
+        String owner = record.owner == null ? "console" : record.owner;
+        com.maxlananas.fawebim.core.history.EditLog.add(owner, record.world, record);
+        if (com.maxlananas.fawebim.core.platform.Config.get().snapshotsEnabled) {
+            com.maxlananas.fawebim.core.history.Snapshots.saveAsync(record, owner);
+        }
     }
 
     /** Name of the world the session is editing, kept for the history log. */
@@ -147,7 +175,90 @@ public final class LocalSession {
         this.sourceMask = sourceMask;
     }
 
-    /** {@code /cancel}: abort the next edit that checks the session state. */
+    /**
+     * The world the player edits now: the one of the last command, click or
+     * edit started for this session. Server thread.
+     */
+    public World getActiveWorld() {
+        return activeWorld == null ? null : activeWorld.get();
+    }
+
+    public void setActiveWorld(World world) {
+        if (world != null && getActiveWorld() != world) {
+            this.activeWorld = new java.lang.ref.WeakReference<>(world);
+        }
+    }
+
+    /**
+     * What the masks and patterns parsed for this session read: the blocks of
+     * the {@linkplain #getActiveWorld() active world}, through the source mask
+     * - a block it rejects reads as air, as it does through an edit. A mask kept
+     * in the session, a brush or a tool therefore follows the player into
+     * another dimension instead of reading the one it was parsed in.
+     */
+    public com.maxlananas.fawebim.core.world.Extent worldReader() {
+        if (worldReader == null) {
+            worldReader = new WorldReader(this);
+        }
+        return worldReader;
+    }
+
+    private static final class WorldReader implements com.maxlananas.fawebim.core.world.Extent {
+
+        private final LocalSession session;
+        /** Set while the source mask runs, so its own reads are not masked again. */
+        private boolean applyingSourceMask;
+
+        WorldReader(LocalSession session) {
+            this.session = session;
+        }
+
+        @Override
+        public int getBlock(int x, int y, int z) {
+            Mask source = session.sourceMask;
+            if (source != null && !applyingSourceMask) {
+                applyingSourceMask = true;
+                boolean accepted;
+                try {
+                    accepted = source.test(x, y, z);
+                } finally {
+                    applyingSourceMask = false;
+                }
+                if (!accepted) {
+                    return com.maxlananas.fawebim.core.world.BlockState.registry().air();
+                }
+            }
+            return session.getActiveWorld().getBlock(x, y, z);
+        }
+
+        /** Masks and patterns only read. */
+        @Override
+        public boolean setBlock(int x, int y, int z, int stateId) {
+            return false;
+        }
+
+        @Override
+        public int getBiome(int x, int y, int z) {
+            return session.getActiveWorld().getBiome(x, y, z);
+        }
+
+        @Override
+        public int minY() {
+            return session.getActiveWorld().minY();
+        }
+
+        @Override
+        public int maxY() {
+            return session.getActiveWorld().maxY();
+        }
+    }
+
+    /**
+     * {@code /cancel}: stops the commands of this session that are running, at
+     * their next checkpoint. The flag lives as long as they do: the first command
+     * to start and the last one to end both clear it, so a cancel can never
+     * carry over into an edit started after it.
+     */
     public void cancel() {
         cancelled = true;
     }
@@ -158,6 +269,29 @@ public final class LocalSession {
 
     public boolean isCancelled() {
         return cancelled;
+    }
+
+    /** Called by the dispatcher when a command of this session starts. */
+    public void enterCommand() {
+        if (runningCommands == 0) {
+            cancelled = false;
+        }
+        runningCommands++;
+    }
+
+    /** Called by the dispatcher when a command of this session is over. */
+    public void exitCommand() {
+        if (runningCommands > 0) {
+            runningCommands--;
+        }
+        if (runningCommands == 0) {
+            cancelled = false;
+        }
+    }
+
+    /** How many commands of this session are running, the caller's own included. */
+    public int runningCommands() {
+        return runningCommands;
     }
 
     /** The timezone used when snapshot dates are displayed. */
@@ -186,35 +320,28 @@ public final class LocalSession {
         this.watchdog = watchdog;
     }
 
-    /** Commands that need {@code /confirm} before running. */
-    public void setPendingCommand(Runnable command, String description) {
-        this.pendingCommand = command;
-        this.pendingDescription = description;
+    /**
+     * Parks a command line that stopped for {@code //confirm}. A newer one
+     * replaces it: {@code //confirm} runs the command that asked last.
+     *
+     * @param now {@link System#nanoTime()}
+     */
+    public void setPendingCommand(String line, long now) {
+        this.pendingCommand = line;
+        this.pendingSince = now;
     }
 
-    public boolean hasPendingCommand() {
-        return pendingCommand != null;
-    }
-
-    public String pendingDescription() {
-        return pendingDescription;
-    }
-
-    /** Runs the pending command, or returns false when there is none. */
-    public boolean confirmPending() {
-        Runnable command = pendingCommand;
+    /**
+     * The command line parked for {@code //confirm}, or null when there is none
+     * or it has waited longer than {@code maxWaitNanos}. Taking it clears it, so
+     * one {@code //confirm} runs it once.
+     *
+     * @param now {@link System#nanoTime()}
+     */
+    public String takePendingCommand(long now, long maxWaitNanos) {
+        String line = pendingCommand;
         pendingCommand = null;
-        pendingDescription = null;
-        if (command == null) {
-            return false;
-        }
-        command.run();
-        return true;
-    }
-
-    public void clearPending() {
-        pendingCommand = null;
-        pendingDescription = null;
+        return line == null || now - pendingSince > maxWaitNanos ? null : line;
     }
 
     public RegionSelector getSelector(World world) {
@@ -237,19 +364,9 @@ public final class LocalSession {
         this.selector = selector;
     }
 
+    /** A new, empty selector of a type {@code //sel} knows, or {@code null} for an unknown name. */
     public static RegionSelector newSelectors(World world, String type) {
-        int minY = world == null ? -64 : world.minY();
-        int maxY = world == null ? 319 : world.maxY();
-        return switch (type.toLowerCase(java.util.Locale.ROOT)) {
-            case "cuboid" -> new Selectors.CuboidSelector(minY, maxY);
-            case "extend" -> new Selectors.ExtendingCuboidSelector(minY, maxY);
-            case "poly" -> new Selectors.Polygonal2DSelector(minY, maxY);
-            case "ellipsoid" -> new Selectors.EllipsoidSelector(minY, maxY, false);
-            case "sphere" -> new Selectors.EllipsoidSelector(minY, maxY, true);
-            case "cyl", "cylinder" -> new Selectors.CylinderSelector(minY, maxY);
-            case "convex" -> new Selectors.ConvexSelector(minY, maxY);
-            default -> null;
-        };
+        return Selectors.create(type, world, null);
     }
 
     public Region getSelection(World world) {
@@ -282,10 +399,47 @@ public final class LocalSession {
         return clipboard;
     }
 
+    /**
+     * Replaces the clipboard, and what came with the one before it, as FAWE's
+     * new clipboard holder does: the clipboards a {@code //schem loadall}
+     * gathered and the random rotation a {@code //schem load -r} asked for.
+     * Kept, they went on deciding what a later {@code //copy} pasted as - one
+     * of the loaded schematics, or the copy turned a random way.
+     */
     public void setClipboard(BlockArrayClipboard clipboard) {
         // A null clipboard has to clear the holder: wrapping null would leave
         // hasClipboard() true while every read of the clipboard throws.
         this.clipboard = clipboard == null ? null : new ClipboardHolder(clipboard);
+        clipboardPool.clear();
+        clipboardRandomRotation = false;
+        clipboardDynamicRotation = false;
+        poolRandomRotation = false;
+        poolDynamicRotation = false;
+    }
+
+    /**
+     * What the last {@code //distr} counted, by block or state and most
+     * first, which {@code //distr -p} pages through.
+     *
+     * @param entries the name of each block or state and how many there were
+     * @param total   every block counted
+     */
+    public record Distribution(java.util.List<java.util.Map.Entry<String, Long>> entries, long total) {
+    }
+
+    private Distribution lastDistribution;
+
+    public Distribution getLastDistribution() {
+        return lastDistribution;
+    }
+
+    public void setLastDistribution(Distribution distribution) {
+        this.lastDistribution = distribution;
+    }
+
+    /** Moves the clipboard to another of the {@code //schem loadall} ones, which stay loaded. */
+    public void setClipboardFromPool(BlockArrayClipboard member) {
+        this.clipboard = new ClipboardHolder(member);
     }
 
     private com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard anvilClipboard;
@@ -410,12 +564,13 @@ public final class LocalSession {
         this.superPickaxeMode = mode;
     }
 
-    public int getSuperPickaxeRadius() {
-        return superPickaxeRadius;
+    /** The range of the area or recursive super pickaxe. */
+    public double getSuperPickaxeRange() {
+        return superPickaxeRange;
     }
 
-    public void setSuperPickaxeRadius(int radius) {
-        this.superPickaxeRadius = radius;
+    public void setSuperPickaxeRange(double range) {
+        this.superPickaxeRange = range;
     }
 
     public int getMaxBlocksChanged() {
@@ -480,12 +635,17 @@ public final class LocalSession {
         this.sideEffectSet = sideEffectSet == null ? SideEffectSet.defaults() : sideEffectSet;
     }
 
-    public int getWandItemId() {
-        return wandItemId;
+    /**
+     * Whether the wand item selects when clicked; {@code //toggleeditwand}
+     * turns it off for a player who wants the item back as an item, and the
+     * selection commands keep working.
+     */
+    public boolean isSelectionWandEnabled() {
+        return selectionWandEnabled;
     }
 
-    public void setWandItemId(int wandItemId) {
-        this.wandItemId = wandItemId;
+    public void setSelectionWandEnabled(boolean enabled) {
+        this.selectionWandEnabled = enabled;
     }
 
     public boolean isIncludeAir() {
@@ -512,16 +672,41 @@ public final class LocalSession {
         this.drawSelection = drawSelection;
     }
 
-    public java.util.Map<String, Object> getBindings() {
-        return bindings;
+    /** What an item is bound to, or null when nothing is. */
+    public ItemBinding binding(String item) {
+        return item == null ? null : bindings.get(item);
     }
 
-    public String getToolBindingName() {
-        return toolBindingName;
+    /**
+     * What an item is bound to, made when nothing was, to bind something to;
+     * the item becomes the one bound last.
+     */
+    public ItemBinding bind(String item) {
+        java.util.Objects.requireNonNull(item, "item");
+        ItemBinding binding = bindings.remove(item);
+        if (binding == null) {
+            binding = new ItemBinding();
+        }
+        bindings.put(item, binding);
+        return binding;
     }
 
-    public void setToolBindingName(String name) {
-        this.toolBindingName = name;
+    /** Takes everything off an item, and answers what it held, or null. */
+    public ItemBinding unbind(String item) {
+        return item == null ? null : bindings.remove(item);
+    }
+
+    /** Forgets an item once nothing is bound to it any more. */
+    public void release(String item) {
+        ItemBinding binding = binding(item);
+        if (binding != null && binding.isEmpty()) {
+            bindings.remove(item);
+        }
+    }
+
+    /** The items something is bound to, the one bound last at the end. */
+    public java.util.Map<String, ItemBinding> bindings() {
+        return java.util.Collections.unmodifiableMap(bindings);
     }
 
     public BlockVector3 getLastClickedPosition() {

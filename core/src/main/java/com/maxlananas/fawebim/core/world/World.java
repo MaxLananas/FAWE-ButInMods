@@ -126,29 +126,87 @@ public interface World extends Extent {
      * this data into it; one that keeps block entities as data replaces what it
      * holds. It is called after the blocks of the chunk are written, never
      * before, because the block entity only exists once its block does.</p>
+     *
+     * <p>{@link #applyChunk} keeps the block entities in step with the blocks
+     * it writes, as the game does for a block it sets: a block that no longer
+     * has one loses it, one that gains one gets a new, empty one, and one that
+     * keeps its type keeps its data.</p>
      */
     default void applyBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
     }
 
-    /** Ensures the given chunks get relit after a bulk edit. */
+    /**
+     * Relights whole chunks from their blocks, which is what {@code //fixlighting}
+     * asks for: light left behind by blocks that are gone is dropped and the light
+     * of what is there spreads again. {@link #applyChunk(ChunkSet, com.maxlananas.fawebim.core.session.SideEffectSet)}
+     * keeps the light of what it writes by itself; this is for light that went
+     * wrong some other way.
+     */
     void relight(Collection<BlockVector2> chunks);
+
+    /**
+     * Zeroes the block and sky light of whole chunks, as FAWE's
+     * {@code //removelighting} does. The light comes back where blocks change,
+     * or everywhere with {@link #relight}.
+     */
+    default void removeLight(Collection<BlockVector2> chunks) {
+    }
 
     /** Sends the given chunks, with their light, to everyone who can see them. */
     default void resendChunks(Collection<BlockVector2> chunks) {
+    }
+
+    /**
+     * The block light at a position, from 0 to 15: the light of torches, lava
+     * and the like, not the sky's, as the game's light engine last settled it.
+     * A world without light answers 0.
+     */
+    default int blockLight(int x, int y, int z) {
+        return 0;
     }
 
     /** Queues a "every neighbour of this block should update" notification. */
     default void queueBlockUpdate(int x, int y, int z) {
     }
 
-    /** Regenerates a chunk from the world seed, keeping nothing. */
-    boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options);
+    /**
+     * Terrain generated afresh, to copy from: what the world's generator makes
+     * of some chunks, in a world of its own. Closing it frees that world.
+     */
+    interface GeneratedTerrain extends AutoCloseable {
+
+        int getBlock(int x, int y, int z);
+
+        int getBiome(int x, int y, int z);
+
+        /** The data of a generated block entity (a chest of a structure), or {@code null}. */
+        com.maxlananas.fawebim.core.util.NbtCompound getBlockEntity(int x, int y, int z);
+
+        void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                BlockEntityVisitor visitor);
+
+        @Override
+        void close();
+    }
 
     /**
-     * Whether {@code //regen <seed>} can use the seed it was given. Minecraft's
-     * chunk source is built from the level seed, so a platform that cannot build
-     * a second one says so and the command tells the player instead of silently
-     * regenerating with the world seed.
+     * Generates chunks afresh, as the world's generator makes them - with the
+     * seed of the options when there is one - without touching the live world:
+     * {@code //regen} copies the blocks of its selection out of the result
+     * through its edit session, so nothing outside the selection changes and
+     * the regeneration can be undone. Server thread only.
+     *
+     * @return the terrain, which the caller closes, or {@code null} when the
+     *         platform cannot generate any
+     */
+    default GeneratedTerrain generate(Collection<BlockVector2> chunks, RegenOptions options) {
+        return null;
+    }
+
+    /**
+     * Whether {@code //regen <seed>} can use the seed it was given. A platform
+     * that can only generate with the world's seed says so, and the command
+     * tells the player instead of silently regenerating with the world seed.
      */
     default boolean supportsCustomRegenSeed() {
         return false;
@@ -163,17 +221,60 @@ public interface World extends Extent {
         return -1;
     }
 
-    boolean generateTree(BlockVector3 pos, String treeType, Random random);
+    /**
+     * Grows a tree whose trunk starts at pos: a WorldEdit tree type
+     * ({@code oak}, {@code mega_redwood}, ...) or a placed feature id. Its blocks
+     * go through the session, as WorldEdit's and FAWE's trees do, so the mask,
+     * the change limit and the history see them: a tree placed straight into
+     * the world could not be undone.
+     *
+     * @return false when nothing grew - no room, no soil, or a type the world does not know
+     */
+    boolean generateTree(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos, String treeType,
+                         Random random);
 
-    boolean generateFeature(BlockVector3 pos, String featureType, Random random);
+    /**
+     * Places a worldgen feature at pos, its blocks through the session: a
+     * configured feature, the ones FAWE names ({@code minecraft:oak},
+     * {@code minecraft:ore_gold}, ...), or else a placed one
+     * ({@code minecraft:trees_plains}, ...), placed as world generation places
+     * it but in any biome.
+     *
+     * @return false when the feature is unknown or did not fit
+     */
+    boolean generateFeature(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                            String featureType, Random random);
 
     /**
      * Generates a worldgen structure (a village, a shipwreck, a stronghold...) at
-     * the given position.
+     * the given position, its blocks through the session.
      *
-     * @return false when the structure id is unknown to the server
+     * @return false when the structure id is unknown to the server or it did not fit
      */
-    default boolean generateStructure(String structureId, BlockVector3 pos, Random random) {
+    default boolean generateStructure(com.maxlananas.fawebim.core.extent.EditSession session, String structureId,
+                                      BlockVector3 pos, Random random) {
+        return false;
+    }
+
+    /**
+     * The ids {@link #generateFeature} knows, sorted, or an empty list when the
+     * platform cannot tell: what an id typed for a feature is checked against.
+     */
+    default List<String> featureIds() {
+        return List.of();
+    }
+
+    /** The ids {@link #generateStructure} knows, as {@link #featureIds()}. */
+    default List<String> structureIds() {
+        return List.of();
+    }
+
+    /**
+     * Whether FAWE's feature placer puts the feature against the clicked face
+     * rather than in the clicked block: a tree, a flower, a patch of grass
+     * grows on the block, an ore vein or a geode in it.
+     */
+    default boolean placesFeatureOnFace(String featureId) {
         return false;
     }
 
@@ -220,15 +321,73 @@ public interface World extends Extent {
         return getEntities(new Region3i(-30_000_000, minY(), -30_000_000, 30_000_000, maxY(), 30_000_000));
     }
 
-    /** Called before an edit that may insert/remove block entities. */
-    default void setBlockEntity(int x, int y, int z, com.maxlananas.fawebim.core.util.NbtCompound nbt) {
+    /**
+     * The entities within a radius of a block, as WorldEdit's
+     * {@code CylinderRegion.createRadius} holds them for {@code /remove},
+     * {@code //butcher} and the butcher brush: the block each one stands in
+     * lies within the radius and a half of the centre's column, at any height
+     * of the world.
+     */
+    default List<EntityData> getEntitiesWithin(BlockVector3 center, double radius) {
+        int reach = (int) Math.ceil(radius);
+        List<EntityData> box = getEntities(new Region3i(center.x() - reach, minY(), center.z() - reach,
+                center.x() + reach, maxY(), center.z() + reach));
+        // On the squared distance, so no square root is taken per entity.
+        double limit = (radius + 0.5) * (radius + 0.5);
+        List<EntityData> inside = new java.util.ArrayList<>(box.size());
+        for (EntityData entity : box) {
+            long dx = (long) Math.floor(entity.position().x()) - center.x();
+            long dz = (long) Math.floor(entity.position().z()) - center.z();
+            if (dx * dx + dz * dz <= limit) {
+                inside.add(entity);
+            }
+        }
+        return inside;
     }
 
+    /**
+     * The data of the block entity at a position, or {@code null} when there is
+     * none: the compound the game saves for it, its type under {@code id} and
+     * without its position. A new compound on every call; a live world answers
+     * on its server thread only.
+     */
     default com.maxlananas.fawebim.core.util.NbtCompound getBlockEntity(int x, int y, int z) {
         return null;
     }
 
-    default void removeBlockEntity(int x, int y, int z) {
+    /**
+     * Creates the entity the data describes, at its position, and returns it
+     * as a live entity (with its handle and identity), or {@code null} when the
+     * game refuses: an unknown type, or the identity already in use.
+     *
+     * @param uuid the identity to give it - an undo puts back the entity it
+     *             took away under the identity it had - or {@code null} for a
+     *             new one, as a paste needs
+     */
+    default EntityData spawnEntity(EntityData data, String uuid) {
+        return null;
+    }
+
+    /** Removes the live entity of an identity; false when there is none. Never a player. */
+    default boolean removeEntityById(String uuid) {
+        return false;
+    }
+
+    /** Receives the position of a block entity. */
+    @FunctionalInterface
+    interface BlockEntityVisitor {
+
+        void visit(int x, int y, int z);
+    }
+
+    /**
+     * Visits the position of every block entity inside a box, loading the
+     * chunks it covers. Asking the chunks for the few block entities they hold
+     * is what keeps a copy or an edit from asking every one of its blocks. A
+     * live world answers on its server thread only.
+     */
+    default void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                    BlockEntityVisitor visitor) {
     }
 
     /** Schedules work on the platform's main thread. */

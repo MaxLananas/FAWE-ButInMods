@@ -26,17 +26,15 @@ public final class BrushPresets {
         return Config.get().resolveDirectory(Config.get().brushPresetDirectory);
     }
 
-    /** Saves the brush currently bound to the player's item. */
-    public static Path save(LocalSession session, String name) throws IOException {
-        Object line = session.getBindings().get("brush-command");
+    /** Saves the brush of the right click of an item, or answers null when it has none. */
+    public static Path save(LocalSession session, String item, String name) throws IOException {
+        com.maxlananas.fawebim.core.session.ItemBinding binding = session.binding(item);
+        String line = binding == null ? null : binding.brushLine();
         if (line == null) {
             return null;
         }
-        Path folder = directory();
-        Files.createDirectories(folder);
-        Path file = folder.resolve(safe(name) + ".txt");
-        Files.writeString(file, line + System.lineSeparator());
-        return file;
+        Path file = directory().resolve(safe(name) + ".txt");
+        return com.maxlananas.fawebim.core.util.AtomicFiles.writeString(file, line + System.lineSeparator());
     }
 
     /** The command line of a saved preset, or null when it does not exist. */
@@ -68,7 +66,7 @@ public final class BrushPresets {
     private static String safe(String name) {
         String cleaned = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "_");
         if (cleaned.isEmpty()) {
-            throw new IllegalArgumentException("Invalid preset name");
+            throw new com.maxlananas.fawebim.core.util.InputException("Invalid preset name '" + name + "'");
         }
         return cleaned;
     }

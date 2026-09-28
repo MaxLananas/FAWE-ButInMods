@@ -2,8 +2,11 @@ package com.maxlananas.fawebim.core.brush;
 
 import com.maxlananas.fawebim.core.actor.Actor;
 import com.maxlananas.fawebim.core.command.CommandRegistry;
+import com.maxlananas.fawebim.core.function.Morphology;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.pattern.Patterns;
+import com.maxlananas.fawebim.core.region.RegionFactories;
+import com.maxlananas.fawebim.core.session.ItemBinding;
 import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.util.Images;
 import com.maxlananas.fawebim.core.util.Msg;
@@ -26,37 +29,81 @@ public final class BrushFactory {
     private BrushFactory() {
     }
 
-    /** The brush bound to the player's held item, if any. */
-    public static Brush current(LocalSession session) {
-        Object bound = session.getBindings().get("brush");
-        return bound instanceof Brush brush ? brush : null;
+    /** The brush of the right click of an item, or null. */
+    public static Brush current(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        return binding == null ? null : binding.primary();
     }
 
-    public static void bind(LocalSession session, Brush brush, Actor actor) {
-        session.getBindings().put("brush", brush);
-        session.getBindings().put("brush-item", actor.heldItem());
+    /** The brush of the right click of the item the actor holds, or null. */
+    public static Brush current(Actor actor) {
+        return current(actor.session(), actor.heldItem());
     }
 
-    /** The brush bound to the left click of the held item, if any. */
-    public static Brush currentSecondary(LocalSession session) {
-        Object bound = session.getBindings().get("secondary-brush");
-        return bound instanceof Brush brush ? brush : null;
+    /** The brush of the left click of an item, or null. */
+    public static Brush currentSecondary(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        return binding == null ? null : binding.secondary();
     }
 
-    /** Binds a brush to the left click, which is what {@code /tool secondary} does. */
-    public static void bindSecondary(LocalSession session, Brush brush, Actor actor) {
-        session.getBindings().put("secondary-brush", brush);
-        session.getBindings().put("secondary-brush-item", actor.heldItem());
+    /** The brush of the left click of the item the actor holds, or null. */
+    public static Brush currentSecondary(Actor actor) {
+        return currentSecondary(actor.session(), actor.heldItem());
     }
 
-    public static void unbind(LocalSession session) {
-        session.getBindings().remove("brush");
-        session.getBindings().remove("brush-item");
+    /**
+     * Binds a brush to both clicks of the held item, in place of what it held,
+     * as FAWE's /brush does: it gives the brush tool's primary and secondary
+     * settings the same brush, so a left click fires it as a right click does
+     * until {@code /tool secondary} gives the left click another, and a
+     * setting changed on one is changed on both.
+     *
+     * @param line the command that built the brush, which a preset saves
+     */
+    public static void bind(LocalSession session, Brush brush, Actor actor, String line) {
+        ItemBinding binding = session.bind(actor.heldItem());
+        binding.setPrimary(brush, line);
+        binding.setSecondary(brush, line);
+        brush.bound(session);
     }
 
-    public static void unbindSecondary(LocalSession session) {
-        session.getBindings().remove("secondary-brush");
-        session.getBindings().remove("secondary-brush-item");
+    /**
+     * Binds a brush to the left click of the held item, which is what
+     * {@code /tool secondary} does.
+     *
+     * @param line the command that built the brush
+     */
+    public static void bindSecondary(LocalSession session, Brush brush, Actor actor, String line) {
+        session.bind(actor.heldItem()).setSecondary(brush, line);
+    }
+
+    /** Takes the brush off the right click of an item. */
+    public static void unbind(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        if (binding != null) {
+            binding.setPrimary(null, null);
+            session.release(item);
+        }
+    }
+
+    /** Takes the brush off the left click of an item. */
+    public static void unbindSecondary(LocalSession session, String item) {
+        ItemBinding binding = session.binding(item);
+        if (binding != null) {
+            binding.setSecondary(null, null);
+            session.release(item);
+        }
+    }
+
+    /** The brush of the right click bound last, whatever the item, or null. */
+    public static Brush latest(LocalSession session) {
+        Brush latest = null;
+        for (ItemBinding binding : session.bindings().values()) {
+            if (binding.primary() != null) {
+                latest = binding.primary();
+            }
+        }
+        return latest;
     }
 
     /**
@@ -87,17 +134,29 @@ public final class BrushFactory {
                 brush.setIterations(parameters.integer("iterations", 4));
                 yield brush;
             }
-            case "blendball" -> new Brushes.BlendBallBrush(parameters.radius(), parameters.mask(),
-                    parameters.flag("a"), parameters.integer("minFreqDiff", 1), parameters.flagMask());
+            case "blendball" -> {
+                int minFreqDiff = parameters.integer("minFreqDiff", 1);
+                if (minFreqDiff < 0 || minFreqDiff > 26) {
+                    throw CommandRegistry.error("minFreqDiff not in range 0 <= value <= 26");
+                }
+                yield new Brushes.BlendBallBrush(parameters.radius(), parameters.mask(), parameters.flag("a"),
+                        minFreqDiff, parameters.flagMask());
+            }
             case "height" -> terrain(parameters, false, false);
             case "cliff" -> terrain(parameters, true, false);
             case "flatten" -> terrain(parameters, false, true);
             case "heightmap" -> createHeightmapBrush(parameters);
             case "circle" -> new Brushes.CircleBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
                     !parameters.string("filled", "false").equals("false"));
-            case "raise", "lower" -> new Brushes.RaiseLowerBrush(parameters.radius(), parameters.pattern(),
-                    key.equals("lower"), parameters.mask());
-            case "layer" -> new Brushes.LayerBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "raise", "lower" -> {
+                // WorldEdit's: a deform in the game's coordinates, each block of
+                // the shape taking the one below it to raise, above it to lower.
+                Brushes.DeformBrush brush = new Brushes.DeformBrush(parameters.radius(),
+                        key.equals("raise") ? "y-=1" : "y+=1", shape(parameters), parameters.mask());
+                brush.setGameOrigin(true);
+                yield brush;
+            }
+            case "layer" -> new Brushes.LayerBrush(parameters.radius(), parameters.layers(), parameters.mask());
             case "line" -> {
                 Brushes.LineBrush brush = new Brushes.LineBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask());
@@ -126,27 +185,28 @@ public final class BrushFactory {
             }
             case "scatter" -> new Brushes.ScatterBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
                     parameters.integer("points", 5), parameters.integer("distance", 1), parameters.flag("o"));
-            case "shatter" -> new Brushes.ShatterBrush(parameters.radius(), parameters.pattern(), parameters.mask());
+            case "shatter" -> new Brushes.ShatterBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
+                    parameters.integer("count", 10));
             case "splatter" -> {
                 Brushes.SplatterBrush brush = new Brushes.SplatterBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask());
                 brush.setPoints(parameters.integer("points", 1));
+                brush.setRecursion(parameters.integer("recursion", 5));
+                brush.setSolid(!java.util.Set.of("false", "no", "off", "0")
+                        .contains(parameters.string("solid", "true").toLowerCase(Locale.ROOT)));
                 yield brush;
             }
             case "rock" -> {
                 Brushes.RockBrush brush = new Brushes.RockBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask());
-                brush.setShape(parameters.number("sphericity", 100), parameters.number("frequency", 30),
-                        parameters.number("amplitude", 50));
+                brush.setShape(parameters.radii(), parameters.number("sphericity", 100),
+                        parameters.number("frequency", 30), parameters.number("amplitude", 50));
                 yield brush;
             }
-            case "pull" -> {
-                Brushes.PullBrush brush = new Brushes.PullBrush(parameters.radius(), parameters.pattern(),
-                        parameters.mask());
-                brush.setShape(parameters.integer("erodefaces", 6), parameters.integer("erodeRec", 0),
-                        parameters.integer("fillFaces", 1), parameters.integer("fillRec", 1));
-                yield brush;
-            }
+            case "pull" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.ERODE,
+                    new Morphology.Passes(parameters.integer("erodefaces", 6), parameters.integer("erodeRec", 0),
+                            parameters.integer("fillFaces", 1), parameters.integer("fillRec", 1)),
+                    parameters.mask());
             case "stencil" -> {
                 Brushes.StencilBrush brush = new Brushes.StencilBrush(parameters.radius(), parameters.pattern(),
                         parameters.mask(), loadImage(parameters.string("image", "")),
@@ -166,31 +226,48 @@ public final class BrushFactory {
                 }
                 yield brush;
             }
-            case "clipboard" -> new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),
-                    parameters.flag("o"), parameters.flag("a"), parameters.flag("v"), parameters.flag("e"),
-                    parameters.flag("b"), parameters.maskValue("sourceMask"), parameters.flag("r"));
+            case "clipboard" -> {
+                // WorldEdit refuses the brush when there is nothing to paste,
+                // and keeps the clipboard it was bound with.
+                if (parameters.clipboard() == null && parameters.world() != null) {
+                    throw CommandRegistry.error("No clipboard: use //copy first");
+                }
+                Brushes.ClipboardBrush brush = new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),
+                        parameters.flag("o"), parameters.flag("a"), parameters.flag("v"), parameters.flag("e"),
+                        parameters.flag("b"), parameters.maskValue("sourceMask"), parameters.flag("r"));
+                brush.setClipboard(parameters.clipboard());
+                yield brush;
+            }
             case "copypaste" -> new Brushes.CopyPastaBrush(parameters.radius(), parameters.flag("r"),
                     parameters.flag("a"));
-            case "biome" -> {
-                Brushes.BiomeBrush brush = new Brushes.BiomeBrush(parameters.radius(), parameters.mask());
-                brush.setFullColumn(parameters.flag("c"));
-                yield brush;
-            }
+            case "biome" -> new Brushes.BiomeBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    com.maxlananas.fawebim.core.command.Parsers.biome(parameters.string("biomeType", "")),
+                    parameters.flag("c"));
             case "butcher" -> new Brushes.ButcherBrush(parameters.radius(), categories(parameters));
-            case "forest", "structure", "feature" -> {
-                Brushes.FeatureBrush brush = new Brushes.FeatureBrush(parameters.radius(), key, parameters.mask());
-                brush.setFeature(parameters.string("type", ""));
-                brush.setDensity(parameters.integer("density", 5));
-                yield brush;
-            }
+            case "forest" -> new Brushes.ForestBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    com.maxlananas.fawebim.core.command.Parsers.treeType(parameters.string("type", "")),
+                    parameters.number("density", 20));
+            case "feature" -> new Brushes.FeatureBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    false, com.maxlananas.fawebim.core.command.Parsers.feature(parameters.world(),
+                            parameters.string("type", "")), parameters.number("density", 5));
+            case "structure" -> new Brushes.FeatureBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    true, com.maxlananas.fawebim.core.command.Parsers.structure(parameters.world(),
+                            parameters.string("type", "")), parameters.number("density", 5));
             case "command" -> new Brushes.CommandBrush(parameters.radius(), parameters.string("input", ""),
                     parameters.flag("h"));
             case "scattercommand" -> new Brushes.ScatterCommandBrush(parameters.radius(),
+                    parameters.integer("points", 1), parameters.integer("distance", 1),
                     parameters.string("commandStr", ""), parameters.flag("p"));
             case "populateschematic" -> {
                 Brushes.PopulateSchematicBrush brush = new Brushes.PopulateSchematicBrush(parameters.radius(),
                         parameters.flagMask());
-                brush.setSchematic(parameters.string("clipboardStr", ""));
+                // Read once, when the brush is bound, as FAWE reads its
+                // clipboard argument: a name that is no schematic is refused
+                // there rather than on every click.
+                String schematic = parameters.string("clipboardStr", "");
+                if (!schematic.isEmpty() && parameters.world() != null) {
+                    brush.setSchematics(schematic, Brushes.PopulateSchematicBrush.load(schematic));
+                }
                 brush.setDensity(parameters.integer("density", 50));
                 brush.setRandomRotation(parameters.flag("r"));
                 yield brush;
@@ -199,19 +276,26 @@ public final class BrushFactory {
             case "sweep" -> new Brushes.SweepBrush(parameters.radius(), parameters.pattern(), parameters.mask());
             case "deform" -> {
                 Brushes.DeformBrush brush = new Brushes.DeformBrush(parameters.radius(),
-                        parameters.string("expression", ""));
+                        parameters.string("expression", ""), shape(parameters));
                 brush.setGameOrigin(parameters.flag("r"));
-                brush.setPlacementOrigin(parameters.flag("o"));
+                brush.setPlacement(parameters.flag("o") ? parameters.placement() : null);
                 yield brush;
             }
-            case "erode", "dilate", "morph" -> new Brushes.ErodeDilateBrush(parameters.radius(), key,
+            case "erode" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.ERODE,
+                    new Morphology.Passes(parameters.integer("erodefaces", 2), parameters.integer("erodeRec", 1),
+                            parameters.integer("fillFaces", 5), parameters.integer("fillRec", 1)),
                     parameters.mask());
+            case "morph" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.MORPH,
+                    new Morphology.Passes(parameters.integer("minErodeFaces", 3),
+                            parameters.integer("numErodeIterations", 1), parameters.integer("minDilateFaces", 3),
+                            parameters.integer("numDilateIterations", 1)),
+                    parameters.mask());
+            // WorldEdit's dilate preset of the morph brush.
+            case "dilate" -> new Brushes.MorphBrush(parameters.radius(), Morphology.Style.MORPH,
+                    new Morphology.Passes(5, 1, 2, 1), parameters.mask());
             case "extinguish" -> new Brushes.ExtinguishBrush(parameters.radius());
-            case "snow" -> {
-                Brushes.SnowBrush brush = new Brushes.SnowBrush(parameters.radius(), parameters.mask());
-                brush.setStack(parameters.flag("s"));
-                yield brush;
-            }
+            case "snow" -> new Brushes.SnowBrush(parameters.radius(), parameters.mask(), shape(parameters),
+                    parameters.flag("s"));
             case "snowsmooth" -> new Brushes.SnowSmoothBrush(parameters.radius(),
                     parameters.integer("iterations", 1), parameters.integer("snowBlockCount", 1),
                     parameters.flagMask());
@@ -223,10 +307,35 @@ public final class BrushFactory {
                 brush.setDepthFirst(parameters.flag("d"));
                 yield brush;
             }
-            case "set", "image" -> new Brushes.SphereBrush(parameters.radius(), parameters.pattern(),
-                    parameters.mask());
+            case "set" -> new Brushes.ShapeBrush(parameters.radius(), parameters.pattern(), parameters.mask(),
+                    shape(parameters));
+            case "image" -> {
+                String file = parameters.string("imageURL", "");
+                if (file.startsWith("http://") || file.startsWith("https://")) {
+                    throw CommandRegistry.error("Images are read from "
+                            + com.maxlananas.fawebim.core.clipboard.Schematics.directory()
+                            + ": put the image there and give its file name");
+                }
+                Images.PixelSource image = loadImage(file);
+                if (image == null) {
+                    throw CommandRegistry.error("Image '" + file + "' not found in "
+                            + com.maxlananas.fawebim.core.clipboard.Schematics.directory());
+                }
+                yield new Brushes.ImageBrush(parameters.radius(), parameters.mask(), image,
+                        parameters.number("yscale", 1), parameters.flag("a"), parameters.flag("f"));
+            }
             default -> null;
         };
+    }
+
+    /** The shape argument of a brush, checked when the brush is bound rather than at the first click. */
+    private static String shape(BrushParameters parameters) {
+        String shape = parameters.string("shape", "sphere");
+        if (RegionFactories.parse(shape, 0, 0) == null) {
+            throw CommandRegistry.error("Unknown shape '" + shape + "'. Use one of "
+                    + String.join(", ", RegionFactories.SHAPES) + ".");
+        }
+        return shape;
     }
 
     /** {@code /brush height|cliff|flatten <radius> [image] [rotation] [yscale]}. */
@@ -269,8 +378,9 @@ public final class BrushFactory {
         if (file == null || file.isEmpty()) {
             return null;
         }
-        Images.PixelSource image = Images.load(
-                com.maxlananas.fawebim.core.clipboard.Schematics.directory().resolve(file));
+        Images.PixelSource image = Images.load(com.maxlananas.fawebim.core.util.SafePaths.inside(
+                com.maxlananas.fawebim.core.clipboard.Schematics.directory(), file,
+                com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks, "image"));
         if (image == null) {
             throw CommandRegistry.error("Image '" + file + "' not found in "
                     + com.maxlananas.fawebim.core.clipboard.Schematics.directory());

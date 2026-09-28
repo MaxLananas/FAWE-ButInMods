@@ -38,13 +38,25 @@ final class Stubs {
                 continue;
             }
             CommandRegistry.Entry entry = registry.register(name);
-            CommandRegistry.Entry delegate = registry.resolve(target);
+            CommandRegistry.Entry exact = registry.get(target);
+            CommandRegistry.Entry delegate = exact != null ? exact : registry.resolve(target);
             entry.description = delegate == null ? target : delegate.description;
             entry.group = delegate == null ? groupFor(name) : delegate.group;
             entry.status = "alias";
             entry.requiresSelection = delegate != null && delegate.requiresSelection;
             entry.requiresPlayer = PLAYER_ONLY.contains(name)
                     || (delegate != null && delegate.requiresPlayer);
+            // The spelling takes the line of the command it runs, so it has its
+            // signature too: for //help, for the usage of a short line and for
+            // tab completion, which offered nothing after //placefeature.
+            if (exact != null) {
+                entry.arguments.addAll(exact.arguments);
+                entry.booleanFlags.addAll(exact.booleanFlags);
+                entry.valueFlags.addAll(exact.valueFlags);
+                entry.switchesUnder.putAll(exact.switchesUnder);
+                entry.suggestions = exact.suggestions;
+                entry.aliasOf = exact.aliasOf != null ? exact.aliasOf : exact;
+            }
             entry.handler = ctx -> {
                 String arguments = ctx.tail();
                 registry.dispatch(ctx.actor(), target + (arguments.isEmpty() ? "" : " " + arguments));
@@ -71,21 +83,31 @@ final class Stubs {
 
     /**
      * WorldEdit registers {@code /} (which the player types as {@code //}) as the
-     * super-pickaxe toggle, so it gets a real implementation instead of a stub.
+     * super-pickaxe toggle, so it gets a real implementation instead of a stub:
+     * one command under both names, {@code /} as WorldEdit declares it and
+     * {@code //} as a line reaches the dispatcher once the platform took its
+     * first slash. Two commands were registered, and the one named {@code /}
+     * could not be reached by any line.
      */
     private static void registerPickaxeToggle(CommandRegistry registry) {
-        for (String name : new String[]{"/", "//"}) {
-            if (registry.get(name) != null) {
-                continue;
-            }
-            CommandRegistry.Entry entry = registry.register(name);
+        if (registry.get("//") == null && registry.get("/") == null) {
+            CommandRegistry.Entry entry = registry.register("//", "/");
             entry.description = "Toggle the super pickaxe function";
             entry.group = "tool";
             entry.status = "implemented";
+            // The pickaxe is the one in a hand, and WorldEdit's toggle takes a player.
+            entry.requiresPlayer = true;
+            entry.arguments.add("[on|off]");
             entry.handler = ctx -> {
-                boolean enabled = !ctx.session().isSuperPickaxeEnabled();
-                ctx.session().setSuperPickaxeEnabled(enabled);
-                ctx.actor().message(Msg.success("Super pickaxe " + (enabled ? "enabled" : "disabled")));
+                boolean current = ctx.session().isSuperPickaxeEnabled();
+                // WorldEdit's toggle: turned on or off when told which, and told
+                // so when it already is.
+                if (!ctx.args().isEmpty() && Parsers.booleanArg(ctx, 0, !current) == current) {
+                    ctx.actor().message(Msg.info("Super pickaxe already " + (current ? "enabled" : "disabled")));
+                    return;
+                }
+                ctx.session().setSuperPickaxeEnabled(!current);
+                ctx.actor().message(Msg.success("Super pickaxe " + (!current ? "enabled" : "disabled")));
             };
         }
     }

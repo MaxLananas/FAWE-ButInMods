@@ -26,10 +26,19 @@ import java.util.function.Supplier;
  */
 public final class Config {
 
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "1.1.0";
     public static final String MINECRAFT_VERSION = "1.21.10";
+    /** The game's data version for {@link #MINECRAFT_VERSION}, which the files this mod writes declare. */
+    public static final int DATA_VERSION = 4556;
 
     private static final Config INSTANCE = new Config();
+
+    /**
+     * The platform the mod runs on and its versions, which the platform module
+     * reads from its loader and hands over at load, since core cannot ask the
+     * loader: what /we version and the reports print.
+     */
+    private static volatile String platform = "Fabric";
 
     /** Everything a user can tune, mirroring WorldEdit's and FAWE's keys. */
     public String wandItem = "minecraft:wooden_axe";
@@ -40,6 +49,7 @@ public final class Config {
     public int maxBrushRadius = 1000;
     public int maxRadius = 1000;
     public int maxBrushRange = 100;
+    public boolean confirmLarge = true;
     public int timeout = 0;
     public int threads = Runtime.getRuntime().availableProcessors();
     public boolean allowAncientBlocks = true;
@@ -49,6 +59,7 @@ public final class Config {
     public int maxRegenVolume = 100000000;
     public boolean superPickaxeDrop = true;
     public boolean superPickaxeManyDrop = true;
+    public int maxSuperPickaxeSize = 5;
     public int butcherDefaultRadius = 20;
     public int butcherMaxRadius = 100;
     public boolean historyEnabled = true;
@@ -71,6 +82,7 @@ public final class Config {
     public int chunkResendThreshold = 128;
     public boolean commandBlockSupport = false;
     public boolean welcomeMessage = true;
+    public boolean selectionPreview = false;
     public boolean debug = false;
 
     private List<Setting<?>> settings = new ArrayList<>();
@@ -101,6 +113,10 @@ public final class Config {
         integer("max-brush-range", "limits.max-brush-range", maxBrushRange,
                 "How far a brush reaches from the player, in blocks.", () -> maxBrushRange,
                 value -> maxBrushRange = value);
+        bool("confirm-large", "limits.confirm-large", confirmLarge,
+                "Ask for //confirm before an edit whose selection spans more than 524,288 columns,"
+                        + " and before a history rollback, as FAWE does.", () -> confirmLarge,
+                value -> confirmLarge = value);
         integer("timeout", "calculation.timeout", timeout,
                 "Seconds an operation may run before it is stopped, 0 for no limit.",
                 () -> timeout, value -> timeout = value);
@@ -126,8 +142,12 @@ public final class Config {
                 "Drop the blocks the super pickaxe breaks.", () -> superPickaxeDrop,
                 value -> superPickaxeDrop = value);
         bool("super-pickaxe-many-drop", "super-pickaxe.many-drop-items", superPickaxeManyDrop,
-                "Drop the blocks of an area super-pickaxe break.", () -> superPickaxeManyDrop,
+                "Drop the blocks of an area or recursive super-pickaxe break.", () -> superPickaxeManyDrop,
                 value -> superPickaxeManyDrop = value);
+        integer("max-super-pickaxe-size", "limits.max-super-pickaxe-size", maxSuperPickaxeSize,
+                "Largest range /sp area and /sp recursive accept, at most "
+                        + com.maxlananas.fawebim.core.tool.SuperPickaxe.MAX_RANGE + ".",
+                () -> maxSuperPickaxeSize, value -> maxSuperPickaxeSize = value);
         integer("butcher-default-radius", "limits.butcher-radius.default", butcherDefaultRadius,
                 "Radius //butcher takes when the command gives none.", () -> butcherDefaultRadius,
                 value -> butcherDefaultRadius = value);
@@ -162,7 +182,13 @@ public final class Config {
                 value -> schematicSaveDirectory = value);
         text("schematic-format", "saving.format", defaultSchematicFormat,
                 "Format //schem save writes when the command gives none.", () -> defaultSchematicFormat,
-                value -> defaultSchematicFormat = value);
+                value -> defaultSchematicFormat = value)
+                // FAWE's names of a format are taken too, and stored as the format's own.
+                .limitedTo(com.maxlananas.fawebim.core.clipboard.SchematicFormat.ids(), value -> {
+                    com.maxlananas.fawebim.core.clipboard.SchematicFormat format =
+                            com.maxlananas.fawebim.core.clipboard.SchematicFormat.find(value);
+                    return format == null ? null : format.id();
+                });
         integer("max-schematic-size", "limits.max-schematic-size", maxSchematicSize,
                 "Largest schematic that may be loaded, in blocks, 0 for no limit.",
                 () -> maxSchematicSize, value -> maxSchematicSize = value);
@@ -188,6 +214,9 @@ public final class Config {
         bool("welcome-message", "join.show-welcome-message", welcomeMessage,
                 "Show the welcome banner, with the way to the commands, when a player joins.",
                 () -> welcomeMessage, value -> welcomeMessage = value);
+        bool("selection-preview", "selection.preview", selectionPreview,
+                "Draw the selection with particles for a player who has not turned it on or off with"
+                        + " //cui.", () -> selectionPreview, value -> selectionPreview = value);
         bool("command-block-support", "command-block-support", commandBlockSupport,
                 "Let command blocks run the mod's commands.", () -> commandBlockSupport,
                 value -> commandBlockSupport = value);
@@ -199,6 +228,15 @@ public final class Config {
 
     public static Config get() {
         return INSTANCE;
+    }
+
+    /** {@code Fabric 0.17.3, Fabric API 0.138.0+1.21.10}, or {@code Fabric} before the platform said. */
+    public static String platform() {
+        return platform;
+    }
+
+    public static void setPlatform(String description) {
+        platform = description;
     }
 
     /** Every setting, in the order the configuration file writes them. */
@@ -257,16 +295,27 @@ public final class Config {
         }
         try {
             apply(MiniYaml.parse(Files.readString(file)));
-        } catch (IOException e) {
-            // A broken config must never stop the mod from loading.
+        } catch (IOException | RuntimeException e) {
+            // A broken config must never stop the mod from loading, and must
+            // not go unnoticed either.
+            Log.warn("Could not read the configuration " + file
+                    + "; the settings it did not give keep their previous values", e);
         }
     }
 
     private void apply(Map<String, Object> map) {
         for (Setting<?> setting : settings) {
             Object value = MiniYaml.path(map, setting.path(), null);
-            if (value != null) {
-                setting.apply(String.valueOf(value));
+            if (value == null) {
+                continue;
+            }
+            // A value the setting cannot take keeps the previous one, and says
+            // so: dropped in silence, a typo in the file looked like a setting
+            // that does nothing.
+            String error = setting.apply(String.valueOf(value));
+            if (error != null) {
+                Log.warn("Ignored " + setting.path() + ": '" + value + "' in " + file + " - " + error
+                        + "; it stays " + setting.value());
             }
         }
     }
@@ -287,10 +336,10 @@ public final class Config {
             put(root, setting.path(), setting.value());
         }
         try {
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, MiniYaml.write(root));
+            com.maxlananas.fawebim.core.util.AtomicFiles.writeString(file, MiniYaml.write(root));
         } catch (IOException e) {
-            // Ignore: the values stay in memory.
+            // The values stay in memory; the file keeps its previous content.
+            Log.warn("Could not write the configuration to " + file, e);
         }
     }
 
@@ -315,8 +364,10 @@ public final class Config {
         settings.add(Setting.of(key, path, Setting.Kind.INTEGER, description, fallback, reader, writer));
     }
 
-    private void text(String key, String path, String fallback, String description,
-                      Supplier<String> reader, Consumer<String> writer) {
-        settings.add(Setting.of(key, path, Setting.Kind.TEXT, description, fallback, reader, writer));
+    private Setting<String> text(String key, String path, String fallback, String description,
+                                 Supplier<String> reader, Consumer<String> writer) {
+        Setting<String> setting = Setting.of(key, path, Setting.Kind.TEXT, description, fallback, reader, writer);
+        settings.add(setting);
+        return setting;
     }
 }

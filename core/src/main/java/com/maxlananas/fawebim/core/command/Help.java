@@ -21,20 +21,6 @@ final class Help {
     /** Rows one page holds: a header, a group line, eight commands and a footer. */
     private static final int PAGE_SIZE = 8;
 
-    /**
-     * One colour pair per group, so the same part of the command surface always
-     * reads in the same colour. A group is a handful of rows on a page, and the
-     * shift between two of them is what makes the shape of the page readable.
-     */
-    private static final int[][] GROUP_COLOURS = {
-            {0x8FE3FF, 0x6C9BFF},
-            {0xFFD98E, 0xFF9E6C},
-            {0xA8F5A0, 0x5FD9A0},
-            {0xF7A8E0, 0xB47BFF},
-            {0x9FE8FF, 0x74C6FF},
-            {0xFFE9A0, 0xE4C05F},
-    };
-
     private Help() {
     }
 
@@ -58,7 +44,7 @@ final class Help {
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
             if (!entry.group.equals(group)) {
                 group = entry.group;
-                ctx.actor().message(Msg.of("  " + groupTitle(group)));
+                ctx.actor().message(groupTitle(group));
             }
             ctx.actor().suggestLink(row(entry), entry.name,
                     "Put " + entry.name + " in the chat box");
@@ -90,7 +76,7 @@ final class Help {
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
             if (!entry.group.equals(group)) {
                 group = entry.group;
-                ctx.actor().message(Msg.of("  " + groupTitle(group)));
+                ctx.actor().message(groupTitle(group));
             }
             ctx.actor().suggestLink(row(entry), entry.name,
                     "Put " + entry.name + " in the chat box");
@@ -98,28 +84,106 @@ final class Help {
         footer(ctx, "//help " + filter, page);
     }
 
+    /**
+     * {@code //help //set}: the help of one command, as FAWE gives it for a
+     * command it is named: what it does, how it is written, its other
+     * spellings, its flags, what it needs, and its sub-commands. The commands
+     * whose name only starts the same way are offered after it.
+     */
+    static void command(Ctx ctx, CommandRegistry registry, CommandRegistry.Entry entry, String filter) {
+        ctx.actor().suggestLink(Msg.result(entry.name, entry.description).raw(), entry.name,
+                "Put " + entry.name + " in the chat box");
+        ctx.actor().message(Msg.keyValue("Usage", entry.usage()));
+        if (entry.aliasOf != null) {
+            ctx.actor().message(Msg.keyValue("Runs", entry.aliasOf.name));
+        }
+        List<String> aliases = new ArrayList<>();
+        for (String alias : entry.aliases) {
+            if (!alias.equalsIgnoreCase(entry.name)) {
+                aliases.add(alias);
+            }
+        }
+        if (!aliases.isEmpty()) {
+            aliases.sort(null);
+            ctx.actor().message(Msg.keyValue("Also written", String.join(", ", aliases)));
+        }
+        List<String> flags = new ArrayList<>();
+        for (String flag : entry.booleanFlags) {
+            flags.add("-" + flag);
+        }
+        for (String flag : entry.valueFlags) {
+            flags.add("-" + flag + " <value>");
+        }
+        if (!flags.isEmpty()) {
+            flags.sort(null);
+            ctx.actor().message(Msg.keyValue("Flags", String.join(" ", flags)));
+        }
+        if (entry.requiresPlayer || entry.requiresSelection) {
+            ctx.actor().message(Msg.hint(entry.requiresPlayer && entry.requiresSelection
+                    ? "A player with a selection runs it"
+                    : entry.requiresPlayer ? "A player runs it" : "It works on the selection"));
+        }
+        String bare = entry.name.replaceFirst("^/+", "").toLowerCase(Locale.ROOT);
+        boolean hasSubCommands = registry.all().stream()
+                .anyMatch(other -> isUnder(other.name, bare));
+        if (hasSubCommands) {
+            ctx.actor().commandLink(Msg.hint("Its sub-commands: " + Msg.value("//help -s " + entry.name).raw()).raw(),
+                    "//help -s " + entry.name, "List the sub-commands of " + entry.name);
+        }
+        List<String> others = new ArrayList<>();
+        for (CommandRegistry.Entry other : registry.all()) {
+            if (other != entry && !other.status.equals("stub") && other.name.toLowerCase(Locale.ROOT)
+                    .startsWith(filter) && !isUnder(other.name, bare)) {
+                others.add(other.name);
+            }
+        }
+        if (!others.isEmpty()) {
+            others.sort(null);
+            ctx.actor().commandLink(Msg.hint("Also named so: " + String.join(", ",
+                            others.subList(0, Math.min(6, others.size()))) + (others.size() > 6 ? ", ..." : "")).raw(),
+                    "//help " + filter + " -p 1", "Search the commands named " + filter);
+        }
+    }
+
     /** {@code //help -s <command>}: the sub-commands registered under one name. */
-    static void subCommands(Ctx ctx, CommandRegistry registry, String filter) {
+    static void subCommands(Ctx ctx, CommandRegistry registry, String typed) {
+        // "//help -s //schem" and "//help -s schem" ask for the same container.
+        String filter = typed.replaceFirst("^/+", "");
         List<CommandRegistry.Entry> matches = new ArrayList<>();
+        CommandRegistry.Entry container = null;
         for (CommandRegistry.Entry entry : registry.all()) {
             String name = entry.name.toLowerCase(Locale.ROOT);
-            if (name.startsWith("/" + filter + " ") || name.startsWith("//" + filter + " ")
-                    || name.equals("/" + filter) || name.equals("//" + filter)) {
+            if (name.equals("/" + filter) || name.equals("//" + filter)) {
+                container = entry;
+            } else if (isUnder(name, filter) || entry.aliases.stream().anyMatch(alias -> isUnder(alias, filter))) {
+                // A command registered elsewhere that the container answers to
+                // as well, as //cui is also /we cui.
                 matches.add(entry);
             }
+        }
+        // The container itself is listed only when it has no sub-command to show.
+        if (matches.isEmpty() && container != null) {
+            matches.add(container);
         }
         if (matches.isEmpty()) {
             ctx.actor().message(Msg.error("No sub-command found for '" + filter + "'"));
             return;
         }
         matches.sort(Comparator.comparing(entry -> entry.name));
-        Page page = Page.of(ctx, matches.size(), PAGE_SIZE);
+        // A container with a handful of sub-commands shows them all at once
+        // rather than leaving one or two for a second page.
+        Page page = Page.of(ctx, matches.size(), matches.size() <= PAGE_SIZE + 2 ? matches.size() : PAGE_SIZE);
         ctx.actor().message(header("Sub-commands of " + filter, matches.size(), page));
         for (CommandRegistry.Entry entry : matches.subList(page.from(), page.to())) {
             ctx.actor().suggestLink(row(entry), entry.name,
                     "Put " + entry.name + " in the chat box");
         }
         footer(ctx, "//help -s " + filter, page);
+    }
+
+    private static boolean isUnder(String name, String container) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.startsWith("/" + container + " ") || lower.startsWith("//" + container + " ");
     }
 
     /**
@@ -130,51 +194,35 @@ final class Help {
      */
     private static void footer(Ctx ctx, String command, Page page) {
         page.hint(ctx, command);
-        ctx.actor().commandLink(Msg.MARKER + "§7Search " + Msg.value("//help <word>").raw()
-                        + " §8- §7sub-commands " + Msg.value("//help -s <command>").raw()
-                        + " §8- §7pages " + Msg.value("-p <page>").raw(),
+        ctx.actor().commandLink(Msg.hint("Search " + Msg.value("//help <word>").raw()
+                        + " - sub-commands " + Msg.value("//help -s <command>").raw()
+                        + " - pages " + Msg.value("-p <page>").raw()).raw(),
                 "//help ", "Search the command list");
-        ctx.actor().commandLink(Msg.MARKER + "§7Settings " + Msg.value("/fawebim").raw()
-                        + " §8- §7Discord " + Msg.value("/fawebim-discord").raw()
-                        + " §8- §7click a command to put it in the chat box",
+        ctx.actor().commandLink(Msg.hint("Settings " + Msg.value("/fawebim").raw()
+                        + " - Discord " + Msg.value("/fawebim-discord").raw()
+                        + " - click a command to put it in the chat box").raw(),
                 "/fawebim", "Open the settings screen");
     }
 
     /** The heading of a page: the title, how many there are, and which page this is. */
     private static Msg header(String label, int total, Page page) {
-        return Msg.of(Msg.title(label).raw() + " §8(§b" + total + "§7 commands, page §b"
-                + page.number() + "§8/§b" + page.pages() + "§8) " + rule(30));
+        return Msg.title(label + " (" + total + (total == 1 ? " command" : " commands")
+                + (page.pages() > 1 ? ", page " + page.number() + "/" + page.pages() : "") + ")");
     }
 
-    /** One command: its usage in the command colour, then what it does. */
+    /** One command: its name - sub-command included - its arguments, then what it does. */
     private static String row(CommandRegistry.Entry entry) {
-        return "  §8· §b" + usage(entry) + " §8- §7" + entry.description;
+        String usage = entry.usage();
+        String arguments = usage.startsWith(entry.name) ? usage.substring(entry.name.length()).trim() : "";
+        return Msg.usage(entry.name, arguments, entry.description).raw();
     }
 
     /**
-     * A usage line with its command name and its arguments in two colours, so the
-     * name the row is about reads first.
+     * The name of a group. Every group reads in the same colour: a page of the
+     * listing is a handful of groups, and a colour of their own for each made
+     * it a patchwork.
      */
-    private static String usage(CommandRegistry.Entry entry) {
-        String usage = entry.usage();
-        int space = usage.indexOf(' ');
-        if (space < 0) {
-            return usage;
-        }
-        return "§b" + usage.substring(0, space) + "§8" + usage.substring(space);
-    }
-
-    /** A dim rule, made of the struck-through spaces the vanilla font draws solid. */
-    private static String rule(int width) {
-        return "§8§m" + " ".repeat(width);
-    }
-
-    /** The name of a group, in that group's own colour. */
-    private static String groupTitle(String group) {
-        if (group == null || group.isEmpty()) {
-            return "§8» §7Other";
-        }
-        int[] colours = GROUP_COLOURS[Math.floorMod(group.hashCode(), GROUP_COLOURS.length)];
-        return "§8» §l" + Msg.gradient(group.toUpperCase(Locale.ROOT), colours[0], colours[1]);
+    private static Msg groupTitle(String group) {
+        return Msg.section(group == null || group.isEmpty() ? "OTHER" : group.toUpperCase(Locale.ROOT));
     }
 }

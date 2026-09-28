@@ -98,7 +98,7 @@ final class AnvilCommands {
                     "deleteunclaimed, deleteallunclaimed — the same age test, without a claim provider",
                     "deletealloldregions <time> — drop region files untouched for that long",
                     "remapall, debugfixroads — legacy maintenance")) {
-                ctx.actor().message(Msg.of("§7 - §f" + line));
+                ctx.actor().message(Msg.item(line));
             }
         };
     }
@@ -117,8 +117,8 @@ final class AnvilCommands {
             EditSession session = ctx.editSession("anvil clear");
             List<int[]> chunks = selectionChunks(ctx);
             int cleared = clearChunks(session, ctx.world(), chunks);
-            flush(ctx, session, "Cleared", Msg.count(cleared) + "\u00a77 of "
-                    + Msg.count(chunks.size()) + "\u00a77 chunk(s)");
+            flush(ctx, session, "Cleared", Msg.count(cleared) + " of "
+                    + Msg.count(chunks.size(), "chunk", "chunks"));
         };
     }
 
@@ -144,8 +144,10 @@ final class AnvilCommands {
                     new com.maxlananas.fawebim.core.region.CuboidRegion(origin, corner), session, false);
             clipboard.setName("anvil");
             ctx.session().setAnvilClipboard(clipboard);
-            ctx.actor().message(Msg.success("Copied " + ((corner.x() - origin.x() + 1) >> 4) + "x"
-                    + ((corner.z() - origin.z() + 1) >> 4) + " chunk(s) to the anvil clipboard"));
+            int widthwise = (corner.x() - origin.x() + 1) >> 4;
+            int lengthwise = (corner.z() - origin.z() + 1) >> 4;
+            ctx.actor().message(Msg.success("Copied " + widthwise + "x" + lengthwise
+                    + (widthwise * lengthwise == 1 ? " chunk" : " chunks") + " to the anvil clipboard"));
         };
     }
 
@@ -171,7 +173,7 @@ final class AnvilCommands {
             EditSession session = ctx.editSession("anvil paste");
             int changed = Clipboards.paste(clipboard, destination, session,
                     com.maxlananas.fawebim.core.transform.Transform.identity(), false, false, false);
-            flush(ctx, session, "Pasted", Msg.count(changed) + "\u00a77 block(s) at "
+            flush(ctx, session, "Pasted", Msg.blocks(changed) + " at "
                     + Msg.value(destination).raw());
         };
     }
@@ -200,7 +202,7 @@ final class AnvilCommands {
                 distribution(ctx, counts);
                 return;
             }
-            ctx.actor().message(Msg.result("Matched", Msg.count(total) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Matched", Msg.blocks(total)));
         };
     }
 
@@ -229,8 +231,8 @@ final class AnvilCommands {
                 return;
             }
             long total = counts.values().stream().mapToLong(Long::longValue).sum();
-            ctx.actor().message(Msg.result("Counted", Msg.count(chunks) + "\u00a77 chunk(s), "
-                    + Msg.count(total) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Counted", Msg.count(chunks, "chunk", "chunks") + ", "
+                    + Msg.blocks(total)));
         };
     }
 
@@ -321,7 +323,7 @@ final class AnvilCommands {
                 changed += session.setBlock(position.x(), position.y(), position.z(),
                         pattern.apply(position)) ? 1 : 0;
             }
-            flush(ctx, session, "Changed", Msg.count(changed) + "\u00a77 block(s)");
+            flush(ctx, session, "Changed", Msg.blocks(changed));
         };
     }
 
@@ -362,7 +364,7 @@ final class AnvilCommands {
                     }
                 }
             }
-            flush(ctx, session, "Removed", Msg.count(changed) + "\u00a77 block(s)");
+            flush(ctx, session, "Removed", Msg.blocks(changed));
         };
     }
 
@@ -378,13 +380,13 @@ final class AnvilCommands {
         entry.booleanFlags.add("u");
         entry.handler = ctx -> {
             List<int[]> chunks = matchingChunks(ctx, chunk -> ChunkData.isAirOnly(chunk.data()));
-            ctx.actor().message(Msg.info(chunks.size() + " chunk(s) hold air only"));
+            ctx.actor().message(Msg.info(Msg.count(chunks.size(), "chunk", "chunks") + " hold air only"));
             if (chunks.isEmpty()) {
                 return;
             }
             EditSession session = ctx.editSession("anvil trimallair");
             int cleared = clearChunks(session, ctx.world(), chunks);
-            flush(ctx, session, "Trimmed", Msg.count(cleared) + "\u00a77 empty chunk(s)");
+            flush(ctx, session, "Trimmed", Msg.count(cleared, "empty chunk", "empty chunks"));
         };
     }
 
@@ -535,7 +537,7 @@ final class AnvilCommands {
                 ctx.world().loadChunk(chunk[0], chunk[1]);
                 loaded++;
             }
-            ctx.actor().message(Msg.success("Loaded " + loaded + " chunk(s) holding unknown blocks; "
+            ctx.actor().message(Msg.success("Loaded " + Msg.count(loaded, "chunk", "chunks") + " holding unknown blocks; "
                     + "the server rewrites them without the removed ids on its next save"));
         };
     }
@@ -552,8 +554,6 @@ final class AnvilCommands {
         entry.handler = ctx -> ctx.actor().message(Msg.info(
                 "debugfixroads is a diagnostic command of the old PlotSquared road format; nothing to do"));
     }
-
-    // ---------------------------------------------------------------- helpers
 
     private void replaceInSelection(Ctx ctx, Mask mask, Pattern pattern) {
         EditSession session = ctx.editSession("anvil replace");
@@ -574,7 +574,7 @@ final class AnvilCommands {
             changed += session.setBlock(position.x(), position.y(), position.z(),
                     target.apply(position)) ? 1 : 0;
         }
-        flush(ctx, session, "Replaced", Msg.count(changed) + "\u00a77 block(s)");
+        flush(ctx, session, "Replaced", Msg.blocks(changed));
     }
 
     /**
@@ -609,15 +609,15 @@ final class AnvilCommands {
         World world = ctx.world();
         Region region = ctx.selection();
         BlockStateRegistry registry = BlockState.registry();
-        Map<String, Long> counts = new LinkedHashMap<>();
-        for (BlockVector3 position : region) {
-            if (mask != null && !mask.test(position)) {
-                continue;
+        com.maxlananas.fawebim.core.util.StateCounts counts =
+                new com.maxlananas.fawebim.core.util.StateCounts(registry.stateCount());
+        region.forEachPosition((x, y, z) -> {
+            if (mask == null || mask.test(x, y, z)) {
+                counts.add(world.getBlock(x, y, z));
             }
-            int state = world.getBlock(position.x(), position.y(), position.z());
-            counts.merge(byState ? registry.describe(state) : registry.name(state), 1L, Long::sum);
-        }
-        return counts;
+            return false;
+        });
+        return counts.byName(byState ? registry::describe : registry::name);
     }
 
     private void distribution(Ctx ctx, Map<String, Long> counts) {
@@ -625,13 +625,13 @@ final class AnvilCommands {
             throw CommandRegistry.error("No block found");
         }
         long total = counts.values().stream().mapToLong(Long::longValue).sum();
-        ctx.actor().message(Msg.info("Distribution (" + Msg.formatNumber(total) + " blocks):"));
+        ctx.actor().message(Msg.title("Distribution (" + Msg.blocks(total) + ")"));
         List<Map.Entry<String, Long>> sorted = new ArrayList<>(counts.entrySet());
         sorted.sort(Comparator.comparingLong((Map.Entry<String, Long> entry) -> entry.getValue()).reversed());
         for (Map.Entry<String, Long> entry : sorted) {
             double share = 100.0 * entry.getValue() / total;
-            ctx.actor().message(Msg.of("§7 - §f" + entry.getKey() + "§7: "
-                    + Msg.formatNumber(entry.getValue()) + " (" + String.format(Locale.ROOT, "%.2f", share) + "%)"));
+            ctx.actor().message(Msg.item(entry.getKey(), Msg.formatNumber(entry.getValue()) + " ("
+                    + String.format(Locale.ROOT, "%.2f", share) + "%)"));
         }
     }
 
@@ -650,7 +650,7 @@ final class AnvilCommands {
 
     private void deleteUnvisited(Ctx ctx, List<int[]> chunks, String reason) {
         if (ctx.hasFlag("d")) {
-            ctx.actor().message(Msg.info(chunks.size() + " chunk(s) qualify (" + reason + ")"));
+            ctx.actor().message(Msg.info(Msg.count(chunks.size(), "chunk", "chunks") + " qualify (" + reason + ")"));
         }
         deleteChunks(ctx, chunks, reason);
     }
@@ -663,7 +663,7 @@ final class AnvilCommands {
         }
         EditSession session = ctx.editSession("anvil delete");
         int cleared = clearChunks(session, ctx.world(), chunks);
-        flush(ctx, session, "Deleted", Msg.count(cleared) + "\u00a77 chunk(s) \u00a78(" + reason + "\u00a78)");
+        flush(ctx, session, "Deleted", Msg.count(cleared, "chunk", "chunks") + " (" + reason + ")");
     }
 
     /**

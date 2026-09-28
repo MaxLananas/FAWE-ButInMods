@@ -7,7 +7,6 @@ import com.maxlananas.fawebim.core.math.Vector3;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -42,6 +41,25 @@ public interface Region extends Iterable<BlockVector3> {
     Iterator<BlockVector3> iterator();
 
     /**
+     * The first position of the region inside a box, from the box's lowest
+     * corner in the order y, z, x, or {@code null} when the region has none
+     * there. Which cells of the game's 4x4x4 biome grid a region reaches, and
+     * where to read each one's biome, are this question.
+     */
+    default BlockVector3 firstInside(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        for (int y = minY; y <= maxY; y++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int x = minX; x <= maxX; x++) {
+                    if (contains(x, y, z)) {
+                        return new BlockVector3(x, y, z);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Receives one block of a region; returning true counts it, the way a
      * command counts the blocks it changed.
      */
@@ -52,19 +70,20 @@ public interface Region extends Iterable<BlockVector3> {
     }
 
     /**
-     * Walks every block of the region without building a {@link BlockVector3}
-     * for it.
+     * Walks every block of the region, each exactly once, without building a
+     * {@link BlockVector3} for it.
      *
-     * <p>Region commands visit a million blocks on a large selection, and an
-     * object per block is the largest allocation of such an edit. The default
-     * here keeps the iterator contract for the shapes whose traversal is not on
-     * a hot path; a region walked constantly (the cuboid) overrides it with
-     * plain loops.</p>
+     * <p>Region commands visit millions of blocks on a large selection, and an
+     * object per block is the largest allocation of such an edit. Every shape
+     * of this package walks itself a chunk column at a time and a section at a
+     * time inside it, which is the order the edit buffer and the world store
+     * blocks in; the default is only there for a region written elsewhere.</p>
      *
-     * @return how many visits reported true
+     * @return how many visits reported true, as a {@code long}: a selection can
+     *         hold more blocks than an {@code int} counts
      */
-    default int forEachPosition(BlockVisitor visitor) {
-        int visited = 0;
+    default long forEachPosition(BlockVisitor visitor) {
+        long visited = 0;
         for (BlockVector3 position : this) {
             if (visitor.visit(position.x(), position.y(), position.z())) {
                 visited++;
@@ -102,23 +121,44 @@ public interface Region extends Iterable<BlockVector3> {
         return (long) getWidth() * getLength();
     }
 
-    default List<BlockVector2> getChunks() {
+    /** How many chunks the bounding box of the region touches, without listing them. */
+    default long getChunkCount() {
         BlockVector3 min = getMinimumPoint();
         BlockVector3 max = getMaximumPoint();
-        LinkedHashSet<BlockVector2> chunks = new LinkedHashSet<>();
+        return ((long) (max.x() >> 4) - (min.x() >> 4) + 1) * ((long) (max.z() >> 4) - (min.z() >> 4) + 1);
+    }
+
+    /**
+     * The chunks the bounding box of the region touches.
+     *
+     * <p>A list of every chunk is an object per chunk; a selection across a
+     * large part of the world would fill the heap with it before any command
+     * ran, so a list of more than {@value #MAX_LISTED_CHUNKS} chunks is refused.
+     * {@link #getChunkCount()} answers how many there are without the list.</p>
+     */
+    default List<BlockVector2> getChunks() {
+        long count = getChunkCount();
+        if (count > MAX_LISTED_CHUNKS) {
+            throw new com.maxlananas.fawebim.core.util.InputException("The selection spans "
+                    + count + " chunks; at most " + MAX_LISTED_CHUNKS + " can be worked on chunk by chunk");
+        }
+        BlockVector3 min = getMinimumPoint();
+        BlockVector3 max = getMaximumPoint();
+        List<BlockVector2> chunks = new ArrayList<>((int) count);
         for (int cx = min.x() >> 4; cx <= (max.x() >> 4); cx++) {
             for (int cz = min.z() >> 4; cz <= (max.z() >> 4); cz++) {
                 chunks.add(new BlockVector2(cx, cz));
             }
         }
-        return new ArrayList<>(chunks);
+        return chunks;
     }
+
+    /** The most chunks {@link #getChunks()} lists. */
+    int MAX_LISTED_CHUNKS = 1 << 20;
 
     default boolean isFlat() {
         return getMinimumY() == getMaximumY();
     }
-
-    // ------------------------------------------------------------ transform ops
 
     /** Expands the region in place by a signed amount per axis. */
     boolean expand(BlockVector3 amount);
@@ -126,14 +166,42 @@ public interface Region extends Iterable<BlockVector3> {
     /** Contracts the region in place by a signed amount per axis. */
     boolean contract(BlockVector3 amount);
 
-    default boolean shift(BlockVector3 amount) {
-        boolean changed = !amount.equals(BlockVector3.ZERO);
-        if (changed) {
-            expand(amount);
-            contract(amount.multiply(-1));
+    /**
+     * Expands the region by several amounts taken as one, as WorldEdit's
+     * {@code expand(BlockVector3...)} does. A box takes them one after the
+     * other; a round shape moves its centre by half their sum and grows by half
+     * the sum of their lengths, so the +3 and -3 of {@code //outset 3} grow a
+     * sphere by three on each side and leave its centre where it is, where
+     * either amount on its own would move the centre by half a block.
+     */
+    default boolean expand(BlockVector3... amounts) {
+        boolean changed = false;
+        for (BlockVector3 amount : amounts) {
+            changed |= expand(amount);
         }
         return changed;
     }
+
+    /** The reverse of {@link #expand(BlockVector3...)}. */
+    default boolean contract(BlockVector3... amounts) {
+        boolean changed = false;
+        for (BlockVector3 amount : amounts) {
+            changed |= contract(amount);
+        }
+        return changed;
+    }
+
+    /**
+     * Moves the region by an amount, keeping its shape.
+     *
+     * <p>Every shape moves its own defining points. Moving by an expansion and
+     * a contraction of the opposite side was the old default, and for a box it
+     * was no move at all: the contraction took back the expansion, so
+     * {@code //shift} answered that the selection moved and left it in place.</p>
+     *
+     * @return whether the amount moved the region at all
+     */
+    boolean shift(BlockVector3 amount);
 
     /**
      * Grows the region towards the given vertical bounds, used by
@@ -151,4 +219,11 @@ public interface Region extends Iterable<BlockVector3> {
 
     /** Short human description used by {@code //size} and the selection wand. */
     String describe();
+
+    /**
+     * A region of the same shape that later changes of this one do not reach,
+     * WorldEdit's {@code Region.clone()}: a clipboard keeps the outline it was
+     * copied from while the selection it came from goes on changing.
+     */
+    Region copy();
 }

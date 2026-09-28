@@ -3,13 +3,15 @@ package com.maxlananas.fawebim.core.clipboard;
 import java.util.Locale;
 
 /**
- * The filter {@code /list} sets for the schematic listings, FAWE's
- * {@code ListFilters}.
+ * The filter {@code /list} sets for the schematic listings, FAWE's filter
+ * names: {@code global} and {@code public} for the shared folder, {@code
+ * local}, {@code private}, {@code me} and {@code mine} for the player's own,
+ * {@code all} for both.
  *
- * <p>Schematics live either in the shared directory, which every player sees
- * ({@code global}, {@code public}), or in a player's own directory
- * ({@code local}, {@code private}, {@code me}, {@code mine}). {@code all} lists
- * both.</p>
+ * <p>A player has a folder of their own in FAWE only with per-player
+ * schematics on. This mod keeps every schematic in the shared folder, as FAWE
+ * does by default, so the filter is remembered and every listing shows the
+ * shared folder.</p>
  */
 public enum ListFilter {
 

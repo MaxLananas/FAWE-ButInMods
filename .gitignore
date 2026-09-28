@@ -15,12 +15,13 @@ run/
 .classpath
 .project
 
-# Local test worlds / schematics / reports produced by the test-suite
-/testrun/
-/schematics/
-/brushes/
-/fawe-reports/
-/fawe-report.txt
+# Local test worlds / schematics / reports produced by the test-suite, at the
+# root or in core/, where Gradle runs it
+testrun/
+schematics/
+brushes/
+fawe-reports/
+fawe-report.txt
 *.class
 
 # Python bytecode from the doc generators

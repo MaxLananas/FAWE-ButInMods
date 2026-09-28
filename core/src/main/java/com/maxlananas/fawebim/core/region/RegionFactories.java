@@ -17,8 +17,12 @@ public final class RegionFactories {
         return switch (key) {
             case "sphere", "ball" -> (center, radius) -> new EllipsoidRegion(
                     center.toCenter(), new com.maxlananas.fawebim.core.math.Vector3(radius, radius, radius), minY, maxY);
+            // WorldEdit's cylinder shape is a disc one block high at the centre;
+            // the world's height is what fixedcyl is for. Spanning the world here
+            // put a cylinder brush through every layer from bedrock to the sky.
             case "cyl", "cylinder" -> (center, radius) -> new CylinderRegion(
-                    new Vector2(center.x() + 0.5, center.z() + 0.5), radius, radius, minY, maxY);
+                    new Vector2(center.x() + 0.5, center.z() + 0.5), radius, radius,
+                    Math.max(minY, Math.min(maxY, center.y())), Math.max(minY, Math.min(maxY, center.y())));
             case "cube", "cuboid", "box" -> (center, radius) -> {
                 int r = (int) Math.floor(radius);
                 return new CuboidRegion(center.add(-r, -r, -r), center.add(r, r, r));

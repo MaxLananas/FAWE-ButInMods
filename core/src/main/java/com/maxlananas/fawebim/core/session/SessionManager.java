@@ -82,11 +82,22 @@ public final class SessionManager {
         return consoleSession;
     }
 
+    /**
+     * Forgets the session of a player who left. An edit of theirs that never
+     * closed is logged first, so leaving does not lose it from the edit log.
+     */
     public void remove(UUID uuid) {
-        sessions.remove(uuid);
+        LocalSession removed = sessions.remove(uuid);
+        if (removed != null) {
+            removed.getHistory().publishPending();
+        }
     }
 
+    /** Forgets every session, when the server stops; pending edits are logged first. */
     public void clear() {
+        for (LocalSession session : all()) {
+            session.getHistory().publishPending();
+        }
         sessions.clear();
     }
 

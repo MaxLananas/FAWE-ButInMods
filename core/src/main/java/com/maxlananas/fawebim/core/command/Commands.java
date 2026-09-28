@@ -24,7 +24,6 @@ import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.World;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
-import com.maxlananas.fawebim.core.world.Direction;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,15 +45,13 @@ public final class Commands {
         this.registry = registry;
     }
 
-    // ------------------------------------------------------------------ helpers
-
     /**
      * Flushes the queued blocks and answers with one line naming what the
      * command did - a label, the count and the time - or with nothing at all
      * when the handler already reported the result itself.
      */
     private void flush(Ctx ctx, EditSession session, String label) {
-        flush(ctx, session, label, session.getBlocksChanged(), "block(s)");
+        flush(ctx, session, label, session.getBlocksChanged(), "block");
     }
 
     private void flush(Ctx ctx, EditSession session, String label, long changed, String unit) {
@@ -71,8 +68,30 @@ public final class Commands {
         return BlockState.registry().air();
     }
 
+    /** WorldEdit's MathUtils.roundHalfUp: a half rounds away from zero. */
+    private static int roundHalfUp(double value) {
+        return (int) (Math.signum(value) * Math.round(Math.abs(value)));
+    }
+
+    /**
+     * The levels {@code //removeabove} and {@code //removebelow} clear, counted
+     * as FAWE counts them: the player's own and as many more as typed, never
+     * more than the world is high, which is also what no height means.
+     */
+    private static int removalHeight(Ctx ctx, EditSession session) {
+        int world = session.maxY() - session.minY() + 1;
+        if (ctx.args().size() < 2) {
+            return world;
+        }
+        long height = Math.min(world, ctx.intArg(1) + 1L);
+        if (height < 1) {
+            throw CommandRegistry.error("The height must be at least 0");
+        }
+        return (int) height;
+    }
+
     /** Replaces every block in a region matching {@code mask} with {@code pattern}. */
-    private int fill(EditSession session, Region region, Pattern pattern, Mask mask) {
+    private long fill(EditSession session, Region region, Pattern pattern, Mask mask) {
         return region.forEachPosition((x, y, z) -> {
             if (mask != null && !mask.test(x, y, z)) {
                 return false;
@@ -110,8 +129,6 @@ public final class Commands {
         Stubs.register(registry);
     }
 
-    // ---------------------------------------------------------------- selection
-
     private void registerSelection() {
         CommandRegistry.Entry e1 = registry.register("//pos1", "//p1");
         e1.description = "Set position 1 to your position or the given coordinates";
@@ -119,9 +136,7 @@ public final class Commands {
         e1.arguments.add("[coordinates]");
         e1.handler = ctx -> {
                     BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
-                    RegionSelector selector = ctx.session().getSelector(ctx.world());
-                    selector.selectPrimary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 1", "set to " + Msg.value(pos).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), pos, true, true);
                 };
 
 
@@ -131,9 +146,7 @@ public final class Commands {
         e2.arguments.add("[coordinates]");
         e2.handler = ctx -> {
                     BlockVector3 pos = ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
-                    RegionSelector selector = ctx.session().getSelector(ctx.world());
-                    selector.selectSecondary(pos, com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 2", "set to " + Msg.value(pos).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), pos, false, true);
                 };
 
 
@@ -143,9 +156,7 @@ public final class Commands {
         e3.requiresPlayer = true;
         e3.handler = ctx -> {
                     BlockVector3 target = ctx.targetBlock(100);
-                    ctx.session().getSelector(ctx.world()).selectPrimary(target,
-                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 1", "set to " + Msg.value(target).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), target, true, true);
                 };
 
 
@@ -155,9 +166,7 @@ public final class Commands {
         e4.requiresPlayer = true;
         e4.handler = ctx -> {
                     BlockVector3 target = ctx.targetBlock(100);
-                    ctx.session().getSelector(ctx.world()).selectSecondary(target,
-                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                    ctx.actor().message(Msg.result("Position 2", "set to " + Msg.value(target).raw()));
+                    com.maxlananas.fawebim.core.tool.Tools.select(ctx.actor(), target, false, true);
                 };
 
 
@@ -197,37 +206,43 @@ public final class Commands {
         // ";" is the spelling WorldEdit gives this command: the client sends the
         // line without its leading slashes, so //; and /; reach it.
         CommandRegistry.Entry e6 = registry.register("//sel", ";");
-        e6.description = "Choose the selection type: cuboid, extend, poly, ellipsoid, sphere, cyl, convex";
+        e6.description = "Choose a region selector";
         e6.group = "selection";
-        e6.arguments.add("[type]");
+        e6.arguments.add("[selector]");
         // -d remembers the selector as the default for new sessions.
         e6.booleanFlags.add("d");
         e6.handler = ctx -> {
-                    if (ctx.args().isEmpty()) {
-                        ctx.actor().message(Msg.info("Selection type: ").append(Msg.value(
-                                ctx.session().getSelector(ctx.world()).getTypeName())));
-                        ctx.actor().message(Msg.info("Types: cuboid, extend, poly, ellipsoid, sphere, cyl, convex"));
+                    RegionSelector current = ctx.session().getSelector(ctx.world());
+                    // Nothing after //sel clears the selection, as in WorldEdit.
+                    if (ctx.args().isEmpty() || ctx.arg(0).equalsIgnoreCase("none")) {
+                        current.clear();
+                        ctx.actor().updateSelectionOutline();
+                        ctx.actor().message(Msg.result("Selection", "cleared"));
                         return;
                     }
-                    String type = ctx.arg(0).toLowerCase(Locale.ROOT);
-                    if (type.equals("none")) {
-                        ctx.session().getSelector(ctx.world()).clear();
-                        ctx.actor().message(Msg.info("Selection cleared"));
+                    String type = ctx.arg(0);
+                    if (type.equalsIgnoreCase("list")) {
+                        listSelectors(ctx, current);
                         return;
                     }
-                    RegionSelector selector = LocalSession.newSelectors(ctx.world(), type);
+                    RegionSelector selector = com.maxlananas.fawebim.core.region.Selectors.create(type, ctx.world(),
+                            current);
                     if (selector == null) {
-                        throw CommandRegistry.error("Unknown selection type '" + type
-                                + "'. Try cuboid, extend, poly, ellipsoid, sphere, cyl, convex.");
+                        throw CommandRegistry.error("Unknown selection type '" + type + "'. Try "
+                                + String.join(", ", com.maxlananas.fawebim.core.region.Selectors.NAMES)
+                                + ", or //sel list");
                     }
                     ctx.session().setSelector(selector);
                     if (ctx.hasFlag("d")) {
                         ctx.session().setDefaultSelectorType(selector.getTypeName());
                         ctx.actor().message(Msg.success("Default selection type set to " + selector.getTypeName()));
-                        return;
                     }
                     ctx.actor().message(Msg.result("Selection type", "set to "
                             + Msg.value(selector.getTypeName()).raw()));
+                    ctx.actor().message(Msg.hint(selector.usage() + (limitsVertices(selector)
+                            ? " (" + (com.maxlananas.fawebim.core.region.SelectorLimits.PLAYER_VERTEX_LIMIT + 1)
+                            + " points at most)" : "")));
+                    ctx.actor().updateSelectionOutline();
                 };
 
 
@@ -243,7 +258,7 @@ public final class Commands {
                     if (ctx.actor().giveWand(item)) {
                         ctx.actor().message(Msg.result(
                                 ctx.hasFlag("n") ? "Navigation wand" : "Wand",
-                                Msg.value(item).raw() + "\u00a77 given"));
+                                Msg.value(item).raw() + " given"));
                     } else {
                         ctx.actor().message(Msg.error("Could not give you the wand"));
                     }
@@ -256,9 +271,14 @@ public final class Commands {
         e8.group = "selection";
         e8.handler = ctx -> {
                     LocalSession session = ctx.session();
-                    session.setFastMode(!session.isFastMode());
-                    ctx.actor().message(Msg.info("Edit wand is now "
-                            + (session.isFastMode() ? "enabled" : "disabled")));
+                    boolean enabled = !session.isSelectionWandEnabled();
+                    session.setSelectionWandEnabled(enabled);
+                    if (enabled) {
+                        ctx.actor().message(Msg.success("The selection wand selects again"));
+                    } else {
+                        ctx.actor().message(Msg.success("The selection wand is off: it is an item again"));
+                        ctx.actor().message(Msg.hint("//pos1 and //pos2 still select, //toggleeditwand turns it back on"));
+                    }
                 };
 
 
@@ -308,7 +328,7 @@ public final class Commands {
                     ctx.actor().message(Msg.keyValue("Dimensions",
                             region.getWidth() + " x " + region.getHeight() + " x " + region.getLength()));
                     ctx.actor().message(Msg.keyValue("Volume", Msg.formatNumber(region.getVolume())));
-                    ctx.actor().message(Msg.keyValue("Chunks", region.getChunks().size()));
+                    ctx.actor().message(Msg.keyValue("Chunks", Msg.formatNumber(region.getChunkCount())));
                 };
 
 
@@ -319,66 +339,47 @@ public final class Commands {
         e12.arguments.add("mask");
         e12.handler = ctx -> {
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    int count = 0;
-                    for (BlockVector3 position : ctx.selection()) {
-                        if (mask.test(position)) {
-                            count++;
-                        }
-                    }
-                    ctx.actor().message(Msg.keyValue("Count", Msg.formatNumber(count)));
+                    long count = ctx.selection().forEachPosition(mask::test);
+                    ctx.actor().message(Msg.result("Counted", Msg.count(count)));
                 };
 
 
         CommandRegistry.Entry e13 = registry.register("//distr", "//distribution");
         e13.description = "Show the block distribution in the selection";
         e13.group = "selection";
-        e13.requiresSelection = true;
         e13.booleanFlags.add("c");
         e13.booleanFlags.add("d");
         e13.valueFlags.add("p");
         e13.arguments.add("[-p <page>]");
+        // -c reads the clipboard, which needs no selection: the selection is
+        // asked for below when it is the one read.
         e13.requiresSelection = false;
         e13.handler = ctx -> {
-                    java.util.Map<Integer, Integer> counts = new java.util.LinkedHashMap<>();
-                    if (ctx.hasFlag("c")) {
-                        if (!ctx.session().hasClipboard()) {
-                            throw CommandRegistry.error("No clipboard: use //copy first");
-                        }
-                        BlockArrayClipboard clip = ctx.session().getClipboard().getClipboard();
-                        for (BlockVector3 position : clip.positions()) {
-                            int state = clip.getBlock(position);
-                            if (BlockState.registry().isAirLike(state)) {
-                                continue;
-                            }
-                            counts.merge(state, 1, Integer::sum);
+                    // -p pages the distribution the last //distr counted, as in
+                    // FAWE: counting the selection again for every page made
+                    // each click through a large one as slow as the first, and
+                    // a page could belong to a different count than the one
+                    // before it.
+                    com.maxlananas.fawebim.core.session.LocalSession.Distribution distribution;
+                    if (ctx.hasFlag("p")) {
+                        distribution = ctx.session().getLastDistribution();
+                        if (distribution == null) {
+                            throw CommandRegistry.error("No previous distribution: run //distr first");
                         }
                     } else {
-                        for (BlockVector3 position : ctx.selection()) {
-                            int state = ctx.world().getBlock(position.x(), position.y(), position.z());
-                            counts.merge(state, 1, Integer::sum);
-                        }
+                        distribution = distribution(ctx);
+                        ctx.session().setLastDistribution(distribution);
                     }
-                    final long total = counts.values().stream().mapToLong(Integer::longValue).sum();
-                    ctx.actor().message(Msg.info("Block distribution (" + Msg.formatNumber(total) + " blocks)"));
-                    BlockStateRegistry blockRegistry = BlockState.registry();
-                    // -d separates the states of a block, e.g. oak_log[axis=x].
-                    boolean separate = ctx.hasFlag("d");
-                    java.util.Map<String, Integer> named = new java.util.LinkedHashMap<>();
-                    for (java.util.Map.Entry<Integer, Integer> entry : counts.entrySet()) {
-                        String name = separate ? blockRegistry.describe(entry.getKey())
-                                : blockRegistry.name(entry.getKey());
-                        named.merge(name, entry.getValue(), Integer::sum);
-                    }
-                    java.util.List<java.util.Map.Entry<String, Integer>> sorted = new java.util.ArrayList<>(named.entrySet());
-                    sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+                    long total = distribution.total();
+                    java.util.List<java.util.Map.Entry<String, Long>> sorted = distribution.entries();
+                    ctx.actor().message(Msg.title("Block distribution (" + Msg.blocks(total) + ")"));
                     Page page = Page.of(ctx, sorted.size());
-                    for (java.util.Map.Entry<String, Integer> entry : sorted.subList(page.from(), page.to())) {
-                        ctx.actor().message(Msg.of("§7 - §f" + entry.getKey() + " §7= §b" + entry.getValue()
-                                + " §7(" + String.format(Locale.ROOT, "%.2f",
-                                entry.getValue() * 100.0 / Math.max(1, total)) + "%)"));
+                    for (java.util.Map.Entry<String, Long> entry : sorted.subList(page.from(), page.to())) {
+                        ctx.actor().message(Msg.item(entry.getKey(), Msg.formatNumber(entry.getValue()) + " ("
+                                + String.format(Locale.ROOT, "%.2f", entry.getValue() * 100.0 / Math.max(1, total))
+                                + "%)"));
                     }
                     page.hint(ctx, "//distr");
-
                 };
 
 
@@ -402,16 +403,21 @@ public final class Commands {
                         return;
                     }
                     int amount = ctx.intArg(0);
-                    int reverse = ctx.intArg(1, 0);
-                    List<BlockVector3> directions = expandDirections(ctx,
-                            ctx.args().size() > 2 ? ctx.joined(2) : "me");
+                    int reverse = reverseAmount(ctx);
+                    List<BlockVector3> directions = expandDirections(ctx, directionArgument(ctx));
+                    // Both amounts of a direction go to the region together, as
+                    // WorldEdit hands them: a sphere takes 3 and a reverse 3 as
+                    // three more on each side, which neither half is on its own.
                     for (BlockVector3 direction : directions) {
-                        region.expand(direction.multiply(capped(region, amount,
-                                roomToGrow(region, direction.multiply(Integer.signum(amount)), ctx.world()))));
-                        if (reverse != 0) {
-                            BlockVector3 opposite = direction.multiply(-1);
-                            region.expand(opposite.multiply(capped(region, reverse,
-                                    roomToGrow(region, opposite.multiply(Integer.signum(reverse)), ctx.world()))));
+                        BlockVector3 opposite = direction.multiply(-1);
+                        int forward = capped(region, amount,
+                                roomToGrow(region, direction.multiply(Integer.signum(amount)), ctx.world()));
+                        int back = capped(region, reverse,
+                                roomToGrow(region, opposite.multiply(Integer.signum(reverse)), ctx.world()));
+                        if (back == 0) {
+                            region.expand(direction.multiply(forward));
+                        } else {
+                            region.expand(direction.multiply(forward), opposite.multiply(back));
                         }
                     }
                     ctx.actor().message(Msg.result("Region expanded", Msg.value(region.describe()).raw()));
@@ -428,15 +434,18 @@ public final class Commands {
         e15.handler = ctx -> {
                     Region region = ctx.selection();
                     int amount = ctx.intArg(0);
-                    int reverse = ctx.intArg(1, 0);
-                    List<BlockVector3> directions = expandDirections(ctx,
-                            ctx.args().size() > 2 ? ctx.joined(2) : "me");
+                    int reverse = reverseAmount(ctx);
+                    List<BlockVector3> directions = expandDirections(ctx, directionArgument(ctx));
                     for (BlockVector3 direction : directions) {
-                        region.contract(direction.multiply(capped(region, amount,
-                                roomToShrink(region, direction))));
-                        if (reverse != 0) {
-                            region.contract(direction.multiply(-1).multiply(capped(region, reverse,
-                                    roomToShrink(region, direction))));
+                        // The reverse amount shrinks the same axis from the other
+                        // side, so it gets what the first one leaves.
+                        int room = roomToShrink(region, direction);
+                        int forward = capped(region, amount, room);
+                        int back = capped(region, reverse, room - Math.abs(forward));
+                        if (back == 0) {
+                            region.contract(direction.multiply(forward));
+                        } else {
+                            region.contract(direction.multiply(forward), direction.multiply(-back));
                         }
                     }
                     ctx.actor().message(Msg.result("Region contracted", Msg.value(region.describe()).raw()));
@@ -478,14 +487,12 @@ public final class Commands {
                     if (horizontal && vertical) {
                         throw CommandRegistry.error("Specify either -h or -v, not both");
                     }
-                    amount = capped(region, amount, outsetRoom(region, amount, horizontal, vertical, ctx.world()));
-                    if (horizontal) {
-                        region.expand(new BlockVector3(amount, 0, amount));
-                    } else if (vertical) {
-                        region.expand(new BlockVector3(0, amount, 0));
-                    } else {
-                        region.expand(new BlockVector3(amount, amount, amount));
+                    List<BlockVector3> sides = sides(horizontal, vertical);
+                    int room = Integer.MAX_VALUE;
+                    for (BlockVector3 side : sides) {
+                        room = Math.min(room, roomToGrow(region, side, ctx.world()));
                     }
+                    region.expand(each(sides, capped(region, amount, room)));
                     ctx.actor().message(Msg.success("Region outset: " + region.describe()));
                 };
 
@@ -505,47 +512,17 @@ public final class Commands {
                     if (horizontal && vertical) {
                         throw CommandRegistry.error("Specify either -h or -v, not both");
                     }
-                    amount = capped(region, amount, insetRoom(region, horizontal, vertical));
-                    if (horizontal) {
-                        region.contract(new BlockVector3(amount, 0, amount));
-                    } else if (vertical) {
-                        region.contract(new BlockVector3(0, amount, 0));
-                    } else {
-                        region.contract(new BlockVector3(amount, amount, amount));
+                    // Both sides of an axis move in, so it keeps at least one
+                    // block when each takes half of what is there.
+                    List<BlockVector3> sides = sides(horizontal, vertical);
+                    int room = Integer.MAX_VALUE;
+                    for (BlockVector3 side : sides) {
+                        room = Math.min(room, roomToShrink(region, side) / 2);
                     }
+                    region.contract(each(sides, capped(region, amount, room)));
                     ctx.actor().message(Msg.success("Region inset: " + region.describe()));
                 };
 
-    }
-
-    /**
-     * Parses FAWE's duration syntax: {@code 30s}, {@code 5m}, {@code 2h},
-     * {@code 1d} or a bare number of minutes. Returns milliseconds.
-     */
-    /** Reads a duration such as {@code 30m}; bare numbers count in minutes. */
-    static long parseDuration(String input) {
-        String value = input.trim().toLowerCase(Locale.ROOT);
-        if (value.isEmpty()) {
-            throw CommandRegistry.error("Empty duration");
-        }
-        long multiplier = 60_000L;
-        char unit = value.charAt(value.length() - 1);
-        if (!Character.isDigit(unit)) {
-            multiplier = switch (unit) {
-                case 's' -> 1000L;
-                case 'm' -> 60_000L;
-                case 'h' -> 3_600_000L;
-                case 'd' -> 86_400_000L;
-                case 'w' -> 604_800_000L;
-                default -> throw CommandRegistry.error("Unknown time unit '" + unit + "'. Use s, m, h, d or w.");
-            };
-            value = value.substring(0, value.length() - 1);
-        }
-        try {
-            return Math.round(Double.parseDouble(value) * multiplier);
-        } catch (NumberFormatException e) {
-            throw CommandRegistry.error("'" + input + "' is not a valid duration");
-        }
     }
 
     /**
@@ -597,28 +574,33 @@ public final class Commands {
         return Math.max(0, room);
     }
 
-    private static int outsetRoom(Region region, int amount, boolean horizontal, boolean vertical,
-                                  World world) {
-        int sign = Integer.signum(amount);
-        int room = Integer.MAX_VALUE;
-        if (!vertical) {
-            room = Math.min(room, roomToGrow(region, new BlockVector3(sign, 0, sign), world));
-        }
+    /**
+     * The sides {@code //outset} and {@code //inset} move, in WorldEdit's
+     * order: both of every axis the switches leave, so the selection grows or
+     * shrinks around where it is. Moving only the positive side of each axis
+     * shifted the selection by the amount as it grew.
+     */
+    private static List<BlockVector3> sides(boolean horizontal, boolean vertical) {
+        List<BlockVector3> sides = new java.util.ArrayList<>(6);
         if (!horizontal) {
-            room = Math.min(room, roomToGrow(region, new BlockVector3(0, sign, 0), world));
+            sides.add(new BlockVector3(0, 1, 0));
+            sides.add(new BlockVector3(0, -1, 0));
         }
-        return room == Integer.MAX_VALUE ? 0 : room;
+        if (!vertical) {
+            sides.add(new BlockVector3(1, 0, 0));
+            sides.add(new BlockVector3(-1, 0, 0));
+            sides.add(new BlockVector3(0, 0, 1));
+            sides.add(new BlockVector3(0, 0, -1));
+        }
+        return sides;
     }
 
-    private static int insetRoom(Region region, boolean horizontal, boolean vertical) {
-        int room = Integer.MAX_VALUE;
-        if (!vertical) {
-            room = Math.min(room, roomToShrink(region, new BlockVector3(1, 0, 1)));
+    private static BlockVector3[] each(List<BlockVector3> sides, int amount) {
+        BlockVector3[] amounts = new BlockVector3[sides.size()];
+        for (int i = 0; i < amounts.length; i++) {
+            amounts[i] = sides.get(i).multiply(amount);
         }
-        if (!horizontal) {
-            room = Math.min(room, roomToShrink(region, new BlockVector3(0, 1, 0)));
-        }
-        return room == Integer.MAX_VALUE ? 0 : room;
+        return amounts;
     }
 
     /** An amount in the direction it will actually be applied in, capped by its room. */
@@ -627,10 +609,10 @@ public final class Commands {
     }
 
     /**
-     * The directions {@code //expand} grows in: a named direction, several of
-     * them separated by commas, an explicit {@code x,y,z} vector, or {@code me}
-     * for the way the player is looking. WorldEdit takes a list here where
-     * {@code //contract} takes one direction.
+     * The directions {@code //expand}, {@code //contract} and {@code //shift}
+     * work in: WorldEdit's list of directions separated by commas, each a name
+     * or a word relative to where the player looks, without diagonals. An
+     * explicit {@code x,y,z} vector is read as the one direction it is.
      */
     private List<BlockVector3> expandDirections(Ctx ctx, String input) {
         String text = input.trim().toLowerCase(Locale.ROOT);
@@ -653,48 +635,44 @@ public final class Commands {
         }
         List<BlockVector3> out = new ArrayList<>();
         for (String part : parts) {
-            out.add(directionVector(ctx, part.trim(), 1));
+            out.add(Directions.parse(ctx.actor(), part, false));
         }
         return out;
     }
 
     /**
-     * The vertical reach of WorldEdit's utility commands: its
-     * {@code default-vertical-height}, which is 128 blocks up and down when a
-     * command does not name a height of its own.
+     * The optional reverse amount of {@code //expand} and {@code //contract}.
+     * WorldEdit reads a word in its place as the start of the directions, so
+     * {@code //expand 10 up} grows ten blocks up; the port refused it as a
+     * number it could not read.
+     */
+    private static int reverseAmount(Ctx ctx) {
+        Ctx.Argument second = ctx.argument(1);
+        return second != null && second.isNumber() ? ctx.intArg(1) : 0;
+    }
+
+    /** The directions of {@code //expand} and {@code //contract}, after the optional reverse amount. */
+    private static String directionArgument(Ctx ctx) {
+        Ctx.Argument second = ctx.argument(1);
+        int from = second != null && second.isNumber() ? 2 : 1;
+        return ctx.args().size() > from ? ctx.joined(from) : "me";
+    }
+
+    /**
+     * The vertical reach of the utility commands that do not name a height,
+     * up and down: {@code limits.vertical-height.default}, 256 unless
+     * configured, as in FAWE.
      */
     private static int defaultVerticalHeight() {
-        return 128;
+        return com.maxlananas.fawebim.core.platform.Config.get().defaultVerticalHeight;
     }
 
-    private BlockVector3 directionVector(Ctx ctx, String direction, int amount) {
-        String dir = direction.toLowerCase(Locale.ROOT);
-        if (dir.equals("me")) {
-            Direction facing = ctx.actor().facing();
-            return facing.toVector().multiply(amount);
-        }
-        if (dir.equals("back")) {
-            return ctx.actor().facing().opposite().toVector().multiply(amount);
-        }
-        if (dir.equals("north") || dir.equals("south") || dir.equals("east") || dir.equals("west")
-                || dir.equals("up") || dir.equals("down")) {
-            return Direction.parse(dir).toVector().multiply(amount);
-        }
-        if (dir.contains(",")) {
-            String[] parts = dir.split(",");
-            return new BlockVector3(Integer.parseInt(parts[0].trim()) * amount,
-                    Integer.parseInt(parts[1].trim()) * amount,
-                    Integer.parseInt(parts[2].trim()) * amount);
-        }
-        return new BlockVector3(0, amount, 0);
-    }
-
-    // ------------------------------------------------------------------- region
 
     private void registerRegion() {
         CommandRegistry.Entry e19 = registry.register("//set");
         e19.description = "Set all blocks inside a region to a pattern";
         e19.group = "region";
+        e19.confirmRegion = true;
         e19.requiresSelection = true;
         e19.booleanFlags.add("n");
         e19.booleanFlags.add("e");
@@ -703,7 +681,7 @@ public final class Commands {
         e19.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Pattern pattern = Parsers.pattern(ctx.joined(0), ctx);
+                    Pattern pattern = Parsers.pattern(ctx.requiredJoined(0), ctx);
                     Mask mask = null;
                     if (ctx.hasFlag("m")) {
                         mask = ctx.session().getMask();
@@ -716,102 +694,51 @@ public final class Commands {
         CommandRegistry.Entry e20 = registry.register("//replace", "//re");
         e20.description = "Replace all blocks matching a mask with a pattern inside a region";
         e20.group = "region";
+        e20.confirmRegion = true;
         e20.requiresSelection = true;
         e20.booleanFlags.add("e");
-        e20.arguments.add("mask");
+        e20.arguments.add("[mask]");
         e20.arguments.add("pattern");
         e20.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    Pattern pattern = Parsers.pattern(ctx.joined(1), ctx);
+                    // As in WorldEdit, a line with one argument names the pattern
+                    // and replaces every block that is not air.
+                    boolean masked = ctx.args().size() > 1;
+                    Mask mask = masked ? Parsers.mask(ctx.arg(0), ctx) : new Masks.ExistingMask(session);
+                    Pattern pattern = Parsers.pattern(ctx.requiredJoined(masked ? 1 : 0), ctx);
                     fill(session, ctx.selection(), pattern, mask);
                     flush(ctx, session, "Replaced");
                 };
 
 
         CommandRegistry.Entry e21 = registry.register("//overlay");
-        e21.description = "Overlay the top layer of blocks with a pattern";
+        e21.description = "Set a block on top of blocks in the region";
         e21.group = "region";
+        e21.confirmRegion = true;
         e21.requiresSelection = true;
         e21.arguments.add("pattern");
         e21.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    Region region = ctx.selection();
-                    // FAWE overlays the top block of every column of the
-                    // selection's footprint: walk down from the ceiling and stop at
-                    // the first block. A column the selection does not hold - the
-                    // corner of the box around a cylinder, say - has nothing to
-                    // overlay, so it is skipped rather than walked.
-                    for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                        for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                            for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!region.contains(x, y, z)) {
-                                    continue;
-                                }
-                                if (!BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    session.setBlock(x, y, z, pattern.apply(x, y, z));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Overlaid");
+                    int changed = com.maxlananas.fawebim.core.function.Layers.overlay(session, ctx.selection(),
+                            pattern);
+                    flush(ctx, session, "Overlaid", changed, "block");
                 };
 
 
         CommandRegistry.Entry e22 = registry.register("//walls");
         e22.description = "Build the walls of the selection";
         e22.group = "region";
+        e22.confirmRegion = true;
         e22.requiresSelection = true;
         e22.arguments.add("pattern");
         e22.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    Region region = ctx.selection();
-                    BlockVector3 min = region.getMinimumPoint();
-                    BlockVector3 max = region.getMaximumPoint();
-                    if (!(region instanceof com.maxlananas.fawebim.core.region.CuboidRegion)) {
-                        // The walls of a shape are the cells of the shape with a
-                        // neighbour outside it - FAWE's WallMakeMask - and not the
-                        // planes of the box around it.
-                        int walls = 0;
-                        for (BlockVector3 cell : region) {
-                            if (region.contains(cell.x() + 1, cell.y(), cell.z())
-                                    && region.contains(cell.x() - 1, cell.y(), cell.z())
-                                    && region.contains(cell.x(), cell.y(), cell.z() + 1)
-                                    && region.contains(cell.x(), cell.y(), cell.z() - 1)) {
-                                continue;
-                            }
-                            if (session.setBlock(cell.x(), cell.y(), cell.z(),
-                                    pattern.apply(cell.x(), cell.y(), cell.z()))) {
-                                walls++;
-                            }
-                        }
-                        flush(ctx, session, "Walls", walls, "block(s)");
-                        return;
-                    }
-                    // One plane at a time. The two planes of a direction used to
-                    // be written alternately, which left the chunk the previous
-                    // write went into on every block; a plane walks sixteen
-                    // blocks of one chunk before it moves to the next one.
-                    for (int y = min.y(); y <= max.y(); y++) {
-                        for (int x = min.x(); x <= max.x(); x++) {
-                            session.setBlock(x, y, min.z(), pattern.apply(x, y, min.z()));
-                        }
-                        for (int x = min.x(); x <= max.x(); x++) {
-                            session.setBlock(x, y, max.z(), pattern.apply(x, y, max.z()));
-                        }
-                        for (int z = min.z(); z <= max.z(); z++) {
-                            session.setBlock(min.x(), y, z, pattern.apply(min.x(), y, z));
-                        }
-                        for (int z = min.z(); z <= max.z(); z++) {
-                            session.setBlock(max.x(), y, z, pattern.apply(max.x(), y, z));
-                        }
-                    }
+                    Operations.walls(session, ctx.selection(), pattern);
                     flush(ctx, session, "Walls");
                 };
 
@@ -819,6 +746,7 @@ public final class Commands {
         CommandRegistry.Entry e23 = registry.register("//faces", "//outline");
         e23.description = "Build the faces of the selection";
         e23.group = "region";
+        e23.confirmRegion = true;
         e23.requiresSelection = true;
         e23.arguments.add("pattern");
         e23.handler = ctx -> {
@@ -833,6 +761,7 @@ public final class Commands {
         CommandRegistry.Entry e24 = registry.register("//center");
         e24.description = "Set the center block(s) of the selection";
         e24.group = "region";
+        e24.confirmRegion = true;
         e24.requiresSelection = true;
         e24.arguments.add("pattern");
         e24.handler = ctx -> {
@@ -841,15 +770,13 @@ public final class Commands {
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
                     Region region = ctx.selection();
                     Vector3 center = region.getCenter();
-                    int minX = (int) Math.floor(center.x());
-                    int minY = (int) Math.floor(center.y());
-                    int minZ = (int) Math.floor(center.z());
-                    int maxX = (int) Math.round(center.x());
-                    int maxY = (int) Math.round(center.y());
-                    int maxZ = (int) Math.round(center.z());
-                    for (int x = minX; x <= maxX; x++) {
-                        for (int y = minY; y <= maxY; y++) {
-                            for (int z = minZ; z <= maxZ; z++) {
+                    // FAWE's box: from the centre cut towards zero to the centre
+                    // rounded half away from zero, whichever way round that is.
+                    int[] from = {(int) center.x(), (int) center.y(), (int) center.z()};
+                    int[] to = {roundHalfUp(center.x()), roundHalfUp(center.y()), roundHalfUp(center.z())};
+                    for (int x = Math.min(from[0], to[0]); x <= Math.max(from[0], to[0]); x++) {
+                        for (int y = Math.min(from[1], to[1]); y <= Math.max(from[1], to[1]); y++) {
+                            for (int z = Math.min(from[2], to[2]); z <= Math.max(from[2], to[2]); z++) {
                                 session.setBlock(x, y, z, pattern.apply(x, y, z));
                             }
                         }
@@ -861,6 +788,7 @@ public final class Commands {
         CommandRegistry.Entry e25 = registry.register("//hollow");
         e25.description = "Hollow out the selection";
         e25.group = "region";
+        e25.confirmRegion = true;
         e25.requiresSelection = true;
         e25.valueFlags.add("m");
         e25.arguments.add("[thickness]");
@@ -885,6 +813,7 @@ public final class Commands {
         CommandRegistry.Entry e27 = registry.register("//smooth");
         e27.description = "Smooth the terrain in the selection";
         e27.group = "region";
+        e27.confirmRegion = true;
         e27.requiresSelection = true;
         // WorldEdit takes the mask of blocks the height map is built from as its
         // second argument, not as a switch.
@@ -896,84 +825,40 @@ public final class Commands {
                     String maskInput = ctx.arg(1, "");
                     Mask smoothMask = maskInput.isEmpty() ? null : Parsers.mask(maskInput, ctx);
                     int changed = HeightMaps.smooth(ctx.world(), session, ctx.selection(), iterations, smoothMask);
-                    flush(ctx, session, "Smoothed", changed, "block(s)");
+                    flush(ctx, session, "Smoothed", changed, "block");
                 };
 
 
         CommandRegistry.Entry e28 = registry.register("//naturalize");
-        e28.description = "Turn the terrain into grass over dirt over stone";
+        e28.description = "3 layers of dirt on top then rock below";
         e28.group = "region";
+        e28.confirmRegion = true;
         e28.requiresSelection = true;
         e28.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockStateRegistry blockRegistry = BlockState.registry();
-                    int grass = blockRegistry.defaultState("minecraft:grass_block");
-                    int dirt = blockRegistry.defaultState("minecraft:dirt");
-                    int stone = blockRegistry.defaultState("minecraft:stone");
-                    Region region = ctx.selection();
-                    for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                        for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                            int layer = 0;
-                            for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!region.contains(x, y, z)
-                                        || blockRegistry.isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    continue;
-                                }
-                                session.setBlock(x, y, z, switch (layer) {
-                                    case 0 -> grass;
-                                    case 1, 2 -> dirt;
-                                    default -> stone;
-                                });
-                                layer++;
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Naturalized");
+                    int changed = com.maxlananas.fawebim.core.function.Layers.naturalize(session, ctx.selection());
+                    flush(ctx, session, "Naturalized", changed, "block");
                 };
 
 
         CommandRegistry.Entry e29 = registry.register("//lay");
-        e29.description = "Lay a pattern on the ground, keeping natural layers below";
+        e29.description = "Set the top block in the region";
         e29.group = "region";
+        e29.confirmRegion = true;
         e29.requiresSelection = true;
         e29.arguments.add("pattern");
         e29.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    int layers = 1;
-                    Region region = ctx.selection();
-                    for (int x = region.getMinimumPoint().x(); x <= region.getMaximumPoint().x(); x++) {
-                        for (int z = region.getMinimumPoint().z(); z <= region.getMaximumPoint().z(); z++) {
-                            int placed = 0;
-                            for (int y = region.getMaximumPoint().y(); y >= region.getMinimumPoint().y(); y--) {
-                                if (!region.contains(x, y, z)
-                                        || BlockState.registry().isAirLike(ctx.world().getBlock(x, y, z))) {
-                                    continue;
-                                }
-                                if (placed < layers) {
-                                    session.setBlock(x, y, z, air());
-                                    placed++;
-                                } else if (region.contains(x, y + 1, z)) {
-                                    // The layer goes on top of the ground, which
-                                    // has to be inside the selection: a selection
-                                    // filled to its ceiling gets nothing put above
-                                    // it.
-                                    session.setBlock(x, y + 1, z, pattern.apply(x, y + 1, z));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Laid");
+                    int columns = com.maxlananas.fawebim.core.function.Layers.lay(session, ctx.selection(), pattern);
+                    flush(ctx, session, "Laid", columns, "block");
                 };
 
 
         CommandRegistry.Entry e30 = registry.register("//fill");
         e30.description = "Fill a hole";
         e30.group = "region";
-        e30.booleanFlags.add("r");
-        e30.booleanFlags.add("h");
         e30.arguments.add("pattern");
         e30.arguments.add("radius");
         e30.arguments.add("[depth]");
@@ -982,15 +867,14 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = Math.max(1, ctx.sizeArg(1, 1));
-                    int depth = Math.max(1, ctx.intArg(2, 1));
+                    double radius = Math.max(1, ctx.radiusArg(1));
+                    int depth = Math.max(1, ctx.sizeArg(2, 1));
                     BlockVector3 direction = ctx.args().size() < 4
                             ? new BlockVector3(0, -1, 0)
                             : expandDirections(ctx, ctx.joined(3)).get(0);
-                    BlockVector3 start = ctx.placement();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fillDirection(ctx.world(), session,
-                            start, pattern, radius, depth, direction);
-                    flush(ctx, session, "Filled", changed, "block(s)");
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fillDirection(session,
+                            ctx.placementInWorld(), pattern, radius, depth, direction);
+                    flush(ctx, session, "Filled", changed, "block");
                 };
 
 
@@ -1008,49 +892,34 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double radius = Math.max(1, ctx.doubleArg(1, 1));
+                    double radius = Math.max(1, ctx.radiusArg(1));
                     int depth = Math.max(1, ctx.intArg(2, Integer.MAX_VALUE));
-                    BlockVector3 start = ctx.placement() != null
-                            ? ctx.placement() : ctx.selection().getMinimumPoint();
-                    // The fill follows the empty space, so only air is replaced:
-                    // whatever the hole was dug through stays where it is.
-                    int changed = com.maxlananas.fawebim.core.function.Operations.floodFill(ctx.world(), session,
-                            start, pattern, (int) Math.ceil(radius), false,
-                            new Masks.AirMask(session, false), depth);
-                    flush(ctx, session, "Filled", changed, "block(s)");
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fillXz(session,
+                            ctx.placementInWorld(), pattern, radius, depth, true);
+                    flush(ctx, session, "Filled", changed, "block");
                 };
 
 
         CommandRegistry.Entry e31 = registry.register("//drain");
-        e31.description = "Drain liquids in the selection";
+        e31.description = "Drain a pool";
         e31.group = "region";
-        e31.requiresSelection = true;
         // -p removes the water plants, -w also un-waterlogs the blocks.
         e31.booleanFlags.add("p");
         e31.booleanFlags.add("w");
-        e31.arguments.add("[radius]");
+        e31.arguments.add("<radius>");
         e31.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    Masks.ExtentHolder.set(session);
-                    BlockVector3 start = ctx.placement() != null
-                            ? ctx.placement() : ctx.selection().getMinimumPoint();
-                    Mask drainMask = ctx.hasFlag("p")
-                            ? Parsers.mask("minecraft:water,minecraft:lava,minecraft:kelp,minecraft:seagrass,"
-                            + "minecraft:tall_seagrass,minecraft:lily_pad,minecraft:bubble_column", ctx)
-                            : new Masks.LiquidMask(session);
-                    int changed = com.maxlananas.fawebim.core.function.Operations.drain(ctx.world(), session, start,
-                            drainMask, ctx.intArg(0, 256));
-                    if (ctx.hasFlag("w")) {
-                        changed += com.maxlananas.fawebim.core.function.Operations.drainWaterlogged(session,
-                                ctx.selection());
-                    }
-                    flush(ctx, session, "Drained", changed, "block(s)");
+                    double radius = Math.max(0, ctx.radiusArg(0));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.drain(session,
+                            ctx.placementInWorld(), radius, ctx.hasFlag("w"), ctx.hasFlag("p"));
+                    flush(ctx, session, "Drained", changed, "block");
                 };
 
 
         CommandRegistry.Entry e32 = registry.register("//regen");
         e32.description = "Regenerate the selection from the world seed";
         e32.group = "region";
+        e32.confirmRegion = true;
         e32.requiresSelection = true;
         e32.arguments.add("[seed]");
         e32.arguments.add("[biome]");
@@ -1069,7 +938,7 @@ public final class Commands {
                     if (ctx.hasFlag("r")) {
                         seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
                     } else if (!ctx.args().isEmpty()) {
-                        seed = Long.parseLong(ctx.arg(0));
+                        seed = Parsers.longArg(ctx.arg(0), "seed");
                     }
                     if (seed != null && !ctx.world().supportsCustomRegenSeed()) {
                         ctx.actor().message(Msg.warn("This platform regenerates with the world seed;"
@@ -1094,97 +963,78 @@ public final class Commands {
                     if (seed != null) {
                         options.setSeed(seed);
                     }
-                    int regenerated = 0;
+                    long regenerated;
                     com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
-                    try {
-                        for (BlockVector2 chunk : region.getChunks()) {
-                            ctx.world().loadChunk(chunk.x(), chunk.z());
-                            if (ctx.world().regenerateChunk(chunk.x(), chunk.z(), options)) {
-                                regenerated++;
-                            }
+                    try (com.maxlananas.fawebim.core.world.World.GeneratedTerrain terrain =
+                                 ctx.world().generate(region.getChunks(), options)) {
+                        if (terrain == null) {
+                            throw CommandRegistry.error("This platform cannot generate terrain");
                         }
+                        // The edit session is opened without the mask, which
+                        // was cleared above.
+                        EditSession editSession = ctx.editSession();
+                        regenerated = com.maxlananas.fawebim.core.function.Regeneration.copy(terrain, region,
+                                editSession, options.shouldRegenBiomes());
+                        if (biomeId >= 0) {
+                            int targetBiome = biomeId;
+                            region.forEachPosition((x, y, z) -> editSession.setBiome(x, y, z, targetBiome));
+                        }
+                        editSession.flushQueue();
                     } finally {
                         ctx.session().setMask(previousMask);
                     }
-                    if (biomeId >= 0) {
-                        EditSession editSession = ctx.editSession();
-                        int targetBiome = biomeId;
-                        region.forEachPosition((x, y, z) -> {
-                            editSession.setBiome(x, y, z, targetBiome);
-                            return true;
-                        });
-                        editSession.flushQueue();
-                    }
-                    ctx.actor().message(Msg.result("Regenerated", Msg.count(regenerated)
-                            + "\u00a77 of " + Msg.count(region.getChunks().size())
-                            + "\u00a77 chunk(s) in \u00a7b" + timer.phrase()));
+                    ctx.actor().message(Msg.result("Regenerated", Msg.blocks(regenerated)
+                            + " in " + timer.phrase()));
                 };
 
 
+        // FAWE's //removeabove and //removebelow: the size is the apothem of a
+        // square around the player - 1 is the player's column - and the height
+        // counts levels from the player's own, the whole height of the world when
+        // none is given.
         CommandRegistry.Entry e33 = registry.register("//removeabove");
-        e33.description = "Remove blocks above a height";
+        e33.description = "Remove blocks above your head.";
         e33.group = "region";
         e33.arguments.add("[size]");
         e33.arguments.add("[height]");
         e33.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
-                    int size = ctx.sizeArg(0, 0);
-                    int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() + 1;
-                    for (int x = origin.x() - size; x <= origin.x() + size; x++) {
-                        for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                            for (int y = height; y <= ctx.world().maxY(); y++) {
-                                session.setBlock(x, y, z, air());
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Removed above");
+                    int apothem = Math.max(1, ctx.sizeArg(0, 1));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.removeAbove(session,
+                            ctx.placement(), apothem, removalHeight(ctx, session));
+                    flush(ctx, session, "Removed", changed, "block");
                 };
 
 
         CommandRegistry.Entry e34 = registry.register("//removebelow");
-        e34.description = "Remove blocks below a height";
+        e34.description = "Remove blocks below you.";
         e34.group = "region";
         e34.arguments.add("[size]");
         e34.arguments.add("[height]");
         e34.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    BlockVector3 origin = ctx.placement() != null ? ctx.placement() : BlockVector3.ZERO;
-                    int size = ctx.sizeArg(0, 0);
-                    int height = ctx.args().size() > 1 ? ctx.intArg(1) : origin.y() - 1;
-                    for (int x = origin.x() - size; x <= origin.x() + size; x++) {
-                        for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                            for (int y = ctx.world().minY(); y <= height; y++) {
-                                session.setBlock(x, y, z, air());
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Removed below");
+                    int apothem = Math.max(1, ctx.sizeArg(0, 1));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.removeBelow(session,
+                            ctx.placement(), apothem, removalHeight(ctx, session));
+                    flush(ctx, session, "Removed", changed, "block");
                 };
 
 
+        // FAWE's //removenear: what the mask matches in the cube of the apothem
+        // around the player, fifty unless one is given.
         CommandRegistry.Entry e35 = registry.register("//removenear");
-        e35.description = "Remove blocks near you";
+        e35.description = "Remove blocks near you.";
         e35.group = "region";
         e35.arguments.add("mask");
-        e35.arguments.add("[size]");
+        e35.arguments.add("[radius]");
         e35.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    int size = ctx.intArg(1, 10);
-                    BlockVector3 origin = ctx.placement();
-                    int changed = 0;
-                    for (int x = origin.x() - size; x <= origin.x() + size; x++) {
-                        for (int y = origin.y() - size; y <= origin.y() + size; y++) {
-                            for (int z = origin.z() - size; z <= origin.z() + size; z++) {
-                                if (mask.test(x, y, z) && session.setBlock(x, y, z, air())) {
-                                    changed++;
-                                }
-                            }
-                        }
-                    }
-                    flush(ctx, session, "Removed", changed, "block(s)");
+                    int apothem = Math.max(1, ctx.sizeArg(1, 50));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.removeNear(session,
+                            ctx.placement(), apothem, mask);
+                    flush(ctx, session, "Removed", changed, "block");
                 };
 
 
@@ -1192,14 +1042,15 @@ public final class Commands {
         e36.description = "Replace blocks near you";
         e36.group = "region";
         e36.arguments.add("size");
-        e36.arguments.add("mask");
+        e36.arguments.add("[mask]");
         e36.arguments.add("pattern");
         e36.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    int size = ctx.sizeArg(0, 0);
-                    Mask mask = Parsers.mask(ctx.arg(1), ctx);
-                    Pattern pattern = Parsers.pattern(ctx.joined(2), ctx);
+                    int size = Math.max(1, ctx.sizeArg(0));
+                    boolean masked = ctx.args().size() > 2;
+                    Mask mask = masked ? Parsers.mask(ctx.arg(1), ctx) : new Masks.ExistingMask(session);
+                    Pattern pattern = Parsers.pattern(ctx.requiredJoined(masked ? 2 : 1), ctx);
                     BlockVector3 origin = ctx.placement();
                     int changed = 0;
                     for (int x = origin.x() - size; x <= origin.x() + size; x++) {
@@ -1212,7 +1063,7 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session, "Replaced", changed, "block(s)");
+                    flush(ctx, session, "Replaced", changed, "block");
                 };
 
 
@@ -1229,11 +1080,11 @@ public final class Commands {
         e37.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.sizeArg(0, 10));
+                    double size = Math.max(1, ctx.radiusArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.simulateSnow(
                             ctx.world(), session, ctx.placement(), size, height, ctx.hasFlag("s"));
-                    flush(ctx, session, "Snowed", changed, "block(s)");
+                    flush(ctx, session, "Snowed", changed, "block");
                 };
 
 
@@ -1245,11 +1096,11 @@ public final class Commands {
         e38.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.sizeArg(0, 10));
+                    double size = Math.max(1, ctx.radiusArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
                     int changed = com.maxlananas.fawebim.core.function.Operations.thaw(
-                            ctx.world(), session, ctx.placement(), size, height);
-                    flush(ctx, session, "Thawed", changed, "block(s)");
+                            session, ctx.placement(), size, height);
+                    flush(ctx, session, "Thawed", changed, "block");
                 };
 
 
@@ -1263,11 +1114,11 @@ public final class Commands {
         e39.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    double size = Math.max(1, ctx.sizeArg(0, 10));
+                    double size = Math.max(1, ctx.radiusArg(0, 10));
                     int height = Math.max(1, ctx.intArg(1, defaultVerticalHeight()));
-                    int changed = com.maxlananas.fawebim.core.function.Operations.green(ctx.world(), session,
+                    int changed = com.maxlananas.fawebim.core.function.Operations.green(session,
                             ctx.placement(), size, height, !ctx.hasFlag("f"));
-                    flush(ctx, session, "Greened", changed, "block(s)");
+                    flush(ctx, session, "Greened", changed, "block");
                 };
 
 
@@ -1280,153 +1131,514 @@ public final class Commands {
         e40.handler = ctx -> {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    int radius = Math.max(1, ctx.intArg(0, 40));
+                    int ceiling = com.maxlananas.fawebim.core.platform.Config.get().maxRadius;
+                    int radius = Math.max(1, ctx.sizeArg(0, ceiling > 0 ? Math.min(40, ceiling) : 40));
                     Mask fire = Parsers.mask("minecraft:fire", ctx);
                     int changed = com.maxlananas.fawebim.core.function.Operations.removeNear(
-                            ctx.world(), session, ctx.placement(), radius, fire);
-                    flush(ctx, session, "Extinguished", changed, "block(s)");
+                            session, ctx.placement(), radius, fire);
+                    flush(ctx, session, "Extinguished", changed, "block");
                 };
 
 
         CommandRegistry.Entry e41 = registry.register("//fixwater");
-        e41.description = "Fix water placement in the selection";
+        e41.description = "Fix water to be stationary";
         e41.group = "region";
-        e41.requiresSelection = true;
-        e41.arguments.add("[radius]");
+        e41.arguments.add("<radius>");
         e41.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
-                            ctx.selection(), "water", ctx.intArg(0, 5));
-                    flush(ctx, session, "Fixed water", changed, "water block(s)");
+                    double radius = Math.max(0, ctx.radiusArg(0));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session,
+                            ctx.placementInWorld(), radius, "minecraft:water");
+                    flush(ctx, session, "Fixed water", changed, "water block");
                 };
 
 
         CommandRegistry.Entry e42 = registry.register("//fixlava");
-        e42.description = "Fix lava placement in the selection";
+        e42.description = "Fix lava to be stationary";
         e42.group = "region";
-        e42.requiresSelection = true;
-        e42.arguments.add("[radius]");
+        e42.arguments.add("<radius>");
         e42.handler = ctx -> {
                     EditSession session = ctx.editSession();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(ctx.world(), session,
-                            ctx.selection(), "lava", ctx.intArg(0, 5));
-                    flush(ctx, session, "Fixed lava", changed, "lava block(s)");
+                    double radius = Math.max(0, ctx.radiusArg(0));
+                    int changed = com.maxlananas.fawebim.core.function.Operations.fixLiquid(session,
+                            ctx.placementInWorld(), radius, "minecraft:lava");
+                    flush(ctx, session, "Fixed lava", changed, "lava block");
                 };
 
 
         CommandRegistry.Entry e43 = registry.register("//move");
-        e43.description = "Move the selection's contents in a direction";
+        e43.description = "Move the contents of the selection";
         e43.group = "region";
+        e43.confirmRegion = true;
         e43.requiresSelection = true;
         e43.booleanFlags.add("s");
         e43.booleanFlags.add("a");
         e43.booleanFlags.add("e");
         e43.booleanFlags.add("b");
         e43.valueFlags.add("m");
-        e43.arguments.add("amount");
-        e43.arguments.add("direction");
-        e43.arguments.add("[pattern]");
+        e43.arguments.add("[multiplier]");
+        e43.arguments.add("[offset]");
+        e43.arguments.add("[replace]");
         e43.arguments.add("[-m <mask>]");
         e43.handler = ctx -> {
                     Region region = ctx.selection();
-                    int amount = ctx.intArg(0);
-                    String direction = ctx.arg(1);
-                    BlockVector3 offset = directionVector(ctx, direction, amount);
+                    int next = leadingCount(ctx);
+                    int multiplier = next == 0 ? 1 : ctx.intArg(0);
+                    if (multiplier < 1) {
+                        throw CommandRegistry.error("The multiplier must be at least 1");
+                    }
+                    BlockVector3 offset = Directions.offset(ctx.actor(), ctx.arg(next, "forward"));
+                    long reach = Math.max(Math.max(Math.abs((long) offset.x()), Math.abs((long) offset.y())),
+                            Math.abs((long) offset.z())) * multiplier;
+                    if (reach == 0) {
+                        throw CommandRegistry.error("The offset " + Msg.value(offset).raw() + " moves nothing");
+                    }
+                    if (reach > 2L * WORLD_BORDER) {
+                        throw CommandRegistry.error("That moves the selection out of the world");
+                    }
+                    offset = offset.multiply(multiplier);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
-                    BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
-                            region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, false);
-                    Pattern pattern = ctx.args().size() > 2 ? Parsers.pattern(ctx.joined(2), ctx) : null;
-                    // Clear the source region.
-                    int empty = air();
-                    region.forEachPosition((x, y, z) -> {
-                        session.setBlock(x, y, z, empty, false);
-                        return false;
-                    });
-                    // Paste at the offset.
-                    BlockVector3 origin = clipboard.getOrigin();
-                    BlockVector3 target = region.getMinimumPoint();
-                    boolean keepSource = ctx.hasFlag("a");
-                    int targetX = target.x() + offset.x();
-                    int targetY = target.y() + offset.y();
-                    int targetZ = target.z() + offset.z();
-                    clipboard.forEachPosition((x, y, z, state) -> {
-                        int bx = x - origin.x() + targetX;
-                        int by = y - origin.y() + targetY;
-                        int bz = z - origin.z() + targetZ;
-                        if (BlockState.registry().isAirLike(state)) {
-                            if (keepSource) {
-                                // -a keeps the blocks the copy would erase.
-                                return false;
-                            }
-                            if (pattern != null) {
-                                session.setBlock(bx, by, bz, pattern.apply(bx, by, bz));
-                                return false;
-                            }
-                        }
-                        session.setBlock(bx, by, bz, state);
-                        return false;
-                    });
+                    Pattern leave = ctx.args().size() > next + 1 ? Parsers.pattern(ctx.joined(next + 1), ctx)
+                            : new com.maxlananas.fawebim.core.pattern.Patterns.Single(air());
+                    Mask mask = sourceMask(ctx, session);
+                    long moved = com.maxlananas.fawebim.core.function.RegionCopies.move(session, region, offset,
+                            mask, leave, ctx.hasFlag("e"), ctx.hasFlag("b"));
                     // -s moves the selection along with the blocks.
                     if (ctx.hasFlag("s")) {
                         region.shift(offset);
                     }
-                    flush(ctx, session, "Moved", session.getBlocksChanged(), "block(s)");
-                    ctx.actor().message(Msg.result("Selection", "moved by " + Msg.count(amount)
-                            + "\u00a77 block(s) towards \u00a7b" + direction.toLowerCase(Locale.ROOT)));
+                    flush(ctx, session, "Moved", moved, "block");
                 };
 
 
         CommandRegistry.Entry e44 = registry.register("//stack");
-        e44.description = "Stack the selection's contents";
+        e44.description = "Repeat the contents of the selection";
         e44.group = "region";
         e44.requiresSelection = true;
         e44.booleanFlags.add("s");
         e44.booleanFlags.add("a");
         e44.booleanFlags.add("e");
         e44.booleanFlags.add("b");
-        // -r counts the copies in blocks instead of selections.
+        // -r steps by the offset itself instead of by the size of the selection.
         e44.booleanFlags.add("r");
         e44.valueFlags.add("m");
         e44.arguments.add("[count]");
-        e44.arguments.add("[direction]");
+        e44.arguments.add("[offset]");
         e44.arguments.add("[-m <mask>]");
         e44.handler = ctx -> {
                     Region region = ctx.selection();
-                    int count = ctx.intArg(0, 1);
-                    String dir = ctx.arg(1, "me");
-                    Direction direction = dir.equalsIgnoreCase("me") ? ctx.actor().facing() : Direction.parse(dir);
+                    int next = leadingCount(ctx);
+                    int count = next == 0 ? 1 : ctx.intArg(0);
+                    if (count < 1) {
+                        throw CommandRegistry.error("The count must be at least 1");
+                    }
+                    // FAWE weighs the selection by the copies asked for.
+                    ctx.confirmRegion(region, count);
+                    BlockVector3 offset = Directions.offset(ctx.actor(), ctx.arg(next, "forward"));
+                    // Each copy steps by the size of the selection along the
+                    // offset, as in WorldEdit, or by the offset itself with -r.
+                    BlockVector3 step = ctx.hasFlag("r") ? offset : new BlockVector3(
+                            offset.x() * region.getWidth(), offset.y() * region.getHeight(),
+                            offset.z() * region.getLength());
+                    if (com.maxlananas.fawebim.core.function.RegionCopies.overlaps(region, step)) {
+                        throw CommandRegistry.error("A step of " + Msg.value(step).raw()
+                                + " puts the copies inside the selection: step at least its size along one axis");
+                    }
+                    // The copies past the edge of the world write nothing; walking
+                    // them was two billion passes over the selection, and their
+                    // offsets overflowed into copies on the far side of the world.
+                    count = copiesInWorld(region, ctx.world(), step.x(), step.y(), step.z(), count);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
-                    Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
-                    BlockArrayClipboard original = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(), region,
-                            session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, false);
-                    BlockVector3 origin = original.getOrigin();
-                    BlockVector3 min = region.getMinimumPoint();
-                    int step = ctx.hasFlag("r") ? 1 : region.getHeight();
-                    int dx = direction.x() * step;
-                    int dy = direction.y() * step;
-                    int dz = direction.z() * step;
-                    for (int i = 1; i <= count; i++) {
-                        for (BlockVector3 position : original.positions()) {
-                            int state = original.getBlock(position);
-                            if (ctx.hasFlag("a") && BlockState.registry().isAirLike(state)) {
-                                continue;
-                            }
-                            int x = position.x() - origin.x() + min.x() + dx * i;
-                            int y = position.y() - origin.y() + min.y() + dy * i;
-                            int z = position.z() - origin.z() + min.z() + dz * i;
-                            session.setBlock(x, y, z, state);
-                        }
-                    }
+                    Mask mask = sourceMask(ctx, session);
+                    long changed = count == 0 ? 0 : com.maxlananas.fawebim.core.function.RegionCopies.stack(session,
+                            region, step, count, mask, ctx.hasFlag("e"), ctx.hasFlag("b"));
                     // -s moves the selection onto the last copy.
-                    if (ctx.hasFlag("s")) {
-                        region.shift(new BlockVector3(dx * count, dy * count, dz * count));
+                    if (ctx.hasFlag("s") && count > 0) {
+                        region.shift(step.multiply(count));
                     }
-                    flush(ctx, session, "Stacked");
+                    flush(ctx, session, "Stacked", changed, "block");
                 };
 
+    }
+
+    /**
+     * Counts the blocks of the selection, or of the clipboard with {@code -c},
+     * by block - by state with {@code -d}, e.g. oak_log[axis=x] - most first.
+     */
+    private static com.maxlananas.fawebim.core.session.LocalSession.Distribution distribution(Ctx ctx) {
+        BlockStateRegistry blockRegistry = BlockState.registry();
+        com.maxlananas.fawebim.core.util.StateCounts counts =
+                new com.maxlananas.fawebim.core.util.StateCounts(blockRegistry.stateCount());
+        if (ctx.hasFlag("c")) {
+            if (!ctx.session().hasClipboard()) {
+                throw CommandRegistry.error("No clipboard: use //copy first");
+            }
+            // Every cell of the copy, air included, as FAWE counts the
+            // clipboard's region and as the selection is counted below: -c
+            // left the air out, so the same blocks read differently copied.
+            BlockArrayClipboard clip = ctx.session().getClipboard().getClipboard();
+            clip.forEachPosition((x, y, z, state) -> {
+                counts.add(state);
+                return false;
+            });
+        } else {
+            World world = ctx.world();
+            ctx.selection().forEachPosition((x, y, z) -> {
+                counts.add(world.getBlock(x, y, z));
+                return false;
+            });
+        }
+        java.util.Map<String, Long> named = counts.byName(ctx.hasFlag("d")
+                ? blockRegistry::describe : blockRegistry::name);
+        java.util.List<java.util.Map.Entry<String, Long>> sorted = new java.util.ArrayList<>(named.entrySet());
+        sorted.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+        return new com.maxlananas.fawebim.core.session.LocalSession.Distribution(java.util.List.copyOf(sorted),
+                counts.total());
+    }
+
+    /** The sub-commands of /we, each by the name it was registered under. */
+    private java.util.Set<String> weSubCommands() {
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (CommandRegistry.Entry entry : registry.all()) {
+            java.util.stream.Stream.concat(java.util.stream.Stream.of(entry.name), entry.aliases.stream())
+                    .filter(name -> name.startsWith("/we "))
+                    .findFirst()
+                    .ifPresent(name -> names.add(name.substring(4)));
+        }
+        return names;
+    }
+
+    /**
+     * Tab completion of //schem: the schematics and folders after load,
+     * delete and loadall, the folders after list, each from the folder the
+     * word typed so far points into.
+     */
+    private static List<String> schematicCompletions(String remaining) {
+        String[] words = remaining.stripLeading().split(" ", -1);
+        if (words.length != 2) {
+            return List.of();
+        }
+        String action = words[0].toLowerCase(Locale.ROOT);
+        boolean foldersOnly = action.equals("list") || action.equals("ls") || action.equals("all");
+        if (!foldersOnly && !java.util.Set.of("load", "delete", "d", "loadall").contains(action)) {
+            return List.of();
+        }
+        String typed = words[1];
+        int slash = typed.lastIndexOf('/');
+        List<String> completions = new ArrayList<>();
+        try {
+            for (String entry : Schematics.entries(slash < 0 ? "" : typed.substring(0, slash))) {
+                if ((!foldersOnly || entry.endsWith("/"))
+                        && entry.regionMatches(true, 0, typed, 0, typed.length())) {
+                    completions.add(entry);
+                    if (completions.size() == 80) {
+                        break;
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            // A folder that is not there completes nothing.
+        }
+        return completions;
+    }
+
+    /**
+     * A sub-command of //schem, with its arguments and FAWE's description of
+     * it: what a bare //schem lists, and the usage the sub-command answers
+     * with when its argument is missing.
+     */
+    private record SchematicSubCommand(String name, String arguments, boolean needsArgument, String description) {
+
+        private static final List<SchematicSubCommand> ALL = List.of(
+                new SchematicSubCommand("list", "[folder/] [filter] [-p <page>] [-d|-n] [-f <format>]", false,
+                        "List saved schematics"),
+                new SchematicSubCommand("load", "<name> [-r] [-d]", true, "Load a schematic into your clipboard"),
+                new SchematicSubCommand("save", "<name> [format] [-f]", true,
+                        "Save your clipboard into a schematic file"),
+                new SchematicSubCommand("loadall", "[format] <name> [-o] [-r] [-d]", true,
+                        "Load multiple clipboards (paste will randomly choose one)"),
+                new SchematicSubCommand("unload", "[name]", false, "Remove a clipboard from your multi-clipboard"),
+                new SchematicSubCommand("move", "<folder>", true,
+                        "Move your loaded schematic; <name> <format> converts one"),
+                new SchematicSubCommand("delete", "<name|*>", true, "Delete a saved schematic"),
+                new SchematicSubCommand("formats", "", false, "List available formats"),
+                new SchematicSubCommand("share", "[name]", false, "Save your clipboard under a name to share"),
+                new SchematicSubCommand("clear", "", false, "Clear your clipboard"));
+
+        static SchematicSubCommand named(String name) {
+            for (SchematicSubCommand sub : ALL) {
+                if (sub.name.equals(name)) {
+                    return sub;
+                }
+            }
+            return null;
+        }
+
+        static String names() {
+            return String.join("|", ALL.stream().map(SchematicSubCommand::name).toList());
+        }
+    }
+
+    /** A bare //schem: every sub-command, each a click away from the chat box. */
+    private static void schematicHelp(Ctx ctx) {
+        ctx.actor().message(Msg.title("Schematic commands (" + SchematicSubCommand.ALL.size() + ")"));
+        for (SchematicSubCommand sub : SchematicSubCommand.ALL) {
+            String command = "//schem " + sub.name();
+            ctx.actor().suggestLink(Msg.usage(command, sub.arguments(), sub.description()).raw(), command + " ",
+                    "Put " + command + " in the chat box");
+        }
+        ctx.actor().message(Msg.hint("A name may go through folders: //schem save trees/oak"));
+    }
+
+    /**
+     * The clipboards //schem load and loadall put in the session, which //schem
+     * move, unload and delete * go by: the loadall pool, else the clipboard.
+     */
+    private static List<BlockArrayClipboard> loadedClipboards(com.maxlananas.fawebim.core.session.LocalSession session) {
+        if (!session.getClipboardPool().isEmpty()) {
+            return List.copyOf(session.getClipboardPool());
+        }
+        return session.hasClipboard() ? List.of(session.getClipboard().getClipboard()) : List.of();
+    }
+
+    /** The files the loaded clipboards were read from that are still there, each once. */
+    private static List<java.nio.file.Path> loadedFiles(com.maxlananas.fawebim.core.session.LocalSession session) {
+        java.util.Set<java.nio.file.Path> files = new java.util.LinkedHashSet<>();
+        for (BlockArrayClipboard clipboard : loadedClipboards(session)) {
+            if (clipboard.getSource() != null && java.nio.file.Files.isRegularFile(clipboard.getSource())) {
+                files.add(clipboard.getSource());
+            }
+        }
+        return new ArrayList<>(files);
+    }
+
+    /**
+     * FAWE's //schem move: the files the clipboard was loaded from go into a
+     * folder of the schematic folder, and the clipboards follow them, so a
+     * second move or an unload still finds them. A file that cannot go - one of
+     * the same name is there - is reported and the others still move.
+     */
+    private static void moveSchematics(Ctx ctx, String folder) {
+        List<java.nio.file.Path> files = loadedFiles(ctx.session());
+        if (files.isEmpty()) {
+            throw CommandRegistry.error("No schematic file to move: //schem move moves the files"
+                    + " //schem load read into your clipboard");
+        }
+        for (java.nio.file.Path file : files) {
+            String before = Schematics.displayName(file);
+            java.nio.file.Path moved;
+            try {
+                moved = Schematics.move(file, folder);
+            } catch (com.maxlananas.fawebim.core.util.InputException refused) {
+                ctx.actor().message(Msg.warn(refused.getMessage()));
+                continue;
+            }
+            for (BlockArrayClipboard clipboard : loadedClipboards(ctx.session())) {
+                if (file.equals(clipboard.getSource())) {
+                    clipboard.setSource(moved.toAbsolutePath().normalize());
+                }
+            }
+            ctx.actor().message(Msg.success("Moved '" + before + "' to '" + Schematics.displayName(moved) + "'"));
+        }
+    }
+
+    /**
+     * FAWE's //schem unload <file>: one schematic leaves the clipboards
+     * //schem loadall gathered, or the clipboard it was loaded into is
+     * cleared. It used to clear the clipboard whatever the name.
+     */
+    private static void unloadSchematic(Ctx ctx, String name) {
+        com.maxlananas.fawebim.core.session.LocalSession session = ctx.session();
+        BlockArrayClipboard match = null;
+        for (BlockArrayClipboard clipboard : loadedClipboards(session)) {
+            if (clipboard.getSource() != null && Schematics.names(clipboard.getSource(), name)) {
+                match = clipboard;
+                break;
+            }
+        }
+        if (match == null) {
+            throw CommandRegistry.error("You do not have '" + name + "' loaded");
+        }
+        String shown = Schematics.displayName(match.getSource());
+        List<BlockArrayClipboard> rest = new ArrayList<>(session.getClipboardPool());
+        rest.remove(match);
+        if (rest.isEmpty()) {
+            session.setClipboard(null);
+            ctx.actor().message(Msg.success("Unloaded '" + shown + "': your clipboard is empty"));
+            return;
+        }
+        boolean current = session.getClipboard().getClipboard() == match;
+        session.setClipboardPool(rest);
+        if (current) {
+            session.setClipboardFromPool(rest.get(0));
+        }
+        ctx.actor().message(Msg.success("Unloaded '" + shown + "': "
+                + Msg.count(rest.size(), "clipboard", "clipboards") + " left"));
+    }
+
+    /**
+     * The origin of a copy or a cut: where the player stands, or pos1 under
+     * {@code //toggleplace}, as in WorldEdit and FAWE, so that a paste puts the
+     * build where it was from the player. A source with no position - the
+     * console, rcon - keeps the lowest corner the clipboard starts with, so a
+     * paste at coordinates puts that corner there.
+     */
+    static BlockVector3 copyOrigin(Ctx ctx, BlockArrayClipboard clipboard) {
+        return ctx.placementOr(clipboard.getOrigin());
+    }
+
+    /**
+     * Cuts the selection into the clipboard and leaves a pattern behind: the
+     * work of {@code //cut}, and of {@code //lazycut}, which differs from it by
+     * its flags only.
+     *
+     * @param exclude blocks that fail it stay where they are, or {@code null}
+     */
+    static void cutSelection(Ctx ctx, boolean withEntities, boolean withBiomes, Mask exclude, Pattern leave) {
+        EditSession session = ctx.editSession();
+        Region region = ctx.selection();
+        // The copy and the replacing share one traversal, so the answer can say
+        // how long the whole cut took.
+        com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
+        BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
+                region, session, withEntities, withBiomes, exclude, leave);
+        clipboard.setOrigin(copyOrigin(ctx, clipboard));
+        ctx.session().setClipboard(clipboard);
+        // The queue is applied before the answer is written, so the time the
+        // line reports is the time the cut really took.
+        session.flushQueue();
+        StringBuilder detail = new StringBuilder(Msg.blocks(
+                        clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
+                .append(" to your clipboard");
+        if (!clipboard.entities().isEmpty()) {
+            detail.append(", ").append(Msg.count(clipboard.entities().size(), "entity", "entities"));
+        }
+        if (clipboard.hasBiomes()) {
+            detail.append(", biomes");
+        }
+        detail.append(" in ").append(timer.phrase());
+        detail.append(" (").append(Msg.size(region.getWidth(), region.getHeight(), region.getLength()))
+                .append(')');
+        ctx.actor().message(Msg.result("Cut", detail.toString()));
+    }
+
+    /**
+     * How many leading arguments of {@code //move} and {@code //stack} are the
+     * count: none when the first is not a number, so {@code //stack up} makes
+     * one copy upwards the way {@code //stack 1 up} does.
+     */
+    private static int leadingCount(Ctx ctx) {
+        Ctx.Argument first = ctx.argument(0);
+        return first != null && first.isNumber() ? 1 : 0;
+    }
+
+    /**
+     * The positions {@code //move} and {@code //stack} copy: the {@code -m}
+     * mask, and with {@code -a} only the ones holding a block, both tested on
+     * the source as in WorldEdit.
+     */
+    private static Mask sourceMask(Ctx ctx, EditSession session) {
+        Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
+        if (!ctx.hasFlag("a")) {
+            return include;
+        }
+        Mask existing = new com.maxlananas.fawebim.core.mask.Masks.ExistingMask(session);
+        return include == null ? existing
+                : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(include, existing));
+    }
+
+    /**
+     * How many copies of a stack, each {@code (dx, dy, dz)} further than the
+     * one before, still reach into the world: between the world's floor and
+     * ceiling, and inside the border horizontally.
+     */
+    static int copiesInWorld(Region region, World world, int dx, int dy, int dz, int count) {
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        long border = Parsers.MAX_COORDINATE;
+        long fit = count;
+        fit = Math.min(fit, copiesAlong(min.x(), max.x(), dx, -border, border));
+        fit = Math.min(fit, copiesAlong(min.y(), max.y(), dy, world.minY(), world.maxY()));
+        fit = Math.min(fit, copiesAlong(min.z(), max.z(), dz, -border, border));
+        return (int) fit;
+    }
+
+    /** The copies along one axis whose span still meets {@code [low, high]}. */
+    private static long copiesAlong(int min, int max, int step, long low, long high) {
+        if (step > 0) {
+            return Math.max(0, (high - min) / step);
+        }
+        if (step < 0) {
+            return Math.max(0, (max - low) / -step);
+        }
+        return Long.MAX_VALUE;
+    }
+
+    /** {@code //sel list}: every selection type, each a line that switches to it when clicked. */
+    private static void listSelectors(Ctx ctx, RegionSelector current) {
+        ctx.actor().message(Msg.title("Selection types"));
+        for (String name : com.maxlananas.fawebim.core.region.Selectors.NAMES) {
+            String description = com.maxlananas.fawebim.core.region.Selectors.description(name);
+            Msg line = name.equals(current.getTypeName()) ? Msg.item(name + " (in use)", description)
+                    : Msg.item(name, description);
+            ctx.actor().commandLink(line.raw(), "//sel " + name, "Switch to " + name);
+        }
+    }
+
+    /** Whether the shape counts its clicks against WorldEdit's vertex limit. */
+    private static boolean limitsVertices(RegionSelector selector) {
+        return selector instanceof com.maxlananas.fawebim.core.region.Selectors.Polygonal2DSelector
+                || selector instanceof com.maxlananas.fawebim.core.region.Selectors.ConvexSelector
+                || selector instanceof com.maxlananas.fawebim.core.region.Selectors.PolyhedralSelector;
+    }
+
+    /**
+     * The axis {@code //flip} mirrors along: that of a direction, as in
+     * WorldEdit, looking up or down included, or one named by its letter.
+     */
+    private static com.maxlananas.fawebim.core.transform.Axis flipAxis(Ctx ctx, String input) {
+        String word = input.trim().toLowerCase(Locale.ROOT);
+        if (word.equals("x") || word.equals("y") || word.equals("z")) {
+            return com.maxlananas.fawebim.core.transform.Axis.parse(word);
+        }
+        BlockVector3 direction = Directions.parse(ctx.actor(), word, false);
+        return direction.x() != 0 ? com.maxlananas.fawebim.core.transform.Axis.X
+                : direction.y() != 0 ? com.maxlananas.fawebim.core.transform.Axis.Y
+                : com.maxlananas.fawebim.core.transform.Axis.Z;
+    }
+
+    /**
+     * What {@code //line} joins, as in WorldEdit: the vertices of a convex
+     * selection, or the two corners of a cuboid one in the order they were
+     * set, so the line runs between the corners the player clicked rather than
+     * always from the lowest to the highest.
+     */
+    private static List<BlockVector3> lineEnds(Ctx ctx) {
+        Region region = ctx.selection();
+        if (region instanceof com.maxlananas.fawebim.core.region.ConvexPolyhedralRegion convex) {
+            return convex.getVertices();
+        }
+        if (!(region instanceof com.maxlananas.fawebim.core.region.CuboidRegion)) {
+            throw CommandRegistry.error("//line only works with cuboid selections or convex polyhedral selections");
+        }
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        if (ctx.session().getSelector(ctx.world()) instanceof com.maxlananas.fawebim.core.region.Selectors.CuboidSelector cuboid
+                && cuboid.isDefined() && cuboid.getPos1().min(cuboid.getPos2()).equals(min)
+                && cuboid.getPos1().max(cuboid.getPos2()).equals(max)) {
+            return List.of(cuboid.getPos1(), cuboid.getPos2());
+        }
+        return List.of(min, max);
+    }
+
+    private static double lineThickness(Ctx ctx) {
+        double thickness = ctx.radiusArg(1, 0);
+        if (thickness < 0) {
+            throw CommandRegistry.error("Thickness must be >= 0");
+        }
+        return thickness;
     }
 
     /** The origin a rotation transform turns around. */
@@ -1434,61 +1646,55 @@ public final class Commands {
         return holder.getClipboard().getOrigin();
     }
 
-    // --------------------------------------------------------------- generation
-
     private void registerGeneration() {
         registerShapes();
         CommandRegistry.Entry e45 = registry.register("//line");
         e45.description = "Draw a line between selection corners";
         e45.group = "generation";
+        e45.confirmRegion = true;
         e45.requiresSelection = true;
         e45.booleanFlags.add("h");
-        e45.booleanFlags.add("s");
         e45.arguments.add("pattern");
         e45.arguments.add("[thickness]");
         e45.handler = ctx -> {
+                    List<BlockVector3> points = lineEnds(ctx);
+                    double thickness = lineThickness(ctx);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double thickness = ctx.doubleArg(1, 0);
-                    BlockVector3 min = ctx.selection().getMinimumPoint();
-                    BlockVector3 max = ctx.selection().getMaximumPoint();
-                    int changed = com.maxlananas.fawebim.core.function.Operations.line(session, min, max, pattern, thickness,
-                            ctx.hasFlag("h"));
-                    flush(ctx, session, "Drew", changed, "block(s)");
+                    int changed = Operations.drawLine(session, points, thickness, !ctx.hasFlag("h"), pattern);
+                    flush(ctx, session, "Drew", changed, "block");
                 };
 
 
         CommandRegistry.Entry e46 = registry.register("//curve");
         e46.description = "Draw a spline through the convex selection's vertices";
         e46.group = "generation";
+        e46.confirmRegion = true;
         e46.requiresSelection = true;
         // -h draws the shell of the curve instead of the solid path.
         e46.booleanFlags.add("h");
         e46.arguments.add("pattern");
         e46.arguments.add("[thickness]");
         e46.handler = ctx -> {
+                    if (!(ctx.selection() instanceof com.maxlananas.fawebim.core.region.ConvexPolyhedralRegion convex)) {
+                        throw CommandRegistry.error("//curve only works with convex polyhedral selections");
+                    }
+                    double thickness = lineThickness(ctx);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    double thickness = ctx.doubleArg(1, 0);
-                    Region region = ctx.selection();
-                    List<BlockVector3> points = region instanceof com.maxlananas.fawebim.core.region.ConvexPolyhedralRegion convex
-                            ? convex.getVertices() : List.of(region.getMinimumPoint(), region.getMaximumPoint());
-                    int changed = com.maxlananas.fawebim.core.function.Operations.spline(session, points, pattern,
-                            ctx.hasFlag("h") ? Math.max(0, thickness - 1) : thickness);
-                    if (ctx.hasFlag("h")) {
-                        // A shell keeps the outer layer of the tube only.
-                        changed = com.maxlananas.fawebim.core.function.Operations.splineShell(session, points, pattern,
-                                thickness);
-                    }
-                    flush(ctx, session, "Drew", changed, "block(s)");
+                    // WorldEdit's curve: a Catmull-Rom spline walked ten times per block.
+                    int changed = Operations.drawSpline(session, convex.getVertices(), 0, 0, 0, 10, thickness,
+                            !ctx.hasFlag("h"), pattern);
+                    flush(ctx, session, "Drew", changed, "block");
                 };
 
 
         CommandRegistry.Entry e48 = registry.register("//deform");
         e48.description = "Deform blocks in the selection using an expression";
         e48.group = "generation";
+        e48.confirmRegion = true;
         e48.requiresSelection = true;
         e48.booleanFlags.add("r");
         e48.booleanFlags.add("o");
@@ -1496,28 +1702,30 @@ public final class Commands {
         e48.booleanFlags.add("c");
         e48.arguments.add("expression");
         e48.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    String expression = ctx.joined(0);
+                    String expression = ctx.requiredJoined(0);
                     Region deformRegion = ctx.selection();
-                    int originX = 0;
-                    int originZ = 0;
-                    if (ctx.hasFlag("c")) {
-                        originX = (deformRegion.getMinimumPoint().x() + deformRegion.getMaximumPoint().x()) / 2;
-                        originZ = (deformRegion.getMinimumPoint().z() + deformRegion.getMaximumPoint().z()) / 2;
-                    } else if (ctx.hasFlag("o") && !ctx.hasFlag("r")) {
-                        BlockVector3 placement = ctx.placement();
-                        originX = placement.x();
-                        originZ = placement.z();
+                    // WorldEdit's order: -r, then -o, then -c, else the unit cube.
+                    Operations.DeformFrame frame;
+                    if (ctx.hasFlag("r")) {
+                        frame = Operations.DeformFrame.RAW;
+                    } else if (ctx.hasFlag("o")) {
+                        frame = Operations.DeformFrame.offset(ctx.placement().toVector3());
+                    } else if (ctx.hasFlag("c")) {
+                        frame = Operations.DeformFrame.offset(deformRegion.getMinimumPoint().toVector3()
+                                .add(deformRegion.getMaximumPoint().toVector3()).multiply(0.5));
+                    } else {
+                        frame = Operations.DeformFrame.unitCube(deformRegion);
                     }
-                    int changed = com.maxlananas.fawebim.core.function.Operations.deform(ctx.world(), session,
-                            deformRegion, expression, originX, 0, originZ);
-                    flush(ctx, session, "Deformed", changed, "block(s)");
+                    EditSession session = ctx.editSession();
+                    int changed = Operations.deform(ctx.world(), session, deformRegion, expression, frame);
+                    flush(ctx, session, "Deformed", changed, "block");
                 };
 
 
         CommandRegistry.Entry e49 = registry.register("//flora");
         e49.description = "Make flora within the region";
         e49.group = "generation";
+        e49.confirmRegion = true;
         e49.requiresSelection = true;
         e49.arguments.add("[density]");
         e49.handler = ctx -> {
@@ -1525,7 +1733,7 @@ public final class Commands {
                     double density = ctx.doubleArg(0, 5) / 100.0;
                     int changed = com.maxlananas.fawebim.core.function.Operations.flora(ctx.world(), session,
                             ctx.selection(), density);
-                    flush(ctx, session, "Planted", changed, "plant(s)");
+                    flush(ctx, session, "Planted", changed, "plant");
                 };
 
 
@@ -1534,6 +1742,7 @@ public final class Commands {
         CommandRegistry.Entry e49b = registry.register("//forest");
         e49b.description = "Make a forest within the region";
         e49b.group = "generation";
+        e49b.confirmRegion = true;
         e49b.requiresSelection = true;
         e49b.arguments.add("<tree-type>");
         e49b.arguments.add("[density]");
@@ -1541,16 +1750,11 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     // WorldEdit defaults the type to a regular tree and takes any
                     // name it declares for one, so the argument is optional.
-                    String type = com.maxlananas.fawebim.core.world.TreeTypes
-                            .canonical(ctx.arg(0, "tree"));
-                    if (type == null) {
-                        throw CommandRegistry.error("Unknown tree type '" + ctx.arg(0)
-                                + "'. Try: " + com.maxlananas.fawebim.core.world.TreeTypes.names());
-                    }
+                    String type = Parsers.treeType(ctx.arg(0, "tree"));
                     double density = ctx.doubleArg(1, 5) / 100.0;
-                    int changed = com.maxlananas.fawebim.core.function.Operations.forest(ctx.world(), session,
+                    int changed = com.maxlananas.fawebim.core.function.Operations.forest(session,
                             ctx.selection(), type, density);
-                    flush(ctx, session, "Planted", changed, "tree(s)");
+                    flush(ctx, session, "Planted", changed, "tree");
                 };
 
 
@@ -1582,43 +1786,14 @@ public final class Commands {
                             }
                         }
                     }
-                    flush(ctx, session, "Generated", changed, "pumpkin(s)");
-                };
-
-
-        CommandRegistry.Entry e51 = registry.register("//tree");
-        e51.description = "Create a tree at your position";
-        e51.group = "generation";
-        e51.requiresPlayer = true;
-        e51.booleanFlags.add("t");
-        e51.arguments.add("[type]");
-        e51.handler = ctx -> {
-                    String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(ctx.arg(0, "tree"));
-                    if (type == null) {
-                        throw CommandRegistry.error("Unknown tree type '" + ctx.arg(0, "")
-                                + "'. Try: " + com.maxlananas.fawebim.core.world.TreeTypes.names());
-                    }
-                    boolean ok = ctx.world().generateTree(ctx.placement(), type, new java.util.Random());
-                    ctx.actor().message(ok ? Msg.success("Tree planted at ").append(Msg.value(ctx.placement()))
-                            : Msg.error("The world cannot plant a " + type + " tree here"));
-                };
-
-
-        CommandRegistry.Entry e52 = registry.register("//deltree");
-        e52.description = "Remove the tree you are looking at";
-        e52.group = "generation";
-        e52.requiresPlayer = true;
-        e52.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    BlockVector3 target = ctx.targetBlock(100);
-                    int changed = com.maxlananas.fawebim.core.function.Operations.removeTree(ctx.world(), session, target);
-                    flush(ctx, session, "Removed", changed, "block(s)");
+                    flush(ctx, session, "Generated", changed, "pumpkin");
                 };
 
 
         CommandRegistry.Entry e53 = registry.register("//ore", "/ore");
         e53.description = "Generates ores";
         e53.group = "generation";
+        e53.confirmRegion = true;
         e53.requiresSelection = true;
         e53.arguments.add("mask");
         e53.arguments.add("material");
@@ -1652,13 +1827,14 @@ public final class Commands {
                             ctx.selection(), mask, material, size, frequency, rarity, minY, maxY, false,
                             com.maxlananas.fawebim.core.function.Operations.OreDeepslate.NONE,
                             java.util.concurrent.ThreadLocalRandom.current());
-                    flush(ctx, session, "Generated", changed, "block(s)");
+                    flush(ctx, session, "Generated", changed, "block");
                 };
 
 
         CommandRegistry.Entry e53b = registry.register("//ores", "/ores");
         e53b.description = "Generates ores";
         e53b.group = "generation";
+        e53b.confirmRegion = true;
         e53b.requiresSelection = true;
         // -b makes every ore below y=0 its deepslate form, -d only the ores that
         // land in deepslate, which are the two switches FAWE declares.
@@ -1675,13 +1851,14 @@ public final class Commands {
                     int changed = com.maxlananas.fawebim.core.function.Operations.ores(ctx.world(), session,
                             ctx.selection(), mask, deepslate,
                             java.util.concurrent.ThreadLocalRandom.current());
-                    flush(ctx, session, "Generated", changed, "block(s)");
+                    flush(ctx, session, "Generated", changed, "block");
                 };
 
 
         CommandRegistry.Entry e55 = registry.register("//fall");
         e55.description = "Have the blocks in the selection fall";
         e55.group = "generation";
+        e55.confirmRegion = true;
         e55.requiresSelection = true;
         e55.arguments.add("[replace]");
         // -m keeps the blocks inside the vertical bounds of the selection.
@@ -1690,9 +1867,9 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     int[] replace = ctx.args().isEmpty() ? null
                             : new int[]{ctx.pattern(0).apply(ctx.placement())};
-                    int changed = com.maxlananas.fawebim.core.function.Operations.fall(ctx.world(), session,
+                    long changed = com.maxlananas.fawebim.core.function.Operations.fall(ctx.world(), session,
                             ctx.selection(), ctx.hasFlag("m"), replace);
-                    flush(ctx, session, "Generated", changed, "block(s)");
+                    flush(ctx, session, "Dropped", changed, "block");
                 };
 
     }
@@ -1710,7 +1887,7 @@ public final class Commands {
             Masks.ExtentHolder.set(session);
             double[] radii = sphereRadii(ctx.arg(1));
             int changed = sphere(session, ctx, radii, Parsers.pattern(ctx.arg(0), ctx), ctx.hasFlag("h"));
-            flush(ctx, session, "Created", changed, "block(s)");
+            flush(ctx, session, "Created", changed, "block");
         };
 
         CommandRegistry.Entry hollowSphere = registry.register("//hsphere");
@@ -1724,7 +1901,7 @@ public final class Commands {
             Masks.ExtentHolder.set(session);
             double[] radii = sphereRadii(ctx.arg(1));
             int changed = sphere(session, ctx, radii, Parsers.pattern(ctx.arg(0), ctx), true);
-            flush(ctx, session, "Created", changed, "block(s)");
+            flush(ctx, session, "Created", changed, "block");
         };
 
         CommandRegistry.Entry cylinder = registry.register("//cyl");
@@ -1740,7 +1917,7 @@ public final class Commands {
             double[] radii = cylinderRadii(ctx.arg(1));
             int changed = com.maxlananas.fawebim.core.function.Operations.cylinder(session, ctx.placement(),
                     radii, ctx.intArg(2, 1), Parsers.pattern(ctx.arg(0), ctx), ctx.hasFlag("h"), 0);
-            flush(ctx, session, "Created", changed, "block(s)");
+            flush(ctx, session, "Created", changed, "block");
         };
 
         CommandRegistry.Entry hollowCylinder = registry.register("//hcyl");
@@ -1760,7 +1937,7 @@ public final class Commands {
             }
             int changed = com.maxlananas.fawebim.core.function.Operations.cylinder(session, ctx.placement(),
                     radii, ctx.intArg(2, 1), Parsers.pattern(ctx.arg(0), ctx), true, thickness);
-            flush(ctx, session, "Created", changed, "block(s)");
+            flush(ctx, session, "Created", changed, "block");
         };
 
         registerPyramidAndCone();
@@ -1810,11 +1987,11 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    int size = ctx.intArg(1);
+                    int size = ctx.sizeArg(1);
                     boolean hollowShape = ctx.hasFlag("h");
                     int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, hollowShape);
-                    flush(ctx, session, "Created", changed, "block(s)");
+                    flush(ctx, session, "Created", changed, "block");
                 };
 
 
@@ -1827,10 +2004,10 @@ public final class Commands {
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Pattern pattern = Parsers.pattern(ctx.arg(0), ctx);
-                    int size = ctx.intArg(1);
+                    int size = ctx.sizeArg(1);
                     int changed = com.maxlananas.fawebim.core.function.Operations.pyramid(session, ctx.placement(),
                             size, pattern, true);
-                    flush(ctx, session, "Created", changed, "block(s)");
+                    flush(ctx, session, "Created", changed, "block");
                 };
 
 
@@ -1861,17 +2038,16 @@ public final class Commands {
                     Masks.ExtentHolder.set(session);
                     int changed = com.maxlananas.fawebim.core.function.Operations.cone(session, ctx.placement(),
                             pattern, radiusX, radiusZ, height, !ctx.hasFlag("h"), thickness);
-                    flush(ctx, session, "Created", changed, "block(s)");
+                    flush(ctx, session, "Created", changed, "block");
                 };
 
     }
-
-    // ---------------------------------------------------------------- clipboard
 
     private void registerClipboard() {
         CommandRegistry.Entry e59 = registry.register("//copy", "//cp");
         e59.description = "Copy the selection to your clipboard";
         e59.group = "clipboard";
+        e59.confirmRegion = true;
         e59.requiresSelection = true;
         e59.booleanFlags.add("e");
         e59.booleanFlags.add("b");
@@ -1883,23 +2059,24 @@ public final class Commands {
                     Mask include = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
                     BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.copy(ctx.world(),
                             ctx.selection(), session, ctx.hasFlag("e"), ctx.hasFlag("b"), include, ctx.hasFlag("c"));
+                    if (!ctx.hasFlag("c")) {
+                        clipboard.setOrigin(copyOrigin(ctx, clipboard));
+                    }
                     ctx.session().setClipboard(clipboard);
                     // What the clipboard holds, not how big the selection was:
                     // a copy of an empty region stores nothing, and the size in
                     // brackets is the selection the player made either way.
-                    StringBuilder detail = new StringBuilder(Msg.count(
+                    StringBuilder detail = new StringBuilder(Msg.blocks(
                                     clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
-                            .append("\u00a77 block(s) to your clipboard");
+                            .append(" to your clipboard");
                     if (!clipboard.entities().isEmpty()) {
-                        detail.append(", ").append(Msg.count(clipboard.entities().size()))
-                                .append("\u00a77 entities");
+                        detail.append(", ").append(Msg.count(clipboard.entities().size(), "entity", "entities"));
                     }
                     if (clipboard.hasBiomes()) {
-                        detail.append(", \u00a77biomes");
+                        detail.append(", biomes");
                     }
-                    detail.append(" \u00a78(").append(ctx.selection().getWidth()).append('x')
-                            .append(ctx.selection().getHeight()).append('x')
-                            .append(ctx.selection().getLength()).append(')');
+                    detail.append(" (").append(Msg.size(ctx.selection().getWidth(), ctx.selection().getHeight(),
+                            ctx.selection().getLength())).append(')');
                     ctx.actor().message(Msg.result("Copied", detail.toString()));
                 };
 
@@ -1907,6 +2084,7 @@ public final class Commands {
         CommandRegistry.Entry e60 = registry.register("//cut");
         e60.description = "Cut the selection to your clipboard";
         e60.group = "clipboard";
+        e60.confirmRegion = true;
         e60.requiresSelection = true;
         e60.booleanFlags.add("e");
         e60.booleanFlags.add("b");
@@ -1914,36 +2092,11 @@ public final class Commands {
         // Upstream takes the pattern the selection is left as; its default is air.
         e60.arguments.add("[leavePattern]");
         e60.handler = ctx -> {
-                    EditSession session = ctx.editSession();
-                    Masks.ExtentHolder.set(session);
+                    Masks.ExtentHolder.set(ctx.editSession());
                     Mask exclude = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
-                    Region region = ctx.selection();
                     Pattern leave = ctx.args().isEmpty() ? Parsers.pattern("air", ctx)
                             : Parsers.pattern(ctx.arg(0), ctx);
-                    // The copy and the replacing share one traversal, so the
-                    // answer can say how long the whole cut took.
-                    com.maxlananas.fawebim.core.util.Timer timer = new com.maxlananas.fawebim.core.util.Timer();
-                    BlockArrayClipboard clipboard = com.maxlananas.fawebim.core.clipboard.Clipboards.cut(ctx.world(),
-                            region, session, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
-                    ctx.session().setClipboard(clipboard);
-                    // The queue is applied before the answer is written, so the
-                    // time the line reports is the time the cut really took.
-                    session.flushQueue();
-                    StringBuilder detail = new StringBuilder(Msg.count(
-                                    clipboard.filled(com.maxlananas.fawebim.core.world.BlockState.registry())))
-                            .append("\u00a77 block(s) to your clipboard");
-                    if (!clipboard.entities().isEmpty()) {
-                        detail.append(", ").append(Msg.count(clipboard.entities().size()))
-                                .append("\u00a77 entities");
-                    }
-                    if (clipboard.hasBiomes()) {
-                        detail.append(", \u00a77biomes");
-                    }
-                    detail.append(" in \u00a7b").append(timer.phrase());
-                    detail.append(" \u00a78(").append(region.getWidth()).append('x')
-                            .append(region.getHeight()).append('x').append(region.getLength())
-                            .append(')');
-                    ctx.actor().message(Msg.result("Cut", detail.toString()));
+                    cutSelection(ctx, ctx.hasFlag("e"), ctx.hasFlag("b"), exclude, leave);
                 };
 
 
@@ -1982,8 +2135,10 @@ public final class Commands {
                                 java.util.concurrent.ThreadLocalRandom.current().nextInt(4) * 90.0));
                     }
                     BlockArrayClipboard clipboard = holder.getClipboard();
-                    BlockVector3 destination = ctx.args().isEmpty()
-                            ? ctx.placement() : ctx.blockVector(0);
+                    // -o, as in WorldEdit: the origin goes back where it was
+                    // in the world, which puts the build back where it stood.
+                    BlockVector3 destination = ctx.hasFlag("o") ? clipboard.worldOrigin()
+                            : ctx.args().isEmpty() ? ctx.placement() : ctx.blockVector(0);
                     EditSession session = ctx.editSession();
                     Masks.ExtentHolder.set(session);
                     Mask sourceMask = ctx.hasFlag("m") ? Parsers.mask(ctx.flagValue("m", ""), ctx) : null;
@@ -1995,13 +2150,16 @@ public final class Commands {
                                 ctx.hasFlag("b"), ctx.hasFlag("x"), ctx.hasFlag("v"));
                     }
                     if (ctx.hasFlag("s") || onlySelect) {
-                        ctx.session().getSelector(ctx.world()).selectPrimary(destination,
+                        // The blocks the paste covers: the clipboard's box around
+                        // the destination as its origin, turned with the paste.
+                        BlockVector3[] bounds = com.maxlananas.fawebim.core.clipboard.Clipboards.pastedBounds(
+                                clipboard, destination, holder.getTransform());
+                        ctx.session().getSelector(ctx.world()).selectPrimary(bounds[0],
                                 com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
-                        ctx.session().getSelector(ctx.world()).selectSecondary(
-                                destination.add(clipboard.getWidth(), clipboard.getHeight(), clipboard.getLength()),
+                        ctx.session().getSelector(ctx.world()).selectSecondary(bounds[1],
                                 com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
                     }
-                    flush(ctx, session, "Pasted", changed, "block(s)");
+                    flush(ctx, session, "Pasted", changed, "block");
                 };
 
 
@@ -2013,7 +2171,7 @@ public final class Commands {
         e62.arguments.add("[rotateZ]");
         e62.handler = ctx -> {
                     if (!ctx.session().hasClipboard()) {
-                        throw CommandRegistry.error("No clipboard");
+                        throw CommandRegistry.error("No clipboard: use //copy first");
                     }
                     double rotateY = ctx.doubleArg(0);
                     double rotateX = ctx.doubleArg(1, 0);
@@ -2038,6 +2196,13 @@ public final class Commands {
                     }
                     holder.setTransform(transform);
                     ctx.actor().message(Msg.result("Clipboard", "rotated"));
+                    // WorldEdit's note: a block is turned by a quarter at a
+                    // time, so any other angle lands between two of them.
+                    if (Math.abs(rotateY % 90) > 0.001 || Math.abs(rotateX % 90) > 0.001
+                            || Math.abs(rotateZ % 90) > 0.001) {
+                        ctx.actor().message(Msg.warn("Interpolation is not supported: angles that are"
+                                + " multiples of 90 are recommended"));
+                    }
                 };
 
 
@@ -2049,13 +2214,7 @@ public final class Commands {
                     if (!ctx.session().hasClipboard()) {
                         throw CommandRegistry.error("No clipboard");
                     }
-                    String direction = ctx.arg(0, "me");
-                    com.maxlananas.fawebim.core.transform.Axis axis = direction.equalsIgnoreCase("me")
-                            ? switch (ctx.actor().facing()) {
-                        case NORTH, SOUTH -> com.maxlananas.fawebim.core.transform.Axis.Z;
-                        case EAST, WEST -> com.maxlananas.fawebim.core.transform.Axis.X;
-                        default -> com.maxlananas.fawebim.core.transform.Axis.Y;
-                    } : com.maxlananas.fawebim.core.transform.Axis.parse(direction);
+                    com.maxlananas.fawebim.core.transform.Axis axis = flipAxis(ctx, ctx.arg(0, "me"));
                     var holder = ctx.session().getClipboard();
                     holder.setTransform(holder.getTransform().combine(
                             com.maxlananas.fawebim.core.transform.Transforms.flip(holder.getClipboard().getOrigin(), axis)));
@@ -2067,7 +2226,9 @@ public final class Commands {
         e64.description = "Clear your clipboard";
         e64.group = "clipboard";
         e64.handler = ctx -> {
-                    ctx.session().setClipboard(new BlockArrayClipboard(BlockVector3.ZERO));
+                    // Empty, as FAWE leaves it: a clipboard of one air block
+                    // still pasted, and saved as a schematic.
+                    ctx.session().setClipboard(null);
                     ctx.actor().message(Msg.result("Clipboard", "cleared"));
                 };
 
@@ -2082,27 +2243,63 @@ public final class Commands {
         e65.booleanFlags.add("n");
         e65.valueFlags.add("f");
         e65.valueFlags.add("p");
+        e65.switchesUnder.put("save", java.util.Set.of("f"));
         e65.arguments.add("list|ls|all|save|load|loadall|delete|d|formats|listformats|f|move|m|share|clear|unload");
         e65.arguments.add("[name]");
         e65.arguments.add("[format]");
         e65.arguments.add("[-p <page>]");
+        e65.suggestions = Commands::schematicCompletions;
         e65.handler = ctx -> {
-                    String action = ctx.arg(0).toLowerCase(Locale.ROOT);
-                    if (action.equals("ls") || action.equals("all")) {
-                        action = "list";
+                    // A bare //schem lists the sub-commands, as FAWE's help for the
+                    // container does, where it answered with a missing argument.
+                    if (ctx.args().isEmpty() || ctx.arg(0).equalsIgnoreCase("help")) {
+                        schematicHelp(ctx);
+                        return;
+                    }
+                    String action = switch (ctx.arg(0).toLowerCase(Locale.ROOT)) {
+                        case "ls", "all" -> "list";
+                        case "d" -> "delete";
+                        case "m" -> "move";
+                        case "f", "listformats" -> "formats";
+                        default -> ctx.arg(0).toLowerCase(Locale.ROOT);
+                    };
+                    SchematicSubCommand sub = SchematicSubCommand.named(action);
+                    if (sub == null) {
+                        throw CommandRegistry.error("Unknown sub-command '" + ctx.arg(0) + "': //schem "
+                                + SchematicSubCommand.names());
+                    }
+                    // The usage of the sub-command, not of every one of them.
+                    if (sub.needsArgument() && ctx.args().size() < 2) {
+                        throw CommandRegistry.error("Missing argument 1 for //schem " + sub.name() + " "
+                                + sub.arguments());
                     }
                     switch (action) {
                         case "list" -> {
-                            // //schem list [filter] overrides the filter /list set.
-                            com.maxlananas.fawebim.core.clipboard.ListFilter filter =
-                                    com.maxlananas.fawebim.core.clipboard.ListFilter.parse(ctx.arg(1, ""));
-                            if (filter == null) {
-                                filter = ctx.session().getListFilter();
+                            // FAWE's list: a word ending in a slash is a folder to
+                            // look in - trees/ - and another word keeps the names it
+                            // starts. A filter name picks between the shared folder
+                            // and the player's own, which only exists with FAWE's
+                            // per-player schematics: every schematic is shared here.
+                            StringBuilder path = new StringBuilder();
+                            String word = "";
+                            for (String argument : ctx.args().subList(1, ctx.args().size())) {
+                                if (argument.endsWith("/")) {
+                                    path.append(argument);
+                                } else if (com.maxlananas.fawebim.core.clipboard.ListFilter.parse(argument) == null) {
+                                    word = argument;
+                                }
                             }
-                            List<String> names = Schematics.list(filter,
-                                    ctx.actor().isPlayer() ? ctx.actor().name() : null);
-                            // -f <format> keeps one format, -d and -n sort by
-                            // write time instead of by name.
+                            String folder = path.length() == 0 ? "" : path.substring(0, path.length() - 1);
+                            if (!folder.isEmpty() && !Schematics.isFolder(folder)) {
+                                throw CommandRegistry.error("No folder named '" + folder + "' among the schematics");
+                            }
+                            List<String> names = Schematics.entries(folder);
+                            if (!word.isEmpty()) {
+                                names = Schematics.matching(names, word);
+                            }
+                            // -f <format> keeps one format, as FAWE's does, which
+                            // leaves the folders out; -d and -n sort the files by
+                            // write time instead of by name, under the folders.
                             String format = ctx.hasFlag("f")
                                     ? ctx.flagValue("f", "").toLowerCase(Locale.ROOT) : null;
                             if (format != null) {
@@ -2116,25 +2313,44 @@ public final class Commands {
                             }
                             if (ctx.hasFlag("d") || ctx.hasFlag("n")) {
                                 boolean oldestFirst = ctx.hasFlag("d");
-                                names.sort((a, b) -> oldestFirst
-                                        ? Long.compare(Schematics.timeOf(a), Schematics.timeOf(b))
-                                        : Long.compare(Schematics.timeOf(b), Schematics.timeOf(a)));
+                                names = new ArrayList<>(names);
+                                names.sort((a, b) -> {
+                                    if (a.endsWith("/") != b.endsWith("/")) {
+                                        return a.endsWith("/") ? -1 : 1;
+                                    }
+                                    return oldestFirst ? Long.compare(Schematics.timeOf(a), Schematics.timeOf(b))
+                                            : Long.compare(Schematics.timeOf(b), Schematics.timeOf(a));
+                                });
                             }
                             Page page = Page.of(ctx, names.size());
-                            ctx.actor().message(Msg.info(Msg.title("Schematics") + "§7 (" + names.size() + ", page " + page.number()
-                                    + "/" + page.pages() + ", " + filter.describe() + "):"));
-                            for (String name : names.subList(page.from(), page.to())) {
-                                ctx.actor().message(Msg.of("§7 - §f" + name + " §7("
-                                        + Schematics.formatOf(name) + ")"));
+                            ctx.actor().message(Msg.title((folder.isEmpty() ? "Schematics" : "Schematics in " + folder + "/")
+                                    + " (" + names.size() + (page.pages() > 1 ? ", page " + page.number() + "/" + page.pages() : "")
+                                    + ")"));
+                            if (names.isEmpty()) {
+                                ctx.actor().message(Msg.hint("None yet: //schem save <name> writes your clipboard"));
                             }
-                            page.hint(ctx, "//schem list");
+                            // A folder lists itself when clicked, a schematic puts its
+                            // load command in the chat box, as in FAWE.
+                            for (String name : names.subList(page.from(), page.to())) {
+                                if (name.endsWith("/")) {
+                                    ctx.actor().commandLink(Msg.item(name, "folder").raw(), "//schem list " + name,
+                                            "List " + name);
+                                } else {
+                                    ctx.actor().suggestLink(Msg.item(name, Schematics.formatOf(name)).raw(),
+                                            "//schem load " + name, "Load " + name);
+                                }
+                            }
+                            page.hint(ctx, "//schem list" + (folder.isEmpty() ? "" : " " + folder + "/"));
                         }
                         case "save" -> {
                             if (!ctx.session().hasClipboard()) {
                                 throw CommandRegistry.error("No clipboard: copy something first");
                             }
                             String name = ctx.arg(1);
-                            String format = ctx.arg(2, "sponge.3");
+                            // Without a format the save writes the one saving.format
+                            // names, which it used to ignore for sponge.3.
+                            String format = com.maxlananas.fawebim.core.clipboard.SchematicFormat.of(ctx.arg(2,
+                                    com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat)).id();
                             // -f overwrites an existing file; without it a name
                             // that is already taken is refused.
                             if (!ctx.hasFlag("f") && Schematics.exists(name, format)) {
@@ -2144,11 +2360,10 @@ public final class Commands {
                             // A large save goes to the worker pool, so the tick
                             // loop is not held up while the file is written.
                             BlockArrayClipboard saving = ctx.session().getClipboard().getClipboard();
-                            if (format.toLowerCase(java.util.Locale.ROOT).startsWith("mcedit")
-                                    || format.toLowerCase(java.util.Locale.ROOT).startsWith("legacy")) {
+                            if (format.equals(com.maxlananas.fawebim.core.clipboard.SchematicFormat.MCEDIT.id())) {
                                 int lost = Schematics.legacyLosses(saving);
                                 if (lost > 0) {
-                                    ctx.actor().message(Msg.error(lost + " block(s) have no legacy id and are"
+                                    ctx.actor().message(Msg.error(Msg.blocks(lost) + " have no legacy id and are"
                                             + " saved as air; use sponge.3 to keep them"));
                                 }
                             }
@@ -2160,16 +2375,19 @@ public final class Commands {
                                 Schematics.saveAsync(saving, name, format, ctx.world().executor())
                                         .whenComplete((file, error) -> ctx.world().sync(() -> {
                                             if (error != null) {
-                                                ctx.actor().message(Msg.error("Could not save schematic '"
-                                                        + name + "': " + error.getCause()));
+                                                Throwable cause = error.getCause() != null ? error.getCause() : error;
+                                                ctx.actor().message(CommandRegistry.failureMessage(
+                                                        cause instanceof Exception exception ? exception
+                                                                : new RuntimeException(cause),
+                                                        ctx.actor(), "//schem save"));
                                             } else {
                                                 ctx.actor().message(Msg.success("Saved schematic '"
-                                                        + file.getFileName() + "'"));
+                                                        + Schematics.displayName(file) + "'"));
                                             }
                                         }));
                             } else {
-                                Schematics.save(saving, name, format);
-                                ctx.actor().message(Msg.success("Saved schematic '" + name + "'"));
+                                java.nio.file.Path file = Schematics.save(saving, name, format);
+                                ctx.actor().message(Msg.success("Saved schematic '" + Schematics.displayName(file) + "'"));
                             }
                         }
                         case "load" -> {
@@ -2187,25 +2405,55 @@ public final class Commands {
                                 ctx.session().setClipboardRandomRotation(false);
                                 ctx.session().setClipboardDynamicRotation(false);
                             }
-                            ctx.actor().message(Msg.success("Loaded schematic '" + name + "' ("
-                                    + Msg.formatNumber(clipboard.volume()) + " blocks)"
-                                    + (ctx.hasFlag("r") ? " with a random rotation" : "")));
+                            // The file that was read, which the name may leave open -
+                            // oak is oak.schem or oak.schematic - and FAWE's pointer to
+                            // what comes next.
+                            com.maxlananas.fawebim.core.math.BlockBox box = clipboard.getBox();
+                            ctx.actor().message(Msg.success("Loaded schematic '"
+                                    + Schematics.displayName(clipboard.getSource()) + "' ("
+                                    + Msg.size(box.width(), box.height(), box.length()) + ")"
+                                    + (ctx.hasFlag("r") ? " with a random rotation" : "")
+                                    + ": paste it with //paste"));
                         }
                         case "delete", "d" -> {
-                            Schematics.delete(ctx.arg(1));
-                            ctx.actor().message(Msg.success("Deleted schematic '" + ctx.arg(1) + "'"));
+                            String name = ctx.arg(1);
+                            if (!name.equals("*")) {
+                                Schematics.delete(name);
+                                ctx.actor().message(Msg.success("Deleted schematic '" + name + "'"));
+                                return;
+                            }
+                            // FAWE's //schem delete *: the files the clipboard was loaded from.
+                            List<java.nio.file.Path> files = loadedFiles(ctx.session());
+                            if (files.isEmpty()) {
+                                throw CommandRegistry.error("No schematic file to delete: //schem delete * deletes"
+                                        + " the files //schem load read into your clipboard");
+                            }
+                            for (java.nio.file.Path file : files) {
+                                String shown = Schematics.displayName(file);
+                                Schematics.delete(shown);
+                                ctx.actor().message(Msg.success("Deleted schematic '" + shown + "'"));
+                            }
                         }
                         case "unload" -> {
-                            ctx.session().setClipboard(null);
-                            ctx.actor().message(Msg.result("Clipboard", "unloaded"));
+                            if (ctx.args().size() < 2) {
+                                ctx.session().setClipboard(null);
+                                ctx.actor().message(Msg.result("Clipboard", "unloaded"));
+                                return;
+                            }
+                            unloadSchematic(ctx, ctx.arg(1));
                         }
                         case "move", "m" -> {
-                            String name = ctx.arg(1);
-                            String format = ctx.arg(2, com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat);
-                            com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard converted = Schematics.load(name);
-                            Schematics.delete(name);
-                            Schematics.save(converted, name, format);
-                            ctx.actor().message(Msg.success("Schematic '" + name + "' converted to " + format));
+                            if (ctx.args().size() > 2) {
+                                // Two words: the conversion this command did before it
+                                // moved files as FAWE's does.
+                                String name = ctx.arg(1);
+                                java.nio.file.Path written = Schematics.convert(name, ctx.arg(2));
+                                ctx.actor().message(Msg.success("Converted '" + name + "' to "
+                                        + com.maxlananas.fawebim.core.clipboard.SchematicFormat.of(ctx.arg(2)).id()
+                                        + ": '" + Schematics.displayName(written) + "'"));
+                                return;
+                            }
+                            moveSchematics(ctx, ctx.arg(1));
                         }
                         case "share" -> {
                             if (!ctx.session().hasClipboard()) {
@@ -2220,40 +2468,52 @@ public final class Commands {
                         }
                         case "clear" -> {
                             ctx.session().setClipboard(null);
-                            ctx.session().clearClipboardPool();
                             ctx.actor().message(Msg.result("Clipboard", "cleared"));
                         }
                         case "loadall" -> {
-                            String format = ctx.arg(1, com.maxlananas.fawebim.core.platform.Config.get()
-                                    .defaultSchematicFormat);
-                            String filter = ctx.arg(2, "*");
+                            // FAWE's //schem loadall [format] <filename>: one word is the
+                            // file, and the format only comes first when both are given.
+                            // The format is read from each file anyway.
+                            String filter = ctx.arg(ctx.args().size() > 2 ? 2 : 1);
                             java.util.List<com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard> loaded =
-                                    Schematics.loadAll(format, filter);
+                                    Schematics.loadAll(filter);
                             if (loaded.isEmpty()) {
                                 throw CommandRegistry.error("No schematic matched '" + filter + "'");
                             }
-                            if (ctx.hasFlag("o")) {
-                                ctx.session().setClipboardPool(loaded);
-                            } else {
-                                ctx.session().addToClipboardPool(loaded);
+                            // Without -o they join the clipboards the session
+                            // holds, a single one included, as FAWE's addClipboard.
+                            java.util.List<BlockArrayClipboard> pool = new java.util.ArrayList<>();
+                            if (!ctx.hasFlag("o")) {
+                                pool.addAll(ctx.session().getClipboardPool());
+                                if (pool.isEmpty() && ctx.session().hasClipboard()) {
+                                    pool.add(ctx.session().getClipboard().getClipboard());
+                                }
                             }
+                            pool.addAll(loaded);
+                            ctx.session().setClipboard(loaded.get(0));
+                            ctx.session().setClipboardPool(pool);
                             ctx.session().setClipboardPoolRandomRotation(ctx.hasFlag("r") || ctx.hasFlag("d"));
                             ctx.session().setClipboardPoolDynamicRotation(ctx.hasFlag("d"));
-                            ctx.session().setClipboard(loaded.get(0));
-                            ctx.actor().message(Msg.success("Loaded " + loaded.size() + " clipboard(s); "
+                            ctx.actor().message(Msg.success("Loaded " + Msg.count(loaded.size(), "clipboard", "clipboards") + "; "
                                     + "//paste picks one at random"));
                         }
                         case "formats", "listformats", "f" -> {
-                            ctx.actor().message(Msg.info("Formats: " + String.join(", ", Schematics.formats())
-                                    + " (default: " + com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat + ")"));
+                            // FAWE's listing: every format with the names it is looked up by.
+                            com.maxlananas.fawebim.core.clipboard.SchematicFormat[] all =
+                                    com.maxlananas.fawebim.core.clipboard.SchematicFormat.values();
+                            ctx.actor().message(Msg.title("Schematic formats (" + all.length + ", default "
+                                    + com.maxlananas.fawebim.core.platform.Config.get().defaultSchematicFormat + ")"));
+                            for (com.maxlananas.fawebim.core.clipboard.SchematicFormat format : all) {
+                                ctx.actor().message(Msg.item(format.id(), format.suffix() + (format.aliases().isEmpty()
+                                        ? "" : " - also " + String.join(", ", format.aliases()))));
+                            }
                         }
-                        default -> throw CommandRegistry.error("Usage: //schem list|save <name>|load <name>|delete <name>");
+                        default -> throw CommandRegistry.error("Unknown sub-command '" + ctx.arg(0) + "': //schem "
+                                + SchematicSubCommand.names());
                     }
                 };
 
     }
-
-    // ------------------------------------------------------------------ history
 
     private void registerHistory() {
         CommandRegistry.Entry e66 = registry.register("//undo", "/undo", "//u");
@@ -2263,13 +2523,14 @@ public final class Commands {
         e66.arguments.add("[player]");
         e66.handler = ctx -> {
                     int steps = undoCount(ctx.argument(0));
+                    ctx.confirmCount(steps);
                     com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx);
                     int undone = historySteps(ctx, target, steps, true);
                     String who = target == ctx.session() ? "" : " for " + target.ownerName();
                     if (undone == 0) {
                         ctx.actor().message(Msg.error("Nothing to undo" + who));
                     } else {
-                        ctx.actor().message(Msg.result("Undid", Msg.count(undone) + "\u00a77 block change(s)" + who));
+                        ctx.actor().message(Msg.result("Undid", Msg.count(undone, "block change", "block changes") + who));
                     }
                 };
 
@@ -2281,13 +2542,14 @@ public final class Commands {
         e67.arguments.add("[player]");
         e67.handler = ctx -> {
                     int steps = undoCount(ctx.argument(0));
+                    ctx.confirmCount(steps);
                     com.maxlananas.fawebim.core.session.LocalSession target = historyTarget(ctx);
                     int redone = historySteps(ctx, target, steps, false);
                     String who = target == ctx.session() ? "" : " for " + target.ownerName();
                     if (redone == 0) {
                         ctx.actor().message(Msg.error("Nothing to redo" + who));
                     } else {
-                        ctx.actor().message(Msg.result("Redid", Msg.count(redone) + "\u00a77 block change(s)" + who));
+                        ctx.actor().message(Msg.result("Redid", Msg.count(redone, "block change", "block changes") + who));
                     }
                 };
 
@@ -2352,28 +2614,21 @@ public final class Commands {
                 break;
             }
             EditSession edit = new EditSession(ctx.world(), session, undo ? "undo" : "redo", false);
-            for (var sets : record.changes().values()) {
-                for (var set : sets) {
-                    edit.applyChangeSet(set, undo);
-                }
-            }
-            for (var sets : record.biomeChanges().values()) {
-                for (var set : sets) {
-                    edit.applyBiomeChangeSet(set, undo);
-                }
+            try {
+                edit.applyRecord(record, undo);
+            } finally {
+                edit.close();
             }
             changed += record.changeCount() + record.biomeChangeCount();
-            edit.flushQueue();
         }
         return changed;
     }
-
-    // -------------------------------------------------------------------- biome
 
     private void registerBiome() {
         CommandRegistry.Entry e69 = registry.register("/setbiome", "//setbiome", "//biome");
         e69.description = "Set the biome in the selection, or at your position with -p";
         e69.group = "biome";
+        e69.confirmRegion = true;
         e69.requiresSelection = true;
         // -p changes the biome of the block the player stands in only.
         e69.booleanFlags.add("p");
@@ -2409,8 +2664,8 @@ public final class Commands {
                         }
                     }
                     session.flushQueue();
-                    ctx.actor().message(Msg.success("Changed biome of " + Msg.formatNumber(changed)
-                            + " biome cell(s)"));
+                    ctx.actor().message(Msg.success("Changed biome of "
+                            + Msg.count(changed, "biome cell", "biome cells")));
                 };
 
 
@@ -2422,8 +2677,10 @@ public final class Commands {
         e70.handler = ctx -> {
                     List<String> biomes = BlockState.registry().biomeNames();
                     Page page = Page.of(ctx, biomes.size());
-                    ctx.actor().message(Msg.info(page.header("Biomes", biomes.size()) + " "
-                            + Str.limit(String.join(", ", biomes.subList(page.from(), page.to())), 2000)));
+                    ctx.actor().message(page.header("Biomes", biomes.size()));
+                    ctx.actor().message(Msg.hint(Str.limit(String.join(", ",
+                            biomes.subList(page.from(), page.to())), 2000)));
+                    page.hint(ctx, "//biomelist");
                 };
 
 
@@ -2442,8 +2699,6 @@ public final class Commands {
                 };
 
     }
-
-    // -------------------------------------------------------------------- chunk
 
     private void registerChunk() {
         CommandRegistry.Entry e72 = registry.register("//chunkinfo");
@@ -2470,11 +2725,13 @@ public final class Commands {
         e73.handler = ctx -> {
                     List<BlockVector2> chunks = ctx.selection().getChunks();
                     Page page = Page.of(ctx, chunks.size(), 40);
-                    StringBuilder sb = new StringBuilder(page.header("Chunks", chunks.size()) + " ");
+                    ctx.actor().message(page.header("Chunks", chunks.size()));
+                    StringBuilder sb = new StringBuilder();
                     for (int i = page.from(); i < page.to(); i++) {
                         sb.append(chunks.get(i).x()).append(',').append(chunks.get(i).z()).append(' ');
                     }
-                    ctx.actor().message(Msg.info(sb.toString()));
+                    ctx.actor().message(Msg.hint(sb.toString().trim()));
+                    page.hint(ctx, "//listchunks");
                 };
 
 
@@ -2486,22 +2743,40 @@ public final class Commands {
         e74.valueFlags.add("o");
         e74.arguments.add("[-o <time>]");
         e74.handler = ctx -> {
-                    long before = ctx.hasFlag("o") ? parseDuration(ctx.flagValue("o", "")) : 0;
+                    long before = ctx.hasFlag("o") ? Str.parseDuration(ctx.flagValue("o", "")) : 0;
                     long threshold = before == 0 ? 0 : System.currentTimeMillis() - before;
-                    int count = 0;
+                    java.util.List<BlockVector2> chunks = new java.util.ArrayList<>();
                     int skipped = 0;
                     for (BlockVector2 chunk : ctx.selection().getChunks()) {
                         if (threshold > 0 && ctx.world().chunkLastModified(chunk.x(), chunk.z()) > threshold) {
                             skipped++;
                             continue;
                         }
-                        if (ctx.world().regenerateChunk(chunk.x(), chunk.z(),
-                                new com.maxlananas.fawebim.core.world.RegenOptions())) {
-                            count++;
+                        chunks.add(chunk);
+                    }
+                    // A deleted chunk is one the generator makes again: its whole
+                    // columns are written as freshly generated, through the edit
+                    // session, so //undo brings them back.
+                    if (!chunks.isEmpty()) {
+                        try (com.maxlananas.fawebim.core.world.World.GeneratedTerrain terrain = ctx.world().generate(
+                                chunks, new com.maxlananas.fawebim.core.world.RegenOptions().setRegenBiomes(true))) {
+                            if (terrain == null) {
+                                throw CommandRegistry.error("This platform cannot generate terrain");
+                            }
+                            EditSession editSession = ctx.editSession();
+                            for (BlockVector2 chunk : chunks) {
+                                com.maxlananas.fawebim.core.function.Regeneration.copy(terrain,
+                                        new com.maxlananas.fawebim.core.region.CuboidRegion(
+                                                new BlockVector3(chunk.x() << 4, ctx.world().minY(), chunk.z() << 4),
+                                                new BlockVector3((chunk.x() << 4) + 15, ctx.world().maxY(),
+                                                        (chunk.z() << 4) + 15)),
+                                        editSession, true);
+                            }
+                            editSession.flushQueue();
                         }
                     }
-                    ctx.actor().message(Msg.result("Deleted", Msg.count(count) + "\u00a77 chunk(s)"
-                            + (skipped > 0 ? ", kept " + Msg.count(skipped) + "\u00a77 recently changed"
+                    ctx.actor().message(Msg.result("Deleted", Msg.count(chunks.size(), "chunk", "chunks")
+                            + (skipped > 0 ? ", kept " + Msg.count(skipped) + " recently changed"
                                     : "")));
                 };
 
@@ -2561,8 +2836,6 @@ public final class Commands {
 
     }
 
-    // --------------------------------------------------------------- navigation
-
     private void registerNavigation() {
         CommandRegistry.Entry e76 = registry.register("//jumpto", "//j");
         e76.description = "Teleport to a location";
@@ -2578,8 +2851,14 @@ public final class Commands {
                         throw CommandRegistry.error("No block in sight");
                     }
                     ctx.requirePosition();
-                    Navigation.setOnGround(ctx.actor(), target);
-                    ctx.actor().message(Msg.result("Jumped to", Msg.value(target).raw()));
+                    // WorldEdit's /jumpto: the first free space at or above the
+                    // target, or the target itself with -f.
+                    if (ctx.hasFlag("f")) {
+                        ctx.actor().teleport(target.x() + 0.5, target.y(), target.z() + 0.5);
+                    } else if (!Navigation.findFreePosition(ctx.actor(), target)) {
+                        throw CommandRegistry.error("No free space above " + Msg.value(target).raw());
+                    }
+                    ctx.actor().message(Msg.result("Jumped to", Msg.value(ctx.actor().position()).raw()));
                 };
 
 
@@ -2624,7 +2903,7 @@ public final class Commands {
                     if (moved == 0) {
                         throw CommandRegistry.error("You would hit something above you");
                     }
-                    ctx.actor().message(Msg.result("Ascended", Msg.count(moved) + "\u00a77 level(s)"));
+                    ctx.actor().message(Msg.result("Ascended", Msg.count(moved, "level", "levels")));
                 };
 
 
@@ -2643,7 +2922,7 @@ public final class Commands {
                     if (moved == 0) {
                         throw CommandRegistry.error("You would hit something below you");
                     }
-                    ctx.actor().message(Msg.result("Descended", Msg.count(moved) + "\u00a77 level(s)"));
+                    ctx.actor().message(Msg.result("Descended", Msg.count(moved, "level", "levels")));
                 };
 
 
@@ -2680,7 +2959,7 @@ public final class Commands {
                     if (!Navigation.ascendUpwards(ctx.actor(), distance, alwaysGlass(ctx))) {
                         throw CommandRegistry.error("You are obstructed above");
                     }
-                    ctx.actor().message(Msg.success("Moved up " + distance + " block(s)"));
+                    ctx.actor().message(Msg.success("Moved up " + Msg.blocks(distance)));
                 };
 
 
@@ -2713,8 +2992,6 @@ public final class Commands {
         return !ctx.actor().isFlying();
     }
 
-    // ------------------------------------------------------------------ utility
-
     private void registerUtility() {
         CommandRegistry.Entry e81 = registry.register("/fast");
         e81.description = "Toggle fast mode";
@@ -2731,7 +3008,7 @@ public final class Commands {
                     }
                     session.setFastMode(enabled);
                     ctx.actor().message(Msg.result("Fast mode", enabled
-                            ? "on \u00a77- lighting in the affected chunks may be wrong and/or you"
+                            ? "on - lighting in the affected chunks may be wrong and/or you"
                                     + " may need to rejoin to see changes"
                             : "off"));
                 };
@@ -2871,7 +3148,7 @@ public final class Commands {
         e86b.arguments.add("[mask]");
         e86b.handler = ctx -> {
                     com.maxlananas.fawebim.core.brush.Brush brush =
-                            com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.session());
+                            com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.actor());
                     if (ctx.args().isEmpty()) {
                         ctx.session().setSourceMask(null);
                         if (brush != null) {
@@ -2925,25 +3202,25 @@ public final class Commands {
         CommandRegistry.Entry e89 = registry.register("//masks");
         e89.description = "List the available masks";
         e89.group = "utility";
-        e89.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Masks") + "§7: #air #existing #solid #liquid #fullcube #wall #surface #angle #surfaceangle #roc #beside " + "#extrema #xaxis #yaxis #zaxis #true #false #exposed #biome #region #dregion #offset " + "#simplex #clipboard # =expr ! & ,"));
+        e89.handler = ctx -> ctx.actor().message(Msg.result("Masks", "#air #existing #solid #liquid #fullcube #wall #surface #angle #surfaceangle #roc #beside " + "#extrema #xaxis #yaxis #zaxis #true #false #exposed #biome #region #dregion #offset " + "#simplex #clipboard # =expr ! & ,"));
 
 
         CommandRegistry.Entry e90 = registry.register("//patterns");
         e90.description = "List the available patterns";
         e90.group = "utility";
-        e90.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Patterns") + "§7: block, 25%block, #clipboard #copy #existing #biome #offset #spread #solidspread " + "#surfacespread #l/#linear #l3d #l2d #color #lighten #darken #saturate #desaturate " + "#swaptype #simplex ##tag =expr ^"));
+        e90.handler = ctx -> ctx.actor().message(Msg.result("Patterns", "block, 25%block, #clipboard #copy #existing #biome #offset #spread #solidspread " + "#surfacespread #l/#linear #l3d #l2d #color #lighten #darken #saturate #desaturate " + "#swaptype #simplex ##tag =expr ^"));
 
 
         CommandRegistry.Entry e91 = registry.register("//transforms");
         e91.description = "List the available transforms";
         e91.group = "utility";
-        e91.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Transforms") + "§7: rotate <angle> [axis], flip [direction], scale <factor>, offset <x> <y> <z>"));
+        e91.handler = ctx -> ctx.actor().message(Msg.result("Transforms", "rotate <angle> [axis], flip [direction], scale <factor>, offset <x> <y> <z>"));
 
 
         CommandRegistry.Entry e92 = registry.register("//brushes");
         e92.description = "List the available brushes";
         e92.group = "utility";
-        e92.handler = ctx -> ctx.actor().message(Msg.info( Msg.title("Brushes") + "§7: sphere ball smooth blendball flatten height raise lower layer line spline catenary " + "scatter shatter splatter rock blob pull stencil gravity cylinder clipboard copypaste " + "biome butcher forest command populateschematic surface surfacespline sweep"));
+        e92.handler = ctx -> ctx.actor().message(Msg.result("Brushes", "sphere ball smooth blendball flatten height raise lower layer line spline catenary " + "scatter shatter splatter rock blob pull stencil gravity cylinder clipboard copypaste " + "biome butcher forest command populateschematic surface surfacespline sweep"));
 
 
         CommandRegistry.Entry e93 = registry.register("//desel", "//deselect");
@@ -2955,30 +3232,26 @@ public final class Commands {
                 };
 
 
-        CommandRegistry.Entry e94 = registry.register("//we", "/we", "/worldedit");
+        CommandRegistry.Entry e94 = registry.register("//we", "/we", "/worldedit", "/fawe", "/fastasyncworldedit");
         e94.description = "WorldEdit/FAWE information";
         e94.group = "utility";
         e94.arguments.add("[version|reload|trace|help]");
         e94.handler = ctx -> {
-                    String action = ctx.arg(0, "version").toLowerCase(Locale.ROOT);
-                    switch (action) {
-                        case "version" -> ctx.actor().message(Msg.info("FAWE-BIM "
-                                + com.maxlananas.fawebim.core.platform.Config.VERSION
-                                + " for Minecraft " + com.maxlananas.fawebim.core.platform.Config.MINECRAFT_VERSION
-                                + " (WorldEdit/FAWE command surface 7.3.17)"));
-                        case "reload" -> {
-                            com.maxlananas.fawebim.core.platform.Config.get().reload();
-                            ctx.actor().message(Msg.success("Configuration reloaded"));
-                        }
-                        case "trace" -> {
-                            // The same switch as the /we trace command, for a
-                            // line that reached /we itself.
-                            boolean tracing = !ctx.session().isTracing();
-                            ctx.session().setTracing(tracing);
-                            ctx.actor().message(Msg.result("Trace mode", tracing ? "active" : "inactive"));
-                        }
-                        default -> ctx.actor().message(Msg.info("Usage: /we version|reload|trace"));
+                    // FAWE's /worldedit container, which answers to /we, /fawe
+                    // and /fastasyncworldedit too. Its sub-commands are
+                    // registered as "/we <name>": a line that came in through
+                    // another spelling is sent on to them, and a bare /we lists
+                    // them, as FAWE's container does.
+                    if (ctx.args().isEmpty()) {
+                        Help.subCommands(ctx, registry, "we");
+                        return;
                     }
+                    String sub = "/we " + ctx.arg(0).toLowerCase(Locale.ROOT);
+                    if (!registry.contains(sub)) {
+                        throw CommandRegistry.error("Unknown sub-command '" + ctx.arg(0) + "': /we "
+                                + String.join("|", weSubCommands()));
+                    }
+                    registry.dispatch(ctx.actor(), "/we " + ctx.tail());
                 };
 
 
@@ -2992,11 +3265,15 @@ public final class Commands {
         e95.arguments.add("[-p <page>]");
         e95.arguments.add("[-s]");
         e95.handler = ctx -> {
-                    String filter = ctx.arg(0, "").trim().toLowerCase(Locale.ROOT);
+                    // A command path may take two words: //help /tool tree.
+                    String filter = String.join(" ", ctx.args()).trim().toLowerCase(Locale.ROOT);
+                    CommandRegistry.Entry exact = filter.startsWith("/") ? registry.get(filter) : null;
                     if (filter.isEmpty()) {
                         Help.list(ctx, registry);
                     } else if (ctx.hasFlag("s")) {
                         Help.subCommands(ctx, registry, filter);
+                    } else if (exact != null && !ctx.hasFlag("p")) {
+                        Help.command(ctx, registry, exact, filter);
                     } else {
                         Help.search(ctx, registry, filter);
                     }
@@ -3006,8 +3283,8 @@ public final class Commands {
         CommandRegistry.Entry e96 = registry.register("//version");
         e96.description = "Show the mod version";
         e96.group = "utility";
-        e96.handler = ctx -> ctx.actor().message(Msg.info(Msg.title("FAWE-BIM") + "§7 " + com.maxlananas.fawebim.core.platform.Config.VERSION
-                + " \u2014 " + registry.all().size() + " commands registered"));
+        e96.handler = ctx -> ctx.actor().message(Msg.result("FAWE-BIM "
+                + com.maxlananas.fawebim.core.platform.Config.VERSION, registry.all().size() + " commands registered"));
 
     }
 
@@ -3065,79 +3342,174 @@ public final class Commands {
         registerBrushNone();
 
         CommandRegistry.Entry e99 = registry.register("/brush", "//brush", "/br");
-        e99.description = "Show the current brush";
+        e99.description = "Show the brushes of the item in hand";
         e99.group = "brush";
         e99.handler = ctx -> {
-                    var brush = com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.session());
-                    if (brush == null) {
-                        ctx.actor().message(Msg.info("No brush bound. Use /brush sphere 5 stone for example."));
-                    } else {
-                        ctx.actor().message(Msg.keyValue("Brush", brush.describe()));
+                    // Each brush has an entry of its own: a word after /brush
+                    // that reaches this one names none of them.
+                    if (!ctx.args().isEmpty()) {
+                        String close = Str.closest(ctx.arg(0), brushNames());
+                        throw CommandRegistry.error("Unknown brush '" + ctx.arg(0) + "'. "
+                                + (close == null ? "See //help -s brush" : "Did you mean /brush " + close + "?"));
+                    }
+                    com.maxlananas.fawebim.core.session.ItemBinding binding =
+                            ctx.session().binding(ctx.actor().heldItem());
+                    if (binding == null || !binding.hasBrush()) {
+                        ctx.actor().message(Msg.info("No brush bound. Use /brush sphere stone 5 for example."));
+                        return;
+                    }
+                    // Each click by the line that built its brush, which says it
+                    // as it was typed, and the size it has now; one line for a
+                    // brush both clicks share, as /brush binds it.
+                    if (binding.primary() != null && binding.secondary() == binding.primary()) {
+                        ctx.actor().message(Msg.keyValue("Both clicks",
+                                brushSummary(binding.brushLine(), binding.primary())));
+                        return;
+                    }
+                    if (binding.primary() != null) {
+                        ctx.actor().message(Msg.keyValue("Right click",
+                                brushSummary(binding.brushLine(), binding.primary())));
+                    }
+                    if (binding.secondary() != null) {
+                        ctx.actor().message(Msg.keyValue("Left click",
+                                brushSummary(binding.secondaryLine(), binding.secondary())));
                     }
                 };
 
     }
 
+    /** The words that follow /brush, sorted, for the suggestion under one mistyped. */
+    private List<String> brushNames() {
+        java.util.TreeSet<String> names = new java.util.TreeSet<>();
+        for (CommandRegistry.Entry entry : registry.all()) {
+            addSubCommandWord(names, "/brush ", entry.name);
+            for (String alias : entry.aliases) {
+                addSubCommandWord(names, "/brush ", alias);
+            }
+        }
+        return new ArrayList<>(names);
+    }
+
+    private static void addSubCommandWord(java.util.Set<String> names, String container, String name) {
+        if (name.startsWith(container) && name.indexOf(' ', container.length()) < 0) {
+            names.add(name.substring(container.length()));
+        }
+    }
+
+    /**
+     * Binds the tool a name stands for to the held item, or to the item named
+     * right after the tool's arguments, and says so as FAWE does.
+     *
+     * @param first where the tool's arguments start among the command's
+     */
+    private void bindTool(Ctx ctx, String name, int first) {
+        com.maxlananas.fawebim.core.tool.Tool tool = com.maxlananas.fawebim.core.tool.Tools.create(name, ctx, first);
+        if (tool == null) {
+            throw CommandRegistry.error("Unknown tool '" + name + "'. Options: "
+                    + com.maxlananas.fawebim.core.tool.Tools.options());
+        }
+        // The tool's own name, whichever spelling built it: /tool replace is the replacer.
+        String item = com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(),
+                ctx.arg(first + com.maxlananas.fawebim.core.tool.Tools.argumentCount(tool.name()), ""));
+        ctx.actor().message(Msg.success(com.maxlananas.fawebim.core.tool.Tools.boundLine(tool.name(), item)));
+    }
+
+    /**
+     * Takes whatever is bound to the held item off it, its tool or its
+     * brushes, as FAWE's /tool none and /brush none both do; FAWE's line says
+     * which of the two it was.
+     */
+    private void unbindTool(Ctx ctx) {
+        com.maxlananas.fawebim.core.session.ItemBinding old = ctx.session().unbind(ctx.actor().heldItem());
+        boolean brush = old != null && old.hasBrush();
+        ctx.actor().message(Msg.success((brush ? "Brush" : "Tool") + " unbound from your current item"));
+    }
+
     private void registerTools() {
         CommandRegistry.Entry e100 = registry.register("/tool", "//tool");
-        e100.description = "Bind a tool to an item: none, tree, repl, cycler, flood-fill, brush, info, farwand, "
-                        + "navwand, lrbuild, stacker, deltree";
+        e100.description = "Binds a tool to the item in your hand";
         e100.group = "tool";
+        // A tool is bound to the item in a hand, as every one of WorldEdit's
+        // tool commands takes a player: a console has no hand to bind it to.
+        e100.requiresPlayer = true;
         e100.arguments.add("[" + String.join("|", com.maxlananas.fawebim.core.tool.Tools.NAMES) + "]");
         e100.arguments.add("[target]");
+        // Each tool has an entry of its own below: a line reaches this one
+        // with no tool or with a name no entry answers. FAWE requires the
+        // tool and lists them; this took a bare /tool for /tool none, so a
+        // player looking for the tools lost the one in hand.
         e100.handler = ctx -> {
-                    String type = ctx.arg(0, "none").toLowerCase(Locale.ROOT);
-                    if (type.equals("none")) {
-                        LocalSession session = ctx.session();
-                        String held = ctx.actor().heldItem();
-                        com.maxlananas.fawebim.core.tool.Tools.clear(session);
-                        // Upstream a brush is a tool bound to an item, so unbinding
-                        // clears the brush equipped with the held item as well.
-                        if (held != null && held.equals(session.getBindings().get("brush-item"))) {
-                            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
-                            session.getBindings().remove("brush-command");
-                        }
-                        if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
-                            com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
-                        }
-                        ctx.actor().message(Msg.success("Tool unbound"));
-                        return;
+                    if (ctx.args().isEmpty()) {
+                        throw CommandRegistry.error("No tool given. Options: "
+                                + com.maxlananas.fawebim.core.tool.Tools.options());
                     }
-                    com.maxlananas.fawebim.core.tool.Tool tool = com.maxlananas.fawebim.core.tool.Tools.create(type, ctx);
-                    if (tool == null) {
-                        throw CommandRegistry.error("Unknown tool '" + type + "'");
-                    }
-                    com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), ctx.arg(1, ""));
-                    ctx.actor().message(Msg.success("Tool '" + type + "' bound to your held item"));
+                    bindTool(ctx, ctx.arg(0).toLowerCase(Locale.ROOT), 1);
                 };
+
+        // Each tool is a sub-command of its own, as in FAWE, with the arguments
+        // and the description FAWE gives it: //help, the usage of a line short
+        // of an argument and tab completion show what the tool takes.
+        CommandRegistry.Entry none = registry.registerUnlessPresent("/tool none", "/tool unbind");
+        if (none != null) {
+            none.description = "Unbind a bound tool from your current item";
+            none.group = "tool";
+            none.requiresPlayer = true;
+            none.handler = this::unbindTool;
+        }
+        for (com.maxlananas.fawebim.core.tool.Tools.Kind kind : com.maxlananas.fawebim.core.tool.Tools.KINDS) {
+            String[] aliases = kind.aliases().stream().map(alias -> "/tool " + alias).toArray(String[]::new);
+            CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool " + kind.name(), aliases);
+            if (entry == null) {
+                continue;
+            }
+            entry.description = kind.description();
+            entry.group = "tool";
+            entry.requiresPlayer = true;
+            entry.arguments.addAll(kind.arguments());
+            entry.handler = ctx -> bindTool(ctx, kind.name(), 0);
+        }
 
 
         CommandRegistry.Entry e101 = registry.register("/superpickaxe", "/sp", "//sp");
-        e101.description = "Super-pickaxe: single, area <radius>, recursive";
+        e101.description = "Super-pickaxe: single, area <range>, recursive <range>";
         e101.group = "tool";
+        // A mode of the pickaxe in a hand: every one of WorldEdit's takes a player.
+        e101.requiresPlayer = true;
         e101.arguments.add("[single|area|recursive|recur|off]");
-        e101.arguments.add("[radius]");
+        e101.arguments.add("[range]");
         e101.handler = ctx -> {
                     String mode = ctx.arg(0, "area").toLowerCase(Locale.ROOT);
                     LocalSession session = ctx.session();
                     switch (mode) {
                         case "single" -> {
+                            session.setSuperPickaxeMode(com.maxlananas.fawebim.core.tool.SuperPickaxe.SINGLE);
                             session.setSuperPickaxeEnabled(true);
-                            session.setSuperPickaxeMode(0);
-                        }
-                        case "recursive", "recur" -> {
-                            session.setSuperPickaxeEnabled(true);
-                            session.setSuperPickaxeMode(2);
+                            ctx.actor().message(Msg.success("Super pickaxe: single block"));
                         }
                         case "area" -> {
+                            int range = ctx.intArg(1, 1);
+                            com.maxlananas.fawebim.core.tool.SuperPickaxe.checkRange(range);
+                            session.setSuperPickaxeMode(com.maxlananas.fawebim.core.tool.SuperPickaxe.AREA);
+                            session.setSuperPickaxeRange(range);
                             session.setSuperPickaxeEnabled(true);
-                            session.setSuperPickaxeMode(1);
-                            session.setSuperPickaxeRadius(ctx.intArg(1, 1));
+                            ctx.actor().message(Msg.success("Super pickaxe: area of range " + Msg.value(range).raw()));
                         }
-                        case "off" -> session.setSuperPickaxeEnabled(false);
-                        default -> throw CommandRegistry.error("Usage: /sp single|area <radius>|recursive|off");
+                        case "recursive", "recur" -> {
+                            double range = ctx.doubleArg(1, 1);
+                            com.maxlananas.fawebim.core.tool.SuperPickaxe.checkRange(range);
+                            session.setSuperPickaxeMode(com.maxlananas.fawebim.core.tool.SuperPickaxe.RECURSIVE);
+                            session.setSuperPickaxeRange(range);
+                            session.setSuperPickaxeEnabled(true);
+                            ctx.actor().message(Msg.success("Super pickaxe: recursive, range "
+                                    + Msg.value(Msg.formatDouble(range)).raw()));
+                        }
+                        case "off" -> {
+                            session.setSuperPickaxeEnabled(false);
+                            ctx.actor().message(Msg.success("Super pickaxe disabled"));
+                        }
+                        default -> throw CommandRegistry.error(
+                                "Usage: /sp single|area <range>|recursive <range>|off");
                     }
-                    ctx.actor().message(Msg.success("Super-pickaxe mode: " + mode));
                 };
 
 
@@ -3149,19 +3521,10 @@ public final class Commands {
         if (none == null) {
             return;
         }
-        none.description = "Unbind the brush from your current item";
+        none.description = "Unbind a bound brush from your current item";
         none.group = "brush";
         none.requiresPlayer = true;
-        none.handler = ctx -> {
-            LocalSession session = ctx.session();
-            com.maxlananas.fawebim.core.brush.BrushFactory.unbind(session);
-            session.getBindings().remove("brush-command");
-            String held = ctx.actor().heldItem();
-            if (held != null && held.equals(session.getBindings().get("secondary-brush-item"))) {
-                com.maxlananas.fawebim.core.brush.BrushFactory.unbindSecondary(session);
-            }
-            ctx.actor().message(Msg.success("Brush unbound"));
-        };
+        none.handler = this::unbindTool;
     }
 
     /**
@@ -3180,7 +3543,8 @@ public final class Commands {
             save.handler = ctx -> {
                 java.nio.file.Path file;
                 try {
-                    file = com.maxlananas.fawebim.core.brush.BrushPresets.save(ctx.session(), ctx.arg(0));
+                    file = com.maxlananas.fawebim.core.brush.BrushPresets.save(ctx.session(), ctx.actor().heldItem(),
+                            ctx.arg(0));
                 } catch (java.io.IOException e) {
                     throw CommandRegistry.error("Could not save the preset: " + e.getMessage());
                 }
@@ -3224,9 +3588,9 @@ public final class Commands {
                     return;
                 }
                 Page page = Page.of(ctx, presets.size(), 15);
-                ctx.actor().message(Msg.info(page.header("Brush presets", presets.size())));
+                ctx.actor().message(page.header("Brush presets", presets.size()));
                 for (String preset : presets.subList(page.from(), page.to())) {
-                    ctx.actor().message(Msg.of("\u00a77 - \u00a7f" + preset));
+                    ctx.actor().message(Msg.item(preset));
                 }
             };
         }
@@ -3253,17 +3617,42 @@ public final class Commands {
         if (built == null) {
             throw CommandRegistry.error("Brush '" + row[0] + "' could not be created");
         }
-        com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor());
-        // Remembered so the preset commands can save and reload it.
-        session.getBindings().put("brush-command", buildBrushLine(ctx));
-        ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped (radius " + radius + ")"));
+        // With the line that built it, which the preset commands save and reload.
+        com.maxlananas.fawebim.core.brush.BrushFactory.bind(session, built, ctx.actor(), buildBrushLine(ctx));
+        ctx.actor().message(Msg.success("Brush '" + row[0] + "' equipped"
+                + (sized(row) ? " (radius " + Msg.formatDouble(radius) + ")" : "")));
+        if (built.hint() != null) {
+            ctx.actor().message(Msg.hint(built.hint()));
+        }
     }
 
+    /**
+     * Whether FAWE gives the brush a radius: the clipboard, item and sweep
+     * brushes have none, and are not told one they would not use.
+     */
+    private static boolean sized(String[] row) {
+        return row == null || com.maxlananas.fawebim.core.brush.BrushParameters.arguments(row).stream()
+                .anyMatch(argument -> argument.startsWith("radius") || argument.startsWith("size"));
+    }
+
+    /** A bound brush as the line that built it, with the size it has now. */
+    private static String brushSummary(String line, com.maxlananas.fawebim.core.brush.Brush brush) {
+        String[] words = line == null ? new String[0] : line.trim().split("\\s+");
+        String[] row = words.length < 2 ? null : BrushTable.byName(
+                com.maxlananas.fawebim.core.brush.BrushFactory.canonical(words[1].toLowerCase(Locale.ROOT)));
+        return (line == null ? brush.describe() : line)
+                + (sized(row) ? " (size " + Msg.formatDouble(brush.radius()) + ")" : "");
+    }
+
+    /**
+     * The line that binds the brush again, for a preset: the brush's own
+     * command and every word typed after it, switches included. It was
+     * "brush" and the arguments alone - no brush name, no switches - so a
+     * preset loaded nothing, and a brush bound without an argument failed
+     * after it was bound.
+     */
     private static String buildBrushLine(Ctx ctx) {
-        StringBuilder line = new StringBuilder("brush ").append(ctx.arg(0));
-        for (int i = 1; i < ctx.args().size(); i++) {
-            line.append(' ').append(ctx.arg(i));
-        }
-        return line.toString();
+        String tail = ctx.tail();
+        return ctx.entry().name + (tail.isEmpty() ? "" : " " + tail);
     }
 }

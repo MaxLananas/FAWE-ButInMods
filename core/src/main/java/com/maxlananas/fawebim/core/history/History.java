@@ -1,7 +1,6 @@
 package com.maxlananas.fawebim.core.history;
 
 import com.maxlananas.fawebim.core.util.NbtCompound;
-import com.maxlananas.fawebim.core.world.World;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,12 +37,29 @@ public final class History {
         }
     }
 
-    /** A single undo step. */
+    /**
+     * A single undo step.
+     *
+     * <p>A record is written by the one edit that owns it, on the thread running
+     * that edit. Once the edit is over the record is {@linkplain #seal() sealed}:
+     * from then on it is only read - by an undo, by the edit log, by the snapshot
+     * writer on its own thread - and a write to it is a bug that fails loudly
+     * instead of changing a history someone else is serialising.</p>
+     */
     public static final class Record {
 
         public final String description;
         /** The world the record belongs to, so the edit log can filter by it. */
         public String world;
+        /**
+         * Who made the edit. The history of a session can be shared with every
+         * other session, so the name travels with the record rather than with
+         * whichever session installed the history's listener.
+         */
+        public String owner;
+        private boolean sealed;
+        /** Set once the history listener has been told about the record. */
+        private boolean published;
         /**
          * The change sets of a record, by packed chunk key. A history map used to
          * hold boxed keys, and an edit that fills thousands of chunks built a
@@ -54,6 +70,7 @@ public final class History {
         final com.maxlananas.fawebim.core.util.LongObjectMap<List<BiomeChangeSet>> biomes =
                 new com.maxlananas.fawebim.core.util.LongObjectMap<>();
         final List<EntityChange> entities = new ArrayList<>();
+        final List<BlockEntityChange> blockEntities = new ArrayList<>();
         int changeCount;
         int biomeChangeCount;
         /**
@@ -69,13 +86,32 @@ public final class History {
             this.description = description;
         }
 
+        /** Ends the record: every later write to it throws. */
+        public void seal() {
+            sealed = true;
+            currentSection = null;
+            currentBiomeSection = null;
+        }
+
+        public boolean isSealed() {
+            return sealed;
+        }
+
+        private void checkOpen() {
+            if (sealed) {
+                throw new IllegalStateException("History record '" + description + "' is sealed");
+            }
+        }
+
         public void add(ChangeSet set) {
+            checkOpen();
             sectionsOf(changes, key(set.chunkX(), set.chunkZ())).add(set);
             changeCount += set.size();
         }
 
         /** Records one block change, creating the section's change set on demand. */
         public void addChange(int x, int y, int z, int previous, int current) {
+            checkOpen();
             int chunkX = x >> 4;
             int chunkZ = z >> 4;
             int sectionY = y >> 4;
@@ -104,11 +140,28 @@ public final class History {
         }
 
         public void addEntity(EntityChange change) {
+            checkOpen();
             entities.add(change);
+        }
+
+        /**
+         * Records what the block entity of a position held before a write and
+         * what the write put there; either is {@code null} when there was or
+         * is none. The block change itself is recorded apart, like any other.
+         */
+        public void addBlockEntity(int x, int y, int z, NbtCompound before, NbtCompound after) {
+            checkOpen();
+            blockEntities.add(new BlockEntityChange(x, y, z, before, after));
+        }
+
+        /** The block entity changes, in the order the edit made them. */
+        public List<BlockEntityChange> blockEntities() {
+            return blockEntities;
         }
 
         /** Records one biome change, creating the section's set on demand. */
         public void addBiome(int x, int y, int z, int previous, int current) {
+            checkOpen();
             if (previous == current) {
                 return;
             }
@@ -160,7 +213,7 @@ public final class History {
         }
 
         public boolean isEmpty() {
-            return changeCount == 0 && biomeChangeCount == 0 && entities.isEmpty();
+            return changeCount == 0 && biomeChangeCount == 0 && entities.isEmpty() && blockEntities.isEmpty();
         }
 
         /**
@@ -197,7 +250,19 @@ public final class History {
         }
     }
 
-    /** A removed (undo) or added (redo) entity. */
+    /**
+     * The data a write took from a block entity and the data it gave it: the
+     * undo puts {@code before} back, the redo {@code after}. The compounds are
+     * never changed once recorded.
+     */
+    public record BlockEntityChange(int x, int y, int z, NbtCompound before, NbtCompound after) {
+    }
+
+    /**
+     * An entity an edit removed or added: its data, where it was, and its
+     * identity, which an undo gives back to a removed entity and uses to find
+     * an added one.
+     */
     public static final class EntityChange {
 
         public final String type;
@@ -206,14 +271,21 @@ public final class History {
         public final double y;
         public final double z;
         public final boolean removed;
+        public final String uuid;
 
         public EntityChange(String type, NbtCompound nbt, double x, double y, double z, boolean removed) {
+            this(type, nbt, x, y, z, removed, null);
+        }
+
+        public EntityChange(String type, NbtCompound nbt, double x, double y, double z, boolean removed,
+                            String uuid) {
             this.type = type;
             this.nbt = nbt;
             this.x = x;
             this.y = y;
             this.z = z;
             this.removed = removed;
+            this.uuid = uuid;
         }
     }
 
@@ -233,11 +305,39 @@ public final class History {
     }
 
     /**
-     * Called with a record once the edit that produced it is over, i.e. when the
-     * next record starts. Used to write snapshots to disk.
+     * Called once with every record that changed something, when the edit that
+     * produced it is over. Used to log the edit and to write its snapshot.
      */
     public void setRecordListener(java.util.function.Consumer<Record> listener) {
         this.recordListener = listener;
+    }
+
+    /**
+     * Ends a record: seals it and hands it to the listener, once.
+     *
+     * <p>An edit publishes its record when it closes. A record whose edit never
+     * closed is published when the next record starts, so a caller that forgets
+     * to close still gets its edit logged, only later.</p>
+     */
+    public void publish(Record record) {
+        if (record == null || record.published) {
+            return;
+        }
+        record.published = true;
+        record.seal();
+        if (recordListener != null && !record.isEmpty()) {
+            recordListener.accept(record);
+        }
+    }
+
+    /**
+     * Publishes the newest record if its edit never closed, for a session that
+     * is going away: the player left or the server is stopping.
+     */
+    public void publishPending() {
+        if (!records.isEmpty()) {
+            publish(records.get(records.size() - 1));
+        }
     }
 
     /** Starts a new record and drops any redo history, like FAWE does. */
@@ -251,9 +351,10 @@ public final class History {
      * @param world the world the edit happens in, or null when unknown
      */
     public Record newRecord(String description, String world) {
-        Record completed = getCurrent();
-        if (recordListener != null && completed != null && !completed.isEmpty()) {
-            recordListener.accept(completed);
+        // Only the newest record can still be open: every earlier one was
+        // published when the record after it started.
+        if (!records.isEmpty()) {
+            publish(records.get(records.size() - 1));
         }
         while (records.size() > currentIndex + 1) {
             records.remove(records.size() - 1);
@@ -330,28 +431,11 @@ public final class History {
     }
 
     /** Total recorded changes across all records, for {@code /history}. */
-    public int totalChanges() {
-        int total = 0;
+    public long totalChanges() {
+        long total = 0;
         for (Record record : records) {
             total += record.changeCount();
         }
         return total;
-    }
-
-    /** Undo/redo application helper used by the session. */
-    public static int apply(World world, Record record, boolean undo, WorldApplier applier) {
-        int count = 0;
-        for (List<ChangeSet> sets : record.changes.values()) {
-            for (ChangeSet set : sets) {
-                count += applier.apply(set, undo);
-            }
-        }
-        return count;
-    }
-
-    /** Callback the platform uses to write history data back into the world. */
-    public interface WorldApplier {
-
-        int apply(ChangeSet set, boolean undo);
     }
 }

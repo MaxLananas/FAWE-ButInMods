@@ -3,9 +3,10 @@ package com.maxlananas.fawebim.core.history;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.NbtIo;
+import com.maxlananas.fawebim.core.world.BlockState;
+import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.IntUnaryOperator;
 import java.util.stream.Stream;
 
 /**
@@ -55,25 +57,31 @@ public final class Snapshots {
         writer = executor == null ? Runnable::run : executor;
     }
 
-    /** Writes a record off the editing thread, ignoring a failed write. */
+    /**
+     * Writes a record off the editing thread; a failed write is logged. Nothing
+     * is written before the platform names the snapshot folder, which it does
+     * when the server starts.
+     */
     public static void saveAsync(History.Record record, String owner) {
+        if (directory == null) {
+            return;
+        }
         writer.execute(() -> {
             try {
                 save(record, owner);
             } catch (IOException | RuntimeException e) {
                 // A failing snapshot must never take an edit down with it.
+                com.maxlananas.fawebim.core.platform.Log.warn("Could not write the snapshot of '"
+                        + record.description + "' for " + owner, e);
             }
         });
     }
 
     public static Path save(History.Record record, String owner) throws IOException {
-        Path folder = ownerFolder(owner);
-        Files.createDirectories(folder);
-        Path file = folder.resolve(timestamp() + ".snap");
-        try (OutputStream out = Files.newOutputStream(file)) {
-            NbtIo.write(of(record, owner), out, false, true);
-        }
-        return file;
+        Path file = ownerFolder(owner).resolve(timestamp() + ".snap");
+        NbtCompound snapshot = of(record, owner);
+        return com.maxlananas.fawebim.core.util.AtomicFiles.write(file,
+                out -> NbtIo.write(snapshot, out, false, true));
     }
 
     /** Snapshots owned by a player, newest first. */
@@ -114,14 +122,16 @@ public final class Snapshots {
 
     private static Path nearest(String owner, long epochMillis, boolean before) {
         Path best = null;
+        long bestTime = 0;
         for (Path path : list(owner)) {
             long time = timestampOf(path);
             if (time < 0) {
                 continue;
             }
             if (before ? time < epochMillis : time > epochMillis) {
-                if (best == null || before ? time > timestampOf(best) : time < timestampOf(best)) {
+                if (best == null || (before ? time > bestTime : time < bestTime)) {
                     best = path;
+                    bestTime = time;
                 }
             }
         }
@@ -142,29 +152,79 @@ public final class Snapshots {
         return NbtIo.readNbtOrGzip(Files.readAllBytes(path));
     }
 
-    /** Restores a snapshot, i.e. puts the recorded "before" states back. */
+    /**
+     * Restores a snapshot, i.e. puts the recorded "before" states back.
+     *
+     * <p>The sections and their rows are walked back to front: a cell the edit
+     * wrote twice is in the snapshot twice, and only the first row holds the
+     * state it had before the edit.</p>
+     */
     public static int restore(EditSession session, NbtCompound snapshot) {
         int restored = 0;
-        for (NbtCompound section : snapshot.getCompoundList("sections")) {
+        IntUnaryOperator states = blockPalette(snapshot);
+        List<NbtCompound> sections = snapshot.getCompoundList("sections");
+        for (int s = sections.size() - 1; s >= 0; s--) {
+            NbtCompound section = sections.get(s);
             int chunkX = section.getInt("x", 0);
             int chunkZ = section.getInt("z", 0);
             int sectionY = section.getInt("y", 0);
             int[] indices = section.getIntArray("i");
             int[] before = section.getIntArray("b");
-            if (indices == null || before == null) {
-                continue;
-            }
-            for (int i = 0; i < indices.length && i < before.length; i++) {
+            for (int i = Math.min(indices.length, before.length) - 1; i >= 0; i--) {
                 int index = indices[i];
                 int x = (chunkX << 4) + (index & 15);
                 int z = (chunkZ << 4) + ((index >> 4) & 15);
                 int y = (sectionY << 4) + ((index >> 8) & 15);
-                if (session.setBlock(x, y, z, before[i])) {
+                if (session.setBlock(x, y, z, states.applyAsInt(before[i]))) {
                     restored++;
                 }
             }
         }
+        // The data of the block entities goes back after their blocks, last change first.
+        List<NbtCompound> blockEntities = snapshot.getCompoundList("blockEntities");
+        for (int i = blockEntities.size() - 1; i >= 0; i--) {
+            NbtCompound change = blockEntities.get(i);
+            NbtCompound before = change.getCompoundOrNull("b");
+            if (before != null) {
+                session.setBlockEntity(change.getInt("x", 0), change.getInt("y", 0), change.getInt("z", 0), before);
+            }
+        }
         return restored;
+    }
+
+    /**
+     * How the block states of a snapshot read back. A snapshot names its states
+     * in a palette, so it restores the same blocks after the game or its mods
+     * change the numbering; one written before the palette holds this server's
+     * numbers, which only mean the same blocks on the same game.
+     */
+    private static IntUnaryOperator blockPalette(NbtCompound snapshot) {
+        List<Object> names = snapshot.get("palette") instanceof List<?> list ? new ArrayList<>(list) : null;
+        if (names == null) {
+            return IntUnaryOperator.identity();
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        int air = registry.air();
+        int[] states = new int[names.size()];
+        for (int i = 0; i < states.length; i++) {
+            int state = names.get(i) instanceof String name ? registry.parse(name) : -1;
+            states[i] = state < 0 ? air : state;
+        }
+        return index -> index >= 0 && index < states.length ? states[index] : air;
+    }
+
+    /** The same for biomes: {@code biomePalette} names them, older snapshots number them. */
+    private static IntUnaryOperator biomePalette(NbtCompound snapshot) {
+        List<Object> names = snapshot.get("biomePalette") instanceof List<?> list ? new ArrayList<>(list) : null;
+        if (names == null) {
+            return IntUnaryOperator.identity();
+        }
+        BlockStateRegistry registry = BlockState.registry();
+        int[] biomes = new int[names.size()];
+        for (int i = 0; i < biomes.length; i++) {
+            biomes[i] = names.get(i) instanceof String name ? registry.biome(name) : -1;
+        }
+        return index -> index >= 0 && index < biomes.length ? biomes[index] : -1;
     }
 
     /**
@@ -175,7 +235,10 @@ public final class Snapshots {
      */
     public static int restoreBiomes(EditSession session, NbtCompound snapshot) {
         int restored = 0;
-        for (NbtCompound section : snapshot.getCompoundList("biomes")) {
+        IntUnaryOperator biomes = biomePalette(snapshot);
+        List<NbtCompound> sections = snapshot.getCompoundList("biomes");
+        for (int s = sections.size() - 1; s >= 0; s--) {
+            NbtCompound section = sections.get(s);
             com.maxlananas.fawebim.core.history.BiomeChangeSet set =
                     new com.maxlananas.fawebim.core.history.BiomeChangeSet(
                             section.getInt("x", 0), section.getInt("z", 0), section.getInt("y", 0));
@@ -185,7 +248,10 @@ public final class Snapshots {
                 continue;
             }
             for (int i = 0; i < cells.length && i < before.length; i++) {
-                set.restore(cells[i], before[i]);
+                int biome = biomes.applyAsInt(before[i]);
+                if (biome >= 0) {
+                    set.restore(cells[i], biome);
+                }
             }
             restored += session.applyBiomeChangeSet(set, true);
         }
@@ -202,21 +268,27 @@ public final class Snapshots {
      */
     public static int restoreEntities(EditSession session, NbtCompound snapshot) {
         int restored = 0;
-        for (NbtCompound entity : snapshot.getCompoundList("entities")) {
+        List<NbtCompound> entities = snapshot.getCompoundList("entities");
+        // Last change first, as for the blocks: the region ends as it was before the edit.
+        for (int i = entities.size() - 1; i >= 0; i--) {
+            NbtCompound entity = entities.get(i);
+            String uuid = entity.getString("uuid", null);
+            if (!entity.getBoolean("removed", false)) {
+                // An entity the edit added is taken away again.
+                if (uuid != null) {
+                    session.getWorld().removeEntityById(uuid);
+                }
+                continue;
+            }
+            NbtCompound nbt = entity.getCompoundOrNull("nbt");
+            if (nbt == null) {
+                continue;
+            }
             com.maxlananas.fawebim.core.math.Vector3 position = new com.maxlananas.fawebim.core.math.Vector3(
                     entity.getDouble("x", 0), entity.getDouble("y", 0), entity.getDouble("z", 0));
-            com.maxlananas.fawebim.core.world.EntityData data = new com.maxlananas.fawebim.core.world.EntityData(
-                    entity.getString("type", "minecraft:pig"), entity.getCompound("nbt"), position);
-            // A change recorded as "removed" was undone by putting the entity
-            // back; one recorded as added is taken away again.
-            session.getWorld().getEntities(com.maxlananas.fawebim.core.world.Extent.Region3i.of(
-                            position.toBlockPoint(), position.toBlockPoint().add(1, 1, 1)))
-                    .stream()
-                    .filter(existing -> existing.type().equals(data.type()))
-                    .findFirst()
-                    .ifPresent(existing -> session.getWorld().removeEntity(existing));
-            if (entity.getBoolean("removed", false)) {
-                session.addEntity(data);
+            // Under the identity it had, which the game refuses while that entity is back already.
+            if (session.getWorld().spawnEntity(new com.maxlananas.fawebim.core.world.EntityData(
+                    entity.getString("type", "minecraft:pig"), nbt.clone(), position), uuid) != null) {
                 restored++;
             }
         }
@@ -226,6 +298,8 @@ public final class Snapshots {
     /** Turns a snapshot back into a history record, for {@code /history import}. */
     public static History.Record toRecord(NbtCompound snapshot) {
         History.Record record = new History.Record(snapshot.getString("description", "imported snapshot"));
+        IntUnaryOperator states = blockPalette(snapshot);
+        IntUnaryOperator biomes = biomePalette(snapshot);
         for (NbtCompound section : snapshot.getCompoundList("sections")) {
             int chunkX = section.getInt("x", 0);
             int chunkZ = section.getInt("z", 0);
@@ -241,8 +315,8 @@ public final class Snapshots {
                 int x = (chunkX << 4) + (index & 15);
                 int z = (chunkZ << 4) + ((index >> 4) & 15);
                 int y = (sectionY << 4) + ((index >> 8) & 15);
-                int previous = before != null && i < before.length ? before[i] : 0;
-                int current = after != null && i < after.length ? after[i] : previous;
+                int previous = i < before.length ? states.applyAsInt(before[i]) : BlockState.registry().air();
+                int current = i < after.length ? states.applyAsInt(after[i]) : previous;
                 record.addChange(x, y, z, previous, current);
             }
         }
@@ -261,10 +335,21 @@ public final class Snapshots {
                 int x = (chunkX << 4) + ((cell & 3) << 2);
                 int y = (sectionY << 4) + (((cell >> 4) & 3) << 2);
                 int z = (chunkZ << 4) + (((cell >> 2) & 3) << 2);
-                int previous = before != null && i < before.length ? before[i] : 0;
-                int current = after != null && i < after.length ? after[i] : previous;
-                record.addBiome(x, y, z, previous, current);
+                int previous = i < before.length ? biomes.applyAsInt(before[i]) : -1;
+                int current = i < after.length ? biomes.applyAsInt(after[i]) : previous;
+                if (previous >= 0 && current >= 0) {
+                    record.addBiome(x, y, z, previous, current);
+                }
             }
+        }
+        for (NbtCompound change : snapshot.getCompoundList("blockEntities")) {
+            record.addBlockEntity(change.getInt("x", 0), change.getInt("y", 0), change.getInt("z", 0),
+                    change.getCompoundOrNull("b"), change.getCompoundOrNull("a"));
+        }
+        for (NbtCompound entity : snapshot.getCompoundList("entities")) {
+            record.addEntity(new History.EntityChange(entity.getString("type", "minecraft:pig"),
+                    entity.getCompoundOrNull("nbt"), entity.getDouble("x", 0), entity.getDouble("y", 0),
+                    entity.getDouble("z", 0), entity.getBoolean("removed", false), entity.getString("uuid", null)));
         }
         return record;
     }
@@ -276,6 +361,9 @@ public final class Snapshots {
 
     /** Serialises a record with the timestamp of the edit, not of the write. */
     public static NbtCompound of(History.Record record, String owner, long time) {
+        BlockStateRegistry registry = BlockState.registry();
+        Palette blocks = new Palette(registry::describe);
+        Palette biomeNames = new Palette(registry::biomeName);
         List<NbtCompound> sections = new ArrayList<>();
         int[] min = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] max = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
@@ -286,8 +374,8 @@ public final class Snapshots {
                 section.putInt("z", set.chunkZ());
                 section.putInt("y", set.sectionY());
                 section.putIntArray("i", set.cells());
-                section.putIntArray("b", set.beforeStates());
-                section.putIntArray("a", set.afterStates());
+                section.putIntArray("b", blocks.indices(set.beforeStates()));
+                section.putIntArray("a", blocks.indices(set.afterStates()));
                 sections.add(section);
                 for (int i = 0; i < set.size(); i++) {
                     int index = set.cellAt(i);
@@ -319,8 +407,8 @@ public final class Snapshots {
                 section.putInt("z", set.chunkZ());
                 section.putInt("y", set.sectionY());
                 section.putIntArray("i", shrink(set.cells(), set.size()));
-                section.putIntArray("b", shrink(set.before(), set.size()));
-                section.putIntArray("a", shrink(set.after(), set.size()));
+                section.putIntArray("b", biomeNames.indices(shrink(set.before(), set.size()).clone()));
+                section.putIntArray("a", biomeNames.indices(shrink(set.after(), set.size()).clone()));
                 biomes.add(section);
             }
         }
@@ -329,6 +417,23 @@ public final class Snapshots {
         if (!biomes.isEmpty()) {
             root.putList("biomes", biomes);
             root.putInt("biomeChanges", record.biomeChangeCount());
+            root.putList("biomePalette", biomeNames.names());
+        }
+        root.putList("palette", blocks.names());
+        List<NbtCompound> blockEntities = new ArrayList<>();
+        for (History.BlockEntityChange change : record.blockEntities()) {
+            NbtCompound entry = new NbtCompound().putInt("x", change.x()).putInt("y", change.y())
+                    .putInt("z", change.z());
+            if (change.before() != null) {
+                entry.putCompound("b", change.before());
+            }
+            if (change.after() != null) {
+                entry.putCompound("a", change.after());
+            }
+            blockEntities.add(entry);
+        }
+        if (!blockEntities.isEmpty()) {
+            root.putList("blockEntities", blockEntities);
         }
         List<NbtCompound> entities = new ArrayList<>();
         for (History.EntityChange change : record.entities()) {
@@ -338,6 +443,9 @@ public final class Snapshots {
             entity.putDouble("y", change.y);
             entity.putDouble("z", change.z);
             entity.putBoolean("removed", change.removed);
+            if (change.uuid != null) {
+                entity.putString("uuid", change.uuid);
+            }
             if (change.nbt != null) {
                 entity.putCompound("nbt", change.nbt);
             }
@@ -347,6 +455,37 @@ public final class Snapshots {
             root.putList("entities", entities);
         }
         return root;
+    }
+
+    /** Numbers the states or biomes a snapshot uses in the order it meets them, and names them. */
+    private static final class Palette {
+
+        private final java.util.function.IntFunction<String> namer;
+        private final com.maxlananas.fawebim.core.util.LongObjectMap<Integer> indexOf =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>();
+        private final List<String> names = new ArrayList<>();
+
+        Palette(java.util.function.IntFunction<String> namer) {
+            this.namer = namer;
+        }
+
+        /** Replaces every id of the array, which the caller owns, by its palette index. */
+        int[] indices(int[] ids) {
+            for (int i = 0; i < ids.length; i++) {
+                Integer index = indexOf.get(ids[i]);
+                if (index == null) {
+                    index = names.size();
+                    indexOf.put(ids[i], index);
+                    names.add(namer.apply(ids[i]));
+                }
+                ids[i] = index;
+            }
+            return ids;
+        }
+
+        List<String> names() {
+            return names;
+        }
     }
 
     private static int[] shrink(int[] source, int size) {
@@ -364,8 +503,17 @@ public final class Snapshots {
         return directory().resolve(safe);
     }
 
+    /** Makes two snapshots of the same millisecond land in two files. */
+    private static final java.util.concurrent.atomic.AtomicInteger SEQUENCE =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * The name of a new snapshot: its time, which the date lookups read back,
+     * then a sequence number. A random suffix could repeat within a
+     * millisecond and overwrite the snapshot written just before.
+     */
     private static String timestamp() {
-        return System.currentTimeMillis() + "-" + Integer.toHexString((int) (Math.random() * 0xFFFF));
+        return System.currentTimeMillis() + "-" + Integer.toHexString(SEQUENCE.incrementAndGet());
     }
 
     /** Convenience for callers that only want the failure to be logged. */

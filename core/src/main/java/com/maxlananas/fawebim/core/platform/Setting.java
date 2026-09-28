@@ -27,6 +27,8 @@ public final class Setting<T> {
     private final T defaultValue;
     private final Supplier<T> reader;
     private final java.util.function.Consumer<T> writer;
+    private java.util.List<String> choices = java.util.List.of();
+    private java.util.function.UnaryOperator<String> canonical;
 
     Setting(String key, String path, Kind kind, String description, T defaultValue,
             Supplier<T> reader, java.util.function.Consumer<T> writer) {
@@ -37,6 +39,26 @@ public final class Setting<T> {
         this.defaultValue = defaultValue;
         this.reader = reader;
         this.writer = writer;
+    }
+
+    /**
+     * Limits a text setting to named values: a typo is refused when it is
+     * typed, where it used to be stored and only failed once the value was
+     * used.
+     *
+     * @param choices   the values, as they are listed and completed
+     * @param canonical maps what was typed to the value it names - an alias
+     *                  included - or to null when it names none
+     */
+    Setting<T> limitedTo(java.util.List<String> choices, java.util.function.UnaryOperator<String> canonical) {
+        this.choices = java.util.List.copyOf(choices);
+        this.canonical = canonical;
+        return this;
+    }
+
+    /** The values a text setting is limited to, empty when it takes any text. */
+    public java.util.List<String> choices() {
+        return choices;
     }
 
     /** The short name used in game, without the surrounding slashes. */
@@ -96,7 +118,8 @@ public final class Setting<T> {
         return switch (kind) {
             case BOOLEAN -> "Expected true or false";
             case INTEGER -> "Expected a whole number";
-            case TEXT -> "Expected a text value";
+            case TEXT -> choices.isEmpty() ? "Expected a text value"
+                    : "Expected one of " + String.join(", ", choices);
         };
     }
 
@@ -119,7 +142,7 @@ public final class Setting<T> {
                     yield null;
                 }
             }
-            case TEXT -> text;
+            case TEXT -> canonical == null ? text : canonical.apply(text);
         };
     }
 

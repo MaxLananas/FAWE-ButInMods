@@ -10,23 +10,78 @@ import javax.imageio.ImageIO;
 /**
  * Reads the images used by {@code //img} and the image brush.
  *
- * <p>WorldEdit accepts a file or an URL; the mod only reads files, from the
- * schematics directory, because a server-side mod has no business fetching
- * arbitrary URLs. The pixel accessors return {@code 0xAARRGGBB}, which is the
- * layout {@code Patterns.Color} expects.</p>
+ * <p>The image brush reads files of the schematics directory; {@code //img}
+ * reads the images directory or an address, as FAWE's does. Either way the
+ * image is decoded through {@link #decode}, which reads the size in the header
+ * first: a small file can declare a picture of a billion pixels, and decoding
+ * it outright is the memory of the server. The pixel accessors return
+ * {@code 0xAARRGGBB}, which is the layout {@code Patterns.Color} expects.</p>
  */
 public final class Images {
+
+    /**
+     * The most pixels an image may declare to be decoded at all, before any
+     * scaling: 4096 by 4096, 64 MiB of pixels while it is read.
+     */
+    public static final long MAX_DECODED_PIXELS = 4096L * 4096L;
 
     private Images() {
     }
 
-    /** Loads an image, returning null when it is missing or unreadable. */
+    /**
+     * Decodes an image, refusing one whose header declares more than
+     * {@code maxPixels} pixels before a pixel is allocated.
+     *
+     * @return the image, or null when no reader of this runtime knows the format
+     * @throws IOException when it cannot be read or is too large
+     */
+    public static BufferedImage decode(java.io.InputStream stream, long maxPixels) throws IOException {
+        try (javax.imageio.stream.ImageInputStream input = ImageIO.createImageInputStream(stream)) {
+            if (input == null) {
+                return null;
+            }
+            java.util.Iterator<javax.imageio.ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                return null;
+            }
+            javax.imageio.ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                long width = reader.getWidth(0);
+                long height = reader.getHeight(0);
+                if (width <= 0 || height <= 0 || width * height > maxPixels) {
+                    throw new TooLargeException("The image is " + width + "x" + height + ", more than the "
+                            + maxPixels + " pixels one may have");
+                }
+                return reader.read(0);
+            } finally {
+                reader.dispose();
+            }
+        }
+    }
+
+    /** An image whose header declares more pixels than may be decoded. */
+    public static final class TooLargeException extends IOException {
+
+        TooLargeException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Loads an image, returning null when it is missing or unreadable.
+     *
+     * @throws InputException when it declares more pixels than may be decoded
+     */
     public static PixelSource load(Path file) {
         try {
             if (!Files.isRegularFile(file)) {
                 return null;
             }
-            BufferedImage image = ImageIO.read(file.toFile());
+            BufferedImage image;
+            try (java.io.InputStream stream = Files.newInputStream(file)) {
+                image = decode(stream, MAX_DECODED_PIXELS);
+            }
             if (image == null) {
                 return null;
             }
@@ -35,6 +90,8 @@ public final class Images {
             int[] pixels = new int[width * height];
             image.getRGB(0, 0, width, height, pixels, 0, width);
             return new PixelSource(width, height, pixels);
+        } catch (TooLargeException e) {
+            throw new InputException(e.getMessage());
         } catch (IOException | RuntimeException e) {
             return null;
         }

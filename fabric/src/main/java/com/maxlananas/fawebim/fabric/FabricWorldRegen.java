@@ -1,249 +1,240 @@
 package com.maxlananas.fawebim.fabric;
 
+import com.maxlananas.fawebim.core.math.BlockVector2;
+import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.RegenOptions;
-import net.minecraft.core.Holder;
+import com.maxlananas.fawebim.core.world.World;
+import net.minecraft.Util;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.biome.Biome;
+import net.minecraft.util.ProblemReporter;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
-import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.dimension.LevelStem;
+import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.storage.DerivedLevelData;
+import net.minecraft.world.level.storage.LevelData;
+import net.minecraft.world.level.storage.LevelStorageSource;
+import net.minecraft.world.level.storage.PrimaryLevelData;
+import net.minecraft.world.level.storage.ServerLevelData;
+import net.minecraft.world.level.storage.TagValueOutput;
 
-import java.lang.reflect.Method;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
+import java.util.stream.Stream;
 
 /**
- * {@code //regen} support.
+ * {@code //regen} on Fabric, the way WorldEdit's Fabric world does it.
  *
- * <p>Minecraft has no public "regenerate this chunk" API, so the vanilla world
- * generator is driven reflectively. The parameter list of
- * {@code ChunkGenerator#fillFromNoise} changed across releases (an
- * {@link Executor} used to be the first argument), so the arguments are matched
- * by type instead of by position: that keeps the mod working on 1.21.10 and
- * degrading gracefully on other versions. When the generator cannot be driven,
- * the chunk is cleared instead — still a usable, if drastic, {@code //regen}.</p>
+ * <p>The chunks are generated in a temporary level that has the live level's
+ * dimension and generator - and the seed of the options when there is one -
+ * with its storage in a temporary folder, up to the features, so the terrain,
+ * its caves, its surface, its ores, trees and structures are all there. The
+ * engine then copies the blocks it wants out of it through an edit session.
+ * The live level is never written here; generating into its chunks in place,
+ * as this class used to, rewrote whole chunks past the selection with raw
+ * noise, left the blocks the noise did not cover, and could not be undone.</p>
+ *
+ * <p>Server thread only: the temporary level's chunk system is driven from
+ * it, while the game's workers generate.</p>
  */
 final class FabricWorldRegen {
 
     private FabricWorldRegen() {
     }
 
-    static boolean regenerate(ServerLevel level, int chunkX, int chunkZ, RegenOptions options) {
-        LevelChunk chunk = level.getChunk(chunkX, chunkZ);
-        if (!options.shouldKeepEntities()) {
-            removeEntities(level, chunk);
-        }
-        // Without -b the biome grid is kept: the generator would overwrite it
-        // while it rebuilds the terrain, so it is saved and put back below.
-        List<List<Holder<Biome>>> biomes = options.shouldRegenBiomes() ? null : captureBiomes(chunk);
-        boolean generated = false;
+    static World.GeneratedTerrain generate(ServerLevel level, Collection<BlockVector2> chunks, RegenOptions options) {
+        MinecraftServer server = level.getServer();
+        PrimaryLevelData data = primary(level.getLevelData());
+        WorldOptions original = data.worldGenOptions();
+        long seed = options.shouldUseSeed() ? options.getSeed() : level.getSeed();
+        Path folder = null;
+        LevelStorageSource.LevelStorageAccess access = null;
+        ServerLevel generated = null;
         try {
-            generated = runGenerator(level, chunk);
-        } catch (Throwable ignored) {
-            generated = false;
+            folder = Files.createTempDirectory("fawebim-regen");
+            access = LevelStorageSource.createDefault(folder).createAccess("fawebim-regen");
+            if (options.shouldUseSeed()) {
+                // What the structures are placed from; the noise takes the seed below.
+                data.worldOptions = original.withSeed(OptionalLong.of(seed));
+            }
+            generated = new ServerLevel(server, Util.backgroundExecutor(), access,
+                    (ServerLevelData) level.getLevelData(), level.dimension(),
+                    new LevelStem(level.dimensionTypeRegistration(), level.getChunkSource().getGenerator()),
+                    level.isDebug(), seed, List.of(), false, level.getRandomSequences());
+            Map<Long, ChunkAccess> made = generateChunks(generated, chunks);
+            return new Terrain(level, generated, access, folder, made);
+        } catch (Exception | LinkageError failure) {
+            close(server, generated, access, folder);
+            throw new IllegalStateException("Could not generate the terrain to regenerate from", failure);
+        } finally {
+            data.worldOptions = original;
         }
-        if (!generated) {
-            clear(chunk);
-        }
-        if (biomes != null) {
-            restoreBiomes(chunk, biomes);
-        }
-        chunk.markUnsaved();
-        return true;
     }
 
-    /** The biome of every 4x4x4 cell of the chunk, in section order. */
-    private static List<List<Holder<Biome>>> captureBiomes(LevelChunk chunk) {
-        List<List<Holder<Biome>>> saved = new ArrayList<>();
-        for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
-            LevelChunkSection section = chunk.getSection(sectionIndex);
-            List<Holder<Biome>> cells = new ArrayList<>(64);
-            for (int y = 0; y < 4; y++) {
-                for (int z = 0; z < 4; z++) {
-                    for (int x = 0; x < 4; x++) {
-                        cells.add(section.getBiomes().get(x, y, z));
-                    }
+    /** The chunks, generated up to their features, keyed by {@link ChunkPos#asLong}. */
+    private static Map<Long, ChunkAccess> generateChunks(ServerLevel generated, Collection<BlockVector2> chunks) {
+        List<CompletableFuture<ChunkAccess>> futures = new ArrayList<>();
+        for (BlockVector2 chunk : chunks) {
+            futures.add(generated.getChunkSource().getChunkFuture(chunk.x(), chunk.z(), ChunkStatus.FEATURES, true)
+                    .thenApply(result -> result.orElse(null)));
+        }
+        // The level's own tasks run on this thread while the workers generate.
+        generated.getChunkSource().mainThreadProcessor.managedBlock(() -> {
+            for (CompletableFuture<ChunkAccess> future : futures) {
+                if (!future.isDone()) {
+                    return false;
                 }
-            }
-            saved.add(cells);
-        }
-        return saved;
-    }
-
-    private static void restoreBiomes(LevelChunk chunk, List<List<Holder<Biome>>> saved) {
-        for (int sectionIndex = 0; sectionIndex < Math.min(saved.size(), chunk.getSectionsCount()); sectionIndex++) {
-            LevelChunkSection section = chunk.getSection(sectionIndex);
-            PalettedContainer<Holder<Biome>> container = biomeContainer(section);
-            List<Holder<Biome>> cells = saved.get(sectionIndex);
-            int cell = 0;
-            for (int y = 0; y < 4; y++) {
-                for (int z = 0; z < 4; z++) {
-                    for (int x = 0; x < 4; x++) {
-                        container.getAndSetUnchecked(x, y, z, cells.get(cell++));
-                    }
-                }
-            }
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static PalettedContainer<Holder<Biome>> biomeContainer(LevelChunkSection section) {
-        return (PalettedContainer<Holder<Biome>>) section.getBiomes();
-    }
-
-    /**
-     * Calls {@code ChunkGenerator#fillFromNoise} (or {@code createChunk}) with
-     * whatever arguments the running version expects. The generator writes the
-     * noise terrain, the carvers, the surface rules and the biomes straight into
-     * the chunk that is passed in.
-     */
-    private static boolean runGenerator(ServerLevel level, LevelChunk chunk) throws Exception {
-        Object generator = level.getChunkSource().getGenerator();
-        Object randomState = invoke(level.getChunkSource(), "randomState");
-        if (randomState == null) {
-            return false;
-        }
-        for (Method method : generator.getClass().getMethods()) {
-            if (!method.getName().equals("fillFromNoise") && !method.getName().equals("createChunk")) {
-                continue;
-            }
-            Object[] args = argumentsFor(method, level, chunk, randomState);
-            if (args == null) {
-                continue;
-            }
-            Object result = method.invoke(generator, args);
-            Object value = result instanceof CompletableFuture<?> future ? future.join() : result;
-            if (value instanceof ChunkAccess generated) {
-                if (generated != chunk) {
-                    copy(generated, chunk);
-                }
-                return true;
             }
             return true;
+        });
+        Map<Long, ChunkAccess> made = new HashMap<>();
+        for (CompletableFuture<ChunkAccess> future : futures) {
+            ChunkAccess chunk = future.isCompletedExceptionally() ? null : future.getNow(null);
+            if (chunk == null) {
+                throw new IllegalStateException("A chunk could not be generated");
+            }
+            made.put(chunk.getPos().toLong(), chunk);
         }
-        return false;
+        return made;
     }
 
-    /** Builds the argument list, or null when this overload cannot be driven. */
-    private static Object[] argumentsFor(Method method, ServerLevel level, LevelChunk chunk, Object randomState) {
-        Class<?>[] types = method.getParameterTypes();
-        Object[] args = new Object[types.length];
-        for (int i = 0; i < types.length; i++) {
-            Class<?> type = types[i];
-            if (type.isInstance(randomState)) {
-                args[i] = randomState;
-            } else if (type.isInstance(chunk)) {
-                args[i] = chunk;
-            } else if (Executor.class.isAssignableFrom(type)) {
-                args[i] = (Executor) Runnable::run;
-            } else if (type.getName().endsWith("Blender")) {
-                args[i] = blender(type);
-            } else if (type.isInstance(level.getStructureManager())) {
-                args[i] = level.getStructureManager();
-            } else {
+    private static PrimaryLevelData primary(LevelData data) {
+        if (data instanceof DerivedLevelData derived) {
+            return primary(derived.wrapped);
+        }
+        if (data instanceof PrimaryLevelData primary) {
+            return primary;
+        }
+        throw new IllegalStateException("Unknown level data " + data.getClass().getName());
+    }
+
+    /** Frees the temporary level, after the server ran what it left behind, and deletes its folder. */
+    private static void close(MinecraftServer server, ServerLevel generated, LevelStorageSource.LevelStorageAccess access,
+                              Path folder) {
+        while (server.pollTask()) {
+            Thread.yield();
+        }
+        try {
+            if (generated != null) {
+                generated.close();
+            }
+        } catch (IOException | RuntimeException exception) {
+            FaweMod.LOGGER.warn("Could not close the level generated for //regen", exception);
+        }
+        try {
+            if (access != null) {
+                access.close();
+            }
+        } catch (IOException | RuntimeException exception) {
+            FaweMod.LOGGER.warn("Could not close the storage generated for //regen", exception);
+        }
+        if (folder != null) {
+            try (Stream<Path> files = Files.walk(folder)) {
+                for (Path path : files.sorted(Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(path);
+                }
+            } catch (IOException exception) {
+                FaweMod.LOGGER.warn("Could not delete {}, the folder generated for //regen", folder, exception);
+            }
+        }
+    }
+
+    /** The generated chunks, read by the engine while it copies from them. */
+    private static final class Terrain implements World.GeneratedTerrain {
+
+        private final ServerLevel live;
+        private final ServerLevel generated;
+        private final LevelStorageSource.LevelStorageAccess access;
+        private final Path folder;
+        private final Map<Long, ChunkAccess> chunks;
+        private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        private final int air = Block.getId(Blocks.AIR.defaultBlockState());
+
+        Terrain(ServerLevel live, ServerLevel generated, LevelStorageSource.LevelStorageAccess access, Path folder,
+                Map<Long, ChunkAccess> chunks) {
+            this.live = live;
+            this.generated = generated;
+            this.access = access;
+            this.folder = folder;
+            this.chunks = chunks;
+        }
+
+        private ChunkAccess chunk(int x, int z) {
+            return chunks.get(ChunkPos.asLong(x >> 4, z >> 4));
+        }
+
+        @Override
+        public int getBlock(int x, int y, int z) {
+            ChunkAccess chunk = chunk(x, z);
+            return chunk == null ? air : Block.getId(chunk.getBlockState(cursor.set(x, y, z)));
+        }
+
+        @Override
+        public int getBiome(int x, int y, int z) {
+            ChunkAccess chunk = chunk(x, z);
+            if (chunk == null) {
+                return -1;
+            }
+            ResourceLocation key = live.registryAccess().lookupOrThrow(Registries.BIOME)
+                    .getKey(chunk.getNoiseBiome(x >> 2, y >> 2, z >> 2).value());
+            return key == null ? -1 : FabricRegistries.biomeId(key.toString());
+        }
+
+        @Override
+        public NbtCompound getBlockEntity(int x, int y, int z) {
+            ChunkAccess chunk = chunk(x, z);
+            var blockEntity = chunk == null ? null : chunk.getBlockEntity(cursor.set(x, y, z));
+            if (blockEntity == null) {
+                return null;
+            }
+            try {
+                TagValueOutput output = TagValueOutput.createWithContext(ProblemReporter.DISCARDING,
+                        live.registryAccess());
+                blockEntity.saveWithId(output);
+                return FabricWorld.fromTag(output.buildResult());
+            } catch (IOException | RuntimeException exception) {
+                FaweMod.LOGGER.warn("Could not save a generated block entity at {},{},{}", x, y, z, exception);
                 return null;
             }
         }
-        return args;
-    }
 
-    /** {@code Blender.empty()} — no blending for a regenerate. */
-    private static Object blender(Class<?> type) {
-        try {
-            Method empty = type.getMethod("empty");
-            if (java.lang.reflect.Modifier.isStatic(empty.getModifiers())) {
-                return empty.invoke(null);
-            }
-        } catch (ReflectiveOperationException ignored) {
-            // Blender is an interface with a nested Empty implementation.
-        }
-        for (Class<?> nested : type.getDeclaredClasses()) {
-            if (nested.getSimpleName().equalsIgnoreCase("empty")) {
-                try {
-                    var instance = nested.getField("INSTANCE").get(null);
-                    if (type.isInstance(instance)) {
-                        return instance;
-                    }
-                } catch (ReflectiveOperationException ignored) {
-                    // Fall through.
+        @Override
+        public void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                       World.BlockEntityVisitor visitor) {
+            for (ChunkAccess chunk : chunks.values()) {
+                ChunkPos pos = chunk.getPos();
+                if (pos.getMaxBlockX() < minX || pos.getMinBlockX() > maxX
+                        || pos.getMaxBlockZ() < minZ || pos.getMinBlockZ() > maxZ) {
+                    continue;
                 }
-            }
-        }
-        return null;
-    }
-
-    private static Object invoke(Object target, String name) {
-        try {
-            Method method = target.getClass().getMethod(name);
-            method.setAccessible(true);
-            return method.invoke(target);
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            return null;
-        }
-    }
-
-    /** Copies a freshly generated chunk over the live one, sections and all. */
-    private static void copy(ChunkAccess from, LevelChunk to) {
-        for (int sectionIndex = 0; sectionIndex < to.getSectionsCount(); sectionIndex++) {
-            LevelChunkSection source = from.getSection(sectionIndex);
-            LevelChunkSection target = to.getSection(sectionIndex);
-            if (source == null || target == null) {
-                continue;
-            }
-            for (int y = 0; y < 16; y++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int x = 0; x < 16; x++) {
-                        target.setBlockState(x, y, z, source.getBlockState(x, y, z), false);
-                    }
-                }
-            }
-            copyBiomes(source, target);
-        }
-        // Heightmaps are rebuilt from the copied sections.
-        to.markUnsaved();
-    }
-
-    private static void copyBiomes(LevelChunkSection from, LevelChunkSection to) {
-        var source = from.getBiomes();
-        PalettedContainer<Holder<Biome>> target = biomeContainer(to);
-        for (int y = 0; y < 4; y++) {
-            for (int z = 0; z < 4; z++) {
-                for (int x = 0; x < 4; x++) {
-                    target.getAndSetUnchecked(x, y, z, source.get(x, y, z));
-                }
-            }
-        }
-    }
-
-    private static void removeEntities(ServerLevel level, LevelChunk chunk) {
-        int minX = chunk.getPos().getMinBlockX();
-        int minZ = chunk.getPos().getMinBlockZ();
-        var box = new net.minecraft.world.phys.AABB(minX, level.getMinY(), minZ,
-                minX + 16, level.getMaxY() + 1, minZ + 16);
-        for (var entity : level.getEntities((net.minecraft.world.entity.Entity) null, box, e -> true)) {
-            entity.discard();
-        }
-    }
-
-    private static void clear(LevelChunk chunk) {
-        BlockState air = Blocks.AIR.defaultBlockState();
-        for (LevelChunkSection section : chunk.getSections()) {
-            if (section == null || section.hasOnlyAir()) {
-                continue;
-            }
-            for (int y = 0; y < 16; y++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int x = 0; x < 16; x++) {
-                        section.setBlockState(x, y, z, air, false);
+                for (BlockPos at : chunk.getBlockEntitiesPos()) {
+                    if (at.getX() >= minX && at.getX() <= maxX && at.getY() >= minY && at.getY() <= maxY
+                            && at.getZ() >= minZ && at.getZ() <= maxZ) {
+                        visitor.visit(at.getX(), at.getY(), at.getZ());
                     }
                 }
             }
         }
-        chunk.markUnsaved();
+
+        @Override
+        public void close() {
+            FabricWorldRegen.close(live.getServer(), generated, access, folder);
+        }
     }
 }

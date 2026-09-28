@@ -1,33 +1,23 @@
 package com.maxlananas.fawebim.core.clipboard;
 
-import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.util.NbtIo;
-import com.maxlananas.fawebim.core.world.BlockState;
-import com.maxlananas.fawebim.core.world.BlockStateRegistry;
-import com.maxlananas.fawebim.core.world.EntityData;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
- * Schematic reading and writing.
+ * The schematic folder: listing, naming, loading and saving files.
  *
- * <p>All the formats WorldEdit/FAWE 7.3.17 can read or write are supported:</p>
- * <ul>
- *   <li>Sponge schematic v1, v2 and v3 ({@code .schem}) — v3 uses varint
- *       payloads, hence the version sniffing below,</li>
- *   <li>the legacy MCEdit {@code .schematic} format (WE {@code -f mcedit}),</li>
- *   <li>structure block {@code .nbt} files.</li>
- * </ul>
+ * <p>The formats themselves are {@link SpongeSchematic} (v1 to v3,
+ * {@code .schem}), {@link McEditSchematic} ({@code .schematic}) and
+ * {@link StructureSchematic} (the game's {@code .nbt} structures).</p>
  */
 public final class Schematics {
 
@@ -53,30 +43,101 @@ public final class Schematics {
         return directory;
     }
 
-    /** The schematic formats that can be read and written. */
+    /** The schematic formats that can be written, by the name each is stored under. */
     public static List<String> formats() {
-        return List.of("sponge.3", "sponge.2", "mcedit", "schem", "structure");
-    }
-
-    public static List<String> list() {
-        return list(ListFilter.ALL, null);
+        return SchematicFormat.ids();
     }
 
     /**
-     * Lists schematics, optionally only the shared ones or only the player's own.
+     * The schematics of the shared folder, sorted by name.
      *
-     * @param owner the player whose directory {@link ListFilter#LOCAL} reads
+     * <p>FAWE keeps a folder per player only with {@code per-player-schematics}
+     * on; with it off, its default and the only mode here, every filter of
+     * {@code //schem list} lists the shared folder. The player's folder this
+     * used to read for {@code local} was written by nothing, and a name listed
+     * from it could not be loaded, since every other command reads the shared
+     * folder.</p>
      */
-    public static List<String> list(ListFilter filter, String owner) {
+    public static List<String> list() {
         List<String> names = new ArrayList<>();
-        if (filter != ListFilter.LOCAL) {
-            collect(directory(), names);
-        }
-        if (filter != ListFilter.GLOBAL && owner != null) {
-            collect(directory().resolve(owner.toLowerCase(java.util.Locale.ROOT)), names);
-        }
+        collect(directory(), names);
         names.sort(String::compareToIgnoreCase);
         return names;
+    }
+
+    /**
+     * What a folder of the schematic folder holds, as {@code //schem list}
+     * shows it: its sub-folders first, each ending in a slash, then its
+     * schematics, every name given from the schematic folder - trees/oak.schem
+     * - so that it loads as it is listed. The empty name is the schematic
+     * folder itself.
+     */
+    public static List<String> entries(String folder) {
+        Path dir = folder.isEmpty() ? directory() : resolve(folder);
+        String prefix = folder.isEmpty() ? "" : folder + "/";
+        List<String> folders = new ArrayList<>();
+        List<String> files = new ArrayList<>();
+        if (Files.isDirectory(dir)) {
+            boolean links = Config.get().allowSymlinks;
+            try (Stream<Path> children = Files.list(dir)) {
+                children.forEach(child -> {
+                    String name = child.getFileName().toString();
+                    if (!links && Files.isSymbolicLink(child)) {
+                        return;
+                    }
+                    if (Files.isDirectory(child)) {
+                        folders.add(prefix + name + "/");
+                    } else if (Files.isRegularFile(child) && isSchematic(name)) {
+                        files.add(prefix + name);
+                    }
+                });
+            } catch (IOException e) {
+                // An unreadable directory simply lists nothing.
+            }
+        }
+        folders.sort(String::compareToIgnoreCase);
+        files.sort(String::compareToIgnoreCase);
+        folders.addAll(files);
+        return folders;
+    }
+
+    /** True when the name is a folder inside the schematic folder. */
+    public static boolean isFolder(String name) {
+        return Files.isDirectory(resolve(name));
+    }
+
+    /** A file of the schematic folder named as a command takes it: trees/oak.schem. */
+    public static String displayName(Path file) {
+        Path relative = directory().toAbsolutePath().normalize().relativize(file.toAbsolutePath().normalize());
+        StringBuilder name = new StringBuilder();
+        for (Path part : relative) {
+            if (name.length() > 0) {
+                name.append('/');
+            }
+            name.append(part);
+        }
+        return name.toString();
+    }
+
+    /**
+     * The names FAWE's list keeps for a word that is not a filter name: those
+     * that start with it, else those that contain it, ignoring case.
+     */
+    public static List<String> matching(List<String> names, String word) {
+        String lower = word.toLowerCase(java.util.Locale.ROOT);
+        List<String> starting = new ArrayList<>();
+        List<String> containing = new ArrayList<>();
+        for (String name : names) {
+            // A name listed from a sub-folder is matched by its own part.
+            String trimmed = name.endsWith("/") ? name.substring(0, name.length() - 1) : name;
+            String candidate = trimmed.substring(trimmed.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
+            if (candidate.startsWith(lower)) {
+                starting.add(name);
+            } else if (candidate.contains(lower)) {
+                containing.add(name);
+            }
+        }
+        return starting.isEmpty() ? containing : starting;
     }
 
     /** The format a listed name was written in, derived from its extension. */
@@ -96,30 +157,34 @@ public final class Schematics {
 
     /** True when a schematic of that name already exists in the directory. */
     public static boolean exists(String name, String format) {
-        Path folder = directory();
-        for (String candidate : List.of(name, name + suffixOf(format))) {
+        // The name is checked first, so the answer never tells about a file outside the folder.
+        Path file = resolve(name);
+        Path folder = file.getParent();
+        String leaf = file.getFileName().toString();
+        for (String candidate : List.of(leaf, leaf + suffixOf(format))) {
             if (Files.isRegularFile(folder.resolve(candidate))) {
                 return true;
             }
         }
-        for (String listed : list()) {
-            if (listed.equalsIgnoreCase(name) || listed.toLowerCase(java.util.Locale.ROOT)
-                    .startsWith(name.toLowerCase(java.util.Locale.ROOT) + ".")) {
+        List<String> listed = new ArrayList<>();
+        collect(folder, listed);
+        for (String other : listed) {
+            if (other.equalsIgnoreCase(leaf) || other.toLowerCase(java.util.Locale.ROOT)
+                    .startsWith(leaf.toLowerCase(java.util.Locale.ROOT) + ".")) {
                 return true;
             }
         }
         return false;
     }
 
-    /** The file suffix of a format name, {@code .schem} for {@code sponge.3}. */
+    /**
+     * The file suffix of a format name, {@code .schem} for {@code sponge.3} -
+     * the one the format is written with, so an existing file is looked for
+     * under the name the save would give it.
+     */
     public static String suffixOf(String format) {
-        String key = format == null ? "" : format.toLowerCase(java.util.Locale.ROOT);
-        return switch (key) {
-            case "mcedit", "schematic", "mcedit2" -> ".schematic";
-            case "structure", "nbt" -> ".nbt";
-            case "sponge.2" -> ".schem";
-            default -> ".schem";
-        };
+        SchematicFormat known = SchematicFormat.find(format);
+        return known == null ? ".schem" : known.suffix();
     }
 
     /** When the file behind a listed schematic was last written, or -1. */
@@ -165,22 +230,34 @@ public final class Schematics {
     }
 
     /**
-     * Loads every schematic of the folder matching a glob, as {@code /schem loadall}
-     * does; the pool it fills is what {@code //paste} then picks from at random.
-     *
-     * @param format the format name the command was given, kept for the message
-     * @param glob   a file name pattern, {@code *} for everything
+     * The schematics {@code /schem loadall} puts in the pool {@code //paste}
+     * picks from at random: the one a name gives, as FAWE loads it, or every
+     * schematic of the folder a glob such as {@code tree*} matches.
      */
-    public static List<BlockArrayClipboard> loadAll(String format, String glob) {
+    public static List<BlockArrayClipboard> loadAll(String input) {
+        if (input.chars().noneMatch(c -> c == '*' || c == '?' || c == '[' || c == '{')) {
+            return List.of(load(input));
+        }
+        // trees/oak* looks in trees: the folder part is a path, only the last
+        // part is a glob.
+        int slash = input.lastIndexOf('/');
+        String folder = slash < 0 ? "" : input.substring(0, slash);
+        if (folder.chars().anyMatch(c -> c == '*' || c == '?' || c == '[' || c == '{')) {
+            throw new com.maxlananas.fawebim.core.util.InputException("Only the last part of '" + input
+                    + "' may hold a wildcard");
+        }
         java.nio.file.PathMatcher matcher = java.nio.file.FileSystems.getDefault()
-                .getPathMatcher("glob:" + (glob == null || glob.isBlank() ? "*" : glob));
+                .getPathMatcher("glob:" + input.substring(slash + 1));
         List<BlockArrayClipboard> loaded = new ArrayList<>();
-        for (String name : list(ListFilter.ALL, null)) {
+        List<String> names = new ArrayList<>();
+        collect(folder.isEmpty() ? directory() : resolve(folder), names);
+        names.sort(String::compareToIgnoreCase);
+        for (String name : names) {
             if (!matcher.matches(java.nio.file.Path.of(name))) {
                 continue;
             }
             try {
-                loaded.add(load(name));
+                loaded.add(load(folder.isEmpty() ? name : folder + "/" + name));
             } catch (RuntimeException e) {
                 // A file that is not a readable schematic is skipped, like FAWE does.
             }
@@ -188,11 +265,20 @@ public final class Schematics {
         return loaded;
     }
 
+    /**
+     * Deletes a schematic. A name that is not one - no such file, or a folder -
+     * is refused, where it used to be answered as deleted.
+     */
     public static void delete(String name) {
+        Path file = resolveExisting(name);
+        if (!Files.isRegularFile(file)) {
+            throw new com.maxlananas.fawebim.core.util.InputException(Files.isDirectory(file)
+                    ? "'" + name + "' is a folder, not a schematic" : "No schematic named '" + name + "'");
+        }
         try {
-            Files.deleteIfExists(resolveExisting(name));
+            Files.delete(file);
         } catch (IOException e) {
-            throw new IllegalStateException("Could not delete schematic '" + name + "'");
+            throw new java.io.UncheckedIOException("Could not delete schematic '" + name + "'", e);
         }
     }
 
@@ -209,9 +295,10 @@ public final class Schematics {
         if (Files.isRegularFile(exact)) {
             return exact;
         }
-        Path folder = directory();
+        Path folder = exact.getParent();
+        String leaf = exact.getFileName().toString();
         for (String extension : FILE_EXTENSIONS) {
-            Path candidate = folder.resolve(name + extension);
+            Path candidate = folder.resolve(leaf + extension);
             if (Files.isRegularFile(candidate)) {
                 return candidate;
             }
@@ -223,16 +310,129 @@ public final class Schematics {
     private static final List<String> FILE_EXTENSIONS =
             List.of(".schem", ".schematic", ".nbt");
 
-    private static Path resolve(String name) {
-        Path path = directory().resolve(name);
-        if (!path.getFileName().toString().equals(name)) {
-            throw new IllegalArgumentException("Invalid schematic name");
+    /**
+     * The folder a command names: trees or trees/, and "." for the schematic
+     * folder itself, which a name cannot otherwise reach.
+     */
+    public static Path folder(String name) {
+        String trimmed = name.endsWith("/") ? name.substring(0, name.length() - 1) : name;
+        return trimmed.isEmpty() || trimmed.equals(".") ? directory() : resolve(trimmed);
+    }
+
+    /**
+     * True when a name given in a command stands for the file: its name from
+     * the schematic folder, with or without the extension, ignoring case.
+     */
+    public static boolean names(Path file, String name) {
+        String shown = displayName(file);
+        int dot = shown.lastIndexOf('.');
+        return shown.equalsIgnoreCase(name)
+                || dot > shown.lastIndexOf('/') && shown.substring(0, dot).equalsIgnoreCase(name);
+    }
+
+    /**
+     * Moves a schematic file into a folder of the schematic folder, as FAWE's
+     * {@code //schem move} moves the files the clipboard was loaded from. The
+     * folder is made when it is not there; a file of the same name in it is
+     * left alone.
+     *
+     * @return where the file is now
+     */
+    public static Path move(Path file, String folder) {
+        Path root = directory().toAbsolutePath().normalize();
+        Path from = file.toAbsolutePath().normalize();
+        if (!from.startsWith(root)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + from.getFileName()
+                    + "' is not in the schematic folder");
         }
-        if (!com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks && Files.isSymbolicLink(path)) {
-            throw new IllegalArgumentException("Symbolic links are disabled"
-                    + " (files.allow-symbolic-links in config/fawebim.yml)");
+        Path dir = folder(folder);
+        Path to = dir.resolve(from.getFileName().toString()).toAbsolutePath().normalize();
+        if (to.equals(from)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + displayName(from) + "' is already there");
+        }
+        if (Files.exists(to)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + displayName(to) + "' already exists");
+        }
+        try {
+            Files.createDirectories(dir);
+            // Without REPLACE_EXISTING: a file that appeared meanwhile fails the
+            // move rather than being overwritten.
+            return Files.move(from, to);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not move '" + displayName(from) + "'", e);
+        }
+    }
+
+    /**
+     * Rewrites a saved schematic in another format, which is what
+     * {@code //schem move <name> <format>} did before it moved files as FAWE's
+     * does. The new file is written before the old one goes, so a write that
+     * fails leaves the schematic as it was, and another schematic under the
+     * new name is not overwritten.
+     *
+     * @return the file written
+     */
+    public static Path convert(String name, String formatName) {
+        SchematicFormat format = SchematicFormat.of(formatName);
+        Path from = resolveExisting(name).toAbsolutePath().normalize();
+        if (!Files.isRegularFile(from)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("No schematic named '" + name + "'");
+        }
+        String shown = displayName(from);
+        int dot = shown.lastIndexOf('.');
+        String base = dot > shown.lastIndexOf('/') ? shown.substring(0, dot) : shown;
+        Path to = resolve(base + format.suffix()).toAbsolutePath().normalize();
+        if (!to.equals(from) && Files.exists(to)) {
+            throw new com.maxlananas.fawebim.core.util.InputException("'" + displayName(to) + "' already exists");
+        }
+        Path written = save(load(name), base, format.id());
+        if (!to.equals(from)) {
+            try {
+                Files.delete(from);
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException("Wrote '" + displayName(written) + "' but could not delete '"
+                        + shown + "'", e);
+            }
+        }
+        return written;
+    }
+
+    /**
+     * The file a name stands for in the schematic folder. As in FAWE the name
+     * may go through sub-folders - trees/oak - but it never leads out of the
+     * folder: an empty part, a {@code .} or {@code ..}, a backslash or a drive
+     * letter is refused, and so is a symbolic link on the way, unless
+     * {@code files.allow-symbolic-links} allows them.
+     */
+    private static Path resolve(String name) {
+        if (name.isEmpty() || name.indexOf('\\') >= 0 || name.indexOf(':') >= 0 || name.indexOf('\0') >= 0) {
+            throw invalidName(name);
+        }
+        Path root = directory();
+        Path path = root;
+        boolean links = com.maxlananas.fawebim.core.platform.Config.get().allowSymlinks;
+        try {
+            for (String part : name.split("/", -1)) {
+                if (part.isEmpty() || part.equals(".") || part.equals("..")) {
+                    throw invalidName(name);
+                }
+                path = path.resolve(part);
+                if (!links && Files.isSymbolicLink(path)) {
+                    throw new com.maxlananas.fawebim.core.util.InputException("Symbolic links are disabled"
+                            + " (files.allow-symbolic-links in config/fawebim.yml)");
+                }
+            }
+        } catch (java.nio.file.InvalidPathException e) {
+            throw invalidName(name);
+        }
+        if (!path.normalize().startsWith(root.normalize())) {
+            throw invalidName(name);
         }
         return path;
+    }
+
+    private static com.maxlananas.fawebim.core.util.InputException invalidName(String name) {
+        return new com.maxlananas.fawebim.core.util.InputException("Invalid schematic name '" + name + "'");
     }
 
     /**
@@ -241,9 +441,13 @@ public final class Schematics {
      */
     public static final int ASYNC_SAVE_THRESHOLD = 1_000_000;
 
-    /** Writes the clipboard using the given format ({@code sponge.3}, {@code sponge.2}, {@code mcedit}). */
-    public static void save(BlockArrayClipboard clipboard, String name, String format) {
-        write(serialize(clipboard, name, format));
+    /**
+     * Writes the clipboard using the given format ({@code sponge.3}, {@code sponge.2}, {@code mcedit}).
+     *
+     * @return the file that was written, whose name carries the format's extension
+     */
+    public static Path save(BlockArrayClipboard clipboard, String name, String format) {
+        return write(serialize(clipboard, name, format));
     }
 
     /**
@@ -264,559 +468,141 @@ public final class Schematics {
     private record Serialized(String fileName, byte[] data) {
     }
 
-    private static Serialized serialize(BlockArrayClipboard clipboard, String name, String format) {
-        String lower = format.toLowerCase(Locale.ROOT);
+    /**
+     * The bytes of a schematic: gzipped NBT in every format, with the root name
+     * each format is recognised by.
+     */
+    private static Serialized serialize(BlockArrayClipboard clipboard, String name, String formatName) {
+        SchematicFormat format = SchematicFormat.of(formatName);
         NbtCompound root;
-        String fileName = name;
-        if (lower.startsWith("mcedit") || lower.startsWith("legacy")) {
-            root = writeMcedit(clipboard);
-            if (!fileName.endsWith(".schematic")) {
-                fileName = fileName + ".schematic";
+        String rootName;
+        switch (format) {
+            case MCEDIT -> {
+                root = McEditSchematic.write(clipboard);
+                rootName = McEditSchematic.ROOT_NAME;
             }
-        } else if (lower.startsWith("structure") || lower.startsWith("nbt")) {
-            root = writeStructure(clipboard);
-            if (!fileName.endsWith(".nbt")) {
-                fileName = fileName + ".nbt";
+            case STRUCTURE -> {
+                root = StructureSchematic.write(clipboard);
+                rootName = "";
             }
-        } else {
-            int version = lower.endsWith("2") ? 2 : lower.endsWith("1") ? 1 : 3;
-            root = writeSponge(clipboard, version);
-            if (!fileName.endsWith(".schem")) {
-                fileName = fileName + ".schem";
+            default -> {
+                root = SpongeSchematic.write(clipboard, format.spongeVersion());
+                rootName = SpongeSchematic.rootName(format.spongeVersion());
             }
         }
+        String suffix = format.suffix();
+        String fileName = name.endsWith(suffix) ? name : name + suffix;
         try {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-            if (lower.startsWith("mcedit") || lower.startsWith("legacy")) {
-                // MCEdit files are plain (uncompressed) NBT.
-                NbtIo.write(root, buffer, false, false);
-            } else if (version3(lower)) {
-                // Sponge v3: varint payload, gzipped on disk (same as FAWE).
-                NbtIo.write(root, buffer, true, true);
-            } else {
-                // Sponge v2 and the legacy schematic format: gzipped NBT.
-                NbtIo.write(root, buffer, false, true);
-            }
+            NbtIo.write(root, rootName, buffer, true);
             return new Serialized(fileName, buffer.toByteArray());
         } catch (IOException e) {
-            throw new IllegalStateException("Could not save schematic: " + e.getMessage());
+            throw new java.io.UncheckedIOException("Could not save schematic '" + name + "'", e);
         }
     }
 
+    /**
+     * Writes a serialised schematic in one step: overwriting a schematic with a
+     * write that fails half way used to leave neither the old one nor the new.
+     */
     private static Path write(Serialized data) {
         try {
-            Files.createDirectories(directory());
-            return Files.write(resolve(data.fileName()), data.data());
+            Path target = resolve(data.fileName());
+            // trees/oak makes the trees folder, as FAWE's save does.
+            Files.createDirectories(target.getParent());
+            return com.maxlananas.fawebim.core.util.AtomicFiles.write(target, data.data());
         } catch (IOException e) {
-            throw new IllegalStateException("Could not save schematic: " + e.getMessage());
+            throw new java.io.UncheckedIOException("Could not save schematic '" + data.fileName() + "'", e);
         }
     }
 
     public static BlockArrayClipboard load(String name) {
+        Path path = resolveExisting(name);
         try {
-            BlockArrayClipboard clipboard = readAll(resolveExisting(name), name);
-            checkSize(clipboard, name);
+            BlockArrayClipboard clipboard = readDetected(readAny(path, name), name);
+            clipboard.setSource(path.toAbsolutePath().normalize());
             return clipboard;
+        } catch (java.nio.file.NoSuchFileException e) {
+            throw new com.maxlananas.fawebim.core.util.InputException("No schematic named '" + name + "'");
         } catch (IOException e) {
-            throw new IllegalStateException("Could not load schematic '" + name + "': " + e.getMessage());
+            throw new java.io.UncheckedIOException("Could not load schematic '" + name + "'", e);
         }
     }
-
-    /** Reads a schematic file, whatever layout it uses. */
-    private static BlockArrayClipboard readAll(Path path, String name) throws IOException {
-        byte[] data = Files.readAllBytes(path);
-        NbtCompound root = readAny(data);
-        if (root == null) {
-            throw new IllegalStateException("Corrupted schematic file");
-        }
-        return readDetected(root, name);
-    }
-
-    /** Refuses a schematic bigger than {@code limits.max-schematic-size}. */
-    private static void checkSize(BlockArrayClipboard clipboard, String name) {
-        int maximum = com.maxlananas.fawebim.core.platform.Config.get().maxSchematicSize;
-        if (maximum <= 0) {
-            return;
-        }
-        long volume = (long) clipboard.getWidth() * clipboard.getHeight() * clipboard.getLength();
-        if (volume > maximum) {
-            throw new IllegalStateException("Schematic '" + name + "' holds " + volume
-                    + " blocks, more than limits.max-schematic-size (" + maximum + ")");
-        }
-    }
-
-    public static BlockArrayClipboard fromBytes(byte[] data, String name) {
-        NbtCompound root = readAny(data);
-        if (root == null) {
-            throw new IllegalStateException("Corrupted schematic data");
-        }
-        if (root.contains("Palette") || root.contains("BlockData") || root.contains("Blocks") && root.contains("Palette")) {
-            return readSponge(root, name == null ? "schematic" : name);
-        }
-        if (root.contains("Schematic")) {
-            return readMcedit(root);
-        }
-        return readSponge(root, name == null ? "schematic" : name);
-    }
-
-    /**
-     * Works out which of the four supported containers the NBT is: Sponge v1-3
-     * (flat, or nested under {@code Schematic} as in v3), MCEdit or structure blocks.
-     */
-    private static BlockArrayClipboard readDetected(NbtCompound root, String name) {
-        NbtCompound nested = root.getCompoundOrNull("Schematic");
-        if (nested != null) {
-            if (nested.contains("Palette") || nested.contains("BlockData") || nested.contains("Data")) {
-                return readSponge(root, name);
-            }
-            if (nested.contains("Blocks")) {
-                return readMcedit(root);
-            }
-        }
-        if (root.contains("Palette") || root.contains("BlockData")) {
-            return readSponge(root, name);
-        }
-        if (root.contains("palette") && root.contains("blocks")) {
-            return readStructure(root);
-        }
-        if (root.contains("Blocks")) {
-            return readMcedit(root);
-        }
-        return readSponge(root, name);
-    }
-
-    // ---------------------------------------------------------------- Sponge
-
-    private static boolean version3(String format) {
-        return format.startsWith("sponge.3") || format.equals("sponge") || format.equals("schem");
-    }
-
-    private static NbtCompound writeSponge(BlockArrayClipboard clipboard, int version) {
-        BlockVector3 origin = clipboard.getOrigin();
-        int width = clipboard.getWidth();
-        int height = clipboard.getHeight();
-        int length = clipboard.getLength();
-
-        // Build the palette in encounter order; FAWE writes the air state as index 0.
-        List<Integer> paletteStates = new ArrayList<>();
-        java.util.Map<Integer, Integer> paletteIds = new java.util.HashMap<>();
-        int airId = BlockState.registry().air();
-        paletteIds.put(airId, 0);
-        paletteStates.add(airId);
-
-        int[] data = new int[width * height * length];
-        int index = 0;
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    int state = clipboard.getBlock(origin.x() + x, origin.y() + y, origin.z() + z);
-                    int paletteIndex = paletteIds.computeIfAbsent(state, key -> {
-                        paletteStates.add(key);
-                        return paletteIds.size();
-                    });
-                    data[index++] = paletteIndex;
-                }
-            }
-        }
-
-        NbtCompound root = new NbtCompound();
-        if (version >= 3) {
-            root.putInt("Version", 3);
-            root.putInt("DataVersion", 4189);
-        } else {
-            root.putInt("Version", version);
-            root.putInt("DataVersion", version == 2 ? 2975 : 1631);
-        }
-        root.putInt("Width", width);
-        root.putInt("Height", height);
-        root.putInt("Length", length);
-        NbtCompound offset = new NbtCompound();
-        offset.putInt("x", origin.x());
-        offset.putInt("y", origin.y());
-        offset.putInt("z", origin.z());
-        root.put("Offset", offset);
-
-        if (version >= 3) {
-            NbtCompound schem = new NbtCompound();
-            schem.putInt("Version", 3);
-            NbtCompound palette = new NbtCompound();
-            for (int i = 0; i < paletteStates.size(); i++) {
-                palette.putInt(BlockState.registry().describe(paletteStates.get(i)), i);
-            }
-            schem.put("Palette", palette);
-            schem.putByteArray("Data", packVarInts(data));
-            schem.put("BlockEntities", blockEntities(clipboard, origin));
-            if (!clipboard.entities().isEmpty()) {
-                schem.put("Entities", entities(clipboard, origin));
-            }
-            root.put("Schematic", schem);
-        } else {
-            NbtCompound palette = new NbtCompound();
-            for (int i = 0; i < paletteStates.size(); i++) {
-                palette.putInt(BlockState.registry().describe(paletteStates.get(i)), i);
-            }
-            root.put("Palette", palette);
-            root.putByteArray("BlockData", packShorts(data));
-            if (version == 2) {
-                root.put("BlockEntities", blockEntities(clipboard, origin));
-                if (!clipboard.entities().isEmpty()) {
-                    root.put("Entities", entities(clipboard, origin));
-                }
-            } else {
-                // v1 splits metadata/block entities differently.
-                NbtCompound blockEntities = blockEntities(clipboard, origin);
-                root.put("TileEntities", new java.util.ArrayList<>(blockEntities.values()));
-            }
-        }
-        return root;
-    }
-
-    private static BlockArrayClipboard readSponge(NbtCompound root, String name) {
-        NbtCompound schem = root.contains("Schematic") ? root.getCompound("Schematic") : root;
-        int version = root.contains("Version") ? root.getInt("Version", 0) : schem.getInt("Version", 0);
-        int width = schem.contains("Width") ? schem.getInt("Width", 0) : root.getInt("Width", 0);
-        int height = schem.contains("Height") ? schem.getInt("Height", 0) : root.getInt("Height", 0);
-        int length = schem.contains("Length") ? schem.getInt("Length", 0) : root.getInt("Length", 0);
-        if (width <= 0 || height <= 0 || length <= 0) {
-            throw new IllegalStateException("Schematic has no size information");
-        }
-        NbtCompound palette = schem.contains("Palette") ? schem.getCompound("Palette")
-                : root.getCompound("Palette");
-        java.util.List<String> names = new ArrayList<>(palette.keySet().size());
-        for (String key : palette.keySet()) {
-            names.add(key);
-        }
-        java.util.Map<Integer, Integer> paletteIds = new java.util.HashMap<>();
-        int maxIndex = 0;
-        for (String key : names) {
-            int paletteIndex = palette.getInt(key, 0);
-            maxIndex = Math.max(maxIndex, paletteIndex);
-            int state = BlockState.registry().parse(key);
-            if (state < 0) {
-                state = BlockState.registry().air();
-            }
-            paletteIds.put(paletteIndex, state);
-        }
-        int[] paletteStates = new int[maxIndex + 1];
-        for (java.util.Map.Entry<Integer, Integer> entry : paletteIds.entrySet()) {
-            paletteStates[entry.getKey()] = entry.getValue();
-        }
-
-        byte[] payload = schem.contains("Data") ? schem.getByteArray("Data")
-                : schem.contains("BlockData") ? schem.getByteArray("BlockData") : root.getByteArray("BlockData");
-        int[] indices = version >= 3 ? readVarInts(payload, width * height * length)
-                : readShorts(payload, width * height * length);
-
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(BlockVector3.ZERO);
-        clipboard.setName(name);
-        int index = 0;
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    int paletteIndex = indices[index++];
-                    int state = paletteIndex >= 0 && paletteIndex < paletteStates.length
-                            ? paletteStates[paletteIndex] : BlockState.registry().air();
-                    clipboard.setBlock(x, y, z, state);
-                }
-            }
-        }
-        // Block entities.
-        NbtCompound blockEntities = schem.contains("BlockEntities") ? schem.getCompound("BlockEntities")
-                : root.contains("BlockEntities") ? root.getCompound("BlockEntities")
-                : root.contains("TileEntities") ? root.getCompound("TileEntities") : null;
-        if (blockEntities != null) {
-            for (Object value : blockEntities.values()) {
-                if (value instanceof NbtCompound compound) {
-                    int[] pos = compound.contains("Pos") ? ints(compound.getList("Pos")) : new int[]{0, 0, 0};
-                    clipboard.addBlockEntity(new BlockVector3(pos[0], pos[1], pos[2]), compound);
-                }
-            }
-        }
-        clipboard.normalize();
-        return clipboard;
-    }
-
-    private static int[] ints(java.util.List<Object> values) {
-        int[] out = new int[values.size()];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = (int) Double.parseDouble(String.valueOf(values.get(i)));
-        }
-        return out;
-    }
-
-    private static NbtCompound blockEntities(BlockArrayClipboard clipboard, BlockVector3 origin) {
-        NbtCompound list = new NbtCompound();
-        int i = 0;
-        for (var entry : clipboard.blockEntities().entrySet()) {
-            NbtCompound compound = entry.getValue();
-            // Positions must be relative to the schematic origin.
-            NbtCompound pos = new NbtCompound();
-            pos.putInt("x", entry.getKey().x() - origin.x());
-            pos.putInt("y", entry.getKey().y() - origin.y());
-            pos.putInt("z", entry.getKey().z() - origin.z());
-            compound.put("Pos", pos);
-            list.put("be" + i++, compound);
-        }
-        return list;
-    }
-
-    private static NbtCompound entities(BlockArrayClipboard clipboard, BlockVector3 origin) {
-        NbtCompound list = new NbtCompound();
-        int i = 0;
-        for (EntityData entity : clipboard.entities()) {
-            NbtCompound compound = entity.nbt() == null ? new NbtCompound() : entity.nbt();
-            NbtCompound pos = new NbtCompound();
-            pos.putDouble("x", entity.position().x() - origin.x());
-            pos.putDouble("y", entity.position().y() - origin.y());
-            pos.putDouble("z", entity.position().z() - origin.z());
-            compound.put("Pos", pos);
-            compound.putString("Id", entity.type());
-            list.put("e" + i++, compound);
-        }
-        return list;
-    }
-
-    // ---------------------------------------------------------------- MCEdit
 
     /**
      * How many blocks of the clipboard the legacy format cannot name, so the
      * command can warn before writing them as air.
      */
     public static int legacyLosses(BlockArrayClipboard clipboard) {
-        BlockVector3 origin = clipboard.getOrigin();
-        BlockStateRegistry registry = BlockState.registry();
-        int unsupported = 0;
-        for (int y = 0; y < clipboard.getHeight(); y++) {
-            for (int z = 0; z < clipboard.getLength(); z++) {
-                for (int x = 0; x < clipboard.getWidth(); x++) {
-                    int state = clipboard.getBlock(origin.x() + x, origin.y() + y, origin.z() + z);
-                    if (!registry.isAirLike(state) && registry.legacyId(state) < 0) {
-                        unsupported++;
-                    }
-                }
-            }
-        }
-        return unsupported;
-    }
-
-    private static NbtCompound writeMcedit(BlockArrayClipboard clipboard) {
-        BlockVector3 origin = clipboard.getOrigin();
-        int width = clipboard.getWidth();
-        int height = clipboard.getHeight();
-        int length = clipboard.getLength();
-        byte[] blocks = new byte[width * height * length];
-        byte[] data = new byte[width * height * length];
-        BlockStateRegistry registry = BlockState.registry();
-        int index = 0;
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    int state = clipboard.getBlock(origin.x() + x, origin.y() + y, origin.z() + z);
-                    // Blocks the legacy ids cannot express are written as air, which
-                    // is what WorldEdit's MCEdit writer does.
-                    int id = registry.legacyId(state);
-                    blocks[index] = (byte) (id < 0 ? 0 : id);
-                    data[index] = (byte) (id < 0 ? 0 : registry.legacyMetadata(state) & 0xF);
-                    index++;
-                }
-            }
-        }
-        NbtCompound root = new NbtCompound();
-        root.putString("Materials", "Alpha");
-        root.putShort("Width", (short) width);
-        root.putShort("Height", (short) height);
-        root.putShort("Length", (short) length);
-        root.putByteArray("Blocks", blocks);
-        root.putByteArray("Data", data);
-        root.put("Entities", entities(clipboard, origin));
-        root.put("TileEntities", blockEntities(clipboard, origin));
-        return root;
-    }
-
-    private static BlockArrayClipboard readMcedit(NbtCompound root) {
-        NbtCompound schem = root.contains("Schematic") ? root.getCompound("Schematic") : root;
-        int width = schem.getShort("Width", 0);
-        int height = schem.getShort("Height", 0);
-        int length = schem.getShort("Length", 0);
-        byte[] blocks = schem.getByteArray("Blocks");
-        byte[] data = schem.getByteArray("Data");
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(BlockVector3.ZERO);
-        int index = 0;
-        BlockStateRegistry registry = BlockState.registry();
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    int id = blocks[index] & 0xFF;
-                    int meta = data.length > index ? data[index] & 0xFF : 0;
-                    index++;
-                    // WorldEdit only reads the numeric ids of old files when the
-                    // configuration allows ancient blocks.
-                    int state = com.maxlananas.fawebim.core.platform.Config.get().allowAncientBlocks
-                            ? registry.legacyState(id, meta)
-                            : registry.air();
-                    clipboard.setBlock(x, y, z, state);
-                }
-            }
-        }
-        clipboard.normalize();
-        return clipboard;
-    }
-
-    // -------------------------------------------------------------- structure
-
-    private static NbtCompound writeStructure(BlockArrayClipboard clipboard) {
-        BlockVector3 origin = clipboard.getOrigin();
-        int width = clipboard.getWidth();
-        int height = clipboard.getHeight();
-        int length = clipboard.getLength();
-        List<Integer> paletteStates = new ArrayList<>();
-        java.util.Map<Integer, Integer> paletteIds = new java.util.HashMap<>();
-        java.util.List<NbtCompound> paletteEntries = new ArrayList<>();
-        java.util.List<NbtCompound> blocks = new ArrayList<>();
-        for (int y = 0; y < height; y++) {
-            for (int z = 0; z < length; z++) {
-                for (int x = 0; x < width; x++) {
-                    int state = clipboard.getBlock(origin.x() + x, origin.y() + y, origin.z() + z);
-                    if (BlockState.registry().isAirLike(state)) {
-                        continue;
-                    }
-                    int paletteIndex = paletteIds.computeIfAbsent(state, key -> {
-                        paletteStates.add(key);
-                        NbtCompound entry = new NbtCompound();
-                        entry.putString("Name", BlockState.registry().name(key));
-                        java.util.Map<String, String> properties = BlockState.registry().properties(key);
-                        if (!properties.isEmpty()) {
-                            NbtCompound props = new NbtCompound();
-                            properties.forEach(props::putString);
-                            entry.put("Properties", props);
-                        }
-                        paletteEntries.add(entry);
-                        return paletteIds.size();
-                    });
-                    NbtCompound block = new NbtCompound();
-                    block.putIntArray("pos", new int[]{x, y, z});
-                    block.putInt("state", paletteIndex);
-                    blocks.add(block);
-                }
-            }
-        }
-        NbtCompound root = new NbtCompound();
-        root.putIntArray("size", new int[]{width, height, length});
-        root.putList("palette", paletteEntries);
-        root.putList("blocks", blocks);
-        root.put("entities", new java.util.ArrayList<>());
-        return root;
-    }
-
-    private static BlockArrayClipboard readStructure(NbtCompound root) {
-        java.util.List<Object> palette = root.getList("palette");
-        List<Integer> states = new ArrayList<>();
-        for (Object entry : palette) {
-            if (entry instanceof NbtCompound compound) {
-                StringBuilder name = new StringBuilder(compound.getString("Name", "minecraft:air"));
-                NbtCompound properties = compound.getCompound("Properties");
-                if (properties != null && !properties.keySet().isEmpty()) {
-                    name.append('[');
-                    boolean first = true;
-                    for (String key : properties.keySet()) {
-                        if (!first) {
-                            name.append(',');
-                        }
-                        name.append(key).append('=').append(properties.getString(key, ""));
-                        first = false;
-                    }
-                    name.append(']');
-                }
-                int state = BlockState.registry().parse(name.toString());
-                states.add(state < 0 ? BlockState.registry().air() : state);
-            }
-        }
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(BlockVector3.ZERO);
-        for (Object entry : root.getList("blocks")) {
-            if (entry instanceof NbtCompound compound) {
-                java.util.List<Object> pos = compound.getList("pos");
-                int x = Integer.parseInt(String.valueOf(pos.get(0)));
-                int y = Integer.parseInt(String.valueOf(pos.get(1)));
-                int z = Integer.parseInt(String.valueOf(pos.get(2)));
-                int index = compound.getInt("state", 0);
-                clipboard.setBlock(x, y, z, index < states.size() ? states.get(index)
-                        : BlockState.registry().air());
-            }
-        }
-        clipboard.normalize();
-        return clipboard;
-    }
-
-    // ----------------------------------------------------------------- bytes
-
-    /** Sponge v1/v2 pack the block data as big-endian shorts. */
-    private static byte[] packShorts(int[] values) {
-        byte[] out = new byte[values.length * 2];
-        for (int i = 0; i < values.length; i++) {
-            out[i * 2] = (byte) ((values[i] >> 8) & 0xFF);
-            out[i * 2 + 1] = (byte) (values[i] & 0xFF);
-        }
-        return out;
-    }
-
-    /** Sponge v3 packs the block data as varints. */
-    private static byte[] packVarInts(int[] values) {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(values.length);
-        for (int value : values) {
-            int v = value;
-            while ((v & ~0x7F) != 0) {
-                out.write((v & 0x7F) | 0x80);
-                v >>>= 7;
-            }
-            out.write(v);
-        }
-        return out.toByteArray();
-    }
-
-    private static int[] readVarInts(byte[] data, int count) {
-        int[] values = new int[count];
-        try (ByteArrayInputStream in = new ByteArrayInputStream(data)) {
-            NbtIo.Reader reader = new NbtIo.Reader(in, false);
-            for (int i = 0; i < count; i++) {
-                values[i] = reader.readVarInt();
-            }
-        } catch (IOException e) {
-            // Short file: remaining blocks stay air.
-        }
-        return values;
-    }
-
-    private static int[] readShorts(byte[] data, int count) {
-        int[] values = new int[count];
-        for (int i = 0; i < count && i * 2 + 1 < data.length; i++) {
-            values[i] = ((data[i * 2] & 0xFF) << 8) | (data[i * 2 + 1] & 0xFF);
-        }
-        return values;
+        return McEditSchematic.losses(clipboard);
     }
 
     /**
-     * Reads a schematic whatever the container is: plain NBT, gzipped NBT, plain
-     * varint NBT (Sponge v3) or gzipped varint NBT.
-     *
-     * <p>The layout is guessed from the file and then checked: varint NBT read as
-     * plain NBT yields a parse that happens to succeed for a large payload, so a
-     * candidate only counts when the compound it produced is a schematic.</p>
+     * Works out which format the NBT is and reads it. Every reader checks the
+     * size against {@code limits.max-schematic-size} before it allocates the
+     * blocks.
      */
-    private static NbtCompound readAny(byte[] data) {
-        boolean gzipped = data.length > 2 && (data[0] & 0xFF) == 0x1F && (data[1] & 0xFF) == 0x8B;
-        for (boolean varint : new boolean[]{gzipped, !gzipped}) {
-            for (boolean gzip : new boolean[]{gzipped, false}) {
-                try {
-                    NbtCompound root = NbtIo.read(new ByteArrayInputStream(data), varint, gzip);
-                    if (isSchematicRoot(root)) {
-                        return root;
-                    }
-                } catch (Exception ignored) {
-                    // Not this layout; the next candidate gets a turn.
+    private static BlockArrayClipboard readDetected(NbtCompound root, String name) {
+        long maxVolume = Config.get().maxSchematicSize;
+        int dataVersion = dataVersion(root);
+        if (dataVersion > Config.DATA_VERSION) {
+            com.maxlananas.fawebim.core.platform.Log.warn("Schematic '" + name + "' was written by a newer game"
+                    + " (data version " + dataVersion + ", this one is " + Config.DATA_VERSION
+                    + "): blocks it adds load as air");
+        }
+        if (SpongeSchematic.isSponge(root)) {
+            return SpongeSchematic.read(root, name, maxVolume);
+        }
+        if (StructureSchematic.isStructure(root)) {
+            return StructureSchematic.read(root, name, maxVolume);
+        }
+        if (McEditSchematic.isMcEdit(root)) {
+            return McEditSchematic.read(root, name, maxVolume);
+        }
+        NbtCompound nested = root.getCompoundOrNull("Schematic");
+        if (nested != null && McEditSchematic.isMcEdit(nested)) {
+            return McEditSchematic.read(nested, name, maxVolume);
+        }
+        throw new com.maxlananas.fawebim.core.util.InputException("'" + name
+                + "' is not a schematic this mod can read");
+    }
+
+    /**
+     * Reads the NBT of a schematic file whatever its container: gzipped or
+     * plain (the magic number says which), standard NBT or the varint NBT
+     * earlier builds of this mod wrote.
+     *
+     * <p>The file is inflated as it is parsed, and the parse has the memory
+     * budget of {@link NbtIo#defaultBudget()}, so neither a huge file nor a
+     * small one that claims huge arrays can exhaust the heap. Standard NBT is
+     * tried first; varint NBT read as standard NBT, or the other way round,
+     * fails early or yields a compound that is not a schematic.</p>
+     */
+    private static NbtCompound readAny(Path path, String name) throws IOException {
+        boolean gzipped;
+        try (java.io.InputStream in = Files.newInputStream(path)) {
+            byte[] head = in.readNBytes(2);
+            gzipped = NbtIo.isGzip(head.length == 2 ? new byte[]{head[0], head[1], 0} : head);
+        }
+        long budget = NbtIo.defaultBudget();
+        for (boolean varint : new boolean[]{false, true}) {
+            try (java.io.InputStream in = Files.newInputStream(path)) {
+                NbtCompound root = NbtIo.read(in, varint, gzipped, budget);
+                if (isSchematicRoot(root)) {
+                    return root;
                 }
+            } catch (NbtIo.TooLargeException e) {
+                if (!varint) {
+                    throw new com.maxlananas.fawebim.core.util.InputException("'" + name
+                            + "' needs more memory to read than the server can spare");
+                }
+            } catch (java.nio.file.NoSuchFileException e) {
+                throw e;
+            } catch (IOException | RuntimeException e) {
+                // Not this layout; the next one gets a turn.
             }
         }
-        throw new IllegalStateException("Corrupted schematic data");
+        throw new com.maxlananas.fawebim.core.util.InputException("'" + name + "' is not a readable schematic file");
     }
 
     /** True when a parsed root carries one of the containers a schematic uses. */
@@ -826,11 +612,11 @@ public final class Schematics {
                 || root.contains("palette") || root.contains("blocks") || root.contains("size");
     }
 
-    /** A schematic's data version, used to warn about newer formats. */
-    public static int dataVersion(NbtCompound root) {
-        if (root.contains("Schematic")) {
-            NbtCompound schem = root.getCompound("Schematic");
-            return schem.contains("DataVersion") ? schem.getInt("DataVersion", 0) : root.getInt("DataVersion", 0);
+    /** The data version a schematic declares, 0 when it declares none. */
+    private static int dataVersion(NbtCompound root) {
+        NbtCompound nested = root.getCompoundOrNull("Schematic");
+        if (nested != null && nested.contains("DataVersion")) {
+            return nested.getInt("DataVersion", 0);
         }
         return root.getInt("DataVersion", 0);
     }

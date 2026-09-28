@@ -58,28 +58,31 @@ CHECKS = [
     ("//pos1 0,60,0", "position 1: set"),
     ("//pos2 15,60,15", "position 2: set"),
     ("//size", "256"),
-    ("//set minecraft:stone", "256 block(s) affected"),
-    ("//count minecraft:stone", "count: 256"),
-    ("//undo", "Undid: 256 block change(s)"),
-    ("//count minecraft:stone", "count: 0"),
-    ("//set minecraft:stone", "256 block(s) affected"),
-    ("//replace minecraft:stone minecraft:dirt", "256 block(s) affected"),
-    ("//count minecraft:dirt", "count: 256"),
-    ("//undo", "Undid: 256 block change(s)"),
-    ("//count minecraft:dirt", "count: 0"),
+    ("//set minecraft:stone", "256 blocks affected"),
+    ("//count minecraft:stone", "counted: 256"),
+    ("//undo", "Undid: 256 block changes"),
+    ("//count minecraft:stone", "counted: 0"),
+    ("//set minecraft:stone", "256 blocks affected"),
+    ("//replace minecraft:stone minecraft:dirt", "256 blocks affected"),
+    ("//count minecraft:dirt", "counted: 256"),
+    ("//undo", "Undid: 256 block changes"),
+    ("//count minecraft:dirt", "counted: 0"),
     # The clipboard and the schematic file, through a real save and load: the
     # region holds stone at this point, and it is cleared before the load so the
     # count afterwards can only come from the file.
-    ("//copy", "copied: 256 block(s)"),
-    ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke'"),
+    ("//copy", "copied: 256 blocks"),
+    ("//schem save fawebim-smoke", "saved schematic 'fawebim-smoke.schem'"),
     ("//schem list", "fawebim-smoke"),
-    ("//set minecraft:air", "256 block(s) affected"),
-    ("//count minecraft:stone", "count: 0"),
+    ("//set minecraft:air", "256 blocks affected"),
+    ("//count minecraft:stone", "counted: 0"),
     ("//schem unload", "Clipboard: unloaded"),
-    ("//schem load fawebim-smoke", "loaded schematic 'fawebim-smoke'"),
-    ("//paste 0,60,0", "pasted: 256 block(s)"),
-    ("//count minecraft:stone", "count: 256"),
-    ("//schem delete fawebim-smoke", "deleted schematic 'fawebim-smoke'"),
+    ("//schem load fawebim-smoke", "loaded schematic 'fawebim-smoke.schem'"),
+    ("//paste 0,60,0", "pasted: 256 blocks"),
+    ("//count minecraft:stone", "counted: 256"),
+    # FAWE's move: the loaded file goes into a folder, made for it.
+    ("//schem move fawebim-smoke-folder",
+     "moved 'fawebim-smoke.schem' to 'fawebim-smoke-folder/fawebim-smoke.schem'"),
+    ("//schem delete fawebim-smoke-folder/fawebim-smoke", "deleted schematic 'fawebim-smoke-folder/fawebim-smoke'"),
     # Shape commands, checked by their geometry rather than by their messages. The
     # margin selection is cleared first, so the 16x3x16 box is built in the air
     # and the counts only see what the commands below write. The box holds 768
@@ -90,21 +93,21 @@ CHECKS = [
     # The margin is a negative position, which must reach //pos1 as a position.
     ("//pos1 -1,59,-1", "position 1: set"),
     ("//pos2 16,63,16", "position 2: set"),
-    ("//set minecraft:air", "256 block(s) affected"),
+    ("//set minecraft:air", "256 blocks affected"),
     ("//pos1 0,60,0", "position 1: set"),
     ("//pos2 15,62,15", "position 2: set"),
-    ("//set minecraft:stone", "768 block(s) affected"),
-    ("//outline minecraft:sand", "572 block(s) affected"),
-    ("//count minecraft:sand", "count: 572"),
-    ("//count minecraft:stone", "count: 196"),
-    ("//undo", "Undid: 572 block change(s)"),
-    ("//count minecraft:stone", "count: 768"),
+    ("//set minecraft:stone", "768 blocks affected"),
+    ("//outline minecraft:sand", "572 blocks affected"),
+    ("//count minecraft:sand", "counted: 572"),
+    ("//count minecraft:stone", "counted: 196"),
+    ("//undo", "Undid: 572 block changes"),
+    ("//count minecraft:stone", "counted: 768"),
     ("//pos1 -1,59,-1", "position 1: set"),
     ("//pos2 16,63,16", "position 2: set"),
-    ("//hollow 1", "196 block(s) affected"),
-    ("//count minecraft:stone", "count: 572"),
-    ("//undo", "Undid: 196 block change(s)"),
-    ("//count minecraft:stone", "count: 768"),
+    ("//hollow 1", "196 blocks affected"),
+    ("//count minecraft:stone", "counted: 572"),
+    ("//undo", "Undid: 196 block changes"),
+    ("//count minecraft:stone", "counted: 768"),
     # The commands that reach the surface under a name of their own, and the
     # spells WorldEdit gives names it declares with a slash. The box is cleared
     # first, so the formula below fills all 768 cells and //air takes them back;
@@ -112,33 +115,62 @@ CHECKS = [
     # selection and the commands that move a player say they need one.
     ("//pos1 0,60,0", "position 1: set"),
     ("//pos2 15,62,15", "position 2: set"),
-    ("//air", "Set to air: 768 block(s)"),
-    ("//count minecraft:stone", "count: 0"),
-    ("//generate minecraft:stone 1", "generated: 768 block(s)"),
-    ("//count minecraft:stone", "count: 768"),
-    ("//air", "Set to air: 768 block(s)"),
+    ("//air", "Set to air: 768 blocks"),
+    ("//count minecraft:stone", "counted: 0"),
+    ("//generate minecraft:stone 1", "generated: 768 blocks"),
+    ("//count minecraft:stone", "counted: 768"),
+    ("//air", "Set to air: 768 blocks"),
     # The shapes are built around the selection for a source that has no
     # position, so the box has to hold the whole shape before the count below can
     # be the count of the shape: the pyramid of size 4 is 81 blocks over five
     # layers, and the 16x3x16 box of the rows above would clip three of them.
     ("//pos2 15,66,15", "position 2: set"),
-    ("//set minecraft:stone", "1,792 block(s) affected"),
-    ("//air", "Set to air: 1,792 block(s)"),
-    ("//hpyramid minecraft:stone 4", "created: 81 block(s)"),
-    ("//count minecraft:stone", "count: 81"),
-    ("//air", "Set to air: 81 block(s)"),
+    ("//set minecraft:stone", "1,792 blocks affected"),
+    ("//air", "Set to air: 1,792 blocks"),
+    ("//hpyramid minecraft:stone 4", "created: 81 blocks"),
+    ("//count minecraft:stone", "counted: 81"),
+    ("//air", "Set to air: 81 blocks"),
     ("//blob minecraft:stone 3", "Blob: "),
     ("//fillr minecraft:stone 3 3", "filled:"),
     ("//sphere minecraft:stone 3", "created:"),
+    # FAWE's blob is drawn afresh every time and its noise reaches four blocks
+    # past its size, beyond the box: the air takes back a box that holds all
+    # of it, and the corners are put back for the rows below.
+    ("//pos1 0,58,0", "position 1: set"),
+    ("//pos2 15,70,15", "position 2: set"),
     ("//air", "Set to air:"),
+    ("//pos1 0,60,0", "position 1: set"),
+    ("//pos2 15,66,15", "position 2: set"),
     ("//forest oak 20", "planted:"),
     ("//forestgen 5 mega_redwood 10", "planted:"),
     ("//tree oak", "must be run by a player"),
+    # Trees grow through the edit, as WorldEdit's do: on a grass floor laid in
+    # the air, a forest of oaks at full density, and //undo takes back every log
+    # and leaf the game's tree features grew - the floor, which the count of
+    # grass reads, is still there, so the undo was the forest's.
+    ("//pos2 15,60,15", "position 2: set"),
+    ("//set minecraft:grass_block", "256 blocks affected"),
+    ("//pos2 15,80,15", "position 2: set"),
+    ("//forest oak 100", "planted:"),
+    ("//undo", "Undid: "),
+    ("//count minecraft:oak_log", "counted: 0"),
+    ("//count minecraft:oak_leaves", "counted: 0"),
+    ("//count minecraft:grass_block", "counted: 256"),
+    # So do features, as FAWE's do: the configured oak FAWE names grows on the
+    # floor at the position given and the undo takes it back, and an id the
+    # game does not have is refused before anything is generated.
+    ("//feature minecraft:oak 8,61,8", "feature created:"),
+    ("//undo", "Undid: "),
+    ("//count minecraft:oak_log", "counted: 0"),
+    ("//feature minecraft:nope", "Unknown feature 'minecraft:nope'"),
+    ("//structure minecraft:nope", "Unknown structure 'minecraft:nope'"),
+    ("//set minecraft:air", "256 blocks affected"),
+    ("//pos2 15,66,15", "position 2: set"),
     ("//flora 5", "planted:"),
-    ("//ores minecraft:stone", "block(s) affected"),
-    ("//ore minecraft:stone minecraft:iron_ore 9 40 100 60 70", "block(s) affected"),
-    ("//count minecraft:iron_ore", "Count: "),
-    ("setbiome minecraft:plains", "biome cell(s)"),
+    ("//ores minecraft:stone", "blocks affected"),
+    ("//ore minecraft:stone minecraft:iron_ore 9 40 100 60 70", "blocks affected"),
+    ("//count minecraft:iron_ore", "Counted: "),
+    ("setbiome minecraft:plains", "biome cells"),
     ("//hsphere minecraft:stone 4", "created:"),
     ("//hcyl minecraft:stone 4 5", "created:"),
     ("//gsmask minecraft:stone", "Source mask set to"),
@@ -147,6 +179,109 @@ CHECKS = [
     ("//gsmask minecraft:stone", "Source mask set to"),
     ("//gsmask", "Source mask cleared"),
     ("//up 5", "must be run by a player"),
+    # //regen writes the selection from terrain generated in a level of its own,
+    # nothing past the selection, and //undo takes it back: of four gold blocks
+    # in one chunk, regenerating one leaves three.
+    ("//pos1 40,60,40", "position 1: set"),
+    ("//pos2 41,60,41", "position 2: set"),
+    ("//set minecraft:gold_block", "4 blocks affected"),
+    ("//pos2 40,60,40", "position 2: set"),
+    ("//regen", "Regenerated: 1 block"),
+    ("//pos2 41,60,41", "position 2: set"),
+    ("//count minecraft:gold_block", "counted: 3"),
+    ("//pos2 40,60,40", "position 2: set"),
+    ("//undo", "Undid: "),
+    ("//pos2 41,60,41", "position 2: set"),
+    ("//count minecraft:gold_block", "counted: 4"),
+    ("//set minecraft:air", "4 blocks affected"),
+    # Light, as the game itself reads it. A 64x64 roof three blocks thick over
+    # the open sky of the flat world - 768 blocks in each of its chunks - darkens
+    # the air under its middle, 32 blocks from any open column, and taking it
+    # away lights that air again. Flushes that large used to be re-lit from the
+    # light sources the game already knew, which kept the sky light under a new
+    # roof and the dark under a removed one. The game propagates light on a
+    # thread of its own, a column of 140 blocks of air under each of the 4,096
+    # roof blocks here, so the reading is asked again for up to ten seconds
+    # (the third element of the row). No player keeps these chunks loaded, and
+    # since 1.21.9 no spawn area does either: they are forced for the reading.
+    # The vanilla commands in here are left out by the smoke lint.
+    ("weather clear", "weather"),
+    ("time set noon", "time"),
+    ("forceload add -32 -32 31 31", "force loaded"),
+    ("//pos1 -32,80,-32", "position 1: set"),
+    ("//pos2 31,82,31", "position 2: set"),
+    ("//set minecraft:stone", "12,288 blocks affected"),
+    ('execute positioned 0 79 0 if predicate '
+     '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed", 10),
+    ("//set minecraft:air", "12,288 blocks affected"),
+    ('execute positioned 0 79 0 if predicate '
+     '{condition:"minecraft:location_check",predicate:{light:{light:{min:13}}}}', "passed", 10),
+    ("//fixlighting", "Lighting propagated: 16 chunks"),
+    ("forceload remove all", "force loaded"),
+    # The same roof where nothing keeps the chunks loaded. The edit loads them
+    # with the game's ticket of a tick, and the light thread, which finds their
+    # blocks through the loaded chunks, may reach them after that: the mod
+    # keeps them loaded until it is done, and holds their saves until then, as
+    # the game takes the saved light back when it loads a chunk. Whether they
+    # are still loaded or come back from what the flushing save wrote, they
+    # hold the roof and the dark under it.
+    ("//pos1 1000,80,1000", "position 1: set"),
+    ("//pos2 1063,82,1063", "position 2: set"),
+    ("//set minecraft:stone", "12,288 blocks affected"),
+    ("save-all flush", "saved the game"),
+    ("forceload add 1000 1000 1063 1063", "force loaded"),
+    ("execute if block 1032 80 1032 minecraft:stone", "passed"),
+    ('execute positioned 1032 79 1032 if predicate '
+     '{condition:"minecraft:location_check",predicate:{light:{light:{max:3}}}}', "passed", 10),
+    ("forceload remove all", "force loaded"),
+    # FAWE's //confirm: an edit over more than 524,288 columns stops and asks
+    # before it reads a chunk, and so does a count of undos past fifty. Neither
+    # is confirmed here, which would load two thousand chunks or take back the
+    # edits above.
+    ("//pos1 0,200,0", "position 1: set"),
+    ("//pos2 724,200,724", "position 2: set"),
+    ("//set minecraft:air", "Use //confirm to execute //set minecraft:air"),
+    ("//undo 51", "Use //confirm to execute //undo 51"),
+    # Masks and patterns as WorldEdit and FAWE write them, read with the
+    # game's own block states, tags and biomes: the block state mask and
+    # pattern, FAWE's type swap, the mask of the block over another, the biome
+    # mask and FAWE's linear pattern. The rows that need the game's states or
+    # biomes are left out by the smoke lint.
+    ("//pos1 200,60,200", "position 1: set"),
+    ("//pos2 203,60,203", "position 2: set"),
+    ("//set minecraft:oak_log[axis=x]", "16 blocks affected"),
+    ("//count ^[axis=x]", "counted: 16"),
+    ("//count ^=[axis=y]", "counted: 0"),
+    ("//set ^[axis=z]", "16 blocks affected"),
+    ("//count minecraft:oak_log[axis=z]", "counted: 16"),
+    ("//set #typeswap[oak][spruce]", "16 blocks affected"),
+    ("//count minecraft:spruce_log[axis=z]", "counted: 16"),
+    ("//pos2 203,61,203", "position 2: set"),
+    ("//count >minecraft:spruce_log", "counted: 16"),
+    ("//count $minecraft:plains", "counted: 32"),
+    ("//pos2 203,60,203", "position 2: set"),
+    ("//set #l2d[minecraft:stone,minecraft:dirt]", "16 blocks affected"),
+    ("//count minecraft:dirt", "counted: 8"),
+    ("//set minecraft:air", "16 blocks affected"),
+    # The game's own worldgen, which the smoke lint leaves out: the head-less
+    # engine has none of its features and structures. A placed feature with a
+    # biome filter, which the game's own placement of a feature throws on
+    # outside of world generation, grows on a grass floor, and an igloo is
+    # generated at the placement, the middle of the selection, with the
+    # entities and the chest of its basement; each is taken back. The air over
+    # the floor is cleared first: the hollow sphere and cylinder built above
+    # stand there, and the patch placed on the heightmap of a column they
+    # cover lands on stone, where grass does not grow.
+    ("//pos1 0,60,0", "position 1: set"),
+    ("//pos2 15,72,15", "position 2: set"),
+    ("//set minecraft:air", "blocks affected"),
+    ("//pos2 15,60,15", "position 2: set"),
+    ("//set minecraft:grass_block", "256 blocks affected"),
+    ("//feature minecraft:patch_grass_forest 0,61,0", "feature created:"),
+    ("//undo", "Undid: "),
+    ("//set minecraft:air", "blocks affected"),
+    ("//structure minecraft:igloo", "structure created:"),
+    ("//undo", "Undid: "),
 ]
 
 
@@ -252,10 +387,18 @@ def main():
 
     failures = []
     transcript = []
-    for command, expected in CHECKS:
-        answer = client.run(command)
+    for row in CHECKS:
+        command, expected = row[0], row[1]
+        # A row with a third element reads something the game settles in its
+        # own time, and is asked again until it holds or that many seconds pass.
+        deadline = time.time() + (row[2] if len(row) > 2 else 0)
+        while True:
+            answer = client.run(command)
+            ok = expected.lower() in plain(answer).lower()
+            if ok or time.time() >= deadline:
+                break
+            time.sleep(0.25)
         shown = answer.replace("\n", " / ")[:220]
-        ok = expected.lower() in plain(answer).lower()
         print("%s  /%s -> %s" % ("ok  " if ok else "FAIL", command, shown))
         transcript.append("%-45s %s" % ("/" + command, shown))
         if not ok:

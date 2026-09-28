@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Everything a command implementation needs: parsed arguments, flags, the
@@ -30,8 +31,9 @@ public final class Ctx {
     private final List<String> positional = new ArrayList<>();
     private final Map<String, List<String>> flags = new LinkedHashMap<>();
     private EditSession editSession;
-    private EditSession readSession;
     private Region selection;
+    /** Set for a command line {@code //confirm} runs again: its checks have been answered. */
+    private boolean confirmed;
 
     Ctx(CommandRegistry.Entry entry, Actor actor, List<String> tokens) {
         this.entry = entry;
@@ -42,11 +44,20 @@ public final class Ctx {
 
     private void parse() {
         List<String> raw = tokens.size() > 1 ? tokens.subList(1, tokens.size()) : List.of();
+        Set<String> switches = Set.of();
+        if (!entry.switchesUnder.isEmpty()) {
+            for (String token : raw) {
+                if (!isSwitch(token)) {
+                    switches = entry.switchesUnder.getOrDefault(token.toLowerCase(Locale.ROOT), Set.of());
+                    break;
+                }
+            }
+        }
         for (int i = 0; i < raw.size(); i++) {
             String token = raw.get(i);
             if (isSwitch(token)) {
                 String flag = token.substring(1);
-                boolean valueFlag = entry.valueFlags.contains(flag);
+                boolean valueFlag = entry.valueFlags.contains(flag) && !switches.contains(flag);
                 if (valueFlag) {
                     // -flag value, or -flag=value
                     int eq = flag.indexOf('=');
@@ -79,7 +90,7 @@ public final class Ctx {
      * {@code //pos1 -1,59,-1} is a position and {@code //expand -10} is a count -
      * so only a dash that opens neither is read as the start of a switch.
      */
-    private static boolean isSwitch(String token) {
+    static boolean isSwitch(String token) {
         if (token.length() < 2 || token.charAt(0) != '-' || Str.isDouble(token)) {
             return false;
         }
@@ -156,22 +167,44 @@ public final class Ctx {
         return Str.join(positional.subList(Math.min(from, positional.size()), positional.size()), " ");
     }
 
+    /**
+     * The arguments from one on, joined, for a last argument the command
+     * cannot do without - a pattern, an expression. A line that stops short
+     * of it gets the usage, as a missing argument does, rather than whatever
+     * the parser makes of nothing.
+     */
+    public String requiredJoined(int from) {
+        arg(from);
+        return joined(from);
+    }
+
     public int intArg(int index) {
-        return (int) Math.round(doubleArg(index));
+        return Parsers.intArg(arg(index), "argument " + (index + 1));
     }
 
     public int intArg(int index, int fallback) {
-        return index < positional.size() ? (int) Math.round(doubleArg(index)) : fallback;
+        return index < positional.size() ? intArg(index) : fallback;
     }
 
-    public double doubleArg(int index) {
-        String value = arg(index);
-        try {
-            return Double.parseDouble(value);
-        } catch (NumberFormatException e) {
-            // Coordinate style arguments ("~5", "^3") are handled by blockVector().
-            throw CommandRegistry.error("Expected a number but got '" + value + "'");
+    /**
+     * A whole number between {@code min} and {@code max}, both included: an
+     * argument a command sizes a loop or a random draw with is refused outside
+     * that range before anything runs.
+     */
+    public int intArg(int index, int fallback, int min, int max, String name) {
+        int value = intArg(index, fallback);
+        if (value < min || value > max) {
+            throw CommandRegistry.error("The " + name + " must be between " + min + " and " + max);
         }
+        return value;
+    }
+
+    /**
+     * A number argument; {@code NaN} and the infinities are refused. Coordinate
+     * style arguments ({@code ~5}, {@code ^3}) are read by {@link #blockVector}.
+     */
+    public double doubleArg(int index) {
+        return Parsers.finiteArg(arg(index), "argument " + (index + 1));
     }
 
     public double doubleArg(int index, double fallback) {
@@ -186,15 +219,37 @@ public final class Ctx {
      * generator takes already answers to, with the same line that reports it.
      */
     public int sizeArg(int index, int fallback) {
-        if (index >= positional.size()) {
-            return fallback;
-        }
+        return index < positional.size() ? sizeArg(index) : fallback;
+    }
+
+    /** {@link #sizeArg(int, int)} for an argument the command cannot do without. */
+    public int sizeArg(int index) {
         int size = intArg(index);
+        checkRadius(size);
+        return size;
+    }
+
+    /**
+     * A radius that may have decimals, under the same ceiling as
+     * {@link #sizeArg(int, int)}: {@code NaN} and the infinities are refused
+     * with every other number that is not one.
+     */
+    public double radiusArg(int index, double fallback) {
+        return index < positional.size() ? radiusArg(index) : fallback;
+    }
+
+    /** {@link #radiusArg(int, double)} for an argument the command cannot do without. */
+    public double radiusArg(int index) {
+        double radius = doubleArg(index);
+        checkRadius(radius);
+        return radius;
+    }
+
+    private static void checkRadius(double radius) {
         int maximum = com.maxlananas.fawebim.core.platform.Config.get().maxRadius;
-        if (maximum > 0 && Math.abs((long) size) > maximum) {
+        if (maximum > 0 && Math.abs(radius) > maximum) {
             throw CommandRegistry.error("Maximum radius (in configuration): " + maximum);
         }
-        return size;
     }
 
     public boolean hasFlag(String flag) {
@@ -213,12 +268,12 @@ public final class Ctx {
 
     public int flagInt(String flag, int fallback) {
         String value = flagValue(flag, null);
-        return value == null ? fallback : Integer.parseInt(value);
+        return value == null ? fallback : Parsers.intArg(value, "-" + flag);
     }
 
     public double flagDouble(String flag, double fallback) {
         String value = flagValue(flag, null);
-        return value == null ? fallback : Double.parseDouble(value);
+        return value == null ? fallback : Parsers.finiteArg(value, "-" + flag);
     }
 
     public EditSession editSession() {
@@ -228,24 +283,34 @@ public final class Ctx {
         return editSession;
     }
 
-    /**
-     * A session for the commands that only read blocks, such as {@code //count}
-     * and {@code //distr}. It carries the session's source mask so a mask parsed
-     * there sees the blocks the source mask lets through, and it records no
-     * history entry of its own.
-     */
-    public EditSession readSession() {
-        if (readSession == null) {
-            readSession = new EditSession(world(), session(), entry.name, false);
-        }
-        return readSession;
-    }
-
+    /** The edit of this command, opened on first use under the given description. */
     public EditSession editSession(String description) {
         if (editSession == null) {
             editSession = new EditSession(world(), session(), description);
         }
         return editSession;
+    }
+
+    /**
+     * Ends the edits this command opened: what is still buffered is written and
+     * the history record is published. The dispatcher calls it once the handler
+     * returned or failed, so an edit that stopped half way leaves the world and
+     * its history agreeing on the part that was done.
+     *
+     * @return the blocks the command's edit changed
+     */
+    long close() {
+        long changed = editSession == null ? 0 : editSession.getBlocksChanged();
+        if (selection != null) {
+            // A command that took the selection may have changed it - //expand,
+            // //shift, //move -s - and the selector keeps points of its own that
+            // the next click builds on.
+            session().getSelector(world()).learnChanges();
+        }
+        if (editSession != null) {
+            editSession.close();
+        }
+        return changed;
     }
 
     /**
@@ -273,15 +338,64 @@ public final class Ctx {
         return session().isSelectionDefined(world());
     }
 
+    /** Marks a line {@code //confirm} runs again: the checks below let it through. */
+    void markConfirmed() {
+        confirmed = true;
+    }
+
     /**
-     * The block a command that works from where the player stands anchors on.
+     * FAWE's {@code @Confirm(REGION)}: stops the command for {@code //confirm}
+     * when the columns the region spans, times {@code times} - the copies of
+     * {@code //stack}, one for anything else - exceed
+     * {@link Confirmation#MAX_AREA}. Turned off by {@code confirm-large}.
      *
-     * <p>The console has no position, and a command run from it — a script, a
-     * command block, the server console — still has to build its sphere or its
-     * pyramid somewhere: the centre of the selection is WorldEdit's own answer
-     * for those sources, and the world origin is the last resort when no region
-     * is selected either.</p>
+     * <p>FAWE counts one column less along X than the region has, which lets a
+     * selection one block wide through at any length; this counts them all.</p>
      */
+    public void confirmRegion(Region region, long times) {
+        if (confirmed || !com.maxlananas.fawebim.core.platform.Config.get().confirmLarge || times <= 0) {
+            return;
+        }
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        long columns = (long) (max.x() - min.x() + 1) * (max.z() - min.z() + 1);
+        // times > MAX_AREA / columns is columns * times > MAX_AREA without the
+        // overflow a count of copies in the billions would give.
+        if (times <= Confirmation.MAX_AREA / columns) {
+            return;
+        }
+        long height = max.y() - min.y() + 1;
+        long blocks = columns > Long.MAX_VALUE / height ? Long.MAX_VALUE : columns * height;
+        throw new Confirmation.Required("Your selection is large (" + min + " -> " + max + ", containing "
+                + com.maxlananas.fawebim.core.util.Msg.formatNumber(blocks) + " blocks)");
+    }
+
+    /**
+     * FAWE's {@code @Confirm(LIMIT)}: stops the command for {@code //confirm}
+     * when a count - the steps of {@code //undo} and {@code //redo} - is over
+     * {@link Confirmation#MAX_COUNT}. FAWE asks whatever {@code confirm-large}
+     * says, and so does this.
+     */
+    public void confirmCount(long count) {
+        if (confirmed || count <= Confirmation.MAX_COUNT) {
+            return;
+        }
+        throw new Confirmation.Required("You're exceeding your limit for this action (" + count + " > "
+                + Confirmation.MAX_COUNT + ")");
+    }
+
+    /**
+     * FAWE's {@code @Confirm}: stops the command for {@code //confirm} every
+     * time, for the actions that rewrite what other players built. Turned off
+     * by {@code confirm-large}.
+     */
+    public void confirmAlways() {
+        if (confirmed || !com.maxlananas.fawebim.core.platform.Config.get().confirmLarge) {
+            return;
+        }
+        throw new Confirmation.Required(null);
+    }
+
     /**
      * Refuses a command that moves the player when the source has no position:
      * the console, a command block and a function cannot be teleported.
@@ -301,14 +415,32 @@ public final class Ctx {
         return target;
     }
 
-    public BlockVector3 placement() {
+    /**
+     * The placement the source itself gives - pos1 under {@code //toggleplace},
+     * else where it stands - or {@code fallback} for one with no position.
+     */
+    public BlockVector3 placementOr(BlockVector3 fallback) {
         BlockVector3 placed = session().getPlacement().position(world(), actor());
         if (placed != null) {
             return placed;
         }
         BlockVector3 position = actor.position();
-        if (position != null) {
-            return position;
+        return position != null ? position : fallback;
+    }
+
+    /**
+     * The block a command that works from where the player stands anchors on.
+     *
+     * <p>The console has no position, and a command run from it — a script, a
+     * command block, the server console — still has to build its sphere or its
+     * pyramid somewhere: the centre of the selection is WorldEdit's own answer
+     * for those sources, and the world origin is the last resort when no region
+     * is selected either.</p>
+     */
+    public BlockVector3 placement() {
+        BlockVector3 own = placementOr(null);
+        if (own != null) {
+            return own;
         }
         if (hasSelection()) {
             Vector3 center = selection().getCenter();
@@ -316,6 +448,21 @@ public final class Ctx {
                     (int) Math.floor(center.z()));
         }
         return BlockVector3.ZERO;
+    }
+
+    /**
+     * {@link #placement()} for a command that walks the world from there,
+     * refused above or below the world as FAWE's {@code checkExtentHeightBounds}
+     * refuses it, with FAWE's line.
+     */
+    public BlockVector3 placementInWorld() {
+        BlockVector3 placement = placement();
+        World world = world();
+        if (placement.y() < world.minY() || placement.y() > world.maxY()) {
+            throw CommandRegistry.error("This operation cannot be performed at y=" + placement.y()
+                    + " as it is outside world limits.");
+        }
+        return placement;
     }
 
     /**
@@ -330,59 +477,96 @@ public final class Ctx {
         String[] split = input.split(",");
         if (split.length != 3) {
             if (Str.isInteger(input)) {
-                // Single number: the y coordinate for //up style commands. The
-                // digits can still be past what an int holds, which is a position
-                // the world has no room for rather than a crash.
+                // Single number: the y coordinate for //up style commands.
                 BlockVector3 base = placement();
-                try {
-                    return new BlockVector3(base.x(), Integer.parseInt(input), base.z());
-                } catch (NumberFormatException e) {
-                    throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
-                }
+                return new BlockVector3(base.x(), Parsers.coordinate(Parsers.finiteArg(input, "y"), input),
+                        base.z());
             }
             throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
         }
-        BlockVector3 origin = actor.position();
-        Vector3 direction = actor.direction();
-        double[] values = new double[3];
+        String[] parts = new String[3];
+        int local = 0;
         for (int i = 0; i < 3; i++) {
-            try {
-                values[i] = parseCoordinate(split[i].trim(), i, origin, direction);
-            } catch (NumberFormatException e) {
-                throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+            parts[i] = split[i].trim();
+            if (parts[i].startsWith("^")) {
+                local++;
             }
         }
-        return new BlockVector3((int) Math.floor(values[0]), (int) Math.floor(values[1]), (int) Math.floor(values[2]));
+        if (local != 0 && local != 3) {
+            // Minecraft's own rule: ^ offsets are along the way the player looks,
+            // which has no meaning for one axis of a world position.
+            throw CommandRegistry.error("Cannot mix world and local (^) coordinates in '" + input + "'");
+        }
+        double[] values = local == 3 ? localCoordinates(parts, input) : new double[3];
+        if (local == 0) {
+            BlockVector3 origin = actor.position();
+            for (int i = 0; i < 3; i++) {
+                values[i] = worldCoordinate(parts[i], i, origin, input);
+            }
+        }
+        return new BlockVector3(Parsers.coordinate(values[0], input), Parsers.coordinate(values[1], input),
+                Parsers.coordinate(values[2], input));
     }
 
-    private double parseCoordinate(String token, int axis, BlockVector3 origin, Vector3 direction) {
-        double base = origin == null ? 0 : (axis == 0 ? origin.x() : axis == 1 ? origin.y() : origin.z());
+    /** One axis of a world position: a number, or {@code ~} plus an offset from the player. */
+    private static double worldCoordinate(String token, int axis, BlockVector3 origin, String input) {
         if (token.startsWith("~")) {
+            double base = origin == null ? 0 : (axis == 0 ? origin.x() : axis == 1 ? origin.y() : origin.z());
             String rest = token.substring(1);
-            return rest.isEmpty() ? base : base + Double.parseDouble(rest);
+            return rest.isEmpty() ? base : base + number(rest, input);
         }
-        if (token.startsWith("^")) {
-            String rest = token.substring(1);
-            double offset = rest.isEmpty() ? 0 : Double.parseDouble(rest);
-            Vector3 forward = new Vector3(direction.x(), 0, direction.z());
-            if (forward.length() < 1e-6) {
-                forward = new Vector3(0, 0, 1);
-            }
-            forward = forward.normalize();
-            Vector3 right = new Vector3(forward.z(), 0, -forward.x());
-            Vector3 up = new Vector3(0, 1, 0);
-            // ^left ^up ^forward
-            Vector3 local = switch (axis) {
-                case 0 -> right;
-                case 1 -> up;
-                default -> forward;
-            };
-            return base + local.length() * offset;
-        }
-        return Double.parseDouble(token);
+        return number(token, input);
     }
 
-    /** Resolves a pattern argument using the session's global pattern as fallback. */
+    /**
+     * A {@code ^left,^up,^forward} position, computed the way Minecraft's
+     * local coordinates are: along the player's view, pitch included, from the
+     * centre of the block they stand in. Each offset moves along an axis of the
+     * view, so all three have to be read together - moving along world axes
+     * one by one put {@code ^0,^0,^5} five blocks east whichever way the player
+     * looked.
+     */
+    private double[] localCoordinates(String[] parts, String input) {
+        BlockVector3 origin = actor.position();
+        if (origin == null) {
+            throw CommandRegistry.error("Local (^) coordinates need a player to look from");
+        }
+        double left = parts[0].length() == 1 ? 0 : number(parts[0].substring(1), input);
+        double up = parts[1].length() == 1 ? 0 : number(parts[1].substring(1), input);
+        double forwards = parts[2].length() == 1 ? 0 : number(parts[2].substring(1), input);
+        double yaw = Math.toRadians(actor.yaw() + 90.0);
+        double pitch = Math.toRadians(-actor.pitch());
+        double pitchUp = Math.toRadians(-actor.pitch() + 90.0);
+        double forwardX = Math.cos(yaw) * Math.cos(pitch);
+        double forwardY = Math.sin(pitch);
+        double forwardZ = Math.sin(yaw) * Math.cos(pitch);
+        double upX = Math.cos(yaw) * Math.cos(pitchUp);
+        double upY = Math.sin(pitchUp);
+        double upZ = Math.sin(yaw) * Math.cos(pitchUp);
+        // left = -(forward x up)
+        double leftX = -(forwardY * upZ - forwardZ * upY);
+        double leftY = -(forwardZ * upX - forwardX * upZ);
+        double leftZ = -(forwardX * upY - forwardY * upX);
+        return new double[] {
+            origin.x() + 0.5 + forwardX * forwards + upX * up + leftX * left,
+            origin.y() + forwardY * forwards + upY * up + leftY * left,
+            origin.z() + 0.5 + forwardZ * forwards + upZ * up + leftZ * left,
+        };
+    }
+
+    private static double number(String token, String input) {
+        double value;
+        try {
+            value = Double.parseDouble(token);
+        } catch (NumberFormatException e) {
+            throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+        }
+        if (!Double.isFinite(value)) {
+            throw CommandRegistry.error("Expected a position like 10,64,-5 but got '" + input + "'");
+        }
+        return value;
+    }
+
     /**
      * A vector argument: either the three components separated by commas or one
      * number repeated on all three axes, which is how WorldEdit reads
@@ -401,10 +585,12 @@ public final class Ctx {
             throw CommandRegistry.error("Expected one value or x,y,z, got '"
                     + positional.get(index) + "'");
         }
-        return new Vector3(Double.parseDouble(parts[0].trim()), Double.parseDouble(parts[1].trim()),
-                Double.parseDouble(parts[2].trim()));
+        String what = "argument " + (index + 1);
+        return new Vector3(Parsers.finiteArg(parts[0], what), Parsers.finiteArg(parts[1], what),
+                Parsers.finiteArg(parts[2], what));
     }
 
+    /** Resolves a pattern argument using the session's global pattern as fallback. */
     public Pattern pattern(int index) {
         if (index >= positional.size()) {
             Pattern global = session().getPattern();
@@ -440,7 +626,7 @@ public final class Ctx {
     }
 
     public Direction directionArg(int index) {
-        return Direction.parse(arg(index));
+        return Parsers.direction(arg(index));
     }
 
     public boolean boolArg(int index, boolean fallback) {

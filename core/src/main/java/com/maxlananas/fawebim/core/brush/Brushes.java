@@ -5,17 +5,23 @@ import com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard;
 import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.region.CuboidRegion;
 import com.maxlananas.fawebim.core.function.HeightMaps;
+import com.maxlananas.fawebim.core.function.Morphology;
 import com.maxlananas.fawebim.core.function.Operations;
 import com.maxlananas.fawebim.core.mask.Mask;
+import com.maxlananas.fawebim.core.mask.Masks;
 import com.maxlananas.fawebim.core.math.BlockVector3;
+import com.maxlananas.fawebim.core.math.Vector3;
+import com.maxlananas.fawebim.core.pattern.MapColors;
 import com.maxlananas.fawebim.core.pattern.Pattern;
 import com.maxlananas.fawebim.core.transform.Transform;
 import com.maxlananas.fawebim.core.transform.Transforms;
+import com.maxlananas.fawebim.core.util.LongQueue;
+import com.maxlananas.fawebim.core.util.LongSet;
 import com.maxlananas.fawebim.core.util.Msg;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
+import com.maxlananas.fawebim.core.world.Direction;
 import com.maxlananas.fawebim.core.world.EntityData;
-import com.maxlananas.fawebim.core.world.Extent;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.util.List;
@@ -36,21 +42,46 @@ public final class Brushes {
     public static int apply(Brush brush, com.maxlananas.fawebim.core.extent.EditSession session,
                             com.maxlananas.fawebim.core.math.BlockVector3 position,
                             com.maxlananas.fawebim.core.actor.Actor actor) {
-        com.maxlananas.fawebim.core.mask.Mask own = brush.settings().getSourceMask();
-        if (own == null) {
-            return brush.apply(session, position, actor);
+        // /tool transform: what the brush places is transformed around where it hit.
+        Transform transform = brush.settings().getTransform();
+        if (transform != null && !transform.isIdentity()) {
+            session.setTransform(transform, position);
         }
+        // FAWE's brush tool masks the edit of every stroke with the brush's
+        // mask, /tool mask, on top of the global mask the edit already has:
+        // every brush writes through it, and the ones that walk the terrain
+        // read it from the edit.
+        Mask destination = brush.mask();
+        Mask global = session.getMask();
+        if (destination != null && destination != global) {
+            session.setMask(global == null ? destination : new Masks.IntersectionMask(List.of(global, destination)));
+        }
+        com.maxlananas.fawebim.core.mask.Mask own = brush.settings().getSourceMask();
         com.maxlananas.fawebim.core.session.LocalSession local = session.getSession();
         com.maxlananas.fawebim.core.mask.Mask previous = local.getSourceMask();
-        local.setSourceMask(own);
+        if (own != null) {
+            local.setSourceMask(own);
+        }
         try {
             return brush.apply(session, position, actor);
         } finally {
-            local.setSourceMask(previous);
+            if (own != null) {
+                local.setSourceMask(previous);
+            }
+            session.setMask(global);
         }
     }
 
     private Brushes() {
+    }
+
+    /**
+     * FAWE's movement blocker, what its terrain searches land on: the game's
+     * solid blocks but the cobweb and the bamboo sapling.
+     */
+    private static boolean stopsMovement(BlockStateRegistry registry, int state) {
+        String name = registry.name(state);
+        return registry.isSolid(state) && !"minecraft:cobweb".equals(name) && !"minecraft:bamboo_sapling".equals(name);
     }
 
     /** Shared base: holds radius, fill, mask and the settings object. */
@@ -126,15 +157,42 @@ public final class Brushes {
             return session.setBlock(x, y, z, state);
         }
 
+        /** The region a shape covers around the click, as FAWE's region factories build it. */
+        protected static com.maxlananas.fawebim.core.region.Region region(String shape, EditSession session,
+                                                                         BlockVector3 position, double radius) {
+            return com.maxlananas.fawebim.core.region.RegionFactories.parse(shape, session.minY(), session.maxY())
+                    .createCenteredAt(position, radius);
+        }
+
+        /**
+         * Runs an operation that writes through the edit - a forest, a deform -
+         * with the brush's mask added to the edit's for its duration, which is
+         * how FAWE's brush tool masks every brush.
+         */
+        protected int masked(EditSession session, java.util.function.IntSupplier operation) {
+            Mask previous = session.getMask();
+            if (mask == null || mask == previous) {
+                return operation.getAsInt();
+            }
+            session.setMask(previous == null ? mask : new Masks.IntersectionMask(List.of(previous, mask)));
+            try {
+                return operation.getAsInt();
+            } finally {
+                session.setMask(previous);
+            }
+        }
+
         @Override
         public String describe() {
             return "radius=" + radius + (fill != null ? " fill=" + fill.getClass().getSimpleName() : "");
         }
     }
 
-    // -------------------------------------------------------------- solid shapes
-
-    /** {@code /brush sphere <pattern> [radius]}. */
+    /**
+     * {@code /brush sphere <pattern> [radius]}: WorldEdit's sphere, the one
+     * {@code //sphere} builds, whose radius grows by half a block before it is
+     * measured.
+     */
     public static class SphereBrush extends BaseBrush {
 
         public SphereBrush(double radius, Pattern fill, Mask mask) {
@@ -143,14 +201,46 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.forEachInSphere(position, (int) radius, hollow,
-                    (x, y, z) -> place(session, x, y, z));
+            return Operations.forEachInEllipsoid(position, new double[]{radius, radius, radius}, hollow,
+                    session.minY(), session.maxY(), (x, y, z) -> place(session, x, y, z));
         }
     }
 
     /**
-     * {@code /brush sphere -f}: the same sphere, but every column is filled down
-     * to the terrain below it, so the blocks land instead of floating.
+     * {@code /brush set <shape> [radius] <pattern>}: the pattern in the shape the
+     * command names, built around the clicked block the way FAWE's region
+     * factories build it - a sphere, a disc one block high, a cube.
+     */
+    public static final class ShapeBrush extends BaseBrush {
+
+        private final String shape;
+
+        public ShapeBrush(double radius, Pattern fill, Mask mask, String shape) {
+            super(radius, fill, mask);
+            this.shape = shape;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            return (int) region(shape, session, position, radius).forEachPosition((x, y, z) -> place(session, x, y, z));
+        }
+
+        @Override
+        public String describe() {
+            return "shape=" + shape + " " + super.describe();
+        }
+    }
+
+    /**
+     * {@code /brush sphere -f}: FAWE's falling sphere. Each column of the ball
+     * drops onto the highest block that stops movement at or under its own
+     * top, and keeps its length; a column the ground reaches into is set from
+     * its bottom to its top as the sphere's would be.
+     *
+     * <p>This dropped each column onto the highest block of the whole column,
+     * so beside a cliff or under a tree the column was filled up to the top
+     * of the terrain, and it came down on water where FAWE's falls through
+     * to the bottom.</p>
      */
     public static final class FallingSphereBrush extends SphereBrush {
 
@@ -160,27 +250,37 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            BlockStateRegistry registry = BlockState.registry();
+            int minY = session.minY();
+            int maxY = session.maxY();
+            int size = (int) Math.round(radius);
+            int squared = (int) Math.round(radius * radius);
             int changed = 0;
-            int size = (int) radius;
             for (int z = -size; z <= size; z++) {
-                for (int x = -size; x <= size; x++) {
-                    int remaining = size * size - z * z - x * x;
-                    if (remaining < 0) {
+                int remaining = squared - z * z;
+                int xRadius = remaining < 0 ? 0 : (int) Math.sqrt(remaining);
+                for (int x = -xRadius; x <= xRadius; x++) {
+                    int remainingY = remaining - x * x;
+                    if (remainingY < 0) {
                         continue;
                     }
-                    int yRadius = (int) Math.sqrt(remaining);
+                    int yRadius = (int) Math.sqrt(remainingY);
                     int columnX = position.x() + x;
                     int columnZ = position.z() + z;
-                    int startY = Math.max(session.getWorld().minY(), position.y() - yRadius);
-                    int endY = Math.min(session.getWorld().maxY(), position.y() + yRadius);
-                    int floorY = session.getWorld().getHighestBlockY(columnX, columnZ);
-                    // The sphere drops until its lowest block rests on the ground.
-                    if (floorY < startY) {
-                        int drop = startY - floorY;
-                        startY -= drop;
-                        endY -= drop;
+                    int startY = Math.max(minY, position.y() - yRadius);
+                    int endY = Math.min(maxY, position.y() + yRadius);
+                    int ground = minY;
+                    for (int y = endY; y >= minY; y--) {
+                        if (stopsMovement(registry, session.getBlock(columnX, y, columnZ))) {
+                            ground = y;
+                            break;
+                        }
                     }
-                    for (int y = startY; y <= Math.max(floorY, endY); y++) {
+                    if (ground < startY) {
+                        endY -= startY - ground;
+                        startY = ground;
+                    }
+                    for (int y = startY; y <= endY; y++) {
                         if (place(session, columnX, y, columnZ)) {
                             changed++;
                         }
@@ -221,9 +321,12 @@ public final class Brushes {
     public static final class SmoothBrush extends BaseBrush {
 
         private int iterations = 4;
+        /** The blocks the height map is read from, FAWE's third argument; the brush's own mask is /tool mask. */
+        private final Mask heightmapMask;
 
-        public SmoothBrush(double radius, Mask mask) {
-            super(radius, null, mask);
+        public SmoothBrush(double radius, Mask heightmapMask) {
+            super(radius, null, null);
+            this.heightmapMask = heightmapMask;
         }
 
         /** How many smoothing passes the brush runs on every click. */
@@ -239,7 +342,7 @@ public final class Brushes {
             CuboidRegion region = new CuboidRegion(
                     BlockVector3.at(position.x() - size, position.y() - size, position.z() - size),
                     BlockVector3.at(position.x() + size, position.y() + size + 10, position.z() + size));
-            return HeightMaps.smooth(session.getWorld(), session, region, iterations, mask);
+            return HeightMaps.smooth(session.getWorld(), session, region, iterations, heightmapMask);
         }
     }
 
@@ -263,10 +366,9 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            Mask combined = limit == null || limit == mask ? mask
-                    : mask == null ? limit
-                    : new com.maxlananas.fawebim.core.mask.Masks.IntersectionMask(List.of(mask, limit));
-            return Operations.blendBall(session, position, (int) radius, combined, onlyAir, minFreqDiff);
+            // The two masks do different things: -m decides which blocks take
+            // part in the blend, the brush's mask only which may be written.
+            return Operations.blendBall(session, position, radius, mask, limit, onlyAir, minFreqDiff);
         }
     }
 
@@ -315,21 +417,17 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush height} and {@code /brush cliff}.
-     *
-     * <p>FAWE drives these two from a height map whose value is scaled by the
-     * brush size: a cone for the height brush (it raises a rounded hill) and a
-     * flat cylinder for the cliff brush (it raises a plateau, which is what makes
-     * the sharp edge). The terrain is moved towards the target height, so the
-     * brush both fills and clears.</p>
-     */
-    /**
      * {@code /brush height}, {@code /brush cliff} and {@code /brush flatten}: the
      * three brushes FAWE builds from one terrain shape.
      *
-     * <p>The shape is a cone (height, flatten) or a cylinder (cliff); an image
-     * replaces the shape with the heights of the image, rotated by the
-     * {@code rotation} argument and by a random quarter turn per click when
+     * <p>FAWE drives them from a height map whose value is scaled by the brush
+     * size: a cone for the height and flatten brushes, which raises a rounded
+     * hill, and a flat cylinder for the cliff brush, which raises a plateau - the
+     * sharp edge. The terrain is moved towards the target height, so the brush
+     * both fills and clears.</p>
+     *
+     * <p>An image replaces the shape with the heights of the image, rotated by
+     * the {@code rotation} argument and by a random quarter turn per click when
      * {@code -r} is given. {@code -l} moves the snow layers along with the
      * terrain and the smoothing pass can be turned off with {@code -s}.</p>
      */
@@ -487,10 +585,36 @@ public final class Brushes {
                     changed++;
                 }
             }
-            for (int y = target; y > session.getWorld().getHighestBlockY(x, z); y--) {
-                if (place(session, x, y, z)) {
+            if (target <= highest) {
+                return changed;
+            }
+            if (fill != null) {
+                for (int y = target; y > highest; y--) {
+                    if (place(session, x, y, z)) {
+                        changed++;
+                    }
+                }
+                return changed;
+            }
+            // Without a pattern the column grows as WorldEdit's heightmap grows
+            // it: its top block goes up to the new height and the blocks under
+            // it follow, so grass stays on dirt over stone. It placed air.
+            int top = session.getBlock(x, highest, z);
+            if (!registry.isSolid(top)) {
+                return changed;
+            }
+            int carried = registry.air();
+            for (int setY = target - 1, getY = highest - 1; setY >= highest; setY--, getY--) {
+                int below = getY >= session.minY() ? session.getBlock(x, getY, z) : registry.air();
+                if (!registry.isAirLike(below)) {
+                    carried = below;
+                }
+                if (test(x, setY, z) && session.setBlock(x, setY, z, carried)) {
                     changed++;
                 }
+            }
+            if (test(x, target, z) && session.setBlock(x, target, z, top)) {
+                changed++;
             }
             return changed;
         }
@@ -500,68 +624,151 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush raise} and {@code /brush lower}. */
-    public static final class RaiseLowerBrush extends BaseBrush {
-
-        private final boolean lower;
-
-        public RaiseLowerBrush(double radius, Pattern fill, boolean lower, Mask mask) {
-            super(radius, fill, mask);
-            this.lower = lower;
-        }
-
-        @Override
-        public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (int z = -(int) radius; z <= radius; z++) {
-                for (int x = -(int) radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int x0 = position.x() + x;
-                    int z0 = position.z() + z;
-                    int highest = session.getWorld().getHighestBlockY(x0, z0);
-                    if (lower) {
-                        if (session.setBlock(x0, highest, z0, registry.air())) {
-                            changed++;
-                        }
-                    } else if (place(session, x0, highest + 1, z0)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
-        }
-    }
-
-    /** {@code /brush layer [radius]}. */
+    /**
+     * {@code /brush layer <radius> <patterns>}: FAWE's layered skin. The solid
+     * blocks touching air that connect to the clicked one, diagonals included,
+     * within the radius, take the first entry of the list; each entry after it
+     * goes one block further in, where the layer before came straight in and
+     * never next to air.
+     *
+     * <p>As in FAWE, each entry is the block its pattern gives at the origin,
+     * taken once when the brush is bound.</p>
+     */
     public static final class LayerBrush extends BaseBrush {
 
-        public LayerBrush(double radius, Pattern fill, Mask mask) {
-            super(radius, fill, mask);
+        /** The faces of a block, in the order FAWE's search walks them. */
+        private static final int[][] FACES = {{0, -1, 0}, {0, 1, 0}, {-1, 0, 0}, {1, 0, 0}, {0, 0, -1}, {0, 0, 1}};
+
+        private final int[] layers;
+
+        public LayerBrush(double radius, int[] layers, Mask mask) {
+            super(radius, null, mask);
+            this.layers = layers.clone();
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            if (layers.length == 0) {
+                return 0;
+            }
             BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            for (int z = -(int) radius; z <= radius; z++) {
-                for (int x = -(int) radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    for (int y = position.y(); y >= position.y() - (int) radius; y--) {
-                        if (!registry.isAirLike(session.getBlock(position.x() + x, y, position.z() + z))) {
-                            if (place(session, position.x() + x, y, position.z() + z)) {
-                                changed++;
+            long reach = (long) (int) radius * (int) radius;
+            // The surface, connected to the click through all 26 neighbours.
+            LongSet visited = new LongSet();
+            LongQueue queue = new LongQueue();
+            long start = BlockArrayClipboard.positionKey(position.x(), position.y(), position.z());
+            visited.add(start);
+            queue.add(start);
+            java.util.List<Long> surface = new java.util.ArrayList<>();
+            while (!queue.isEmpty()) {
+                long current = queue.poll();
+                surface.add(current);
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            int nx = x + dx;
+                            int ny = y + dy;
+                            int nz = z + dz;
+                            if ((dx | dy | dz) == 0 || ny < session.minY() || ny > session.maxY()) {
+                                continue;
                             }
-                            break;
+                            long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                            long ox = nx - position.x();
+                            long oy = ny - position.y();
+                            long oz = nz - position.z();
+                            if (!visited.contains(next) && ox * ox + oy * oy + oz * oz <= reach
+                                    && registry.isSolid(session.getBlock(nx, ny, nz))
+                                    && touchesAir(session, registry, nx, ny, nz)) {
+                                visited.add(next);
+                                queue.add(next);
+                            }
                         }
                     }
                 }
             }
+            // The layers, one step in per entry of the list.
+            int changed = 0;
+            java.util.List<Long> current = surface;
+            for (int depth = 0; depth < layers.length && !current.isEmpty(); depth++) {
+                java.util.List<Long> inner = new java.util.ArrayList<>();
+                for (long key : current) {
+                    int x = BlockArrayClipboard.keyX(key);
+                    int y = BlockArrayClipboard.keyY(key);
+                    int z = BlockArrayClipboard.keyZ(key);
+                    if (test(x, y, z) && session.setBlock(x, y, z, layers[depth])) {
+                        changed++;
+                    }
+                    if (depth + 1 == layers.length) {
+                        continue;
+                    }
+                    for (int[] face : FACES) {
+                        int nx = x + face[0];
+                        int ny = y + face[1];
+                        int nz = z + face[2];
+                        if (ny < session.minY() || ny > session.maxY()) {
+                            continue;
+                        }
+                        long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (!visited.contains(next) && goesIn(session, registry, visited, nx, ny, nz, depth + 1)) {
+                            visited.add(next);
+                            inner.add(next);
+                        }
+                    }
+                }
+                current = inner;
+            }
             return changed;
+        }
+
+        /**
+         * FAWE's layer mask: a cell takes a layer past the second when the cell
+         * next to it holds the layer before and the one past that the layer
+         * before that, along the first face whose neighbour holds it; and it
+         * never touches air.
+         */
+        private boolean goesIn(EditSession session, BlockStateRegistry registry, LongSet visited,
+                               int x, int y, int z, int depth) {
+            if (depth > 1) {
+                boolean found = false;
+                for (int[] face : FACES) {
+                    int ax = x + face[0];
+                    int ay = y + face[1];
+                    int az = z + face[2];
+                    if (visited.contains(BlockArrayClipboard.positionKey(ax, ay, az))
+                            && session.getBlock(ax, ay, az) == layers[depth - 1]) {
+                        int bx = ax + face[0];
+                        int by = ay + face[1];
+                        int bz = az + face[2];
+                        if (visited.contains(BlockArrayClipboard.positionKey(bx, by, bz))
+                                && session.getBlock(bx, by, bz) == layers[depth - 2]) {
+                            found = true;
+                            break;
+                        }
+                        return false;
+                    }
+                }
+                if (!found) {
+                    return false;
+                }
+            }
+            return !touchesAir(session, registry, x, y, z);
+        }
+
+        private static boolean touchesAir(EditSession session, BlockStateRegistry registry, int x, int y, int z) {
+            for (int[] face : FACES) {
+                if (registry.isAirLike(session.getBlock(x + face[0], y + face[1], z + face[2]))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public String describe() {
+            return "radius=" + radius + " layers=" + layers.length;
         }
     }
 
@@ -572,25 +779,17 @@ public final class Brushes {
             super(radius, fill, mask);
         }
 
+        /**
+         * FAWE's: paints the surface around the click, see
+         * {@link Operations#surfaceSphere}. It laid the pattern on top of the
+         * highest block of every column of a disc - the treetops, the roofs -
+         * and could paint no wall.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            for (int z = -(int) radius; z <= radius; z++) {
-                for (int x = -(int) radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int highest = session.getWorld().getHighestBlockY(position.x() + x, position.z() + z);
-                    if (place(session, position.x() + x, highest + 1, position.z() + z)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
+            return Operations.surfaceSphere(session, position, radius, fill, session.getMask());
         }
     }
-
-    // --------------------------------------------------------------- line brushes
 
     /** {@code /brush line [pattern] [radius] [thickness]} — needs pos1/pos2. */
     public static final class LineBrush extends BaseBrush {
@@ -620,22 +819,23 @@ public final class Brushes {
             this.flat = flat;
         }
 
+        /**
+         * FAWE's: the first click marks where the line starts, the second draws
+         * it there, of the brush's radius - a ball around each block, or with
+         * {@code -f} a disc at its height - solid unless {@code -h}, and with
+         * {@code -s} the second click starts the next line. What each click did
+         * is said over the hotbar, not in the chat.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockVector3 from = start != null ? start : actor.session().getSelector(actor.world())
-                    .getRegion().getMinimumPoint();
             if (start == null) {
-                start = actor.position();
-                from = start;
+                start = position;
+                actor.status(Msg.info("Added point " + position + ", click another position to create the line"));
+                return 0;
             }
-            BlockVector3 end = flat ? position.withY(from.y()) : position;
-            int changed = Operations.line(session, from, end, fill, 0, shell);
-            if (select) {
-                var selector = actor.session().getSelector(actor.world());
-                var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
-                selector.selectPrimary(from, limits);
-                selector.selectSecondary(end, limits);
-            }
+            int changed = Operations.drawLine(session, List.of(start, position), radius, !shell, flat, fill);
+            actor.status(Msg.info("Created the line"));
+            start = select ? position : null;
             return changed;
         }
     }
@@ -662,7 +862,8 @@ public final class Brushes {
             if (points.size() < 2) {
                 return 0;
             }
-            int changed = Operations.spline(session, List.of(points.get(points.size() - 2), target), fill, radius);
+            int changed = Operations.drawSpline(session, List.of(points.get(points.size() - 2), target), 0, 0, 0,
+                    10, radius, true, fill);
             if (points.size() > 64) {
                 points.remove(0);
             }
@@ -673,10 +874,13 @@ public final class Brushes {
     /** {@code /brush catenary} — a rope with sag between two points. */
     public static final class CatenaryBrush extends BaseBrush {
 
-        private double lengthFactor = 1.1;
+        private double lengthFactor = 1.2;
         private boolean shell;
         private boolean select;
         private boolean facingDirection;
+        private BlockVector3 start;
+        private BlockVector3 end;
+        private BlockVector3 vertex;
 
         public CatenaryBrush(double radius, Pattern fill, Mask mask) {
             super(radius, fill, mask);
@@ -698,28 +902,242 @@ public final class Brushes {
             this.facingDirection = facingDirection;
         }
 
+        /**
+         * FAWE's: the first click marks one end, the second hangs a wire of
+         * {@code lengthFactor} times the distance from there - a spline through
+         * the ends and the lowest point of the catenary between them, of the
+         * brush's radius, hollow with {@code -h}. With {@code -d} a third click
+         * turns the sag towards where the player looks. With {@code -s} the end
+         * of a wire starts the next. It hung a sine from the corner of the
+         * selection, as deep as the line was long times the factor.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockVector3 from = actor.session().getSelector(actor.world()).getRegion().getMinimumPoint();
-            // -d drops the line in the direction the player looks at instead of
-            // straight down.
-            BlockVector3 end = position;
-            if (facingDirection) {
-                var facing = actor.facing();
-                end = position.add(facing.toVector().multiply(Math.max(1, (int) radius * 2)));
+            if (start == null || position.equals(start)) {
+                start = position;
+                vertex = null;
+                actor.status(Msg.info("Added point " + position + ", click another position to create the line"));
+                return 0;
             }
-            int changed = Operations.catenary(session, from, end, fill, lengthFactor, shell ? 0.5 : 0);
-            if (select) {
-                var selector = actor.session().getSelector(actor.world());
-                var limits = com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
-                selector.selectPrimary(from, limits);
-                selector.selectSecondary(end, limits);
+            if (vertex == null) {
+                end = position;
+                vertex = Operations.catenaryVertex(start, end, lengthFactor);
+                if (facingDirection) {
+                    actor.status(Msg.info("Added point " + position
+                            + ", click the direction you want to create the spline"));
+                    return 0;
+                }
+            } else if (facingDirection) {
+                // The sag keeps its depth and turns to the view.
+                BlockVector3 middle = new BlockVector3((start.x() + end.x()) / 2, (start.y() + end.y()) / 2,
+                        (start.z() + end.z()) / 2);
+                double depth = Math.sqrt(middle.distanceSq(vertex));
+                com.maxlananas.fawebim.core.math.Vector3 facing = actor.direction();
+                vertex = new BlockVector3((int) Math.round(middle.x() + facing.x() * depth),
+                        (int) Math.round(middle.y() + facing.y() * depth),
+                        (int) Math.round(middle.z() + facing.z() * depth));
             }
+            BlockVector3 last = facingDirection ? end : position;
+            int changed = Operations.drawSpline(session, List.of(start, vertex, last), 0, 0, 0, 10, radius, !shell,
+                    fill);
+            actor.status(Msg.info("Created the line"));
+            vertex = null;
+            start = select ? last : null;
             return changed;
         }
     }
 
-    // ------------------------------------------------------------- scatter family
+    /**
+     * {@code /brush image <image> [radius] [yscale] [-a] [-f]}, FAWE's: the
+     * image laid over the surface blocks around the click as the player sees
+     * it - flat on the ground looking down, upright on a wall looking at it -
+     * as wide as the brush, each block it covers becoming the block nearest the
+     * colour of the pixels it covers. With {@code -a} the image's transparency
+     * mixes it with the colours already there, a clear pixel leaving its block
+     * alone; {@code yscale} makes the image that much more opaque or clear and
+     * {@code -f} fades it out towards its edges, both with the transparency.
+     * The image is read from the schematic folder, as the heightmap brushes'.
+     *
+     * <p>It was a sphere of the brush's pattern, which it had not, so of air.</p>
+     */
+    public static final class ImageBrush extends BaseBrush {
+
+        /** Samples taken along a side of the pixels one block covers, at most. */
+        private static final int SAMPLES = 16;
+
+        private final com.maxlananas.fawebim.core.util.Images.PixelSource image;
+        private final double yScale;
+        private final boolean alpha;
+        private final boolean fade;
+
+        public ImageBrush(double radius, Mask mask, com.maxlananas.fawebim.core.util.Images.PixelSource image,
+                          double yScale, boolean alpha, boolean fade) {
+            super(radius, null, mask);
+            this.image = image;
+            this.yScale = yScale;
+            this.fade = fade;
+            this.alpha = alpha || fade || yScale != 1;
+        }
+
+        @Override
+        public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            double scale = Math.max(image.width(), image.height()) / Math.max(1, radius);
+            // FAWE's view transform, inverted: the yaw turns the offset around
+            // the vertical, then the pitch tilts the image plane up to the view.
+            double yaw = Math.toRadians(actor.yaw());
+            double tilt = Math.toRadians(90 - actor.pitch());
+            double[] view = {Math.cos(yaw), Math.sin(yaw), Math.cos(tilt), Math.sin(tilt)};
+            BlockStateRegistry registry = BlockState.registry();
+            LongSet visited = new LongSet();
+            LongQueue queue = new LongQueue();
+            long start = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.positionKey(position.x(),
+                    position.y(), position.z());
+            visited.add(start);
+            queue.add(start);
+            int changed = 0;
+            while (!queue.isEmpty()) {
+                long node = queue.poll();
+                int x = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyX(node);
+                int y = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyY(node);
+                int z = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.keyZ(node);
+                int painted = paint(session, registry, position, x, y, z, scale, view);
+                // The walk goes on over the surface the image covers, from the
+                // click whatever it is.
+                if (painted < 0 && node != start) {
+                    continue;
+                }
+                changed += Math.max(0, painted);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            int ny = y + dy;
+                            if ((dx | dy | dz) == 0 || ny < session.minY() || ny > session.maxY()) {
+                                continue;
+                            }
+                            long key = com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard.positionKey(x + dx,
+                                    ny, z + dz);
+                            if (visited.add(key)) {
+                                queue.add(key);
+                            }
+                        }
+                    }
+                }
+            }
+            return changed;
+        }
+
+        private static boolean surface(EditSession session, BlockStateRegistry registry, int x, int y, int z) {
+            if (!registry.isSolid(session.getBlock(x, y, z))) {
+                return false;
+            }
+            return !registry.isSolid(session.getBlock(x + 1, y, z)) || !registry.isSolid(session.getBlock(x - 1, y, z))
+                    || !registry.isSolid(session.getBlock(x, y, z + 1)) || !registry.isSolid(session.getBlock(x, y, z - 1))
+                    || y < session.maxY() && !registry.isSolid(session.getBlock(x, y + 1, z))
+                    || y > session.minY() && !registry.isSolid(session.getBlock(x, y - 1, z));
+        }
+
+        /**
+         * Paints one surface block the image covers: 1 when it changed, 0 when
+         * it did not, -1 when it is no surface block the image covers, where
+         * the walk stops.
+         */
+        private int paint(EditSession session, BlockStateRegistry registry, BlockVector3 center, int x, int y,
+                          int z, double scale, double[] view) {
+            if (!surface(session, registry, x, y, z)) {
+                return -1;
+            }
+            int dx = x - center.x();
+            int dy = y - center.y();
+            int dz = z - center.z();
+            double[] low = project(dx - 0.5, dy - 0.5, dz - 0.5, view);
+            double[] high = project(dx + 0.5, dy + 0.5, dz + 0.5, view);
+            int x1 = (int) (low[0] * scale + image.width() / 2d);
+            int z1 = (int) (low[1] * scale + image.height() / 2d);
+            int x2 = (int) (high[0] * scale + image.width() / 2d);
+            int z2 = (int) (high[1] * scale + image.height() / 2d);
+            if (x2 < x1) {
+                int swap = x1;
+                x1 = x2;
+                x2 = swap;
+            }
+            if (z2 < z1) {
+                int swap = z1;
+                z1 = z2;
+                z2 = swap;
+            }
+            if (x1 >= image.width() || x2 < 0 || z1 >= image.height() || z2 < 0) {
+                return -1;
+            }
+            int color = colour(session, registry, x, y, z, Math.max(0, x1), Math.max(0, z1),
+                    Math.min(image.width() - 1, x2), Math.min(image.height() - 1, z2));
+            if (color == -1 || mask != null && !mask.test(x, y, z)) {
+                return 0;
+            }
+            int block = MapColors.palette(registry).closest(color);
+            return block >= 0 && session.setBlock(x, y, z, block) ? 1 : 0;
+        }
+
+        /** An offset in the image's plane, as FAWE's inverted view transform takes it there. */
+        private static double[] project(double dx, double dy, double dz, double[] view) {
+            double ax = view[0] * dx + view[1] * dz;
+            double az = -view[1] * dx + view[0] * dz;
+            return new double[]{ax, view[3] * dy + view[2] * az};
+        }
+
+        /**
+         * The colour of the pixels a block covers, or -1 where they are clear:
+         * their average, mixed with the colour of the block by their average
+         * transparency when the brush reads it.
+         */
+        private int colour(EditSession session, BlockStateRegistry registry, int x, int y, int z,
+                           int x1, int z1, int x2, int z2) {
+            int stepX = Math.max(1, (x2 - x1 + 1) / SAMPLES);
+            int stepZ = Math.max(1, (z2 - z1 + 1) / SAMPLES);
+            long red = 0;
+            long green = 0;
+            long blue = 0;
+            long opacity = 0;
+            int count = 0;
+            for (int u = x1; u <= x2; u += stepX) {
+                for (int v = z1; v <= z2; v += stepZ) {
+                    int rgb = image.rgb(u, v);
+                    red += (rgb >> 16) & 0xFF;
+                    green += (rgb >> 8) & 0xFF;
+                    blue += rgb & 0xFF;
+                    opacity += alpha ? opacity(u, v) : 255;
+                    count++;
+                }
+            }
+            int r = (int) (red / count);
+            int g = (int) (green / count);
+            int b = (int) (blue / count);
+            int a = (int) (opacity / count);
+            if (a <= 0) {
+                return -1;
+            }
+            if (a >= 255) {
+                return (r << 16) | (g << 8) | b;
+            }
+            int existing = MapColors.colorOf(registry, session.getBlock(x, y, z));
+            int er = (existing >> 16) & 0xFF;
+            int eg = (existing >> 8) & 0xFF;
+            int eb = existing & 0xFF;
+            return ((r * a + er * (255 - a)) / 255 << 16) | ((g * a + eg * (255 - a)) / 255 << 8)
+                    | (b * a + eb * (255 - a)) / 255;
+        }
+
+        /** The transparency of a pixel as the brush reads it: scaled by yscale, faded out towards the edges. */
+        private int opacity(int u, int v) {
+            double value = image.opacity(u, v) * yScale;
+            if (fade) {
+                double cx = image.width() / 2d;
+                double cz = image.height() / 2d;
+                double distance = Math.sqrt(Math.pow((u - cx) / cx, 2) + Math.pow((v - cz) / cz, 2));
+                value *= Math.max(0, 1 - distance);
+            }
+            return (int) Math.max(0, Math.min(255, value));
+        }
+    }
 
     /** {@code /brush scatter}. */
     public static final class ScatterBrush extends BaseBrush {
@@ -741,105 +1159,112 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.scatter(session, position, points, distance, radius, fill, random, overlay, mask);
+            return Operations.scatter(session, position, points, distance, radius, fill, random, overlay,
+                    session.getMask());
         }
     }
 
-    /** {@code /brush shatter} — removes the surface like an explosion. */
+    /**
+     * {@code /brush shatter <pattern> [radius] [count]}, FAWE's: the pattern
+     * drawn along the cracks between patches grown over the surface from
+     * {@code count} points, see {@link Operations#shatter}. It set random blocks
+     * of a sphere to air whatever its pattern and count.
+     */
     public static final class ShatterBrush extends BaseBrush {
 
-        public ShatterBrush(double radius, Pattern fill, Mask mask) {
+        private final int count;
+
+        public ShatterBrush(double radius, Pattern fill, Mask mask, int count) {
             super(radius, fill, mask);
+            this.count = Math.max(1, count);
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                if (!test(x, y, z)) {
-                    return false;
-                }
-                return random.nextDouble() < 0.3
-                        && session.setBlock(x, y, z, registry.air());
-            });
+            return Operations.shatter(session, position, radius, count, fill, session.getMask(), random);
         }
     }
 
-    /** {@code /brush splatter} — random blocks in a sphere. */
+    /**
+     * {@code /brush splatter <pattern> [radius] [points] [recursion] [solid]},
+     * FAWE's: splotches grown over the surface from points on it, see
+     * {@link Operations#splatter}. It filled random blocks of a sphere, air
+     * included, whatever its recursion and solid said.
+     */
     public static final class SplatterBrush extends BaseBrush {
 
         private int points = 1;
+        private int recursion = 5;
+        private boolean solid = true;
 
         public SplatterBrush(double radius, Pattern fill, Mask mask) {
             super(radius, fill, mask);
         }
 
-        /** How many clumps the brush throws; FAWE's {@code points} argument. */
+        /** How many splotches the brush throws; FAWE's {@code points} argument. */
         public void setPoints(int points) {
             this.points = Math.max(1, points);
         }
 
+        /** How many levels a splotch grows; FAWE's {@code recursion} argument. */
+        public void setRecursion(int recursion) {
+            this.recursion = Math.max(0, recursion);
+        }
+
+        /** One block of the pattern per splotch, where false asks it for every block. */
+        public void setSolid(boolean solid) {
+            this.solid = solid;
+        }
+
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            int attempts = (int) (radius * radius * 4) * points;
-            for (int i = 0; i < attempts; i++) {
-                double dx = random.nextDouble() * 2 - 1;
-                double dy = random.nextDouble() * 2 - 1;
-                double dz = random.nextDouble() * 2 - 1;
-                double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                if (length > 1) {
-                    continue;
-                }
-                int x = position.x() + (int) (dx * radius);
-                int y = position.y() + (int) (dy * radius);
-                int z = position.z() + (int) (dz * radius);
-                if (place(session, x, y, z)) {
-                    changed++;
-                }
-            }
-            return changed;
+            return Operations.splatter(session, position, radius, points, recursion, solid, fill, session.getMask(),
+                    random);
         }
     }
 
-    /** {@code /brush rock} — random noise shaped like rock. */
     /**
-     * {@code /brush rock}: a distorted sphere. {@code sphericity} is how close to
-     * a perfect sphere the low frequency noise stays, {@code frequency} how fast
-     * the surface wobbles and {@code amplitude} how far it wobbles.
+     * {@code /brush rock <pattern> [radius] [roundness] [frequency] [amplitude]}:
+     * FAWE's blob, a ball whose surface simplex noise pushes in and out, drawn
+     * afresh on every click from a random corner of the noise.
+     *
+     * <p>The radius is one number or one per axis, {@code 10,5,10} for a flat
+     * rock; the brush's size is the largest, and the others keep their share
+     * of it when {@code /tool size} changes it. At a roundness under 100 the
+     * ball is mixed with FAWE's "Manhattan" shape - the sum and the largest of
+     * the axes, each stretched at random - and turned at random.</p>
+     *
+     * <p>This drew the same wobbled sphere, from sines of the offsets, on every
+     * click, and read the radius as a single number.</p>
      */
     public static final class RockBrush extends BaseBrush {
 
-        private double sphericity = 100;
-        private double frequency = 30;
-        private double amplitude = 50;
+        /** The radius of each axis divided by the largest, which is the size. */
+        private Vector3 axes = new Vector3(1, 1, 1);
+        private double sphericity = 1;
+        private double frequency = 0.3;
+        private double amplitude = 0.5;
 
         public RockBrush(double radius, Pattern fill, Mask mask) {
             super(radius, fill, mask);
         }
 
-        public void setShape(double sphericity, double frequency, double amplitude) {
-            this.sphericity = sphericity;
-            this.frequency = frequency;
-            this.amplitude = amplitude;
+        /**
+         * The shape as the command line gives it: the radius of each axis, and
+         * the roundness, frequency and amplitude as percentages.
+         */
+        public void setShape(double[] radii, double sphericity, double frequency, double amplitude) {
+            double largest = Math.max(radii[0], Math.max(radii[1], radii[2]));
+            this.axes = new Vector3(radii[0] / largest, radii[1] / largest, radii[2] / largest);
+            this.sphericity = sphericity / 100;
+            this.frequency = frequency / 100;
+            this.amplitude = amplitude / 100;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            // The angular part of the position drives the noise, so the surface
-            // wobbles per direction instead of per block.
-            double noiseScale = frequency / 100.0;
-            double wobble = amplitude / 100.0;
-            double roundness = sphericity / 100.0;
-            return Operations.forEachInSphere(position, (int) radius, false, (bx, by, bz) -> {
-                double dx = bx - position.x();
-                double dy = by - position.y();
-                double dz = bz - position.z();
-                double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                double noise = Math.sin(dx * noiseScale) * Math.cos(dy * noiseScale) * Math.sin(dz * noiseScale + 1);
-                double limit = radius * (roundness + noise * wobble * (1 - roundness));
-                return distance <= limit && place(session, bx, by, bz);
-            });
+            return Operations.makeBlob(position, radius, frequency, amplitude, axes, sphericity, random,
+                    (x, y, z) -> place(session, x, y, z));
         }
     }
 
@@ -930,8 +1355,14 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush circle} — a disc facing the player, which is how FAWE builds
-     * it: the plane normal is the vector from the player to the target.
+     * {@code /brush circle <pattern> [radius] [filled]}: FAWE's circle, a disc
+     * or a ring facing the player - the blocks of the ball, or of its shell,
+     * within half a block of the plane square to the line from the player to
+     * the clicked block.
+     *
+     * <p>This walked the circle by angles and floored each point, which left
+     * holes on the diagonals and put the circle a block off towards negative
+     * coordinates.</p>
      */
     public static final class CircleBrush extends BaseBrush {
 
@@ -944,46 +1375,15 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            com.maxlananas.fawebim.core.math.Vector3 normal = new com.maxlananas.fawebim.core.math.Vector3(
-                    position.x() - actor.position().x(),
-                    position.y() - actor.position().y(),
-                    position.z() - actor.position().z());
+            // FAWE faces the circle along the line from the player's feet to
+            // the clicked block, measured from its corner.
+            Vector3 feet = actor.location();
+            Vector3 normal = feet == null ? Vector3.ZERO
+                    : new Vector3(position.x() - feet.x(), position.y() - feet.y(), position.z() - feet.z());
             if (normal.lengthSq() == 0) {
                 normal = actor.direction();
             }
-            normal = normal.normalize();
-            com.maxlananas.fawebim.core.math.Vector3 axisU = orthogonal(normal);
-            com.maxlananas.fawebim.core.math.Vector3 axisV = normal.cross(axisU).normalize();
-            int steps = Math.max(8, (int) (2 * Math.PI * radius));
-            int changed = 0;
-            for (int step = 0; step < steps; step++) {
-                double angle = 2 * Math.PI * step / steps;
-                double cos = Math.cos(angle);
-                double sin = Math.sin(angle);
-                int rings = filled ? (int) radius + 1 : 1;
-                for (int ring = 0; ring < rings; ring++) {
-                    double scale = filled ? ring : radius;
-                    double px = position.x() + (axisU.x() * cos + axisV.x() * sin) * scale;
-                    double py = position.y() + (axisU.y() * cos + axisV.y() * sin) * scale;
-                    double pz = position.z() + (axisU.z() * cos + axisV.z() * sin) * scale;
-                    int x = (int) Math.floor(px);
-                    int y = (int) Math.floor(py);
-                    int z = (int) Math.floor(pz);
-                    if (place(session, x, y, z)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
-        }
-
-        /** Any unit vector perpendicular to the given one. */
-        private static com.maxlananas.fawebim.core.math.Vector3 orthogonal(com.maxlananas.fawebim.core.math.Vector3 normal) {
-            com.maxlananas.fawebim.core.math.Vector3 candidate =
-                    Math.abs(normal.y()) < 0.9
-                            ? new com.maxlananas.fawebim.core.math.Vector3(0, 1, 0)
-                            : new com.maxlananas.fawebim.core.math.Vector3(1, 0, 0);
-            return normal.cross(candidate).normalize();
+            return Operations.circle(position, radius, filled, normal.normalize(), (x, y, z) -> place(session, x, y, z));
         }
     }
 
@@ -1023,49 +1423,6 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush pull} — pulls terrain towards the player. */
-    public static final class PullBrush extends BaseBrush {
-
-        private int fillFaces = 1;
-
-        public PullBrush(double radius, Pattern fill, Mask mask) {
-            super(radius, fill, mask);
-        }
-
-        /** {@code erodefaces} / {@code fillFaces}: how many neighbours a block needs to be moved or filled. */
-        public void setShape(int erodeFaces, int erodeRecursion, int fillFaces, int fillRecursion) {
-            this.fillFaces = Math.max(1, fillFaces);
-        }
-
-        @Override
-        public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                if (!test(x, y, z)) {
-                    return false;
-                }
-                int solidNeighbours = 0;
-                for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    BlockVector3 next = direction.toVector();
-                    if (registry.isSolid(session.getBlock(x + next.x(), y + next.y(), z + next.z()))) {
-                        solidNeighbours++;
-                    }
-                }
-                if (solidNeighbours < fillFaces) {
-                    return false;
-                }
-                int x0 = x + Integer.signum(position.x() - x);
-                int z0 = z + Integer.signum(position.z() - z);
-                int state = session.getBlock(x, y, z);
-                if (registry.isAirLike(state)) {
-                    return false;
-                }
-                return session.setBlock(x0, y, z0, state) && session.setBlock(x, y, z, registry.air());
-            });
-        }
-    }
-
-    /** {@code /brush stencil} — draws a repeating pattern in a sphere. */
     /**
      * {@code /brush stencil <pattern> <radius> <image> [rotation] [yscale]} —
      * paints the image onto the surface around the click. The rotation is a
@@ -1206,6 +1563,8 @@ public final class Brushes {
         private final Mask sourceMask;
         /** {@code -r}: turn the paste by a random quarter turn. */
         private final boolean randomRotate;
+        /** The clipboard and its transform as they were when the brush was bound. */
+        private com.maxlananas.fawebim.core.session.ClipboardHolder bound;
 
         public ClipboardBrush(double radius, Mask mask, boolean pasteOnTop) {
             this(radius, mask, pasteOnTop, false, false, false, false, null, false);
@@ -1224,16 +1583,31 @@ public final class Brushes {
             this.randomRotate = randomRotate;
         }
 
+        /**
+         * Keeps the clipboard the brush pastes, as WorldEdit's brush keeps the
+         * holder it is given: a later //copy binds another brush rather than
+         * changing this one. A brush with none pastes the clipboard of the
+         * moment.
+         */
+        public void setClipboard(com.maxlananas.fawebim.core.session.ClipboardHolder clipboard) {
+            this.bound = clipboard;
+        }
+
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            if (!actor.session().hasClipboard()) {
+            var holder = bound != null ? bound : actor.session().hasClipboard() ? actor.session().getClipboard() : null;
+            if (holder == null) {
                 actor.message(Msg.error("No clipboard: use //copy first"));
                 return 0;
             }
-            var holder = actor.session().getClipboard();
             var clipboard = holder.getClipboard();
-            BlockVector3 destination = pasteOnTop ? position : position.add(
-                    -clipboard.getWidth() / 2, -clipboard.getHeight() / 2, -clipboard.getLength() / 2);
+            // WorldEdit's centring: the centre of the clipboard's box goes on
+            // the click, wherever its origin is. Counting half the size from
+            // the origin only centred a clipboard whose origin was its corner.
+            var box = clipboard.getBox();
+            BlockVector3 centre = new BlockVector3(Math.floorDiv(box.minX() + box.maxX(), 2),
+                    Math.floorDiv(box.minY() + box.maxY(), 2), Math.floorDiv(box.minZ() + box.maxZ(), 2));
+            BlockVector3 destination = pasteOnTop ? position : position.subtract(centre.subtract(clipboard.getOrigin()));
             // -r composes a quarter turn with whatever transform the clipboard
             // already carries, exactly like FAWE's brush does.
             Transform transform = holder.getTransform();
@@ -1252,9 +1626,20 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush copypaste [-r] [-a] <radius>} — the first click copies the
-     * connected blob under the cursor, the next ones paste it back with an
-     * optional rotation, which is FAWE's {@code CopyPastaBrush}.
+     * {@code /brush copypaste [radius] [-r] [-a]}: FAWE's copy paste brush. A
+     * click while the clipboard is empty copies the object under it - the
+     * blocks joined to the clicked one, no lower than it, within the radius in
+     * steps - with the clicked block as the origin; the next clicks paste it
+     * one block above the click without its air, turned a random quarter with
+     * {@code -r} or the way the player looks with {@code -a}, or else as the
+     * clipboard's own transform says. Binding the brush empties the clipboard,
+     * so the first click copies, and the brush's mask applies to both.
+     *
+     * <p>The paste was turned around the click, not around the origin of the
+     * copy, which threw a turned object as far from the click as the click
+     * was from where it had been copied; a clipboard of before was pasted by
+     * the first click instead of the object under it; and the masks were not
+     * read.</p>
      */
     public static final class CopyPastaBrush extends BaseBrush {
 
@@ -1268,32 +1653,50 @@ public final class Brushes {
         }
 
         @Override
+        public void bound(com.maxlananas.fawebim.core.session.LocalSession session) {
+            session.setClipboard(null);
+        }
+
+        @Override
+        public String hint() {
+            return "Left click the base of an object to copy, right click to paste. Increase the brush radius if"
+                    + " necessary.";
+        }
+
+        @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            if (!actor.session().hasClipboard()) {
-                BlockArrayClipboard copied = com.maxlananas.fawebim.core.function.Operations.copyConnected(
-                        session.getWorld(), session, position, (int) Math.ceil(radius), mask);
-                if (copied.volume() == 0) {
-                    actor.message(Msg.error("Nothing to copy at " + position));
+            return masked(session, () -> {
+                if (!actor.session().hasClipboard()) {
+                    BlockArrayClipboard copied = Operations.copyConnected(session.getWorld(), session, position,
+                            (int) radius, session.getMask());
+                    if (copied.volume() == 0) {
+                        actor.message(Msg.error("Nothing to copy here: click the base of an object"));
+                        return 0;
+                    }
+                    actor.session().setClipboard(copied);
+                    actor.message(Msg.result("Copied", Msg.blocks(copied.volume()) + " to your clipboard"));
                     return 0;
                 }
-                actor.session().setClipboard(copied);
-                actor.message(Msg.success("Copied " + Msg.formatNumber(copied.volume()) + " block(s)"));
-                return 0;
-            }
-            Transform transform = Transform.identity();
-            if (randomRotate) {
-                transform = Transforms.rotate(position, random.nextInt(4) * 90.0);
-            }
-            if (autoRotate) {
-                // The blob follows the way the player looks, as FAWE's brush does:
-                // the yaw turns it around Y, the pitch tilts it.
-                transform = Transforms.rotate(position, com.maxlananas.fawebim.core.transform.Axis.Y, -actor.yaw())
-                        .combine(transform);
-                transform = Transforms.rotate(position, com.maxlananas.fawebim.core.transform.Axis.X,
-                        actor.pitch() - 90).combine(transform);
-            }
-            return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(actor.session().getClipboard().getClipboard(),
-                    position.add(0, 1, 0), session, transform, true, null, false, false, false, false);
+                var holder = actor.session().getClipboard();
+                BlockArrayClipboard clipboard = holder.getClipboard();
+                BlockVector3 origin = clipboard.getOrigin();
+                // FAWE's flags replace the clipboard's transform with theirs; a
+                // turn of nothing leaves the clipboard's own in place.
+                Transform turn = Transform.identity();
+                int quarters = randomRotate ? random.nextInt(4) : 0;
+                if (quarters != 0) {
+                    turn = Transforms.rotate(origin, quarters * 90.0);
+                }
+                if (autoRotate) {
+                    turn = Transforms.rotate(origin, com.maxlananas.fawebim.core.transform.Axis.Y, -actor.yaw())
+                            .combine(turn);
+                    turn = Transforms.rotate(origin, com.maxlananas.fawebim.core.transform.Axis.X,
+                            actor.pitch() - 90).combine(turn);
+                }
+                Transform transform = turn.isIdentity() ? holder.getTransform() : turn;
+                return com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard, position.add(0, 1, 0),
+                        session, transform, true, null, false, false, false, false);
+            });
         }
 
         @Override
@@ -1312,15 +1715,19 @@ public final class Brushes {
     public static final class ScatterCommandBrush extends BaseBrush {
 
         private final String command;
+        private final int points;
+        private final int distance;
         private boolean verbose;
 
         public ScatterCommandBrush(double radius, String command) {
-            this(radius, command, false);
+            this(radius, 1, 1, command, false);
         }
 
-        public ScatterCommandBrush(double radius, String command, boolean verbose) {
+        public ScatterCommandBrush(double radius, int points, int distance, String command, boolean verbose) {
             super(radius, null, null);
             this.command = command == null ? "" : command;
+            this.points = Math.max(1, points);
+            this.distance = Math.max(0, distance);
             this.verbose = verbose;
         }
 
@@ -1330,20 +1737,12 @@ public final class Brushes {
                 actor.message(Msg.error("No command set: /brush scattercommand <radius> <command>"));
                 return 0;
             }
-            int count = Math.max(1, (int) Math.round(radius));
-            Actor target = verbose ? actor : new com.maxlananas.fawebim.core.actor.SilentActor(actor);
+            // FAWE's: the points of the scatter brush, and the commands run at
+            // each with a selection as large as the distance between them.
             int executed = 0;
-            for (int i = 0; i < count; i++) {
-                int x = position.x() + random.nextInt((int) radius * 2 + 1) - (int) radius;
-                int y = position.y() + random.nextInt((int) radius * 2 + 1) - (int) radius;
-                int z = position.z() + random.nextInt((int) radius * 2 + 1) - (int) radius;
-                String parsed = command
-                        .replace("%x%", String.valueOf(x))
-                        .replace("%y%", String.valueOf(y))
-                        .replace("%z%", String.valueOf(z));
-                if (com.maxlananas.fawebim.core.command.BrushCommands.run(target, parsed)) {
-                    executed++;
-                }
+            for (BlockVector3 point : Operations.scatterPoints(session, position, radius, points, distance, null,
+                    random)) {
+                executed += runCommandsAt(actor, point, distance, command, !verbose);
             }
             return executed;
         }
@@ -1354,48 +1753,52 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush biome} — paints biomes. */
+    /**
+     * {@code /brush biome <shape> [radius] <biome> [-c]}: FAWE's biome brush,
+     * the biome set in every block of the shape. With {@code -c} the shape
+     * goes through the height of the world, a sphere or a cylinder as a
+     * cylinder of the radius and a cuboid as the square of it.
+     *
+     * <p>It set the biome with the id 0 whatever biome it was bound with, in a
+     * cylinder whatever the shape.</p>
+     */
     public static final class BiomeBrush extends BaseBrush {
 
-        private int biomeId;
-        private boolean fullColumn;
+        private final String shape;
+        private final int biome;
+        private final boolean fullColumn;
 
-        public BiomeBrush(double radius, Mask mask) {
+        public BiomeBrush(double radius, Mask mask, String shape, int biome, boolean fullColumn) {
             super(radius, null, mask);
-        }
-
-        public void setBiome(int biomeId) {
-            this.biomeId = biomeId;
-        }
-
-        /** {@code -c}: change the whole column instead of the brush volume. */
-        public void setFullColumn(boolean fullColumn) {
+            this.shape = shape;
+            this.biome = biome;
             this.fullColumn = fullColumn;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            int r = (int) radius;
-            for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int minY = fullColumn ? session.minY() : position.y() - r;
-                    int maxY = fullColumn ? session.maxY() : position.y() + r;
-                    for (int y = minY; y <= maxY; y++) {
-                        if (session.setBiome(position.x() + x, y, position.z() + z, biomeId)) {
-                            changed++;
-                        }
-                    }
-                }
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
+            if (fullColumn) {
+                BlockVector3 min = region.getMinimumPoint();
+                BlockVector3 max = region.getMaximumPoint();
+                region = region instanceof CuboidRegion
+                        ? new CuboidRegion(new BlockVector3(min.x(), session.minY(), min.z()),
+                                new BlockVector3(max.x(), session.maxY(), max.z()))
+                        : new com.maxlananas.fawebim.core.region.CylinderRegion(
+                                new com.maxlananas.fawebim.core.math.Vector2(position.x() + 0.5, position.z() + 0.5),
+                                radius, radius, session.minY(), session.maxY());
             }
-            return changed;
+            com.maxlananas.fawebim.core.region.Region shaped = region;
+            return masked(session, () -> (int) shaped.forEachPosition((x, y, z) -> session.setBiome(x, y, z, biome)));
+        }
+
+        @Override
+        public String describe() {
+            return "biome " + BlockState.registry().biomeName(biome) + " shape=" + shape + (fullColumn ? " -c" : "")
+                    + " " + super.describe();
         }
     }
 
-    /** {@code /brush butcher} — removes nearby entities. */
     /**
      * {@code /brush butcher} — kills the entities in the brush. Which categories
      * it may touch is the {@link Creatures.Category} set the flags built: without
@@ -1414,15 +1817,19 @@ public final class Brushes {
             this.categories = categories;
         }
 
+        /**
+         * FAWE's cylinder of the radius by the height of the world; a cube
+         * of the radius missed the mobs above and below it, and took them from
+         * its corners, half as far again.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int r = (int) radius;
-            var box = Extent.Region3i.of(position.add(-r, -r, -r), position.add(r, r, r));
-            List<EntityData> entities = session.getWorld().getEntities(box);
+            List<EntityData> entities = session.getWorld().getEntitiesWithin(position, radius);
             int removed = 0;
             for (EntityData entity : entities) {
                 if (entity.isSpawnable() && Creatures.matches(entity, categories)) {
-                    session.getWorld().removeEntity(entity);
+                    // Through the edit session, so //undo brings the entity back.
+                    session.removeEntity(entity);
                     removed++;
                 }
             }
@@ -1430,41 +1837,88 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush forest} — plants trees. */
+    /**
+     * {@code /brush forest <shape> [radius] [density] <type>}: WorldEdit's
+     * forest brush, a {@link Operations#paint} of trees over the shape - a tree
+     * tried on {@code density} percent of its columns, grown as //forest grows
+     * one.
+     *
+     * <p>It tried a fixed number of trees whatever the density, on the square
+     * around the click, and asked the world for a feature named after the tree
+     * type, which no world has: it planted nothing.</p>
+     */
     public static final class ForestBrush extends BaseBrush {
 
-        private double density = 0.05;
+        private final String shape;
+        private final String treeType;
+        private final double density;
 
-        public ForestBrush(double radius, Mask mask) {
+        /** @param density in percent, as typed */
+        public ForestBrush(double radius, Mask mask, String shape, String treeType, double density) {
             super(radius, null, mask);
-        }
-
-        public void setDensity(double density) {
+            this.shape = shape;
+            this.treeType = treeType;
             this.density = density;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            int r = (int) radius;
-            for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius || random.nextDouble() > density) {
-                        continue;
-                    }
-                    int x0 = position.x() + x;
-                    int z0 = position.z() + z;
-                    int y = session.getWorld().getHighestBlockY(x0, z0);
-                    if (session.getWorld().generateTree(new BlockVector3(x0, y + 1, z0), "tree", random)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
+            return masked(session, () -> Operations.forest(session, region, treeType, density / 100));
+        }
+
+        @Override
+        public String describe() {
+            return "forest " + treeType + " shape=" + shape + " density=" + Msg.formatDouble(density) + " "
+                    + super.describe();
         }
     }
 
-    /** {@code /brush command} — runs a command where the brush is used. */
+    /**
+     * Runs the commands of a command brush at a point, as FAWE's command
+     * brushes run them: the selection becomes the cube of {@code size} around
+     * the point, the placeholders {x}, {y}, {z}, {world} and {size} - and the
+     * older %x%, %y%, %z% - are the point's, the line is split at ';', and each
+     * command runs for the player standing at the point, so //set fills the
+     * cube and //sphere is built there.
+     *
+     * @return how many of the commands ran
+     */
+    static int runCommandsAt(Actor actor, BlockVector3 point, int size, String commands, boolean quiet) {
+        World world = actor.world();
+        com.maxlananas.fawebim.core.region.RegionSelector cube =
+                com.maxlananas.fawebim.core.region.Selectors.create("cuboid", world, null);
+        com.maxlananas.fawebim.core.region.SelectorLimits limits =
+                com.maxlananas.fawebim.core.region.SelectorLimits.unlimited();
+        cube.selectPrimary(point.add(-size, -size, -size), limits);
+        cube.selectSecondary(point.add(size, size, size), limits);
+        actor.session().setSelector(cube);
+        actor.updateSelectionOutline();
+        String x = String.valueOf(point.x());
+        String y = String.valueOf(point.y());
+        String z = String.valueOf(point.z());
+        String line = commands.replace("{x}", x).replace("{y}", y).replace("{z}", z)
+                .replace("{world}", world.name()).replace("{size}", String.valueOf(size))
+                .replace("%x%", x).replace("%y%", y).replace("%z%", z);
+        Actor runner = new com.maxlananas.fawebim.core.actor.PositionedActor(actor, point);
+        if (quiet) {
+            runner = new com.maxlananas.fawebim.core.actor.SilentActor(runner);
+        }
+        int ran = 0;
+        for (String command : line.split(";")) {
+            if (!command.isBlank() && com.maxlananas.fawebim.core.command.BrushCommands.run(runner, command.trim())) {
+                ran++;
+            }
+        }
+        return ran;
+    }
+
+    /**
+     * {@code /brush command <radius> <commands> [-h]}, FAWE's: the commands run
+     * where the brush lands, with a selection of the radius around it, each
+     * answering in chat unless {@code -h} hides it. It announced the command it
+     * ran on every click and kept the player's own selection.
+     */
     public static final class CommandBrush extends BaseBrush {
 
         private final String command;
@@ -1487,17 +1941,7 @@ public final class Brushes {
                 return 0;
             }
             lastPosition = position;
-            String parsed = command
-                    .replace("%x%", String.valueOf(position.x()))
-                    .replace("%y%", String.valueOf(position.y()))
-                    .replace("%z%", String.valueOf(position.z()));
-            // -h keeps the brush from printing what it ran and what the command
-            // answered, which matters when it fires on every click.
-            Actor target = quiet ? new com.maxlananas.fawebim.core.actor.SilentActor(actor) : actor;
-            if (!quiet) {
-                target.message(Msg.info("Brush command: /" + parsed));
-            }
-            return com.maxlananas.fawebim.core.command.BrushCommands.run(target, parsed) ? 1 : 0;
+            return runCommandsAt(actor, position, (int) radius, command, quiet);
         }
 
         @Override
@@ -1507,49 +1951,83 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush populateschematic} — scatters copies of a schematic over the
-     * surface around the click.
+     * {@code /brush populateschematic <schematic> [mask] [radius] [density] [-r]}:
+     * FAWE's schematic scatter. Each chunk the brush's box reaches gets, as
+     * often as the density says, one schematic at a random column: on the
+     * highest block of that column the mask accepts within the box's height,
+     * one block above it and without its air, turned a random quarter with
+     * {@code -r}. The schematic is a file, a folder whose every schematic is
+     * drawn from, or a list of them, read once when the brush is bound.
      *
-     * <p>FAWE walks the chunks the brush covers, rolls the density once per chunk
-     * and drops one copy at a random column of it. The column is found with the
-     * mask, which defaults to any solid block when the command line leaves it
-     * out.</p>
+     * <p>This pasted the schematic's air, which carved a box through the
+     * ground and through what the stroke had placed before; it stood the
+     * schematic in the surface block instead of on it, looked for the surface
+     * in the whole column, and read the file again for every copy.</p>
      */
     public static final class PopulateSchematicBrush extends BaseBrush {
 
         private String schematic;
+        private java.util.List<BlockArrayClipboard> clipboards = java.util.List.of();
         private boolean randomRotation;
         private int density = 50;
+        /** The blocks a schematic may stand on, FAWE's second argument; the brush's own mask is /tool mask. */
+        private final Mask surfaceMask;
 
-        public PopulateSchematicBrush(double radius, Mask mask) {
-            super(radius, null, mask);
+        public PopulateSchematicBrush(double radius, Mask surfaceMask) {
+            super(radius, null, null);
+            this.surfaceMask = surfaceMask;
         }
 
-        public void setSchematic(String schematic) {
+        /** The schematics to draw from, as the line named them and as they were read. */
+        public void setSchematics(String schematic, java.util.List<BlockArrayClipboard> clipboards) {
             this.schematic = schematic;
+            this.clipboards = java.util.List.copyOf(clipboards);
         }
 
         public void setRandomRotation(boolean randomRotation) {
             this.randomRotation = randomRotation;
         }
 
-        /** How likely a chunk receives a copy, in percent. */
+        /** How likely a chunk receives a copy: FAWE's rarity, a chance of one more in a hundred. */
         public void setDensity(int density) {
-            this.density = Math.max(1, Math.min(100, density));
+            this.density = Math.max(0, Math.min(100, density));
+        }
+
+        /**
+         * Reads what a line names, as FAWE reads its clipboard argument: each
+         * of a comma separated list is a schematic, a pattern of them, or a
+         * folder whose every schematic is taken.
+         */
+        public static java.util.List<BlockArrayClipboard> load(String names) {
+            java.util.List<BlockArrayClipboard> loaded = new java.util.ArrayList<>();
+            for (String name : names.split(",")) {
+                String entry = name.trim();
+                if (entry.isEmpty()) {
+                    continue;
+                }
+                String folder = entry.endsWith("/") ? entry.substring(0, entry.length() - 1) : entry;
+                boolean isFolder = com.maxlananas.fawebim.core.clipboard.Schematics.isFolder(folder);
+                java.util.List<BlockArrayClipboard> found =
+                        com.maxlananas.fawebim.core.clipboard.Schematics.loadAll(isFolder ? folder + "/*" : entry);
+                if (found.isEmpty()) {
+                    throw com.maxlananas.fawebim.core.command.CommandRegistry.error("No schematic in '" + entry + "'");
+                }
+                loaded.addAll(found);
+            }
+            return loaded;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            if (schematic == null || schematic.isEmpty()) {
-                actor.message(Msg.error("Set a schematic first: /brush populateschematic <name> <radius>"));
+            if (clipboards.isEmpty()) {
+                actor.message(Msg.error("Set a schematic first: /brush populateschematic <schematic>"));
                 return 0;
             }
-            // A comma separated list is FAWE's "clipboard uri": one of them is
-            // picked for every copy that is placed.
-            String[] names = schematic.split(",");
+            BlockStateRegistry registry = BlockState.registry();
+            World world = session.getWorld();
             int size = (int) radius;
-            int minY = session.getWorld().minY();
-            int maxY = session.getWorld().maxY();
+            int bottom = Math.max(world.minY(), position.y() - size);
+            int top = Math.min(world.maxY(), position.y() + size);
             int changed = 0;
             for (int chunkX = (position.x() - size) >> 4; chunkX <= (position.x() + size) >> 4; chunkX++) {
                 for (int chunkZ = (position.z() - size) >> 4; chunkZ <= (position.z() + size) >> 4; chunkZ++) {
@@ -1558,29 +2036,32 @@ public final class Brushes {
                     }
                     int x = (chunkX << 4) + random.nextInt(16);
                     int z = (chunkZ << 4) + random.nextInt(16);
-                    int y = HeightMaps.highestTerrain(session.getWorld(), mask, x, z, minY, maxY);
-                    if (mask != null && !mask.test(x, y, z)) {
+                    int y = HeightMaps.highestTerrain(world, surfaceMask, x, z, bottom, top);
+                    // Nothing the mask accepts in the box but its floor, which
+                    // FAWE only builds on when movement stops there.
+                    if (y == bottom && !stopsMovement(registry, world.getBlock(x, y, z))) {
                         continue;
                     }
-                    String name = names[random.nextInt(names.length)].trim();
-                    var clipboard = com.maxlananas.fawebim.core.clipboard.Schematics.load(name);
-                    if (clipboard == null) {
-                        actor.message(Msg.error("Could not load schematic '" + name + "'"));
-                        return changed;
+                    if (surfaceMask != null && !surfaceMask.test(x, y, z)) {
+                        continue;
                     }
-                    var transform = randomRotation
-                            ? com.maxlananas.fawebim.core.transform.Transforms.rotate(clipboard.getOrigin(),
-                                    random.nextInt(4) * 90)
-                            : com.maxlananas.fawebim.core.transform.Transform.identity();
+                    BlockArrayClipboard clipboard = clipboards.get(random.nextInt(clipboards.size()));
+                    int quarters = randomRotation ? random.nextInt(4) : 0;
+                    Transform transform = quarters == 0 ? Transform.identity()
+                            : Transforms.rotate(clipboard.getOrigin(), quarters * 90.0);
                     changed += com.maxlananas.fawebim.core.clipboard.Clipboards.paste(clipboard,
-                            new BlockVector3(x, y, z), session, transform, false, false, false);
+                            new BlockVector3(x, y + 1, z), session, transform, true, null, false, false, false, false);
                 }
             }
             return changed;
         }
+
+        @Override
+        public String describe() {
+            return "populateschematic " + schematic + " (radius " + radius + ", density " + density + ")";
+        }
     }
 
-    /** {@code /brush sweep} — sweeps the clipboard along the click path. */
     /**
      * {@code /brush surfacespline}: the same path as the spline brush, drawn on
      * the surface, with the tension, bias, continuity and quality controls of a
@@ -1612,7 +2093,8 @@ public final class Brushes {
             if (points.size() < 2) {
                 return 0;
             }
-            int changed = Operations.surfaceSpline(session, points, fill, tension, bias, continuity, quality);
+            int changed = Operations.surfaceSpline(session, points, fill, tension, bias, continuity, quality,
+                    radius);
             if (points.size() > 64) {
                 points.remove(0);
             }
@@ -1639,26 +2121,45 @@ public final class Brushes {
         }
     }
 
-    /** {@code /brush deform} — applies an expression to the brush area. */
+    /**
+     * {@code /brush deform}: {@code //deform} on the shape around the click, as
+     * WorldEdit's Deform brush. The expression works in the unit cube of the
+     * shape, or with {@code -r} in the game's coordinates, or with {@code -o}
+     * in blocks from the placement position the brush was bound with.
+     *
+     * <p>WorldEdit's raise and lower brushes are this brush with {@code y-=1}
+     * and {@code y+=1} in the game's coordinates: every block of the shape
+     * takes the one below it, or the one above it.</p>
+     */
     public static final class DeformBrush extends BaseBrush {
 
         private final String expression;
+        private final String shape;
         private boolean gameOrigin;
-        private boolean placementOrigin;
+        private BlockVector3 placement;
 
-        public DeformBrush(double radius, String expression) {
-            super(radius, null, null);
-            this.expression = expression == null ? "" : expression;
+        /** @param shape a name {@code RegionFactories} knows */
+        public DeformBrush(double radius, String expression, String shape) {
+            this(radius, expression, shape, null);
         }
 
-        /** {@code -r}: evaluate the expression against the game's origin. */
+        public DeformBrush(double radius, String expression, String shape, Mask mask) {
+            super(radius, null, mask);
+            this.expression = expression == null ? "" : expression;
+            // Compiled here so a typo is reported when the brush is bound,
+            // not on every click.
+            com.maxlananas.fawebim.core.expression.Expression.compile(this.expression);
+            this.shape = shape;
+        }
+
+        /** {@code -r}: the game's coordinates. */
         public void setGameOrigin(boolean gameOrigin) {
             this.gameOrigin = gameOrigin;
         }
 
-        /** {@code -o}: evaluate the expression against the placement position. */
-        public void setPlacementOrigin(boolean placementOrigin) {
-            this.placementOrigin = placementOrigin;
+        /** {@code -o}: blocks counted from this position; null for the unit cube. */
+        public void setPlacement(BlockVector3 placement) {
+            this.placement = placement;
         }
 
         @Override
@@ -1666,51 +2167,72 @@ public final class Brushes {
             if (expression.isEmpty()) {
                 return 0;
             }
-            var region = com.maxlananas.fawebim.core.region.RegionFactories.parse("sphere",
-                    session.minY(), session.maxY()).createCenteredAt(position, radius);
-            if (placementOrigin && !gameOrigin) {
-                return Operations.deform(session.getWorld(), session, region, expression,
-                        position.x(), position.y(), position.z());
-            }
-            return Operations.deform(session.getWorld(), session, region, expression);
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
+            Operations.DeformFrame frame = gameOrigin ? Operations.DeformFrame.RAW
+                    : placement != null ? Operations.DeformFrame.offset(placement.toVector3())
+                    : Operations.DeformFrame.unitCube(region);
+            return masked(session, () -> Operations.deform(session.getWorld(), session, region, expression, frame));
         }
     }
 
-    /** {@code /brush erode}, {@code /brush dilate}, {@code /brush morph}. */
-    public static final class ErodeDilateBrush extends BaseBrush {
+    /**
+     * {@code /brush morph}, {@code /brush dilate}, {@code /brush erode} and
+     * {@code /brush pull}: erosion and filling in a ball, see
+     * {@link Morphology}. Morph and dilate are WorldEdit's, erode and pull
+     * FAWE's.
+     *
+     * <p>They used to be a single pass that read the blocks it had just
+     * written, so the result depended on the order of the walk; their face and
+     * iteration arguments were read and ignored, and pull moved blocks sideways
+     * towards the click where FAWE fills the open faces around the terrain.</p>
+     */
+    public static final class MorphBrush extends BaseBrush {
 
-        private final String mode;
+        private final Morphology.Style style;
+        private final Morphology.Passes passes;
 
-        public ErodeDilateBrush(double radius, String mode, Mask mask) {
+        public MorphBrush(double radius, Morphology.Style style, Morphology.Passes passes, Mask mask) {
             super(radius, null, mask);
-            this.mode = mode;
+            this.style = style;
+            this.passes = passes;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            return Morphology.apply(session, position, radius, style, passes, openStates(style), mask);
+        }
+
+        /** Which states the style counts as open, remembered per state for the walk of one click. */
+        private static java.util.function.IntPredicate openStates(Morphology.Style style) {
             BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                int solidNeighbours = 0;
-                for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    BlockVector3 next = direction.toVector();
-                    if (registry.isSolid(session.getBlock(x + next.x(), y + next.y(), z + next.z()))) {
-                        solidNeighbours++;
-                    }
+            byte[] known = new byte[Math.max(1, registry.stateCount())];
+            return state -> {
+                if (state < 0 || state >= known.length) {
+                    return isOpen(registry, state, style);
                 }
-                boolean solid = registry.isSolid(session.getBlock(x, y, z));
-                return switch (mode) {
-                    case "erode" -> solid && solidNeighbours < 3 && session.setBlock(x, y, z, registry.air());
-                    case "dilate" -> !solid && solidNeighbours >= 3 && fill != null && place(session, x, y, z);
-                    default ->
-                        // morph: swap solid and air inside the brush
-                        solid ? session.setBlock(x, y, z, registry.air())
-                                : fill != null && place(session, x, y, z);
-                };
-            });
+                if (known[state] == 0) {
+                    known[state] = (byte) (isOpen(registry, state, style) ? 1 : 2);
+                }
+                return known[state] == 1;
+            };
+        }
+
+        private static boolean isOpen(BlockStateRegistry registry, int state, Morphology.Style style) {
+            String name = registry.name(state);
+            if (style == Morphology.Style.ERODE) {
+                // FAWE asks whether the block stops movement: the game's solid
+                // blocks but the cobweb and the bamboo sapling.
+                return !registry.isSolid(state) || "minecraft:cobweb".equals(name)
+                        || "minecraft:bamboo_sapling".equals(name);
+            }
+            // WorldEdit's liquids are the blocks the game calls liquid - water,
+            // lava and the bubble column: a waterlogged block or a kelp plant
+            // is a block.
+            return registry.isAirLike(state) || "minecraft:water".equals(name) || "minecraft:lava".equals(name)
+                    || "minecraft:bubble_column".equals(name);
         }
     }
 
-    /** {@code /brush extinguish} — removes fire and stops lava. */
     /**
      * {@code /brush item <item> [direction]}: uses the item the way a player
      * would, which for a block item means placing it on the surface below the
@@ -1763,6 +2285,14 @@ public final class Brushes {
         }
     }
 
+    /**
+     * {@code /brush extinguish [radius]}: WorldEdit's and FAWE's shortcut, a
+     * sphere brush of air whose mask is the fire block - that block alone, as
+     * both give it; soul fire is left, as they leave it.
+     *
+     * <p>This took away every block whose name held "fire" or "lava" in a ball
+     * of its own: lava, campfires and fire coral went with the fire.</p>
+     */
     public static final class ExtinguishBrush extends BaseBrush {
 
         public ExtinguishBrush(double radius) {
@@ -1772,67 +2302,51 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                String name = registry.name(session.getBlock(x, y, z));
-                return (name.contains("fire") || name.contains("lava"))
-                        && session.setBlock(x, y, z, registry.air());
-            });
+            int air = registry.air();
+            return Operations.forEachInEllipsoid(position, new double[]{radius, radius, radius}, false,
+                    session.minY(), session.maxY(), (x, y, z) -> test(x, y, z)
+                            && "minecraft:fire".equals(registry.name(session.getBlock(x, y, z)))
+                            && session.setBlock(x, y, z, air));
         }
     }
 
     /**
-     * {@code /brush snow}: covers the surface with snow. {@code -s} stacks the
-     * snow layers up instead of laying a single one.
+     * {@code /brush snow <shape> [radius] [-s]}: FAWE's snow brush, the snow
+     * //snow lays - see {@link Operations#simulateSnow(World, EditSession,
+     * com.maxlananas.fawebim.core.region.Region, boolean)} - over the shape. A
+     * cylinder is as high as its radius there, where it is one block high for
+     * the other brushes.
+     *
+     * <p>It put a layer on the highest block of every column of a disc,
+     * whatever the shape and whatever that block was - a flower, flowing
+     * water, a bottom slab - and {@code -s} went through every layer to a full
+     * stack in one click.</p>
      */
     public static final class SnowBrush extends BaseBrush {
 
-        private boolean stack;
-        private int layers = 1;
+        private final String shape;
+        private final boolean stack;
 
-        public SnowBrush(double radius, Mask mask) {
+        public SnowBrush(double radius, Mask mask, String shape, boolean stack) {
             super(radius, null, mask);
-        }
-
-        public void setStack(boolean stack) {
+            this.shape = shape;
             this.stack = stack;
-        }
-
-        public void setLayers(int layers) {
-            this.layers = Math.max(1, layers);
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            BlockStateRegistry registry = BlockState.registry();
-            int changed = 0;
-            int r = (int) radius;
-            for (int z = -r; z <= r; z++) {
-                for (int x = -r; x <= r; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int x0 = position.x() + x;
-                    int z0 = position.z() + z;
-                    int y = session.getWorld().getHighestBlockY(x0, z0);
-                    if (stack) {
-                        // Stacked snow: one layer per block, up to a full snow
-                        // block, which is what FAWE grows when you brush again.
-                        for (int layer = 1; layer <= Math.min(8, layers * 8); layer++) {
-                            int state = registry.parse("minecraft:snow[layers=" + layer + "]");
-                            if (session.setBlock(x0, y + 1, z0, state)) {
-                                changed++;
-                            }
-                            if (layer % 8 != 0) {
-                                continue;
-                            }
-                            y++;
-                        }
-                    } else if (session.setBlock(x0, y + 1, z0, registry.parse("minecraft:snow[layers=1]"))) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
+            String key = shape.toLowerCase(java.util.Locale.ROOT);
+            com.maxlananas.fawebim.core.region.Region region = key.equals("cyl") || key.equals("cylinder")
+                    ? new com.maxlananas.fawebim.core.region.CylinderRegion(
+                            new com.maxlananas.fawebim.core.math.Vector2(position.x() + 0.5, position.z() + 0.5),
+                            radius, radius, position.y() - (int) (radius / 2), position.y() + (int) (radius / 2))
+                    : region(shape, session, position, radius);
+            return masked(session, () -> Operations.simulateSnow(session.getWorld(), session, region, stack));
+        }
+
+        @Override
+        public String describe() {
+            return "snow shape=" + shape + (stack ? " -s" : "") + " " + super.describe();
         }
     }
 
@@ -1847,10 +2361,14 @@ public final class Brushes {
         private final int iterations;
         private final int snowBlockLayers;
 
-        public SnowSmoothBrush(double radius, int iterations, int snowBlockLayers, Mask mask) {
-            super(radius, null, mask);
+        /** The blocks the height map is read from, FAWE's -m; the brush's own mask is /tool mask. */
+        private final Mask heightmapMask;
+
+        public SnowSmoothBrush(double radius, int iterations, int snowBlockLayers, Mask heightmapMask) {
+            super(radius, null, null);
             this.iterations = Math.max(1, iterations);
             this.snowBlockLayers = Math.max(0, snowBlockLayers);
+            this.heightmapMask = heightmapMask;
         }
 
         @Override
@@ -1861,11 +2379,24 @@ public final class Brushes {
                     BlockVector3.at(position.x() + size, position.y() + size + 10, position.z() + size));
             // FAWE blurs the snow of a brush with a wider kernel than the one
             // //snowsmooth uses, so one click evens out the whole drift.
-            return HeightMaps.snowSmooth(session.getWorld(), session, region, iterations, snowBlockLayers, mask, 10);
+            return HeightMaps.snowSmooth(session.getWorld(), session, region, iterations, snowBlockLayers,
+                    heightmapMask, 10);
         }
     }
 
-    /** {@code /brush recurse} — recursively applies the pattern to exposed blocks. */
+    /**
+     * {@code /brush recurse}: the blocks connected to the clicked one through
+     * blocks the mask accepts are set to the pattern, as in FAWE's
+     * RecurseBrush - breadth first up to {@code radius} steps from the click,
+     * or with {@code -d} depth first within {@code radius} blocks of it.
+     *
+     * <p>The mask is the brush's, and without one the clicked block's type, as
+     * FAWE binds the brush with an id mask that {@code /mask} replaces. The
+     * session's mask narrows the walk and stays out of the writes, as FAWE
+     * clears it for the brush. The walk used to go through every block that
+     * was not air whatever the mask, stopped at 5000 changes, and queued a
+     * position object for each of the six neighbours of every block it saw.</p>
+     */
     public static final class RecurseBrush extends BaseBrush {
 
         private boolean depthFirst;
@@ -1874,7 +2405,7 @@ public final class Brushes {
             super(radius, fill, mask);
         }
 
-        /** {@code -d}: walk depth first instead of nearest first. */
+        /** {@code -d}: walk depth first within the radius instead of breadth first. */
         public void setDepthFirst(boolean depthFirst) {
             this.depthFirst = depthFirst;
         }
@@ -1882,70 +2413,123 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
+            int clicked = session.getBlock(position.x(), position.y(), position.z());
+            if (registry.isAirLike(clicked)) {
+                return 0;
+            }
+            Mask previous = session.getMask();
+            Mask own = mask != null ? mask
+                    : new Masks.BlockMask(session, List.of(registry.name(clicked)));
+            Mask walk = previous == null ? own
+                    : new Masks.IntersectionMask(List.of(previous, own));
+            session.setMask(null);
+            try {
+                return walk(session, position, walk);
+            } finally {
+                session.setMask(previous);
+            }
+        }
+
+        private int walk(EditSession session, BlockVector3 start, Mask walk) {
+            World world = session.getWorld();
+            int steps = (int) radius;
+            double reach = radius * radius;
+            LongSet visited = new LongSet();
+            LongQueue queue = new LongQueue();
+            long first = BlockArrayClipboard.positionKey(start.x(), start.y(), start.z());
+            visited.add(first);
+            queue.add(first);
             int changed = 0;
-            java.util.Set<BlockVector3> visited = new java.util.HashSet<>();
-            java.util.Deque<BlockVector3> queue = new java.util.ArrayDeque<>();
-            queue.add(position);
-            while (!queue.isEmpty() && changed < 5000) {
-                BlockVector3 current = depthFirst ? queue.pollLast() : queue.poll();
-                if (!visited.add(current) || current.distance(position) > radius) {
-                    continue;
-                }
-                if (registry.isAirLike(session.getBlock(current.x(), current.y(), current.z()))) {
-                    continue;
-                }
-                if (place(session, current.x(), current.y(), current.z())) {
+            // Breadth first counts its steps a layer at a time.
+            int leftInLayer = 1;
+            int nextLayer = 0;
+            int depth = 0;
+            while (!queue.isEmpty()) {
+                long current = depthFirst ? queue.pollLast() : queue.poll();
+                int x = BlockArrayClipboard.keyX(current);
+                int y = BlockArrayClipboard.keyY(current);
+                int z = BlockArrayClipboard.keyZ(current);
+                int state = fill == null ? BlockState.registry().air() : fill.apply(x, y, z);
+                if (session.setBlock(x, y, z, state)) {
                     changed++;
                 }
-                for (var direction : com.maxlananas.fawebim.core.world.Direction.values()) {
-                    queue.add(current.add(direction.toVector()));
+                if (depthFirst || depth < steps) {
+                    for (Direction direction : DIRECTIONS) {
+                        int nx = x + direction.x();
+                        int ny = y + direction.y();
+                        int nz = z + direction.z();
+                        if (ny < world.minY() || ny > world.maxY()) {
+                            continue;
+                        }
+                        if (depthFirst) {
+                            double dx = nx - start.x();
+                            double dy = ny - start.y();
+                            double dz = nz - start.z();
+                            if (dx * dx + dy * dy + dz * dz > reach) {
+                                continue;
+                            }
+                        }
+                        long next = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (walk.test(nx, ny, nz) && visited.add(next)) {
+                            queue.add(next);
+                            nextLayer++;
+                        }
+                    }
+                }
+                if (!depthFirst && --leftInLayer == 0) {
+                    depth++;
+                    leftInLayer = nextLayer;
+                    nextLayer = 0;
                 }
             }
             return changed;
         }
+
+        private static final Direction[] DIRECTIONS = {
+                Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP, Direction.DOWN};
     }
 
-    /** {@code /brush feature} and {@code /brush structure} — places a worldgen feature. */
+    /**
+     * {@code /brush feature} and {@code /brush structure <shape> [radius]
+     * [density] <type>}: FAWE's Paint of a worldgen feature or structure over
+     * the shape, placed on the ground of {@code density} percent of its
+     * columns.
+     *
+     * <p>The feature brush placed one feature where it was clicked, whatever
+     * its shape and density, and said so in chat on every click; the
+     * structure brush asked the world for a feature named after the
+     * structure.</p>
+     */
     public static final class FeatureBrush extends BaseBrush {
 
-        private final String kind;
-        private String feature = "minecraft:oak_tree";
-        private int density = 5;
+        private final String shape;
+        private final boolean structure;
+        private final String type;
+        private final double density;
 
-        public FeatureBrush(double radius, String kind, Mask mask) {
+        /** @param density in percent, as typed */
+        public FeatureBrush(double radius, Mask mask, String shape, boolean structure, String type, double density) {
             super(radius, null, mask);
-            this.kind = kind;
-        }
-
-        public void setFeature(String feature) {
-            this.feature = feature == null || feature.isEmpty() ? this.feature : feature;
-        }
-
-        /** How many features the brush tries to place on every click. */
-        public void setDensity(int density) {
-            this.density = Math.max(1, density);
+            this.shape = shape;
+            this.structure = structure;
+            this.type = type;
+            this.density = density;
         }
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             World world = session.getWorld();
-            if (kind.equals("feature") || kind.equals("set")) {
-                boolean placed = world.generateFeature(position, feature, random);
-                actor.message(placed ? Msg.success("Placed feature " + feature)
-                        : Msg.error("Unknown feature " + feature));
-                return placed ? 1 : 0;
-            }
-            int r = (int) Math.max(1, radius);
-            int placed = 0;
-            for (int attempt = 0; attempt < density; attempt++) {
-                int x = position.x() + random.nextInt(r * 2 + 1) - r;
-                int z = position.z() + random.nextInt(r * 2 + 1) - r;
-                int y = world.getHighestBlockY(x, z);
-                if (world.generateFeature(new BlockVector3(x, y, z), feature, random)) {
-                    placed++;
-                }
-            }
-            return placed;
+            com.maxlananas.fawebim.core.region.Region region = region(shape, session, position, radius);
+            return masked(session, () -> Operations.paint(session, region, density / 100, random,
+                    (x, y, z, ground) -> structure
+                            ? world.generateStructure(session, type, new BlockVector3(x, y, z), random)
+                            : world.generateFeature(session, new BlockVector3(x, y, z), type, random)));
+        }
+
+        @Override
+        public String describe() {
+            return (structure ? "structure " : "feature ") + type + " shape=" + shape + " density="
+                    + Msg.formatDouble(density) + " " + super.describe();
         }
     }
 }

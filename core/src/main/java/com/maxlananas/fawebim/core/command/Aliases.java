@@ -66,6 +66,9 @@ final class Aliases {
             {"//deltree", "/deltree"},
             {"//lrbuild", "/lrbuild"},
             {"//unbind", "/unbind"},
+            // FAWE registers each tool sub-command at the top level under its
+            // own name as well: "none" is /none, the "unbind" spelling excepted.
+            {"/tool none", "/none"},
             {"//listbrush", "/listbrush"},
             {"//gsmask", "/gsmask", "//globalsourcemask", "/globalsourcemask"},
             {"//pos1", "//1", "/1"},
@@ -83,6 +86,7 @@ final class Aliases {
             "/tool tarmask", "/tool tracemask",
             "/tool tm", "/tool tracemask",
             "/brush listbrush", "//brushes",
+            "/we help", "//help",
     };
 
     private Aliases() {
@@ -117,7 +121,11 @@ final class Aliases {
         if (registry.contains(spelling)) {
             return;
         }
-        CommandRegistry.Entry delegate = registry.resolve(target);
+        // The command the spelling runs, or the container that answers it when
+        // no command has the whole target as a name: then the container's
+        // signature is not the spelling's, and none is copied.
+        CommandRegistry.Entry exact = registry.get(target);
+        CommandRegistry.Entry delegate = exact != null ? exact : registry.resolve(target);
         CommandRegistry.Entry entry = registry.register(spelling);
         entry.description = delegate == null ? target : delegate.description;
         entry.help = delegate == null ? "" : delegate.help;
@@ -128,11 +136,12 @@ final class Aliases {
         // The spelling answers the same line as the command it routes to, so it
         // carries the same signature: without it /mask has no arguments to offer
         // and tab completion after /mask knows nothing about masks.
-        if (delegate != null) {
-            entry.arguments.addAll(delegate.arguments);
-            entry.booleanFlags.addAll(delegate.booleanFlags);
-            entry.valueFlags.addAll(delegate.valueFlags);
-            entry.suggestions = delegate.suggestions;
+        if (exact != null) {
+            entry.arguments.addAll(exact.arguments);
+            entry.booleanFlags.addAll(exact.booleanFlags);
+            entry.valueFlags.addAll(exact.valueFlags);
+            entry.suggestions = exact.suggestions;
+            entry.aliasOf = exact.aliasOf != null ? exact.aliasOf : exact;
         }
         entry.handler = ctx -> {
             String arguments = ctx.tail();

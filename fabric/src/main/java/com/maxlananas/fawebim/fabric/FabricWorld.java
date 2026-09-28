@@ -1,5 +1,6 @@
 package com.maxlananas.fawebim.fabric;
 
+import com.maxlananas.fawebim.core.extent.EditSession;
 import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.math.BlockVector3;
 import com.maxlananas.fawebim.core.math.Vector3;
@@ -11,6 +12,7 @@ import com.maxlananas.fawebim.core.world.PackedBlockArray;
 import com.maxlananas.fawebim.core.world.RegenOptions;
 import com.maxlananas.fawebim.core.world.World;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -20,16 +22,29 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProblemReporter;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
+import net.minecraft.world.level.levelgen.placement.BiomeFilter;
+import net.minecraft.world.level.levelgen.placement.PlacedFeature;
+import net.minecraft.world.level.levelgen.placement.PlacementContext;
+import net.minecraft.world.level.levelgen.placement.PlacementModifier;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.lighting.LightEngine;
 import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
@@ -58,13 +73,6 @@ public final class FabricWorld implements World {
 
     private static final int UPDATE_NEIGHBORS = 1;
     private static final int UPDATE_CLIENTS = 2;
-    /**
-     * Changed blocks in one chunk above which the chunk is re-lit as a whole
-     * instead of queueing every position: the light engine keeps the positions it
-     * is handed in a set, and a set with a million entries in it costs more time
-     * and more memory than recomputing the chunk's light in one pass.
-     */
-    private static final int LIGHT_CHUNK_THRESHOLD = 512;
 
     private final ServerLevel level;
     /** The chunk of the previous read or write, and its position. */
@@ -77,8 +85,15 @@ public final class FabricWorld implements World {
     private int[] changedX = new int[0];
     private int[] changedY = new int[0];
     private int[] changedZ = new int[0];
-    /** One position object for a whole flush: nothing keeps what it is handed. */
-    private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+    /**
+     * The changes of a flush whose block entity has to follow the block: the
+     * index of the change in {@link #changedX}, and the state it replaced.
+     */
+    private int[] blockEntitySlots = new int[16];
+    private int[] blockEntityBefore = new int[16];
+    private int blockEntityCount;
+    /** The positions of the section being written whose light has to be checked. */
+    private final LightChecks lightChecks = new LightChecks();
     private int cachedChunkX = Integer.MIN_VALUE;
     private int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -111,6 +126,33 @@ public final class FabricWorld implements World {
             }
         }
         return pool;
+    }
+
+    /**
+     * Waits for the work handed to the pool - a schematic being written - when
+     * the server stops, then lets the next server of the JVM build a pool of
+     * its own. A daemon pool that is not waited for dropped a write in flight
+     * with the server. Bounded, like the wait for the history writer.
+     */
+    static void drainWorkers() {
+        java.util.concurrent.ExecutorService pool;
+        synchronized (FabricWorld.class) {
+            pool = executor;
+            executor = null;
+        }
+        if (pool == null) {
+            return;
+        }
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                FaweMod.LOGGER.warn("Background writes were still running 30 seconds after the stop; the rest is skipped");
+                pool.shutdownNow();
+            }
+        } catch (InterruptedException interrupted) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     public FabricWorld(ServerLevel level) {
@@ -389,9 +431,9 @@ public final class FabricWorld implements World {
         //    keyed by a block vector: a large edit changes millions of them and
         //    this runs on every flush. The arrays are kept between flushes - a
         //    large edit flushes a chunk after another - and only grow. A flush
-        //    that will re-send the chunk needs the positions and nothing else -
-        //    the clients get the chunk, not a packet per block - so the states are
-        //    only collected below that.
+        //    that will re-send the chunk sends no update per block - the clients
+        //    get the chunk - so the states before and after are only collected
+        //    for those updates or for the neighbours.
         int count = set.size();
         boolean resend = network && count >= Math.max(1, Config.get().chunkResendThreshold);
         if (changedX.length < count) {
@@ -404,12 +446,14 @@ public final class FabricWorld implements World {
         int[] changedYs = changedY;
         int[] changedZs = changedZ;
         int[] slot = {0};
-        boolean perBlockNotify = !resend && (notify || neighbors);
+        blockEntityCount = 0;
+        boolean perBlockUpdate = notify && !resend;
+        boolean perBlockNotify = perBlockUpdate || neighbors;
         BlockState[] before = perBlockNotify ? new BlockState[count] : null;
         BlockState[] after = perBlockNotify ? new BlockState[count] : null;
-        boolean perBlockLight = lighting && count < LIGHT_CHUNK_THRESHOLD;
         var chunkSource = level.getChunkSource();
         var lightEngine = chunkSource.getLightEngine();
+        boolean lightQueued = false;
         boolean ticking = chunk.getFullStatus().isOrAfter(
                 net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING);
         // The four heightmaps vanilla updates for every block it writes. Looking
@@ -423,9 +467,12 @@ public final class FabricWorld implements World {
         // 2. Bulk section write: one palette update per section instead of one
         //    world.setBlock call (with its 6 neighbour updates) per block, plus
         //    the bookkeeping vanilla does for a written cell - the heightmaps of
-        //    its column, the sky light source of its column, the light queue and,
-        //    when the section stops being empty, the light engine's own view of
-        //    it.
+        //    its column, the sky light source of its column, the light check,
+        //    the point of interest a bed, a workstation or a portal is to the
+        //    villagers and the portal search and, when the section stops being
+        //    empty, the light engine's own view of it. The palettes of the
+        //    section and of the buffer tell whether any state involved can be a
+        //    point of interest, so a section without one never asks per block.
         for (int index = 0; index < sections.length; index++) {
             PackedBlockArray buffered = sections[index];
             if (buffered == null) {
@@ -438,6 +485,8 @@ public final class FabricWorld implements World {
             }
             LevelChunkSection section = chunk.getSection(sectionIndex);
             boolean wasEmpty = section.hasOnlyAir();
+            boolean pointsOfInterest = section.maybeHas(PoiTypes::hasPoi)
+                    || buffered.anyPaletteState(FabricWorld::isPointOfInterest);
             int written = buffered.forEachWritten(local -> {
                 int localX = local & 15;
                 int localY = (local >> 8) & 15;
@@ -454,13 +503,19 @@ public final class FabricWorld implements World {
                     after[at] = now;
                 }
                 section.setBlockState(localX, localY, localZ, now, false);
+                if (was != now && (was.hasBlockEntity() || now.hasBlockEntity())) {
+                    rememberBlockEntity(at, was);
+                }
                 motionBlocking.update(localX, y, localZ, now);
                 motionBlockingNoLeaves.update(localX, y, localZ, now);
                 oceanFloor.update(localX, y, localZ, now);
                 worldSurface.update(localX, y, localZ, now);
-                if (perBlockLight && LightEngine.hasDifferentLightProperties(was, now)) {
+                if (lighting && LightEngine.hasDifferentLightProperties(was, now)) {
                     chunk.getSkyLightSources().update(chunk, localX, y, localZ);
-                    lightEngine.checkBlock(cursor.set(baseX + localX, y, baseZ + localZ));
+                    lightChecks.add(local);
+                }
+                if (pointsOfInterest && was != now && (PoiTypes.hasPoi(was) || PoiTypes.hasPoi(now))) {
+                    level.updatePOIOnBlockStateChange(new BlockPos(baseX + localX, y, baseZ + localZ), was, now);
                 }
             });
             applied += written;
@@ -473,7 +528,42 @@ public final class FabricWorld implements World {
                     lightEngine.updateSectionStatus(sectionPos, isEmpty);
                     chunkSource.onSectionEmptinessChanged(
                             set.chunkX(), sectionY >> 4, set.chunkZ(), isEmpty);
+                    lightQueued = true;
                 }
+            }
+            if (lighting) {
+                lightQueued |= lightChecks.submit(lightEngine, set.chunkX(), sectionY >> 4, set.chunkZ());
+            }
+        }
+        if (lighting && lightQueued) {
+            lightPending(chunk, lightEngine);
+        }
+
+        // 2b. The block entities of the blocks that changed, kept as the game
+        //     keeps them when it sets a block: one whose block became another
+        //     block goes, one whose block only changed state stays with its
+        //     data, and a block that needs one gets a new one, registered with
+        //     its ticker. The bulk write went past the chunk's own bookkeeping,
+        //     which used to leave the old block entity in place - a chest's
+        //     items under the stone that replaced it, saved with the chunk - and
+        //     a new chest or furnace without one until something asked for it.
+        //     Nothing is dropped: an edit does not spill what it replaces.
+        for (int i = 0; i < blockEntityCount; i++) {
+            int at = blockEntitySlots[i];
+            BlockPos pos = new BlockPos(changedXs[at], changedYs[at], changedZs[at]);
+            BlockState was = Block.stateById(blockEntityBefore[i]);
+            BlockState now = chunk.getBlockState(pos);
+            var existing = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.CHECK);
+            if (existing != null) {
+                if (now.is(was.getBlock()) && existing.isValidBlockState(now)) {
+                    existing.setBlockState(now);
+                    chunk.updateBlockEntityTicker(existing);
+                    continue;
+                }
+                chunk.removeBlockEntity(pos);
+            }
+            if (now.hasBlockEntity()) {
+                chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
             }
         }
 
@@ -488,14 +578,13 @@ public final class FabricWorld implements World {
             applyBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
         }
 
-        // 4. Lighting, and the client sync for the changed blocks only. Vanilla
-        //    would have queued 6 neighbour updates per block; the bulk write skips
-        //    that and relies on the light engine plus the game's own block-change
-        //    bookkeeping, the way WorldEdit's native access does it. A flush that
-        //    changed a large part of a chunk is re-lit whole instead of position
-        //    by position: the light engine keeps the positions it is handed in a
-        //    set, and a set of a million entries costs more than recomputing the
-        //    chunk's light.
+        // 4. The client sync for the changed blocks only. Vanilla would have
+        //    queued 6 neighbour updates per block; the bulk write skips that
+        //    unless the edit asks for the neighbours, and relies on the game's
+        //    own block-change bookkeeping, the way WorldEdit's native access
+        //    does it. The light engine was handed its checks section by section
+        //    above; the light it computes reaches the clients with the game's
+        //    own light updates, after the chunk a large flush re-sends.
         int changedCount = slot[0];
         for (int index = 0; perBlockNotify && index < changedCount; index++) {
             BlockState was = before[index];
@@ -508,20 +597,61 @@ public final class FabricWorld implements World {
             // update can schedule a block tick, which keeps the position it was
             // given, so this path hands it one of its own.
             BlockPos at = new BlockPos(changedXs[index], changedYs[index], changedZs[index]);
-            if (notify) {
+            if (perBlockUpdate) {
                 level.sendBlockUpdated(at, was, now, UPDATE_NEIGHBORS | UPDATE_CLIENTS);
             }
             if (neighbors) {
                 level.updateNeighborsAt(at, now.getBlock());
             }
         }
-        if (lighting && !perBlockLight) {
-            lightEngine.lightChunk(chunk, false);
-        }
         if (resend) {
             sendChunk(chunk, lightEngine);
         }
         return applied;
+    }
+
+    /**
+     * Keeps the chunk loaded, and holds every save of it, until the light
+     * engine has run the work just queued for it.
+     *
+     * <p>A chunk nothing keeps loaded - an edit away from every player, a paste
+     * wider than the view distance - leaves the loaded set a tick or two after
+     * the edit loaded it, while the light thread may not have reached it yet:
+     * the engine, which finds a chunk's blocks and sky light sources through
+     * the loaded chunks, then left the sky light under a new roof at 15. The
+     * {@link LightTickets ticket} keeps it loaded, not ticking, until the work
+     * is done. The save dependency covers the saves made meanwhile - the
+     * autosave, a flushing save-all - which would store the light as it was
+     * before the edit, and the game takes the saved light back when it loads
+     * the chunk. The future is the one the game hands a holder's send
+     * dependencies to hold a chunk's packet until its light is done. Server
+     * thread only.</p>
+     */
+    private void lightPending(LevelChunk chunk, net.minecraft.server.level.ThreadedLevelLightEngine engine) {
+        ChunkPos pos = chunk.getPos();
+        java.util.concurrent.CompletableFuture<?> done = engine.waitForPendingTasks(pos.x, pos.z);
+        net.minecraft.server.level.ChunkHolder holder =
+                level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(pos.toLong());
+        if (holder != null) {
+            holder.addSaveDependency(done);
+        }
+        LightTickets.hold(level, pos, done);
+    }
+
+    /** Whether a buffered state is one the villagers or the portal search keep track of. */
+    private static boolean isPointOfInterest(int stateId) {
+        return PoiTypes.hasPoi(Block.stateById(stateId));
+    }
+
+    /** Remembers a change whose block entity has to follow its block, see step 2b of {@link #applyChunk}. */
+    private void rememberBlockEntity(int slot, BlockState was) {
+        if (blockEntityCount == blockEntitySlots.length) {
+            blockEntitySlots = java.util.Arrays.copyOf(blockEntitySlots, blockEntityCount * 2);
+            blockEntityBefore = java.util.Arrays.copyOf(blockEntityBefore, blockEntityCount * 2);
+        }
+        blockEntitySlots[blockEntityCount] = slot;
+        blockEntityBefore[blockEntityCount] = Block.getId(was);
+        blockEntityCount++;
     }
 
     /** Sends a whole chunk, with its light data, to everyone who can see it. */
@@ -583,11 +713,79 @@ public final class FabricWorld implements World {
         }
     }
 
+    /**
+     * The light engine's settled copy, which the game itself reads on the
+     * server thread while the light thread works; a chunk that is not loaded
+     * reads 0 and is not loaded for it. Server thread only.
+     */
+    @Override
+    public int blockLight(int x, int y, int z) {
+        return level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, new BlockPos(x, y, z));
+    }
+
+    /**
+     * Relights whole chunks from their blocks: the sky light sources of every
+     * column are found again, then every position goes to the light engine,
+     * which drops the light no source explains and spreads the light the
+     * sources give, into the neighbouring chunks too. A chunk that is not
+     * loaded is skipped, never loaded for this. Server thread only.
+     */
     @Override
     public void relight(Collection<BlockVector2> chunks) {
-        for (BlockVector2 chunk : chunks) {
-            level.getChunkSource().getLightEngine()
-                    .setLightEnabled(new ChunkPos(chunk.x(), chunk.z()), true);
+        var lightEngine = level.getChunkSource().getLightEngine();
+        for (BlockVector2 position : chunks) {
+            LevelChunk chunk = level.getChunkSource().getChunkNow(position.x(), position.z());
+            if (chunk == null) {
+                continue;
+            }
+            chunk.initializeLightSources();
+            for (int index = 0; index < chunk.getSectionsCount(); index++) {
+                LightChecks.submitSection(lightEngine, position.x(), chunk.getSectionYFromSectionIndex(index),
+                        position.z());
+            }
+            lightPending(chunk, lightEngine);
+        }
+    }
+
+    /**
+     * Zeroes the block and sky light of whole chunks, as FAWE does, then sends
+     * the chunks again once the light engine holds the zeroes. A chunk that is
+     * not loaded is skipped. Server thread only.
+     *
+     * <p>Only a section with blocks in it or next to it holds light data. Data
+     * queued for any other section would wait in the engine and land on it the
+     * day a block is put there, so those are left alone.</p>
+     */
+    @Override
+    public void removeLight(Collection<BlockVector2> chunks) {
+        var lightEngine = level.getChunkSource().getLightEngine();
+        for (BlockVector2 position : chunks) {
+            LevelChunk chunk = level.getChunkSource().getChunkNow(position.x(), position.z());
+            if (chunk == null) {
+                continue;
+            }
+            int sections = chunk.getSectionsCount();
+            for (int index = 0; index < sections; index++) {
+                boolean holdsLight = false;
+                for (int near = Math.max(0, index - 1); near <= Math.min(sections - 1, index + 1); near++) {
+                    holdsLight |= !chunk.getSection(near).hasOnlyAir();
+                }
+                if (!holdsLight) {
+                    continue;
+                }
+                net.minecraft.core.SectionPos section = net.minecraft.core.SectionPos.of(
+                        position.x(), chunk.getSectionYFromSectionIndex(index), position.z());
+                lightEngine.queueSectionData(net.minecraft.world.level.LightLayer.BLOCK, section,
+                        new net.minecraft.world.level.chunk.DataLayer());
+                lightEngine.queueSectionData(net.minecraft.world.level.LightLayer.SKY, section,
+                        new net.minecraft.world.level.chunk.DataLayer());
+            }
+            lightEngine.waitForPendingTasks(position.x(), position.z()).thenRunAsync(() -> {
+                LevelChunk loaded = level.getChunkSource().getChunkNow(position.x(), position.z());
+                if (loaded != null) {
+                    sendChunk(loaded, lightEngine);
+                }
+            }, level.getServer());
         }
     }
 
@@ -617,75 +815,292 @@ public final class FabricWorld implements World {
         }
     }
 
+    /** Chunks generated in a level of their own, see {@link FabricWorldRegen}. Server thread only. */
     @Override
-    public boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options) {
-        return FabricWorldRegen.regenerate(level, chunkX, chunkZ, options);
+    public GeneratedTerrain generate(Collection<BlockVector2> chunks, RegenOptions options) {
+        return FabricWorldRegen.generate(level, chunks, options);
+    }
+
+    /** The temporary level of a regeneration takes the seed it is given. */
+    @Override
+    public boolean supportsCustomRegenSeed() {
+        return true;
     }
 
     @Override
-    public boolean generateTree(BlockVector3 pos, String treeType, Random random) {
+    public boolean generateTree(EditSession session, BlockVector3 pos, String treeType, Random random) {
         String type = com.maxlananas.fawebim.core.world.TreeTypes.canonical(treeType);
         if (type == null) {
-            // Not a WorldEdit tree type: a placed feature id plants what it names.
-            String id = treeType == null || !treeType.contains(":") ? null
-                    : treeType.toLowerCase(java.util.Locale.ROOT);
-            return id != null && placeFeature(pos, id, random);
+            // Not a WorldEdit tree type: a feature id plants what it names.
+            return treeType != null && treeType.contains(":")
+                    && generateFeature(session, pos, treeType.toLowerCase(java.util.Locale.ROOT), random);
         }
         // A feature a Minecraft version does not have any more plants a plain oak
-        // rather than failing the command that asked for a tree.
-        return placeFeature(pos, com.maxlananas.fawebim.core.world.TreeTypes.feature(type, random), random)
-                || placeFeature(pos, "minecraft:oak_checked", random);
+        // rather than failing the command that asked for a tree. A tree that is
+        // known but does not fit is not replaced by another: it does not grow.
+        PlacedFeature feature = placedFeature(com.maxlananas.fawebim.core.world.TreeTypes.feature(type, random));
+        return placeFeature(session, pos, feature != null ? feature : placedFeature("minecraft:oak_checked"), random);
+    }
+
+    /**
+     * A configured feature, as FAWE generates one, or else a placed one, through
+     * the edit. Server thread only.
+     */
+    @Override
+    public boolean generateFeature(EditSession session, BlockVector3 pos, String featureType, Random random) {
+        ResourceLocation id = ResourceLocation.tryParse(featureType.contains(":") ? featureType
+                : "minecraft:" + featureType);
+        if (id == null) {
+            return false;
+        }
+        ConfiguredFeature<?, ?> configured = level.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE)
+                .getValue(id);
+        if (configured == null) {
+            return placeFeature(session, pos, placedFeature(id.toString()), random);
+        }
+        try (EditLevel edit = EditLevel.open(level, session)) {
+            return configured.place(edit.level(), level.getChunkSource().getGenerator(),
+                    RandomSource.create(random.nextLong()), new BlockPos(pos.x(), pos.y(), pos.z()));
+        }
+    }
+
+    /** The placed feature an id names on this server, or null. */
+    private PlacedFeature placedFeature(String id) {
+        ResourceLocation location = ResourceLocation.tryParse(id);
+        return location == null ? null
+                : level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
+    }
+
+    /**
+     * Places a placed feature through the edit: the feature reads the world as
+     * the edit sees it and its blocks become the edit's, so they are masked,
+     * counted against the limit and undone with it. Server thread only.
+     *
+     * <p>It is placed as the game's {@code PlacedFeature#place} places it - its
+     * placement modifiers in turn, then the configured feature at every
+     * position they leave - but for the biome filter, which asks the biome
+     * whether it generates the feature and throws when no biome's generation
+     * is placing it, as no command's is.</p>
+     *
+     * @return false when there is no such feature or it did not fit
+     */
+    private boolean placeFeature(EditSession session, BlockVector3 pos, PlacedFeature feature, Random random) {
+        if (feature == null) {
+            return false;
+        }
+        RandomSource source = RandomSource.create(random.nextLong());
+        ChunkGenerator generator = level.getChunkSource().getGenerator();
+        try (EditLevel edit = EditLevel.open(level, session)) {
+            WorldGenLevel target = edit.level();
+            PlacementContext context = new PlacementContext(target, generator, java.util.Optional.empty());
+            java.util.stream.Stream<BlockPos> positions = java.util.stream.Stream.of(
+                    new BlockPos(pos.x(), pos.y(), pos.z()));
+            for (PlacementModifier modifier : feature.placement()) {
+                if (!(modifier instanceof BiomeFilter)) {
+                    positions = positions.flatMap(at -> modifier.getPositions(context, source, at));
+                }
+            }
+            ConfiguredFeature<?, ?> configured = feature.feature().value();
+            // Every position is placed, in the order the game places them: a
+            // reduction does not stop at the first success as a match would.
+            return positions.map(at -> configured.place(target, generator, source, at))
+                    .reduce(false, Boolean::logicalOr);
+        }
+    }
+
+    /**
+     * A structure generated as the game's /place structure generates one - its
+     * start in the chunk of the position, then its pieces chunk by chunk over
+     * its bounding box - through the edit, as WorldEdit's Fabric world does.
+     * Server thread only.
+     */
+    @Override
+    public boolean generateStructure(EditSession session, String structureId, BlockVector3 pos, Random random) {
+        ResourceLocation id = ResourceLocation.tryParse(structureId.contains(":") ? structureId
+                : "minecraft:" + structureId);
+        if (id == null) {
+            return false;
+        }
+        Registry<Structure> structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        Structure structure = structures.getValue(id);
+        if (structure == null) {
+            return false;
+        }
+        ServerChunkCache chunks = level.getChunkSource();
+        ChunkGenerator generator = chunks.getGenerator();
+        try (EditLevel edit = EditLevel.open(level, session)) {
+            StructureStart start = structure.generate(structures.wrapAsHolder(structure), level.dimension(),
+                    level.registryAccess(), generator, generator.getBiomeSource(), chunks.randomState(),
+                    level.getStructureManager(), level.getSeed(), new ChunkPos(new BlockPos(pos.x(), pos.y(), pos.z())),
+                    0, edit.level(), biome -> true);
+            if (!start.isValid()) {
+                return false;
+            }
+            BoundingBox box = start.getBoundingBox();
+            ChunkPos min = new ChunkPos(SectionPos.blockToSectionCoord(box.minX()),
+                    SectionPos.blockToSectionCoord(box.minZ()));
+            ChunkPos max = new ChunkPos(SectionPos.blockToSectionCoord(box.maxX()),
+                    SectionPos.blockToSectionCoord(box.maxZ()));
+            RandomSource source = RandomSource.create(random.nextLong());
+            ChunkPos.rangeClosed(min, max).forEach(chunk -> start.placeInChunk(edit.level(),
+                    level.structureManager(), generator, source,
+                    new BoundingBox(chunk.getMinBlockX(), level.getMinY(), chunk.getMinBlockZ(),
+                            chunk.getMaxBlockX(), level.getMaxY(), chunk.getMaxBlockZ()), chunk));
+            return true;
+        }
     }
 
     @Override
-    public boolean generateFeature(BlockVector3 pos, String featureType, Random random) {
-        String id = featureType.contains(":") ? featureType : "minecraft:" + featureType;
-        return placeFeature(pos, id, random);
+    public List<String> featureIds() {
+        return FabricRegistries.featureIds();
     }
 
-    private boolean placeFeature(BlockVector3 pos, String id, Random random) {
-        ResourceLocation location = ResourceLocation.tryParse(id);
-        if (location == null) {
-            return false;
-        }
-        net.minecraft.world.level.levelgen.placement.PlacedFeature placement =
-                level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
-        if (placement == null) {
-            return false;
-        }
-        net.minecraft.util.RandomSource source = net.minecraft.util.RandomSource.create(random.nextLong());
-        return placement.place(level, level.getChunkSource().getGenerator(), source,
-                new BlockPos(pos.x(), pos.y(), pos.z()));
+    @Override
+    public List<String> structureIds() {
+        return FabricRegistries.structureIds();
     }
 
+    @Override
+    public boolean placesFeatureOnFace(String featureId) {
+        return FabricRegistries.placesOnFace(featureId);
+    }
+
+    /**
+     * The entities of a box, players excepted: no edit copies, removes or
+     * restores a player. Their data is read when first asked for, the way the
+     * game saves them, so a command that only filters by type does not
+     * serialise every entity it looks at. Server thread only.
+     */
     @Override
     public List<EntityData> getEntities(com.maxlananas.fawebim.core.world.Extent.Region3i box) {
         AABB aabb = new AABB(box.minX(), box.minY(), box.minZ(),
                 box.maxX() + 1, box.maxY() + 1, box.maxZ() + 1);
         List<EntityData> entities = new ArrayList<>();
-        for (Entity entity : level.getEntities((Entity) null, aabb, candidate -> true)) {
-            EntityData data = new EntityData(
-                    BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
-                    new NbtCompound().putString("uuid", entity.getUUID().toString()),
-                    new Vector3(entity.getX(), entity.getY(), entity.getZ()));
-            data.setHandle(entity);
-            entities.add(data);
+        for (Entity entity : level.getEntities((Entity) null, aabb,
+                candidate -> !(candidate instanceof net.minecraft.world.entity.player.Player))) {
+            entities.add(describe(entity));
         }
         return entities;
     }
 
+    private EntityData describe(Entity entity) {
+        EntityData data = new EntityData(entity, BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
+                () -> saveEntity(entity), new Vector3(entity.getX(), entity.getY(), entity.getZ()));
+        data.setUuid(entity.getStringUUID());
+        data.setPassenger(entity.isPassenger());
+        return data;
+    }
+
+    /**
+     * An entity's data as the game saves it, its type under {@code id} and
+     * its passengers inside; {@code null} for one the game does not save.
+     */
+    private NbtCompound saveEntity(Entity entity) {
+        return saveEntity(entity, level.registryAccess());
+    }
+
+    static NbtCompound saveEntity(Entity entity, net.minecraft.core.RegistryAccess registries) {
+        try {
+            net.minecraft.world.level.storage.TagValueOutput output =
+                    net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                            ProblemReporter.DISCARDING, registries);
+            return entity.saveAsPassenger(output) ? fromTag(output.buildResult()) : null;
+        } catch (IOException | RuntimeException exception) {
+            FaweMod.LOGGER.warn("Could not save the data of entity {}", entity.getStringUUID(), exception);
+            return null;
+        }
+    }
+
+    /** Pastes and undo put entities through {@link #spawnEntity}. */
     @Override
     public void addEntity(EntityData data) {
-        if (data.handle() instanceof Entity entity && !entity.isAlive()) {
-            level.addFreshEntity(entity);
+        spawnEntity(data, null);
+    }
+
+    /**
+     * Creates an entity from its data, the way WorldEdit's Fabric world does:
+     * without the identity fields, at the position of the data, with its
+     * passengers. Server thread only.
+     */
+    @Override
+    public EntityData spawnEntity(EntityData data, String uuid) {
+        if (net.minecraft.world.entity.EntityType.byString(data.type()).isEmpty()) {
+            return null;
         }
+        java.util.UUID identity = null;
+        if (uuid != null) {
+            try {
+                identity = java.util.UUID.fromString(uuid);
+            } catch (IllegalArgumentException invalid) {
+                identity = null;
+            }
+            if (identity != null && level.getEntity(identity) != null) {
+                return null;
+            }
+        }
+        CompoundTag tag = data.nbt() == null ? new CompoundTag() : toTag(data.nbt());
+        withoutIdentity(tag);
+        tag.putString("id", data.type());
+        Vector3 at = data.position();
+        boolean hangs = tag.contains("block_pos");
+        Entity created = net.minecraft.world.entity.EntityType.loadEntityRecursive(tag, level,
+                net.minecraft.world.entity.EntitySpawnReason.COMMAND, loaded -> {
+                    // A painting, an item frame or a leash knot sits where its
+                    // block_pos puts it. Moving it to a position takes the block
+                    // that contains the position instead, which for a painting
+                    // two blocks high is the one above its own.
+                    if (!(hangs && loaded instanceof net.minecraft.world.entity.decoration.BlockAttachedEntity)) {
+                        loaded.absSnapTo(at.x(), at.y(), at.z(), loaded.getYRot(), loaded.getXRot());
+                    }
+                    return loaded;
+                });
+        if (created == null) {
+            return null;
+        }
+        if (identity != null) {
+            created.setUUID(identity);
+        }
+        if (!level.tryAddFreshEntityWithPassengers(created)) {
+            return null;
+        }
+        return describe(created);
+    }
+
+    /** The fields that name one entity: a copy with them would not be added, or would replace the original. */
+    private static final List<String> IDENTITY_FIELDS = List.of("UUID", "UUIDMost", "UUIDLeast",
+            "WorldUUIDMost", "WorldUUIDLeast", "PersistentIDMSB", "PersistentIDLSB");
+
+    private static void withoutIdentity(CompoundTag tag) {
+        for (String field : IDENTITY_FIELDS) {
+            tag.remove(field);
+        }
+        tag.getList("Passengers").ifPresent(passengers -> {
+            for (int i = 0; i < passengers.size(); i++) {
+                withoutIdentity(passengers.getCompoundOrEmpty(i));
+            }
+        });
     }
 
     @Override
     public void removeEntity(EntityData data) {
-        if (data.handle() instanceof Entity entity) {
+        if (data.handle() instanceof Entity entity && !(entity instanceof net.minecraft.world.entity.player.Player)) {
             entity.discard();
         }
+    }
+
+    @Override
+    public boolean removeEntityById(String uuid) {
+        Entity entity;
+        try {
+            entity = level.getEntity(java.util.UUID.fromString(uuid));
+        } catch (IllegalArgumentException invalid) {
+            return false;
+        }
+        if (entity == null || entity instanceof net.minecraft.world.entity.player.Player) {
+            return false;
+        }
+        entity.discard();
+        return true;
     }
 
     /** Precision ray trace, used by {@code //jumpto}, {@code //thru} and the tools. */
@@ -723,12 +1138,19 @@ public final class FabricWorld implements World {
     public void applyBlockEntity(int x, int y, int z, NbtCompound nbt) {
         LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
         BlockPos pos = new BlockPos(x, y, z);
-        // A chest that was just written does not have its block entity yet: the
-        // game creates it when the block itself changes, which the bulk write did
-        // without going through the level. Asking for it here is what creates it.
+        // The flush created the block entity of every block it wrote; IMMEDIATE
+        // also covers data queued for a block the flush did not write.
         var blockEntity = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
         if (blockEntity == null) {
             FaweMod.LOGGER.debug("No block entity to hold the data at {},{},{}", x, y, z);
+            return;
+        }
+        // The data of a chest is not loaded into the furnace that stands where
+        // the chest was meant to go.
+        String id = nbt.getString("id", null);
+        ResourceLocation type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
+        if (id != null && type != null && !type.equals(ResourceLocation.tryParse(id))) {
+            FaweMod.LOGGER.debug("The data at {},{},{} is for {}, the block entity there is {}", x, y, z, id, type);
             return;
         }
         try {
@@ -742,6 +1164,65 @@ public final class FabricWorld implements World {
         } catch (Throwable throwable) {
             FaweMod.LOGGER.warn("Could not load the data of the block entity at {},{},{}", x, y, z, throwable);
         }
+    }
+
+    /**
+     * The data of a block entity, saved the way the game saves it into a chunk.
+     * Server thread only: the chunk's block entities are not safe to read from
+     * another.
+     */
+    @Override
+    public NbtCompound getBlockEntity(int x, int y, int z) {
+        LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
+        var blockEntity = chunk.getBlockEntity(new BlockPos(x, y, z), LevelChunk.EntityCreationType.CHECK);
+        return blockEntity == null ? null : saveBlockEntity(blockEntity, level.registryAccess());
+    }
+
+    /** The data of a block entity with its id, as the game saves it into a chunk. */
+    static NbtCompound saveBlockEntity(net.minecraft.world.level.block.entity.BlockEntity blockEntity,
+                                       net.minecraft.core.RegistryAccess registries) {
+        try {
+            net.minecraft.world.level.storage.TagValueOutput output =
+                    net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                            ProblemReporter.DISCARDING, registries);
+            blockEntity.saveWithId(output);
+            return fromTag(output.buildResult());
+        } catch (IOException | RuntimeException exception) {
+            BlockPos pos = blockEntity.getBlockPos();
+            FaweMod.LOGGER.warn("Could not save the data of the block entity at {},{},{}", pos.getX(), pos.getY(),
+                    pos.getZ(), exception);
+            return null;
+        }
+    }
+
+    /**
+     * The positions of the block entities of a box, from the chunks' own maps.
+     * Server thread only, like every chunk read.
+     */
+    @Override
+    public void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                   BlockEntityVisitor visitor) {
+        for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
+            for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
+                // A copy of the positions, the pending ones included: reading a
+                // pending block entity makes the chunk promote it.
+                for (BlockPos pos : level.getChunk(chunkX, chunkZ).getBlockEntitiesPos()) {
+                    int x = pos.getX();
+                    int y = pos.getY();
+                    int z = pos.getZ();
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ) {
+                        visitor.visit(x, y, z);
+                    }
+                }
+            }
+        }
+    }
+
+    /** The game's tag as the engine's compound, through the binary form both of them read and write. */
+    static NbtCompound fromTag(CompoundTag tag) throws IOException {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        net.minecraft.nbt.NbtIo.write(tag, new java.io.DataOutputStream(bytes));
+        return com.maxlananas.fawebim.core.util.NbtIo.read(bytes.toByteArray());
     }
 
     /** The engine's compound as the game's tag. */

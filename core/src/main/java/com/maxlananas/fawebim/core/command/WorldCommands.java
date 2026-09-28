@@ -46,16 +46,10 @@ final class WorldCommands {
         entry.description = "Get the FAWE-BIM version";
         entry.group = "worldedit";
         entry.handler = ctx -> {
-            ctx.actor().message(Msg.of("§8» §6FAWE-BIM §e" + Config.VERSION + "§r (FastAsyncWorldEdit, but in mods)"));
-            ctx.actor().message(Msg.of("§8» §7Minecraft §f" + Config.MINECRAFT_VERSION
-                    + "§7, Fabric §f" + loaderVersion()));
-            ctx.actor().message(Msg.of("§8» §7Author §fMaxLananas§7, based on WorldEdit 7.3.17 and FastAsyncWorldEdit"));
+            ctx.actor().message(Msg.result("FAWE-BIM " + Config.VERSION, "FastAsyncWorldEdit, but in mods"));
+            ctx.actor().message(Msg.keyValue("Minecraft", Config.MINECRAFT_VERSION + ", " + Config.platform()));
+            ctx.actor().message(Msg.keyValue("Author", "MaxLananas, based on WorldEdit 7.3.17 and FastAsyncWorldEdit"));
         };
-    }
-
-    private static String loaderVersion() {
-        String version = WorldCommands.class.getPackage().getImplementationVersion();
-        return version == null ? "0.17.x" : version;
     }
 
     /** {@code /we reload} — reloads the config file from disk. */
@@ -90,9 +84,9 @@ final class WorldCommands {
                     continue;
                 }
                 alive++;
-                ctx.actor().message(Msg.of("§7" + thread.getName() + " §8[" + thread.getState() + "]"));
+                ctx.actor().message(Msg.item(thread.getName(), thread.getState().toString()));
             }
-            ctx.actor().message(Msg.info(alive + " live thread(s); "
+            ctx.actor().message(Msg.info(Msg.count(alive, "live thread", "live threads") + "; "
                     + ManagementFactory.getThreadMXBean().getThreadCount() + " total"));
         };
     }
@@ -164,6 +158,7 @@ final class WorldCommands {
                     .resolve("report-" + System.currentTimeMillis() + ".txt");
             List<String> lines = new ArrayList<>(List.of(
                     "FAWE-BIM " + Config.VERSION + " (Minecraft " + Config.MINECRAFT_VERSION + ")",
+                    "Platform: " + Config.platform(),
                     "Author: MaxLananas",
                     "Based on WorldEdit 7.3.17 and FastAsyncWorldEdit",
                     "Java: " + System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")",
@@ -214,12 +209,13 @@ final class WorldCommands {
         entry.handler = ctx -> {
             Map<String, String> info = new java.util.LinkedHashMap<>();
             info.put("version", Config.VERSION + " for Minecraft " + Config.MINECRAFT_VERSION);
+            info.put("platform", Config.platform());
             info.put("java", System.getProperty("java.version"));
             info.put("players-world", ctx.world().name() + " @ " + ctx.actor().position());
             info.put("commands", String.valueOf(registry.all().size()));
             ctx.actor().message(Msg.info("Debug information (also written to ./fawe-report.txt):"));
             for (Map.Entry<String, String> line : info.entrySet()) {
-                ctx.actor().message(Msg.of("§7" + line.getKey() + "§r: §f" + line.getValue()));
+                ctx.actor().message(Msg.keyValue(line.getKey(), line.getValue()));
             }
             Path file = Config.get().resolveDirectory(".").resolve("fawe-report.txt");
             try {
@@ -239,15 +235,17 @@ final class WorldCommands {
      *
      * <p>WorldEdit asks the client to draw the selection and a client mod
      * answers; a vanilla client cannot, so the handshake is completed locally and
-     * this mod draws the outline in the world itself. The command shows, hides
-     * and toggles that outline, and says which colours mark the two corners.</p>
+     * this mod draws the selection in the world itself, with particles. The
+     * drawing is off until a player asks for it - {@code selection.preview} in
+     * the configuration decides for the players who have not - and the command
+     * shows, hides and toggles it.</p>
      */
     private void cui() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//cui", "/we cui", "/cui");
         if (entry == null) {
             return;
         }
-        entry.description = "Complete the CUI handshake, which draws the selection outline";
+        entry.description = "Complete the CUI handshake, which draws the selection with particles";
         entry.group = "worldedit";
         entry.requiresPlayer = true;
         entry.arguments.add("[true|false]");
@@ -257,8 +255,8 @@ final class WorldCommands {
                     ? !session.isDrawSelection() : Parsers.booleanArg(ctx, 0, false);
             if (enabled == session.isDrawSelection()) {
                 ctx.actor().message(Msg.result("Selection preview",
-                        (enabled ? "already on" : "already off") + "\u00a77 - use "
-                                + Msg.value("//cui " + !enabled).raw() + "\u00a77 to change it"));
+                        (enabled ? "already on" : "already off") + " - use "
+                                + Msg.value("//cui " + !enabled).raw() + " to change it"));
                 return;
             }
             session.setDrawSelection(enabled);
@@ -268,19 +266,11 @@ final class WorldCommands {
                 return;
             }
             ctx.actor().message(Msg.result("Selection preview", "on"));
-            ctx.actor().message(Msg.of("\u00a78» \u00a77The box is drawn every \u00a7b"
-                    + "quarter second\u00a77: \u00a7b\u00a7lcyan §7edges, \u00a79\u00a7ldeep blue"
-                    + "\u00a77 uprights, \u00a7c\u00a7lred\u00a77 position 1 and \u00a79\u00a7lblue"
-                    + "\u00a77 position 2, with \u00a7f\u00a7lwhite\u00a77 corners."));
-            ctx.actor().message(Msg.of("\u00a78» \u00a77Its size and the two corners are shown on the"
-                    + " line above the hotbar while you pick."));
+            ctx.actor().message(Msg.hint("The shape is outlined with particles: the first point in red,"
+                    + " the others in blue."));
             if (!session.isSelectionDefined(ctx.world())) {
-                ctx.actor().message(Msg.of("\u00a78» \u00a77Pick two corners with "
-                        + Msg.value("//pos1").raw() + "\u00a77 and " + Msg.value("//pos2").raw()
-                        + "\u00a77 to see the outline."));
-            } else {
-                ctx.actor().status(com.maxlananas.fawebim.core.util.Cui.size(
-                        session.getSelection(ctx.world())));
+                ctx.actor().message(Msg.hint("Select something with the wand or " + Msg.value("//pos1").raw()
+                        + " and " + Msg.value("//pos2").raw() + " to see it."));
             }
         };
     }

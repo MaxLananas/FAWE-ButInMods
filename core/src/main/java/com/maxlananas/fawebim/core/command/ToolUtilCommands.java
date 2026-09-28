@@ -53,9 +53,6 @@ final class ToolUtilCommands {
         primary();
         secondary();
         sourceMask();
-        inspect();
-        featurePlacer();
-        structurePlacer();
     }
 
     /**
@@ -67,7 +64,7 @@ final class ToolUtilCommands {
         if (!ctx.hasFlag("h")) {
             return requireBrush(ctx);
         }
-        Brush offhand = BrushFactory.currentSecondary(ctx.session());
+        Brush offhand = BrushFactory.currentSecondary(ctx.actor());
         if (offhand == null) {
             throw CommandRegistry.error("No tool in the offhand: bind one with /tool secondary <type> first");
         }
@@ -138,7 +135,7 @@ final class ToolUtilCommands {
                 throw CommandRegistry.error("Range must be between 1 and " + Config.get().maxBrushRange);
             }
             settings.setRange(range);
-            ctx.actor().message(Msg.result("Brush range", "set to " + Msg.count(range) + "\u00a77 block(s)"));
+            ctx.actor().message(Msg.result("Brush range", "set to " + Msg.blocks(range)));
         };
     }
 
@@ -209,15 +206,11 @@ final class ToolUtilCommands {
             BrushSettings settings = targetBrush(ctx).settings();
             if (ctx.args().isEmpty()) {
                 settings.setTransform(null);
-                ctx.session().getTransformSet().clear();
                 ctx.actor().message(Msg.result("Brush transform", "cleared"));
                 return;
             }
-            Transform transform = parseTransform(ctx);
-            settings.setTransform(transform);
-            Transforms.Set set = new Transforms.Set();
-            set.add(transform);
-            ctx.session().getTransformSet().setTransforms(set);
+            // The brush's own transform: //gtransform is the one for every edit.
+            settings.setTransform(parseTransform(ctx));
             ctx.actor().message(Msg.result("Brush transform", "set to " + Msg.value(ctx.joined(0)).raw()));
         };
     }
@@ -391,37 +384,44 @@ final class ToolUtilCommands {
     }
 
     /**
-     * Binds a brush like {@code /brush} would, then moves it to the requested
-     * mouse button. The brush already bound to the other button is restored, so
-     * binding one does not unbind the other.
+     * FAWE's {@code /tool primary} and {@code /tool secondary}: the brush line
+     * binds its brush as {@code /brush} does, to both clicks, and when the
+     * item already held a brush the other click gets back the one it had. An
+     * item that held none has the new brush on both clicks, as in FAWE.
      */
     private void bindBrush(Ctx ctx, boolean secondary) {
         LocalSession session = ctx.session();
-        Brush previousPrimary = BrushFactory.current(session);
-        Brush previousSecondary = BrushFactory.currentSecondary(session);
+        String item = ctx.actor().heldItem();
+        com.maxlananas.fawebim.core.session.ItemBinding before = session.binding(item);
+        boolean hadBrush = before != null && before.hasBrush();
+        Brush previousPrimary = hadBrush ? before.primary() : null;
+        String previousLine = hadBrush ? before.brushLine() : null;
+        Brush previousSecondary = hadBrush ? before.secondary() : null;
+        String previousSecondaryLine = hadBrush ? before.secondaryLine() : null;
         StringBuilder line = new StringBuilder("brush");
         for (String argument : ctx.args()) {
             line.append(' ').append(argument);
         }
         registry.dispatch(ctx.actor(), line.toString());
-        Brush bound = BrushFactory.current(session);
-        if (bound == null) {
+        Brush bound = BrushFactory.current(session, item);
+        // The line that failed said why and bound nothing: the brushes there
+        // are still the ones of before.
+        if (bound == null || bound == previousPrimary) {
             return;
         }
+        if (!hadBrush) {
+            return;
+        }
+        com.maxlananas.fawebim.core.session.ItemBinding binding = session.bind(item);
         if (secondary) {
-            BrushFactory.bindSecondary(session, bound, ctx.actor());
-            if (previousPrimary != null) {
-                session.getBindings().put("brush", previousPrimary);
-            } else {
-                BrushFactory.unbind(session);
-            }
-            ctx.actor().message(Msg.result("Left click brush", Msg.value(bound.describe()).raw()));
-            return;
+            binding.setPrimary(previousPrimary, previousLine);
+            // The brush line said the brush is equipped, which is all FAWE's
+            // /primary says; the left click is named, as the right click
+            // keeps its own brush.
+            ctx.actor().message(Msg.keyValue("Left click", binding.secondaryLine()));
+        } else {
+            binding.setSecondary(previousSecondary, previousSecondaryLine);
         }
-        if (previousSecondary != null) {
-            BrushFactory.bindSecondary(session, previousSecondary, ctx.actor());
-        }
-        ctx.actor().message(Msg.result("Right click brush", Msg.value(bound.describe()).raw()));
     }
 
     /**
@@ -456,56 +456,9 @@ final class ToolUtilCommands {
         };
     }
 
-    /** {@code /tool inspect} — the block info tool, WorldEdit registers the same one. */
-    private void inspect() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool inspect");
-        if (entry == null) {
-            return;
-        }
-        entry.description =
-                "Block information tool";
-        entry.requiresPlayer = true;
-        entry.group = "tool";
-        entry.handler = ctx -> registry.dispatch(ctx.actor(), "tool info");
-    }
-
-    private void featurePlacer() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool featureplacer", "/tool featuretool");
-        if (entry == null) {
-            return;
-        }
-        entry.description =
-                "Bind a tool that places a worldgen feature on click";
-        entry.requiresPlayer = true;
-        entry.group = "tool";
-        entry.arguments.add("feature");
-        entry.handler = ctx -> {
-            var tool = new com.maxlananas.fawebim.core.tool.Tools.FeaturePlacerTool(ctx.arg(0));
-            com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), null);
-            ctx.actor().message(Msg.success("Feature placer bound to your held item for '" + ctx.arg(0) + "'"));
-        };
-    }
-
-    private void structurePlacer() {
-        CommandRegistry.Entry entry = registry.registerUnlessPresent("/tool structureplacer", "/tool structuretool");
-        if (entry == null) {
-            return;
-        }
-        entry.description =
-                "Bind a tool that generates a structure on click";
-        entry.requiresPlayer = true;
-        entry.group = "tool";
-        entry.arguments.add("structure");
-        entry.handler = ctx -> {
-            var tool = new com.maxlananas.fawebim.core.tool.Tools.StructurePlacerTool(ctx.arg(0));
-            com.maxlananas.fawebim.core.tool.Tools.bind(ctx.session(), tool, ctx.actor(), null);
-            ctx.actor().message(Msg.success("Structure placer bound to your held item for '" + ctx.arg(0) + "'"));
-        };
-    }
-
     /** The brush bound to the held item, or FAWE's "no brush" error. */
     private static Brush requireBrush(Ctx ctx) {
-        Brush brush = BrushFactory.current(ctx.session());
+        Brush brush = BrushFactory.current(ctx.actor());
         if (brush == null) {
             throw CommandRegistry.error("No brush bound: use /brush <type> first");
         }

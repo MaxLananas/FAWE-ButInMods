@@ -10,6 +10,7 @@ import com.maxlananas.fawebim.core.session.LocalSession;
 import com.maxlananas.fawebim.core.session.Placement;
 import com.maxlananas.fawebim.core.session.PlacementType;
 import com.maxlananas.fawebim.core.util.Msg;
+import com.maxlananas.fawebim.core.util.Str;
 import com.maxlananas.fawebim.core.world.BlockState;
 import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 
@@ -17,7 +18,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -69,35 +69,31 @@ final class UtilityExtras {
         entry.group = "utility";
         entry.arguments.add("expression");
         entry.handler = ctx -> {
-            Expression expression;
+            String input = ctx.requiredJoined(0);
+            double value;
             try {
-                expression = Expression.compile(ctx.joined(0));
-            } catch (IllegalArgumentException e) {
-                throw CommandRegistry.error("Invalid expression: " + e.getMessage());
+                // pi, e, true and false are the expression's own constants,
+                // and a variable is assigned in the expression: a=2; a*3.
+                value = Expression.compile(input).evaluate(new Expression.Variables());
+            } catch (IllegalArgumentException | ArithmeticException e) {
+                throw CommandRegistry.error("'" + input + "' could not be parsed as a valid expression: "
+                        + e.getMessage());
             }
-            Expression.Variables variables = new Expression.Variables();
-            variables.set("pi", Math.PI);
-            variables.set("e", Math.E);
-            variables.set("true", 1);
-            variables.set("false", 0);
-            for (int i = 0; i < ctx.args().size(); i++) {
-                String argument = ctx.arg(i);
-                int equals = argument.indexOf('=');
-                if (equals > 0) {
-                    variables.set(argument.substring(0, equals),
-                            Double.parseDouble(argument.substring(equals + 1)));
-                }
-            }
-            double value = expression.evaluate(variables);
-            ctx.actor().message(Msg.of("§b= §f" + format(value)));
+            ctx.actor().message(Msg.info(input + " = " + Msg.value(format(value)).raw()));
         };
     }
 
+    /**
+     * The result as FAWE writes it: grouped thousands and at most five
+     * decimals, so 0.1+0.2 is 0.3 rather than the double's 0.30000000000000004.
+     */
     private static String format(double value) {
-        if (value == Math.floor(value) && !Double.isInfinite(value) && Math.abs(value) < 1e15) {
-            return String.valueOf((long) value);
+        if (Double.isNaN(value)) {
+            return "NaN";
         }
-        return String.valueOf(value);
+        java.text.DecimalFormat format = new java.text.DecimalFormat("#,##0.#####",
+                java.text.DecimalFormatSymbols.getInstance(Locale.ROOT));
+        return format.format(value);
     }
 
     /** {@code //cancel} — aborts the next edit that reaches a timeout check. */
@@ -110,15 +106,21 @@ final class UtilityExtras {
         entry.group = "utility";
         entry.requiresPlayer = true;
         entry.handler = ctx -> {
+            // This command is one of the running ones. Commands run one after the
+            // other, so another one is only running when this was called from it.
+            if (ctx.session().runningCommands() <= 1) {
+                ctx.actor().message(Msg.info("No edit is running"));
+                return;
+            }
             ctx.session().cancel();
             ctx.actor().message(Msg.success("The running edit will stop at the next checkpoint"));
         };
     }
 
     /**
-     * {@code //confirm} — runs the command that asked for confirmation. Commands
-     * that destroy a lot of data register themselves through
-     * {@link LocalSession#setPendingCommand}.
+     * {@code //confirm} — runs the command that stopped to ask for it (see
+     * {@link Confirmation}), when it asked less than fifteen seconds ago. The
+     * command answers for itself, as it does in FAWE.
      */
     private void confirm() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("//confirm");
@@ -128,13 +130,12 @@ final class UtilityExtras {
         entry.description = "Confirm a command";
         entry.group = "utility";
         entry.handler = ctx -> {
-            if (ctx.session().hasPendingCommand()) {
-                String description = ctx.session().pendingDescription();
-                ctx.session().confirmPending();
-                ctx.actor().message(Msg.success("Confirmed: " + description));
+            String line = ctx.session().takePendingCommand(System.nanoTime(), Confirmation.WAIT_NANOS);
+            if (line == null) {
+                ctx.actor().message(Msg.info("You have no actions pending confirmation"));
                 return;
             }
-            ctx.actor().message(Msg.info("Nothing to confirm"));
+            registry.dispatchConfirmed(ctx.actor(), line);
         };
     }
 
@@ -154,12 +155,22 @@ final class UtilityExtras {
         entry.arguments.add("[args...]");
         entry.handler = ctx -> {
             Path folder = Config.get().resolveDirectory(Config.get().macroDirectory);
-            Path file = folder.resolve(ctx.arg(0));
+            Path file = com.maxlananas.fawebim.core.util.SafePaths.inside(folder, ctx.arg(0),
+                    Config.get().allowSymlinks, "macro");
             if (!Files.isRegularFile(file)) {
                 throw CommandRegistry.error("No macro named '" + ctx.arg(0) + "' in " + folder);
             }
+            // A macro that runs itself, directly or through another, would
+            // recurse until the server thread's stack gave out.
+            if (MACRO_DEPTH.get() >= MAX_MACRO_DEPTH) {
+                throw CommandRegistry.error("Macros may call each other " + MAX_MACRO_DEPTH + " deep at most");
+            }
             List<String> lines;
             try {
+                if (Files.size(file) > MAX_MACRO_BYTES) {
+                    throw CommandRegistry.error("The macro '" + ctx.arg(0) + "' is larger than "
+                            + MAX_MACRO_BYTES / 1024 + " KiB");
+                }
                 lines = Files.readAllLines(file);
             } catch (IOException e) {
                 throw CommandRegistry.error("Could not read macro: " + e.getMessage());
@@ -182,12 +193,24 @@ final class UtilityExtras {
                 }
                 // Macros run in the same session, so selections and history stay
                 // consistent with what the player would have typed.
-                registry.dispatch(ctx.actor(), command);
+                MACRO_DEPTH.set(MACRO_DEPTH.get() + 1);
+                try {
+                    registry.dispatch(ctx.actor(), command);
+                } finally {
+                    MACRO_DEPTH.set(MACRO_DEPTH.get() - 1);
+                }
                 executed++;
             }
-            ctx.actor().message(Msg.success("Ran " + executed + " command(s) from macro " + ctx.arg(0)));
+            ctx.actor().message(Msg.success("Ran " + Msg.count(executed, "command", "commands") + " from macro " + ctx.arg(0)));
         };
     }
+
+    /** How deep macros that run macros may nest, counted on the thread that runs them. */
+    private static final int MAX_MACRO_DEPTH = 8;
+    private static final ThreadLocal<Integer> MACRO_DEPTH = ThreadLocal.withInitial(() -> 0);
+
+    /** A macro is a list of commands typed by hand, not a data file. */
+    private static final long MAX_MACRO_BYTES = 256 * 1024;
 
     private void tips() {
         CommandRegistry.Entry entry = registry.registerUnlessPresent("/tips");
@@ -468,7 +491,7 @@ final class UtilityExtras {
             Page page = Page.of(ctx, matches.size());
             String title = query.isBlank() || query.equals("*") ? "Registry contents"
                     : "Search results for '" + query + "'";
-            ctx.actor().message(Msg.info(page.header(title, matches.size())));
+            ctx.actor().message(page.header(title, matches.size()));
             ctx.actor().message(Msg.info(String.join(", ", matches.subList(page.from(), page.to()))));
         };
     }
@@ -534,11 +557,10 @@ final class UtilityExtras {
                 ctx.actor().message(Msg.info("No block matches '" + query + "'"));
                 return;
             }
-            int page = Math.max(1, ctx.flagInt("p", 1));
-            int pages = (matches.size() + 19) / 20;
-            ctx.actor().message(Msg.info("Blocks matching '" + query + "' (page " + page + "/" + pages + "):"));
-            for (int i = (page - 1) * 20; i < Math.min(matches.size(), page * 20); i++) {
-                ctx.actor().message(Msg.of("§7 - §f" + matches.get(i)));
+            Page page = Page.of(ctx, matches.size());
+            ctx.actor().message(page.header("Blocks matching '" + query + "'", matches.size()));
+            for (String match : matches.subList(page.from(), page.to())) {
+                ctx.actor().message(Msg.item(match));
             }
         };
     }
@@ -566,7 +588,10 @@ final class UtilityExtras {
                         + "'. Try all, global, public, local, private, me or mine");
             }
             ctx.session().setListFilter(filter);
-            ctx.actor().message(Msg.success("//schem list now shows " + filter.describe()));
+            // Without FAWE's per-player folders, every filter lists the shared one.
+            ctx.actor().message(filter == com.maxlananas.fawebim.core.clipboard.ListFilter.LOCAL
+                    ? Msg.warn("Schematics are not kept per player here: //schem list shows the shared folder")
+                    : Msg.success("//schem list now shows " + filter.describe()));
         };
     }
 
@@ -607,7 +632,7 @@ final class UtilityExtras {
                     History.Record current = session.getHistory().getCurrent();
                     ctx.actor().message(current == null ? Msg.info("No edit recorded yet")
                             : Msg.info("Last edit: " + current.description
-                            + " (" + current.changeCount() + " block(s))"));
+                            + " (" + Msg.blocks(current.changeCount()) + ")"));
                 }
                 case "distr", "distribution" -> distribution(ctx);
                 case "find", "inspect", "search", "near" -> find(ctx);
@@ -650,10 +675,10 @@ final class UtilityExtras {
             return;
         }
         Page page = Page.of(ctx, entries.size());
-        ctx.actor().message(Msg.info(page.header("Edits", entries.size())));
+        ctx.actor().message(page.header("Edits", entries.size()));
         for (EditLog.Entry entry : entries.subList(page.from(), page.to())) {
-            ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
-                    + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+            ctx.actor().message(Msg.item(entry.actor, entry.record.description + " ("
+                    + Msg.blocks(entry.record.changeCount()) + ", " + time(ctx, entry) + ")"));
         }
         page.hint(ctx, "//history list");
     }
@@ -664,21 +689,21 @@ final class UtilityExtras {
         if (current == null) {
             throw CommandRegistry.error("No edit recorded yet");
         }
-        Map<String, Integer> counts = new LinkedHashMap<>();
+        com.maxlananas.fawebim.core.util.StateCounts counts =
+                new com.maxlananas.fawebim.core.util.StateCounts(BlockState.registry().stateCount());
         for (var sets : current.changes().values()) {
             for (var set : sets) {
                 for (int i = 0; i < set.size(); i++) {
-                    counts.merge(BlockState.registry().name(set.beforeAt(i)), 1, Integer::sum);
+                    counts.add(set.beforeAt(i));
                 }
             }
         }
-        List<Map.Entry<String, Integer>> sorted = new ArrayList<>(counts.entrySet());
-        sorted.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
+        List<Map.Entry<String, Long>> sorted = new ArrayList<>(counts.byName(BlockState.registry()::name).entrySet());
+        sorted.sort(Map.Entry.<String, Long>comparingByValue().reversed());
         Page page = Page.of(ctx, sorted.size());
-        ctx.actor().message(Msg.info(page.header("Blocks changed by the last edit (before state)",
-                sorted.size())));
-        for (Map.Entry<String, Integer> counted : sorted.subList(page.from(), page.to())) {
-            ctx.actor().message(Msg.of("§7" + counted.getKey() + "§r: §f" + counted.getValue()));
+        ctx.actor().message(page.header("Blocks changed by the last edit (before state)", sorted.size()));
+        for (Map.Entry<String, Long> counted : sorted.subList(page.from(), page.to())) {
+            ctx.actor().message(Msg.item(counted.getKey(), Msg.formatNumber(counted.getValue())));
         }
         page.hint(ctx, "//history distr");
     }
@@ -691,10 +716,10 @@ final class UtilityExtras {
             return;
         }
         Page page = Page.of(ctx, matches.size());
-        ctx.actor().message(Msg.info(page.header("Matching edits", matches.size())));
+        ctx.actor().message(page.header("Matching edits", matches.size()));
         for (EditLog.Entry entry : matches.subList(page.from(), page.to())) {
-            ctx.actor().message(Msg.of("§7 - §f" + entry.actor + "§7 " + entry.record.description
-                    + " §7(" + Msg.formatNumber(entry.record.changeCount()) + " block(s), " + time(ctx, entry) + ")"));
+            ctx.actor().message(Msg.item(entry.actor, entry.record.description + " ("
+                    + Msg.blocks(entry.record.changeCount()) + ", " + time(ctx, entry) + ")"));
         }
         page.hint(ctx, "//history find");
     }
@@ -705,6 +730,8 @@ final class UtilityExtras {
      * or as its after state (restore, which is what {@code -f} asks for).
      */
     private void applyMatches(Ctx ctx, boolean undo) {
+        // FAWE asks for //confirm before either, whatever they match.
+        ctx.confirmAlways();
         List<EditLog.Entry> matches = matches(ctx);
         if (matches.isEmpty()) {
             ctx.actor().message(Msg.error("No edit matches those filters"));
@@ -712,23 +739,27 @@ final class UtilityExtras {
         }
         EditSession session = new EditSession(ctx.world(), ctx.session(), "history", false);
         int changed = 0;
-        for (EditLog.Entry entry : matches) {
-            for (var sets : entry.record.changes().values()) {
-                for (var set : sets) {
-                    changed += session.applyChangeSet(set, undo);
-                }
+        // The log lists the newest edit first. A rollback takes the edits back
+        // newest first, so a cell several of them touched ends as the oldest one
+        // found it; a restore replays them oldest first, so it ends as the newest
+        // one left it.
+        try {
+            for (int index = 0; index < matches.size(); index++) {
+                EditLog.Entry entry = matches.get(undo ? index : matches.size() - 1 - index);
+                changed += session.applyRecord(entry.record, undo);
             }
+        } finally {
+            session.close();
         }
-        session.flushQueue();
-        ctx.actor().message(Msg.result(undo ? "Rolled back" : "Restored", Msg.count(changed)
-                + "\u00a77 block change(s) from " + Msg.count(matches.size()) + "\u00a77 edit(s)"));
+        ctx.actor().message(Msg.result(undo ? "Rolled back" : "Restored", Msg.count(changed, "block change",
+                "block changes") + " from " + Msg.count(matches.size(), "edit", "edits")));
     }
 
     /** Applies the {@code -u}, {@code -t} and {@code -r} filters of the command line. */
     private List<EditLog.Entry> matches(Ctx ctx) {
         String user = ctx.hasFlag("u") ? ctx.flagValue("u", "") : null;
         long since = ctx.hasFlag("t")
-                ? System.currentTimeMillis() - Commands.parseDuration(ctx.flagValue("t", "")) : -1;
+                ? System.currentTimeMillis() - Str.parseDuration(ctx.flagValue("t", "")) : -1;
         double radius = ctx.hasFlag("r") ? ctx.flagDouble("r", -1) : -1;
         BlockVector3 origin = radius >= 0 ? ctx.placement() : null;
         return EditLog.find(user, ctx.world().name(), radius, since, origin);

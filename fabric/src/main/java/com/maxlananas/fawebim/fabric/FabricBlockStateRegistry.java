@@ -51,10 +51,18 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
             Map.entry("plants", new String[]{"minecraft:replaceable_by_trees", "minecraft:flowers"}),
             Map.entry("air", new String[]{}));
 
-    private final Map<Integer, String> nameCache = new ConcurrentHashMap<>();
+    /**
+     * The block name of every state, filled by {@link #refresh()} and never
+     * changed after it is published. Names are asked for on every block of a
+     * mask or a pattern that works by name: a map keyed by a boxed id cost an
+     * allocation and a hash lookup each time.
+     */
+    private volatile String[] names = new String[0];
     /** Tags by name, so a mask does not parse and rebuild one for every block. */
     private final Map<String, java.util.Optional<TagKey<Block>>> tagCache = new ConcurrentHashMap<>();
-    private final Map<Integer, Map<String, String>> propertyCache = new ConcurrentHashMap<>();
+    /** The property maps, built on first use; each is unmodifiable, so sharing it is safe. */
+    private volatile java.util.concurrent.atomic.AtomicReferenceArray<Map<String, String>> properties =
+            new java.util.concurrent.atomic.AtomicReferenceArray<>(0);
     private int airId = -1;
     private int stateCount;
 
@@ -70,11 +78,19 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
             for (BlockState state : block.getStateDefinition().getPossibleStates()) {
                 max = Math.max(max, idOf(state));
             }
-            if (block.getStateDefinition().getPossibleStates().isEmpty()) {
-                max = Math.max(max, idOf(block.defaultBlockState()));
+            max = Math.max(max, idOf(block.defaultBlockState()));
+        }
+        String[] byState = new String[max + 1];
+        for (Block block : BuiltInRegistries.BLOCK) {
+            String name = BuiltInRegistries.BLOCK.getKey(block).toString();
+            for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+                byState[idOf(state)] = name;
             }
+            byState[idOf(block.defaultBlockState())] = name;
         }
         stateCount = max + 1;
+        properties = new java.util.concurrent.atomic.AtomicReferenceArray<>(max + 1);
+        names = byState;
     }
 
     private static int idOf(BlockState state) {
@@ -285,13 +301,14 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public String name(int stateId) {
-        return nameCache.computeIfAbsent(stateId, id -> {
-            BlockState state = stateOf(id);
-            if (state == null) {
-                return "minecraft:air";
-            }
-            return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-        });
+        String[] byState = names;
+        String name = stateId >= 0 && stateId < byState.length ? byState[stateId] : null;
+        if (name != null) {
+            return name;
+        }
+        // A state registered after the last refresh, or no state at all.
+        BlockState state = stateOf(stateId);
+        return state == null ? "minecraft:air" : BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
     }
 
     @Override
@@ -317,18 +334,37 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         return sb.toString();
     }
 
+    /**
+     * The values of a state, as the game writes them in a state string. The
+     * map is cached and shared, so it cannot be changed.
+     */
     @Override
     public Map<String, String> properties(int stateId) {
-        return propertyCache.computeIfAbsent(stateId, id -> {
-            BlockState state = stateOf(id);
-            Map<String, String> map = new LinkedHashMap<>();
-            if (state != null) {
-                for (Map.Entry<Property<?>, Comparable<?>> entry : state.getValues().entrySet()) {
-                    map.put(entry.getKey().getName(), String.valueOf(entry.getValue()));
-                }
+        java.util.concurrent.atomic.AtomicReferenceArray<Map<String, String>> cache = properties;
+        boolean cached = stateId >= 0 && stateId < cache.length();
+        Map<String, String> known = cached ? cache.get(stateId) : null;
+        if (known != null) {
+            return known;
+        }
+        BlockState state = stateOf(stateId);
+        Map<String, String> map = new LinkedHashMap<>();
+        if (state != null) {
+            for (Map.Entry<Property<?>, Comparable<?>> entry : state.getValues().entrySet()) {
+                map.put(entry.getKey().getName(), valueName(entry.getKey(), entry.getValue()));
             }
-            return map;
-        });
+        }
+        Map<String, String> built = java.util.Collections.unmodifiableMap(map);
+        if (cached) {
+            // Two threads may build the same map; the first one stored is kept.
+            return cache.compareAndSet(stateId, null, built) ? built : cache.get(stateId);
+        }
+        return built;
+    }
+
+    /** A property value by the property's own name for it, which toString does not promise. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static String valueName(Property property, Comparable value) {
+        return property.getName(value);
     }
 
     @Override
@@ -412,6 +448,17 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         return state != null && !state.getFluidState().isEmpty();
     }
 
+    /**
+     * The map colour of a state, as {@code 0xRRGGBB}: the colour the colour
+     * patterns give a block their table of texture colours does not have.
+     * Read from the state alone, which is immutable: any thread.
+     */
+    public int mapColor(int stateId) {
+        BlockState state = stateOf(stateId);
+        return state == null ? 0 : state.getMapColor(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,
+                net.minecraft.core.BlockPos.ZERO).col;
+    }
+
     @Override
     public boolean isFullCube(int stateId) {
         BlockState state = stateOf(stateId);
@@ -485,8 +532,6 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         return idOf(block.defaultBlockState());
     }
 
-    // ------------------------------------------------------------------ biomes
-
     @Override
     public int biome(String name) {
         return FabricRegistries.biomeId(name.contains(":") ? name : "minecraft:" + name);
@@ -502,8 +547,6 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     public List<String> biomeNames() {
         return FabricRegistries.biomeNames();
     }
-
-    // ------------------------------------------------------------------- items
 
     @Override
     public List<String> itemNames() {

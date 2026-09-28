@@ -20,21 +20,28 @@ public final class EntityRemovers {
 
     /** The keywords {@code /remove} takes, and the entities each one matches. */
     public enum Type {
-        ALL("all"),
-        PROJECTILES("projectiles?|arrows?"),
-        ITEMS("items?|drops?"),
-        FALLING_BLOCKS("falling(blocks?|sand|gravel)"),
-        PAINTINGS("paintings?|art"),
-        ITEM_FRAMES("(item)frames?"),
-        BOATS("boats?"),
-        MINECARTS("minecarts?"),
-        TNT("tnt"),
-        XP_ORBS("xp");
+        ALL("all", "all"),
+        PROJECTILES("projectiles", "projectiles?|arrows?"),
+        ITEMS("items", "items?|drops?"),
+        FALLING_BLOCKS("fallingblocks", "falling(blocks?|sand|gravel)"),
+        PAINTINGS("paintings", "paintings?|art"),
+        ITEM_FRAMES("itemframes", "(item)frames?"),
+        BOATS("boats", "boats?"),
+        MINECARTS("minecarts", "minecarts?"),
+        TNT("tnt", "tnt"),
+        XP_ORBS("xp", "xp");
 
+        private final String word;
         private final Pattern keyword;
 
-        Type(String keyword) {
+        Type(String word, String keyword) {
+            this.word = word;
             this.keyword = Pattern.compile(keyword);
+        }
+
+        /** The spelling tab completion offers, one of those {@link #matchesKeyword} takes. */
+        public String word() {
+            return word;
         }
 
         /** Whether the word typed on the command line names this filter. */
@@ -44,7 +51,16 @@ public final class EntityRemovers {
 
         public boolean matches(String entityType) {
             return switch (this) {
-                case ALL -> true;
+                // Every kind below, as WorldEdit's "all": never a mob, a
+                // villager or a pet, which /butcher is for.
+                case ALL -> {
+                    for (Type type : values()) {
+                        if (type != ALL && type.matches(entityType)) {
+                            yield true;
+                        }
+                    }
+                    yield false;
+                }
                 case PROJECTILES -> PROJECTILE_TYPES.contains(entityType);
                 case ITEMS -> entityType.equals("minecraft:item");
                 case FALLING_BLOCKS -> entityType.equals("minecraft:falling_block");

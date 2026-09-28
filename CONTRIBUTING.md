@@ -21,8 +21,8 @@ is ported, and what a change is expected to look like.
 ## Setting up
 
 ```bash
-git clone https://github.com/MaxLananas/FAWE-BIM
-cd FAWE-BIM
+git clone https://github.com/MaxLananas/FAWE-ButInMods
+cd FAWE-ButInMods
 ./gradlew build
 ```
 
@@ -140,6 +140,32 @@ way:
   consequence of the game being absent. Anything it prints is a real defect; the Gradle build
   compiles the adapter properly and is still the source of truth.
 
+## Threads
+
+Every edit runs on the server thread, from start to finish: a command, a tool click, a brush stroke,
+an undo. Reading the world, writing it through an `EditSession` and flushing the buffered chunks all
+happen there, because the game's chunks, block entities, entities and light engine belong to that
+thread. What leaves it is work that no longer needs the world: bytes to write, a sealed history
+record to serialise. Nothing is made asynchronous that has to be handed back to the world afterwards.
+
+| What | Where | Class |
+| --- | --- | --- |
+| Chunks, sections, heightmaps, light engine, block entities, entities (`LevelChunk`, `ServerLevel`) | `FabricWorld`, `FabricWorldRegen`, `FabricInteractions` | server-thread-only |
+| The temporary level of `//regen` | `FabricWorldRegen` | server-thread-only; the game's workers generate inside it |
+| Players: position, rotation, inventory, permissions, messages (`ServerPlayer`, `CommandSourceStack`) | `FabricActor`, `FabricInteractions`, `FaweMod` | server-thread-only |
+| Packets handled by the mixin | `MixinServerGamePacketListenerImpl` | called on the network thread first; acts only on the server thread's call |
+| Block states by id, their properties, the block and biome registries after start | `FabricBlockStateRegistry`, `FabricRegistries` | immutable once the server runs: thread-safe |
+| The registry's caches | `FabricBlockStateRegistry` | `ConcurrentHashMap`, and the cached maps are unmodifiable: thread-safe |
+| A block entity's or an entity's data | `FabricWorld.getBlockEntity`, `getEntities` | read on the server thread; the compound is a copy: safe after capture |
+| A sealed history record | `Snapshots`, `EditLog` | immutable snapshot, serialised on the writer thread |
+| The bytes of a schematic | `Schematics.saveAsync` | serialised on the server thread (it reads the clipboard), written on a worker |
+| Settings | `Config` | written on the server thread, read anywhere; a value one edit late is acceptable for every setting |
+| `World.sync` | `FabricWorld` | the server's task queue: thread-safe |
+
+Nothing is *unsafe* on purpose: a worker never reads a chunk, and an `EditSession`, its buffers
+(`ChunkSet`) and a clipboard belong to the thread of the edit that owns them. The worker pool and the
+writer are waited for, a bounded time, when the server stops.
+
 ## Verifying a change
 
 A change is ready when all of the following hold:
@@ -166,9 +192,54 @@ in game (rendering, click handling, world access), say so explicitly in the pull
 * Prefer plain data structures and explicit code over layered abstraction; the engine is on the hot
   path of every edit.
 * Keep allocations out of per-block loops: reuse arrays, avoid boxing, prefer primitive maps.
-* Fail loudly for user errors (`CommandRegistry.error("...")`) and never swallow an exception
-  without a comment explaining why it is safe to ignore.
-* Command messages are short, in English, and use the same `§` colour codes the existing ones use.
+* Fail loudly for user errors (`CommandRegistry.error("...")`, or `InputException` below the command
+  layer) and never swallow an exception without a comment explaining why it is safe to ignore; an
+  unexpected one goes to `platform.Log`, which the platform connects to its logger.
+* Command messages are short and in English. A command says what kind of line it writes - `Msg.result`,
+  `Msg.title`, `Msg.info`, `Msg.success`, `Msg.warn`, `Msg.error`, and `Msg.keyValue`, `Msg.item`,
+  `Msg.hint` for the lines under them - and writes plain sentences: numbers, coordinates, quoted names,
+  switches and `#names` are coloured by the builder, and `Msg.value`, `Msg.count` and `Msg.size` put a
+  value in the middle of a sentence. The name in front of an answer, its gradient and every colour live
+  in `util/Theme.java`; no `§` code is written anywhere else. The message style test fails on a line
+  that does not follow this.
+* Whoever opens an `EditSession` closes it, in a `finally`: closing writes what is buffered and
+  publishes the history record. The dispatcher closes the sessions of a command; a tool or a brush
+  closes its own. Something a player does outside a command line - a click, a stroke - runs through
+  `CommandRegistry.interact`, which answers its failure in chat and makes `/cancel` reach it.
+* A command validates its arguments before it does any work: `Ctx.intArg(index, fallback, min, max,
+  name)`, `Ctx.sizeArg` and `Ctx.radiusArg` refuse a value out of range with a message naming the
+  limit, instead of the edit discovering it half way.
+* A file named on a command line is resolved with `SafePaths.inside(folder, name, ...)`, never with
+  `Path.of`: the name may go down into sub-folders, never up or out, and symbolic links follow
+  `files.allow-symbolic-links`.
+* Files and NBT from outside are untrusted: `NbtIo` reads with a memory budget and a nesting limit,
+  and a schematic's size is checked against `limits.max-schematic-size` and against the data it
+  really holds before anything is allocated. A format lives in its own class (`SpongeSchematic`,
+  `McEditSchematic`, `StructureSchematic`) and is tested against files laid out the way WorldEdit and
+  the game write them.
+* An operation that holds a buffer sized by a selection or a radius - one that reads a whole area
+  before writing it, like `//deform` or the morph brushes - checks it with `Buffers.checkInts` before
+  it reads anything, and reads every source before it writes any block, so the result does not depend
+  on the order of the walk.
+* A direction or an offset typed on a command line goes through `Directions`: `parse` for the
+  direction words (every start of a compass name, the diagonals where the command takes them, and
+  `me`, `forward`, `back`, `left`, `right` relative to where the player looks, with WorldEdit's
+  67.5 degree rule for up and down), `offset` for the `x,y,z` and `^x,y,z` forms of `//move` and
+  `//stack`. A word that is none of these is refused, never read as a default direction.
+* A selection shape is a `RegionSelector` in `Selectors`: its clicks answer with `explainPrimary`
+  and `explainSecondary`, `//sel` converts the previous selection into it where it can, and
+  `Cui.outline` says how the preview draws it. The wand, `//pos1` and `//pos2` all go through
+  `Tools.select`, so the three answer the same way.
+* Something a player does many times in a row - a brush stroke, a wand click on the same block -
+  answers nothing in chat when it goes well, as in WorldEdit; its failures still answer. The line
+  above the hotbar (`Actor.status`) is for what changes with every click, such as the size of the
+  selection.
+* Whatever places blocks through a `Transform` turns their states with `BlockStateTransform` and the
+  data of entities with `EntityTransforms`; a rotation by a multiple of 90 degrees must stay exact.
+  Blocks turn as points around the origin, entities around the centre of the origin's block, and a
+  hanging entity's `block_pos` moves with the blocks (`Clipboards.attachedTo`).
+* Block entities and entities are edits like blocks: they go through the `EditSession`
+  (`setBlockEntity`, `addEntity`, `removeEntity`), which records them so an undo brings them back.
 
 ## Submitting
 

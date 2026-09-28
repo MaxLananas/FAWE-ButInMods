@@ -66,8 +66,6 @@ public final class CommandDocGenerator {
         return count;
     }
 
-    // ------------------------------------------------------------------ coverage
-
     private static final class Coverage {
         private final Set<String> seen = new TreeSet<>();
         private final Set<String> unresolved = new TreeSet<>();
@@ -158,10 +156,6 @@ public final class CommandDocGenerator {
         String trimmed = name.trim();
         return trimmed.startsWith("/") ? trimmed.replaceFirst("^/+", "") : trimmed;
     }
-
-    // ----------------------------------------------------------------- markdown
-
-    // --------------------------------------------------------------------- json
 
     private static String renderJson(List<CommandRegistry.Entry> entries, Coverage coverage) {
         StringBuilder out = new StringBuilder();

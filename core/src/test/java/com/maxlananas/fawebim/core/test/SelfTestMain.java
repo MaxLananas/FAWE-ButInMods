@@ -72,9 +72,32 @@ public final class SelfTestMain {
     private static int failed;
     private static final java.util.List<String> failures = new java.util.ArrayList<>();
 
+    /** Every line the engine logged at error level: each one is a bug a command hit. */
+    static final List<String> loggedErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Every line the engine logged as a warning, for the tests of what deserves one. */
+    static final List<String> loggedWarnings = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public static void main(String[] args) throws Exception {
+        // What the commands write - schematics, reports, the configuration - goes
+        // to a folder of the run, not to the directory the run starts in, which
+        // is a checkout.
+        Path scratch = Files.createTempDirectory("fawebim-selftest");
+        Config.get().load(scratch);
+        Schematics.setDirectory(scratch.resolve("schematics"));
         BlockState.setRegistry(new TestBlockStateRegistry());
         EditSession.BlockStateRegistryHolder.set(BlockState.registry());
+        com.maxlananas.fawebim.core.platform.Log.install((level, message, error) -> {
+            System.out.println("LOG " + level + ": " + message + (error == null ? "" : " (" + error + ")"));
+            if (error != null && level == com.maxlananas.fawebim.core.platform.Log.Level.ERROR) {
+                error.printStackTrace(System.out);
+            }
+            if (level == com.maxlananas.fawebim.core.platform.Log.Level.ERROR) {
+                loggedErrors.add(message + (error == null ? "" : ": " + error));
+            } else if (level == com.maxlananas.fawebim.core.platform.Log.Level.WARN) {
+                loggedWarnings.add(message);
+            }
+        });
 
         testMath();
         testBlockStateRegistry();
@@ -123,6 +146,45 @@ public final class SelfTestMain {
         testHostileArguments();
         testEveryAnswerIsColoured();
         testEveryCommandAnswersInColour();
+        HistoryIntegrityTests.run();
+        DataStructureTests.run();
+        RegionGeometryTests.run();
+        CommandLimitTests.run();
+        SecurityTests.run();
+        SchematicFormatTests.run();
+        BlockEntityTests.run();
+        TransformTests.run();
+        EntityTests.run();
+        ToolTests.run();
+        TerrainTests.run();
+        ClipboardSectionTests.run();
+        RegionCopyTests.run();
+        SelectionTests.run();
+        MessageStyleTests.run();
+        LayerTests.run();
+        BrushArgumentTests.run();
+        ConfirmationTests.run();
+        FillAndLiquidTests.run();
+        RemovalTests.run();
+        SnowAndGreenTests.run();
+        ClipboardPasteTests.run();
+        DistributionAndButcherTests.run();
+        CommandFeedbackTests.run();
+        SchematicFolderTests.run();
+        SchematicCommandTests.run();
+        GenerationTests.run();
+        ShapeBrushTests.run();
+        CompletionTests.run();
+        BindingTests.run();
+        MaskSyntaxTests.run();
+        PatternSyntaxTests.run();
+        BrushCommandTests.run();
+        SculptBrushTests.run();
+
+        // A command that fails with anything but a refusal logs it as an error;
+        // the sweeps above run every command with hostile arguments, so an error
+        // logged anywhere in the run is a command that crashed on its input.
+        checkEquals("no command crashed during the run " + loggedErrors, 0, loggedErrors.size());
 
         System.out.println();
         System.out.println("Self-tests: " + passed + " passed, " + failed + " failed");
@@ -216,11 +278,24 @@ public final class SelfTestMain {
         });
         checkEquals("anvil visited chunks", 1, visited[0]);
         checkEquals("anvil duration", 8L * 3_600_000 + 5L * 60_000 + 12_000, Str.parseDuration("8h5m12s"));
+        checkEquals("a duration takes spaces between its groups", 36L * 3_600_000, Str.parseDuration("1d 12h"));
+        checkEquals("a duration takes a fraction", 90L * 60_000, Str.parseDuration("1.5h"));
+        checkEquals("a duration takes the names of the units", 2L * 604_800_000 + 3_000,
+                Str.parseDuration("2 weeks 3 seconds"));
+        checkEquals("a bare number counts seconds, as in FAWE", 30_000L, Str.parseDuration("30"));
+        for (String invalid : new String[] {"", "-5m", "5x", "1.2.3s", "m", "99999999999999999999y", "5m -3s"}) {
+            boolean refused;
+            try {
+                Str.parseDuration(invalid);
+                refused = false;
+            } catch (com.maxlananas.fawebim.core.util.InputException e) {
+                refused = true;
+            }
+            check("the duration '" + invalid + "' is refused", refused);
+        }
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    private static void check(String name, boolean condition) {
+    static void check(String name, boolean condition) {
         if (condition) {
             passed++;
         } else {
@@ -230,7 +305,7 @@ public final class SelfTestMain {
         }
     }
 
-    private static void checkEquals(String name, Object expected, Object actual) {
+    static void checkEquals(String name, Object expected, Object actual) {
         if (expected == null ? actual == null : expected.equals(actual)) {
             passed++;
         } else {
@@ -266,11 +341,9 @@ public final class SelfTestMain {
         checkEquals("brushes that build without a session", BrushTable.BRUSHES.length, built + needsContext);
     }
 
-    private static void section(String name) {
+    static void section(String name) {
         System.out.println("== " + name);
     }
-
-    // -------------------------------------------------------------------- tests
 
     private static void testMath() {
         section("math");
@@ -283,7 +356,7 @@ public final class SelfTestMain {
         checkEquals("max", b, a.max(b));
         checkEquals("floor of Vector3", new BlockVector3(1, 2, 3),
                 BlockVector3.floor(new Vector3(1.9, 2.1, 3.99)));
-        checkEquals("distanceSq", 27, a.distanceSq(b));
+        checkEquals("distanceSq", 27L, a.distanceSq(b));
         check("toCenter", Math.abs(a.toCenter().x() - 1.5) < 1e-9);
         checkEquals("BlockVector2.at", new BlockVector2(5, 6), BlockVector2.at(5, 6));
         Vector3 v = new Vector3(3, 4, 0);
@@ -415,8 +488,14 @@ public final class SelfTestMain {
         Region ellipsoid = new com.maxlananas.fawebim.core.region.EllipsoidRegion(
                 new Vector3(0.5, 0.5, 0.5), new Vector3(3, 3, 3), world.minY(), world.maxY());
         check("ellipsoid contains", ellipsoid.contains(0, 0, 0));
-        check("expand", sphere.expand(new BlockVector3(5, 0, 0)));
-        check("contract", sphere.contract(new BlockVector3(1, 0, 0)));
+        // WorldEdit's round expansion: the centre moves by half the amount and
+        // the radius along it grows by half, so the side the amount points to
+        // moves by all of it, the other side stays, and the amount has to be even.
+        check("expand", sphere.expand(new BlockVector3(6, 0, 0)));
+        checkEquals("an expanded sphere moves its east side by the amount", 11, sphere.getMaximumPoint().x());
+        checkEquals("an expanded sphere keeps its west side", -5, sphere.getMinimumPoint().x());
+        check("contract", sphere.contract(new BlockVector3(2, 0, 0)));
+        checkEquals("a contracted sphere gives two blocks back", 9, sphere.getMaximumPoint().x());
         session.setSelector(selector);
         check("session selection", session.isSelectionDefined(world));
     }
@@ -565,9 +644,9 @@ public final class SelfTestMain {
         check("solid mask rejects air", !solid.test(3, 80, 3));
         Mask airMask = new Masks.AirMask(session, false);
         check("air mask", airMask.test(3, 80, 3));
-        check("existing mask", new Masks.ExistingMask(session, true).test(0, 60, 0));
+        check("existing mask", new Masks.ExistingMask(session).test(0, 60, 0));
         check("existing mask skips air",
-                !new Masks.ExistingMask(session, true).test(0, 200, 0));
+                !new Masks.ExistingMask(session).test(0, 200, 0));
         Mask liquid = new Masks.LiquidMask(session);
         world.setBlock(5, 71, 5, BlockState.registry().defaultState("minecraft:water"));
         check("liquid mask", liquid.test(5, 71, 5));
@@ -583,7 +662,7 @@ public final class SelfTestMain {
         check("region mask", new Masks.RegionMask(new com.maxlananas.fawebim.core.region.CuboidRegion(
                 new BlockVector3(0, 0, 0), new BlockVector3(4, 4, 4))).test(2, 2, 2));
         check("expression mask", new Masks.ExpressionMask("y > 60", session, new Random()).test(0, 61, 0));
-        check("hotbar mask", new Masks.HotbarMask(java.util.Set.of(stone)) != null);
+        check("hotbar mask", new Masks.HotbarMask(null, java.util.Set.of(stone)) != null);
         check("axis mask", new Masks.AxisMask(1, 8) != null);
         check("simplex mask", new Masks.SimplexMask(0.1, -0.5, 0.5) != null);
         check("angle mask", new Masks.AngleMask(session, 0, 1, false, 1) != null);
@@ -690,7 +769,8 @@ public final class SelfTestMain {
         checkEquals("offset value", new BlockVector3(0, 1, 0), offset.offset());
         check("expression pattern", new Patterns.ExpressionPattern("y + 1").apply(new BlockVector3(0, 5, 0)) == 6);
         check("random state pattern", new Patterns.RandomState(new int[]{stone, dirt}) != null);
-        check("type apply pattern", new Patterns.TypeOrStateApplying(new Patterns.Single(stone)) != null);
+        check("type apply pattern", new Patterns.TypeOrStateApplying(stone, java.util.Map.of()) != null);
+        colourPatterns();
 
         // A dye colour on its own is the wool of that colour: the shorthand FAWE
         // accepts, read through the block registry like every other name.
@@ -733,6 +813,38 @@ public final class SelfTestMain {
                 .anyMatch(message -> message.contains("Unknown block")));
     }
 
+    /**
+     * Colours come from the table of texture colours rather than from a hash
+     * of the block's name, which the platform never replaced, and the answer
+     * of a colour pattern is worked out once per colour or state rather than
+     * at every block against every full block of the game.
+     */
+    private static void colourPatterns() {
+        BlockStateRegistry registry = BlockState.registry();
+        int redWool = registry.defaultState("minecraft:red_wool");
+        int whiteWool = registry.defaultState("minecraft:white_wool");
+        checkEquals("a block of the table has its colour", 0xA12722,
+                com.maxlananas.fawebim.core.pattern.MapColors.colorOf(registry, redWool));
+        Patterns.Color red = new Patterns.Color(0xA12722);
+        check("#color gives the block of that colour, the same everywhere",
+                red.apply(new BlockVector3(0, 0, 0)) == redWool && red.apply(new BlockVector3(900, 5, -40)) == redWool);
+
+        TestWorld world = new TestWorld("colour-patterns");
+        world.setBlock(0, 64, 0, whiteWool);
+        world.setBlock(9, 64, 9, whiteWool);
+        Patterns.ColorAdjust darken = new Patterns.ColorAdjust(world,
+                Patterns.ColorAdjust.Mode.DARKEN, 0.4);
+        int darker = darken.apply(new BlockVector3(0, 64, 0));
+        java.util.function.IntToDoubleFunction brightness = state -> {
+            int color = com.maxlananas.fawebim.core.pattern.MapColors.colorOf(registry, state);
+            return java.awt.Color.RGBtoHSB((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, null)[2];
+        };
+        check("#darken turns white wool into a darker block",
+                darker != whiteWool && brightness.applyAsDouble(darker) < brightness.applyAsDouble(whiteWool));
+        checkEquals("and gives every block of a state the same answer", darker,
+                darken.apply(new BlockVector3(9, 64, 9)));
+    }
+
     private static void testExpressions() {
         section("expressions");
         Expression expression = Expression.compile("x + y * 2");
@@ -751,6 +863,87 @@ public final class SelfTestMain {
         checkEquals("loop", 10.0, evaluate("s = 0; for (i = 1; i <= 4; i++) { s = s + i; } return s;"));
         checkEquals("while", 3.0, evaluate("i = 0; while (i < 3) { i = i + 1; } return i;"));
         check("noise", Math.abs(evaluate("sin(1)")) < 1);
+        expressionFunctionsAsInWorldEdit();
+    }
+
+    /**
+     * The functions take WorldEdit's arguments: min and max any number, the
+     * noises a seed first in their long forms; an unknown function or a wrong
+     * count is refused when the expression is read. Arguments go through a
+     * stack in the variables, so calls nest and allocate nothing.
+     */
+    private static void expressionFunctionsAsInWorldEdit() {
+        checkEquals("min takes any number of arguments", 1.0, evaluate("min(3, 1, 2)"));
+        checkEquals("and so does max", 5.0, evaluate("max(1, 5, 3)"));
+        checkEquals("calls nest, past the room the stack starts with", 12.0,
+                evaluate("max(1, 2, 3, 4, 5, 6, 7, min(9, 10), max(10, 11, abs(-12)))"));
+        checkEquals("rint rounds halves to even", 2.0, evaluate("rint(2.5)"));
+        checkEquals("ln is the natural logarithm", 1.0, evaluate("ln(e)"));
+        boolean unknown = false;
+        try {
+            Expression.compile("nosuch(1)");
+        } catch (Expression.ExpressionException expected) {
+            unknown = expected.getMessage().contains("nosuch");
+        }
+        check("an unknown function is refused when the expression is read", unknown);
+        boolean arity = false;
+        try {
+            Expression.compile("sin(1, 2)");
+        } catch (Expression.ExpressionException expected) {
+            arity = expected.getMessage().contains("takes 1");
+        }
+        check("so is a call with the wrong number of arguments", arity);
+        checkEquals("if() evaluates only the branch it takes", 0.0, evaluate("a = 0; b = if(1, 5, a = 3); return a;"));
+
+        Expression.Variables at = new Expression.Variables().set("x", 3.7).set("y", 1.2).set("z", -4.4);
+        double shortForm = Expression.compile("perlin(x, y, z)").evaluate(at);
+        double oneOctave = Expression.compile("perlin(0, x, y, z, 1, 1, 0.5)").evaluate(at);
+        checkEquals("WorldEdit's perlin of seed 0, frequency 1 and one octave is the short form", shortForm, oneOctave);
+        Expression fractal = Expression.compile("perlin(7, x, y, z, 0.1, 4, 0.5)");
+        double first = fractal.evaluate(at);
+        check("it gives the same value for the same seed and position", first == fractal.evaluate(at)
+                && Math.abs(first) <= 2);
+        check("and another for another seed", first != Expression.compile("perlin(8, x, y, z, 0.1, 4, 0.5)")
+                .evaluate(at));
+        boolean octaves = false;
+        try {
+            Expression.compile("perlin(0, x, y, z, 1, 40, 0.5)").evaluate(at);
+        } catch (Expression.ExpressionException expected) {
+            octaves = expected.getMessage().contains("octaves");
+        }
+        check("more than thirty octaves are refused, as in WorldEdit", octaves);
+        Expression ridged = Expression.compile("ridgedmulti(3, x, y, z, 0.2, 5)");
+        Expression cells = Expression.compile("voronoi(3, x, y, z, 0.25)");
+        double ridgedMin = Double.MAX_VALUE;
+        double ridgedMax = -Double.MAX_VALUE;
+        boolean below = false;
+        boolean above = false;
+        boolean bounded = true;
+        for (int x = 0; x < 40; x++) {
+            for (int z = 0; z < 40; z++) {
+                Expression.Variables point = new Expression.Variables().set("x", x).set("y", 5).set("z", z);
+                double value = ridged.evaluate(point);
+                ridgedMin = Math.min(ridgedMin, value);
+                ridgedMax = Math.max(ridgedMax, value);
+                double cell = cells.evaluate(point);
+                below |= cell < 0;
+                above |= cell > 0;
+                bounded &= Math.abs(cell) <= 1;
+            }
+        }
+        check("ridgedmulti stays from -1 to about 1 (" + ridgedMin + " to " + ridgedMax + ")",
+                ridgedMin >= -1 && ridgedMax <= 1.5 && ridgedMax > ridgedMin);
+        check("voronoi's long form gives cells from -1 to 1 on both sides of 0", below && above && bounded);
+        Expression.Variables near = new Expression.Variables().set("x", 10.5).set("y", 5).set("z", 10.5);
+        Expression.Variables nearer = new Expression.Variables().set("x", 10.51).set("y", 5).set("z", 10.5);
+        checkEquals("with one value over a cell", cells.evaluate(near), cells.evaluate(nearer));
+
+        TestWorld world = new TestWorld("expression-mask");
+        Masks.ExpressionMask counting = new Masks.ExpressionMask("a = a + 1; a == 1", world, new Random(1));
+        check("a mask's expression starts every block with its own variables",
+                counting.test(0, 64, 0) && counting.test(1, 64, 0) && counting.test(2, 64, 0));
+        Masks.ExpressionMask position = new Masks.ExpressionMask("x == 5 && bz == 3", world, new Random(1));
+        check("and reads the position of each", position.test(5, 64, 19) && !position.test(6, 64, 19));
     }
 
     private static double evaluate(String input) {
@@ -776,7 +969,7 @@ public final class SelfTestMain {
             edit.setBlock(position.x(), position.y(), position.z(), stone);
         }
         edit.flushQueue();
-        checkEquals("blocks changed", 75, edit.getBlocksChanged());
+        checkEquals("blocks changed", 75L, edit.getBlocksChanged());
         checkEquals("world updated", stone, world.getBlock(2, 71, 2));
         check("history recorded", session.getHistory().canUndo());
         check("history changes", session.getHistory().totalChanges() == 75);
@@ -796,12 +989,18 @@ public final class SelfTestMain {
 
         // The most changes one chunk section can hold, which takes a change set
         // through every step it grows by, and the undo of all of them.
+        // Section 5 (y 80 to 95) is all air, so each of its 4096 cells is one
+        // change. Writing the same cell again with the state it already holds in
+        // the buffer is not a change, which the count used to get wrong.
         EditSession wide = new EditSession(world, session, "//set wide");
         for (int i = 0; i < 4096; i++) {
-            wide.setBlock(i & 15, 71, (i >> 4) & 15, stone);
+            wide.setBlock(i & 15, 80 + (i >> 8), (i >> 4) & 15, stone);
+        }
+        for (int i = 0; i < 256; i++) {
+            wide.setBlock(i & 15, 80, (i >> 4) & 15, stone);
         }
         wide.flushQueue();
-        checkEquals("a full section of changes is recorded", 4096, wide.getBlocksChanged());
+        checkEquals("a full section of changes is recorded", 4096L, wide.getBlocksChanged());
         var wideRecord = session.getHistory().undo();
         checkEquals("the record holds every change", 4096, wideRecord.changeCount());
         EditSession wideUndo = new EditSession(world, session, "undo", false);
@@ -813,7 +1012,7 @@ public final class SelfTestMain {
         wideUndo.flushQueue();
         int restored = 0;
         for (int i = 0; i < 4096; i++) {
-            if (world.getBlock(i & 15, 71, (i >> 4) & 15) == air) {
+            if (world.getBlock(i & 15, 80 + (i >> 8), (i >> 4) & 15) == air) {
                 restored++;
             }
         }
@@ -868,7 +1067,9 @@ public final class SelfTestMain {
         // block entity and biome
         NbtCompound nbt = new NbtCompound();
         nbt.putString("id", "minecraft:chest");
+        nbt.putString("CustomName", "\"Stored\"");
         EditSession nbtSession = new EditSession(world, session, "nbt");
+        nbtSession.setBlock(1, 71, 1, BlockState.registry().defaultState("minecraft:chest"));
         nbtSession.setBlockEntity(1, 71, 1, nbt);
         // The data waits for the flush, so that it is written once the block it
         // belongs to is in the world.
@@ -876,7 +1077,8 @@ public final class SelfTestMain {
         nbtSession.flushQueue();
         check("block entity stored", world.getBlockEntity(1, 71, 1) != null);
         check("block entity keeps its data", "minecraft:chest".equals(
-                world.getBlockEntity(1, 71, 1).getString("id", "")));
+                world.getBlockEntity(1, 71, 1).getString("id", ""))
+                && "\"Stored\"".equals(world.getBlockEntity(1, 71, 1).getString("CustomName", "")));
         EditSession biomeSession = new EditSession(world, session, "biome");
         check("biome set", biomeSession.setBiome(4, 68, 4, 5));
         biomeSession.flushQueue();
@@ -1024,7 +1226,9 @@ public final class SelfTestMain {
                 new BlockVector3(0, 64, 0), new BlockVector3(7, 71, 7));
         int sourceBiome = world.getBiome(0, 68, 0);
         BlockArrayClipboard biomeClipboard = Clipboards.copy(world, biomeRegion, edit, false, true, null, false);
-        checkEquals("a biome copy keeps one entry per cell", 8, biomeClipboard.biomeEntries().size());
+        int[] biomeCells = {0};
+        biomeClipboard.forEachBiomeCell((minX, minY, minZ, maxX, maxY, maxZ, biome) -> biomeCells[0]++);
+        checkEquals("a biome copy keeps one entry per cell", 8, biomeCells[0]);
         checkEquals("the copied biome is the one of the world", sourceBiome, biomeClipboard.getBiome(0, 68, 0));
         EditSession biomePaste = new EditSession(world, actor.session(), "paste biomes");
         Clipboards.paste(biomeClipboard, new BlockVector3(40, 100, 40), biomePaste,
@@ -1100,7 +1304,7 @@ public final class SelfTestMain {
 
         // Upstream's recipe is #perlin[scale][blocks], the noise picking the block.
         CommandManager.get().dispatch(builder, "//set #perlin[9][dirt,stone]");
-        check("//set #perlin[9][dirt,stone] runs", builder.lastMessage().contains("block(s) affected"));
+        check("//set #perlin[9][dirt,stone] runs", builder.lastMessage().contains("blocks affected"));
         int dirt = BlockState.registry().defaultState("minecraft:dirt");
         int stone = BlockState.registry().defaultState("minecraft:stone");
         int dirtSeen = 0;
@@ -1195,6 +1399,13 @@ public final class SelfTestMain {
         Operations.fall(world, settled, region, true, null);
         settled.flushQueue();
         check("//fall -m leaves a resting block where it is", world.getBlock(10, 70, 10) == stone);
+        CommandManager.get().dispatch(actor, "//pos1 8,70,8");
+        CommandManager.get().dispatch(actor, "//pos2 15,90,15");
+        world.setBlock(12, 85, 12, stone);
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//fall -m");
+        check("//fall says its blocks dropped; it said they were generated",
+                plain(actor.lastMessage()).contains("Dropped: 1 block affected"));
 
         checkEquals("schematic format of .schem", "sponge.3",
                 com.maxlananas.fawebim.core.clipboard.Schematics.formatOf("house.schem"));
@@ -1234,6 +1445,17 @@ public final class SelfTestMain {
         centered.flushQueue();
         check("clipboard brush pastes the clipboard's air", world.getBlock(10, 80, 10) == air
                 && world.getBlock(9, 80, 10) == stone && world.getBlock(11, 80, 10) == stone);
+
+        // Centred whatever the origin: //copy takes the player's position,
+        // which may be anywhere around the box.
+        source.setOrigin(new BlockVector3(5, 3, -2));
+        EditSession offOrigin = new EditSession(world, session, "brush");
+        plain.apply(offOrigin, new BlockVector3(10, 90, 10), actor);
+        offOrigin.flushQueue();
+        check("clipboard brush centres a clipboard whose origin is not its corner",
+                world.getBlock(9, 90, 10) == stone && world.getBlock(11, 90, 10) == stone
+                        && world.getBlock(14, 87, 12) != stone);
+        source.setOrigin(new BlockVector3(0, 0, 0));
 
         // -a skips the clipboard's air cells instead of erasing the target.
         world.setBlock(9, 82, 10, stone);
@@ -1322,8 +1544,8 @@ public final class SelfTestMain {
         check("//smooth lowered the spike", world.getBlock(25, 74, 25) == air && world.getBlock(25, 72, 25) == air);
         check("//smooth kept a top block", world.getBlock(25, 70, 25) != air);
         check("//smooth reported the change", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Smoothed: ")
-                        && plain(message).contains("block(s) affected in ")));
+                .anyMatch(message -> plain(message).contains("\u00bb Smoothed: ")
+                        && plain(message).contains("blocks affected in ")));
 
         // The optional second argument is the mask the height map is built from,
         // so a stone height map does not see a sand spike at all.
@@ -1336,7 +1558,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//smooth 1 stone");
         check("//smooth <mask> left the sand alone", world.getBlock(45, 74, 45) == sand);
         check("//smooth <mask> ran", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Smoothed: ")));
+                .anyMatch(message -> plain(message).contains("\u00bb Smoothed: ")));
 
         // //snowsmooth blurs the snow layer of every column instead of the terrain.
         for (int x = 20; x <= 30; x++) {
@@ -1360,10 +1582,10 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/brush snowsmooth 5 1 -l 3 -m stone");
         check("brush snowsmooth binds the smoother",
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                         instanceof Brushes.SnowSmoothBrush);
         EditSession snowSession = new EditSession(world, session, "brush snowsmooth");
-        com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+        com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                 .apply(snowSession, new BlockVector3(25, 71, 25), actor);
         snowSession.flushQueue();
         check("brush snowsmooth ran with -l and -m", actor.messages().stream()
@@ -1374,7 +1596,7 @@ public final class SelfTestMain {
         world.setBlock(100, 91, 100, air);
         CommandManager.get().dispatch(actor, "/brush sphere dirt 2");
         com.maxlananas.fawebim.core.brush.Brush sphere =
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session);
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem());
         check("brush sphere took its radius", sphere != null && sphere.radius() == 2.0);
         EditSession sphereSession = new EditSession(world, session, "brush sphere");
         sphere.apply(sphereSession, new BlockVector3(100, 90, 100), actor);
@@ -1388,10 +1610,10 @@ public final class SelfTestMain {
         world.setBlock(70, 72, 70, stone);
         CommandManager.get().dispatch(actor, "/brush smooth 3 1 stone");
         check("brush smooth binds the terrain smoother",
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                         instanceof Brushes.SmoothBrush);
         EditSession smoothSession = new EditSession(world, session, "brush smooth");
-        com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+        com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                 .apply(smoothSession, new BlockVector3(70, 69, 70), actor);
         smoothSession.flushQueue();
         check("brush smooth flattened the bump", world.getBlock(70, 72, 70) == air);
@@ -1404,7 +1626,7 @@ public final class SelfTestMain {
         Schematics.save(stamps, "populate-selftest", "sponge.3");
         CommandManager.get().dispatch(actor, "/brush populateschematic populate-selftest.schem stone 4 100");
         check("brush populateschematic binds the scatter brush",
-                com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                         instanceof Brushes.PopulateSchematicBrush);
         TestWorld populated = new TestWorld("populate");
         populated.fillFlat(70);
@@ -1412,12 +1634,13 @@ public final class SelfTestMain {
         scatter.session().setMaxBlocksChanged(100000);
         CommandManager.get().dispatch(scatter, "/brush populateschematic populate-selftest.schem stone 4 100");
         EditSession scatterSession = new EditSession(populated, scatter.session(), "populate");
-        int stamped = com.maxlananas.fawebim.core.brush.BrushFactory.current(scatter.session())
+        int stamped = com.maxlananas.fawebim.core.brush.BrushFactory.current(scatter)
                 .apply(scatterSession, new BlockVector3(0, 70, 0), scatter);
         scatterSession.flushQueue();
         check("brush populateschematic placed copies", stamped > 0);
         // The mask decides which block of a column counts as the surface: the
-        // stone one, so no copy lands on the grass above it.
+        // stone one. Each copy stands on it, one block up as FAWE's does, and
+        // none lands on the grass above.
         int onStone = 0;
         int onSurface = 0;
         for (int x = -16; x < 16; x++) {
@@ -1426,7 +1649,7 @@ public final class SelfTestMain {
                     if (populated.getBlock(x, y, z) != gold) {
                         continue;
                     }
-                    if (y == 67) {
+                    if (y == 68) {
                         onStone++;
                     } else if (y >= 69) {
                         onSurface++;
@@ -1506,10 +1729,10 @@ public final class SelfTestMain {
             world.setBlock(50, 85, 50, stone);
             CommandManager.get().dispatch(actor, "/brush gravity 5 -h 20");
             check("gravity -h 20 binds a gravity brush",
-                    com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+                    com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                             instanceof Brushes.GravityBrush);
             EditSession byHeight = new EditSession(world, session, "brush gravity -h 20");
-            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                     .apply(byHeight, new BlockVector3(50, 71, 50), actor);
             byHeight.flushQueue();
             check("gravity -h 20 used the height", world.getBlock(50, 51, 50) == stone
@@ -1519,7 +1742,7 @@ public final class SelfTestMain {
             world.setBlock(60, 75, 60, stone);
             CommandManager.get().dispatch(actor, "/brush gravity 5 -h");
             EditSession byFlag = new EditSession(world, session, "brush gravity -h");
-            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                     .apply(byFlag, new BlockVector3(60, 71, 60), actor);
             byFlag.flushQueue();
             check("gravity -h alone used the world floor", world.getBlock(60, world.minY(), 60) == stone
@@ -1536,7 +1759,7 @@ public final class SelfTestMain {
             world.setBlock(71, 80, 70, dirt);
             CommandManager.get().dispatch(actor, "/brush clipboard -o -m minecraft:stone");
             EditSession sourceMasked = new EditSession(world, session, "brush clipboard -m");
-            com.maxlananas.fawebim.core.brush.BrushFactory.current(session)
+            com.maxlananas.fawebim.core.brush.BrushFactory.current(session, actor.heldItem())
                     .apply(sourceMasked, new BlockVector3(70, 80, 70), actor);
             sourceMasked.flushQueue();
             check("clipboard brush -m pasted onto the matching block", world.getBlock(70, 80, 70) == gold);
@@ -1586,6 +1809,7 @@ public final class SelfTestMain {
         farActor.session().setMaxBlocksChanged(1_000_000);
         CommandManager.get().dispatch(farActor, "//pos1 -22,-40,-22");
         CommandManager.get().dispatch(farActor, "//pos2 -5,-30,-5");
+        farActor.setPosition(new BlockVector3(-22, -40, -22));
         CommandManager.get().dispatch(farActor, "//copy");
         CommandManager.get().dispatch(farActor, "//paste -a 100,100,100");
         int wrong = 0;
@@ -1678,6 +1902,24 @@ public final class SelfTestMain {
 
     private static void testConfigAndSettings() throws Exception {
         section("configuration");
+        // The version the chat, /version and the join banner print is the one the
+        // build stamps into fabric.mod.json and the jar name.
+        Path properties = Path.of("").toAbsolutePath();
+        while (properties != null && !Files.isRegularFile(properties.resolve("gradle.properties"))) {
+            properties = properties.getParent();
+        }
+        check("gradle.properties is found above " + Path.of("").toAbsolutePath(), properties != null);
+        if (properties != null) {
+            java.util.Properties build = new java.util.Properties();
+            try (var in = Files.newBufferedReader(properties.resolve("gradle.properties"))) {
+                build.load(in);
+            }
+            checkEquals("Config.VERSION is the mod_version of the build", build.getProperty("mod_version"),
+                    Config.VERSION);
+            checkEquals("Config.MINECRAFT_VERSION is the minecraft_version of the build",
+                    build.getProperty("minecraft_version"), Config.MINECRAFT_VERSION);
+        }
+
         Path directory = Files.createTempDirectory("fawebim-config");
         Config config = Config.get();
         config.load(directory);
@@ -1948,10 +2190,10 @@ public final class SelfTestMain {
         check("//desel responded", actor.messages().size() > 0);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/brush sphere stone 5");
-        check("brush bound", com.maxlananas.fawebim.core.brush.BrushFactory.current(actor.session()) != null);
+        check("brush bound", com.maxlananas.fawebim.core.brush.BrushFactory.current(actor) != null);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/tool tree");
-        check("tool bound", com.maxlananas.fawebim.core.tool.Tools.current(actor.session()) != null);
+        check("tool bound", com.maxlananas.fawebim.core.tool.Tools.current(actor) != null);
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/fast");
         check("/fast responded", plain(actor.lastMessage()).contains("Fast mode"));
@@ -1989,7 +2231,9 @@ public final class SelfTestMain {
                 }
                 boolean refused = false;
                 for (String message : console.messages()) {
-                    if (message.startsWith("Command failed")) {
+                    // The answers are coloured, so the text is compared without
+                    // its codes: a "§cCommand failed" never started with it.
+                    if (plain(message).contains("Command failed")) {
                         failures.add(line + ": " + message);
                     }
                     refused |= message.contains("must be run by a player");
@@ -2100,7 +2344,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//snow 4");
         check("//snow runs at the placement", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Snowed: ") && plain(m).contains("49")));
+                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("69")));
     }
 
     private static void testSnapshotSelection() {
@@ -2140,7 +2384,7 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/snapshot sel 1");
         check("/snapshot sel takes an index",
-                plain(actor.lastMessage()).startsWith("\u00bb Snapshot: set to "));
+                plain(actor.lastMessage()).contains("\u00bb Snapshot: set to "));
         check("and it holds the newest snapshot", actor.session().getActiveSnapshot() != null);
 
         actor.clearMessages();
@@ -2204,14 +2448,17 @@ public final class SelfTestMain {
         check("an unknown side effect lists the ones the engine has",
                 plain(actor.lastMessage()).contains("Unknown side effect 'nope'"));
 
-        // The lighting pass the side effect gates is the one the flush runs.
+        // The side effect reaches the write of every chunk, which is where the
+        // world lights what it writes; the flush relights no chunk as a whole.
+        world.litChunks().clear();
         world.relitChunks().clear();
         CommandManager.get().dispatch(actor, "//set minecraft:stone");
-        check("lighting off leaves the chunks it wrote unlit", world.relitChunks().isEmpty());
+        check("lighting off writes the chunks without light", world.litChunks().isEmpty());
         CommandManager.get().dispatch(actor, "//perf lighting on");
-        world.relitChunks().clear();
+        world.litChunks().clear();
         CommandManager.get().dispatch(actor, "//set minecraft:dirt");
-        check("lighting on relights the chunks of the edit", !world.relitChunks().isEmpty());
+        check("lighting on writes the chunks with their light", !world.litChunks().isEmpty());
+        check("an edit relights no whole chunk", world.relitChunks().isEmpty());
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//perf off");
@@ -2237,6 +2484,42 @@ public final class SelfTestMain {
         check("an unknown side effect is refused by //update",
                 plain(actor.lastMessage()).contains("Unknown side effect 'nonsense'"));
 
+        // The light commands act on every loaded chunk between the corners, as
+        // FAWE's on every chunk, and count them; the two that wrote levels only
+        // point to light blocks.
+        for (int chunkX = -1; chunkX <= 1; chunkX++) {
+            world.loadChunk(chunkX, 0);
+        }
+        CommandManager.get().dispatch(actor, "//pos1 -1,30,0");
+        CommandManager.get().dispatch(actor, "//pos2 40,30,8");
+        check("the selection reaches a chunk that is not loaded", !world.isChunkLoaded(2, 0));
+        world.relitChunks().clear();
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//fixlighting");
+        checkEquals("//fixlighting relights the loaded chunks between the corners",
+                java.util.Set.of(new BlockVector2(-1, 0), new BlockVector2(0, 0), new BlockVector2(1, 0)),
+                world.relitChunks());
+        check("//fixlighting counts them", plain(actor.lastMessage()).contains("Lighting propagated")
+                && plain(actor.lastMessage()).contains("3 chunks"));
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//removelight");
+        checkEquals("//removelighting zeroes the light of the same chunks", world.relitChunks(),
+                world.darkenedChunks());
+        check("//removelighting counts them", plain(actor.lastMessage()).contains("Lighting removed")
+                && plain(actor.lastMessage()).contains("3 chunks"));
+        for (String command : new String[] {"//setblocklight", "//setlight", "//setskylight"}) {
+            world.relitChunks().clear();
+            int before = world.setCount();
+            actor.clearMessages();
+            CommandManager.get().dispatch(actor, command);
+            check(command + " points to light blocks, as FAWE does",
+                    plain(actor.lastMessage()).contains("light[level=15]"));
+            check(command + " changes no block and no light",
+                    world.setCount() == before && world.relitChunks().isEmpty());
+        }
+        CommandManager.get().dispatch(actor, "//pos1 0,30,0");
+        CommandManager.get().dispatch(actor, "//pos2 8,30,8");
+
         // //reorder takes upstream's three names and, as upstream does, keeps the
         // mode at fast.
         actor.clearMessages();
@@ -2250,9 +2533,11 @@ public final class SelfTestMain {
         check("//reorder only accepts upstream's names",
                 actor.lastMessage().contains("Reorder mode must be none, multi or fast"));
 
+        // The drawing is off until the player turns it on.
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//drawsel false");
-        check("//drawsel takes a state", actor.lastMessage().contains("Selection drawing disabled"));
+        check("//drawsel knows the drawing starts off",
+                actor.lastMessage().contains("Selection drawing already disabled"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//drawsel true");
         check("//drawsel takes a state", actor.lastMessage().contains("Selection drawing enabled"));
@@ -2321,21 +2606,21 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove items");
         check("/remove items takes the drops around the player",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("2 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Removed: 2 entities")));
         checkEquals("the painting and the distant arrow stay", 2, world.getEntities().size());
 
         // A radius of -1 is every loaded entity, however far away it sits.
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove arrows -1");
         check("/remove arrows -1 reaches the whole world",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("1 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Removed: 1 entity")));
 
         // A radius the cylinder ignores: the arrow is out of reach at five blocks.
         world.addEntity(new EntityData("minecraft:arrow", new NbtCompound(), new Vector3(900.5, 40, 900.5)));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "/remove arrows 5");
         check("/remove arrows 5 leaves distant entities alone",
-                actor.messages().stream().anyMatch(m -> plain(m).contains("0 entit(y/ies)")));
+                actor.messages().stream().anyMatch(m -> plain(m).contains("Removed: 0 entities")));
         checkEquals("the distant arrow is still loaded", 2, world.getEntities().size());
 
         actor.clearMessages();
@@ -2355,33 +2640,39 @@ public final class SelfTestMain {
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//green 6");
         check("//green converts the dirt of its cylinder", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Greened: ") && plain(m).contains("81")));
+                .anyMatch(m -> plain(m).contains("\u00bb Greened: ") && plain(m).contains("81")));
 
         actor.clearMessages();
+        // WorldEdit's cylinder, half a block wider than the radius: 69 columns
+        // where the thaw's disc, FAWE's too, has 49.
         CommandManager.get().dispatch(actor, "//snow 4");
-        check("//snow covers the disc around the player", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Snowed: ") && plain(m).contains("49")));
+        check("//snow covers the cylinder around the player", actor.messages().stream()
+                .anyMatch(m -> plain(m).contains("\u00bb Snowed: ") && plain(m).contains("69")));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//thaw 4");
         check("//thaw takes the snow back", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Thawed: ") && plain(m).contains("49")));
+                .anyMatch(m -> plain(m).contains("\u00bb Thawed: ") && plain(m).contains("49")));
 
-        // Fire in the cube around the player, and nothing else, goes away.
+        // Fire in the cube around the player, and nothing else, goes away. The
+        // placement follows pos1 to the middle of the fire, and a radius of 2 is
+        // FAWE's apothem: a block each way.
         CommandManager.get().dispatch(actor, "//pos1 7,30,7");
         CommandManager.get().dispatch(actor, "//pos2 9,30,9");
         CommandManager.get().dispatch(actor, "//set minecraft:fire");
+        CommandManager.get().dispatch(actor, "//pos1 8,30,8");
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//extinguish 2");
         check("//extinguish removes nearby fire", actor.messages().stream()
-                .anyMatch(m -> plain(m).startsWith("\u00bb Extinguished: ") && plain(m).contains("9")));
+                .anyMatch(m -> plain(m).contains("\u00bb Extinguished: ") && plain(m).contains("9")));
+        CommandManager.get().dispatch(actor, "//pos1 7,30,7");
         CommandManager.get().dispatch(actor, "//count minecraft:fire");
-        check("no fire is left", count(actor).equals("Count: 0"));
+        check("no fire is left", count(actor).equals("Counted: 0"));
         // The command removes fire and nothing else, so the grass the fire sat on
         // is still there.
         CommandManager.get().dispatch(actor, "//pos1 4,29,4");
         CommandManager.get().dispatch(actor, "//pos2 12,29,12");
         check("the ground under the fire is untouched",
-                countOf(actor, "minecraft:grass_block").equals("Count: 81"));
+                countOf(actor, "minecraft:grass_block").equals("Counted: 81"));
     }
 
     private static void testSelectionTransforms() {
@@ -2428,13 +2719,14 @@ public final class SelfTestMain {
         console.clearMessages();
         CommandManager.get().dispatch(console, "//hpyramid minecraft:stone 4");
         check("a shape still builds for a source without a player", console.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Created: ")
+                .anyMatch(message -> plain(message).contains("\u00bb Created: ")
                         && plain(message).contains("81")));
 
         // The same commands run for a player at the position they stand on.
         TestActor player = new TestActor("Builder", world, new BlockVector3(40, 71, 0));
         CommandManager.get().dispatch(player, "//tree oak");
-        check("//tree plants for a player", player.lastMessage().contains("Tree planted at"));
+        check("//tree binds the tree tool for a player, as FAWE's does",
+                plain(player.lastMessage()).contains("Tree tool bound"));
         player.clearMessages();
         CommandManager.get().dispatch(player, "//wand");
         check("//wand hands the wand to a player",
@@ -2452,14 +2744,14 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//pos1 0,70,0");
         CommandManager.get().dispatch(actor, "//pos2 3,70,3");
         CommandManager.get().dispatch(actor, "//set minecraft:stone");
-        check("the selection is stone", count(actor).equals("Count: 16"));
+        check("the selection is stone", count(actor).equals("Counted: 16"));
         CommandManager.get().dispatch(actor, "//gsmask minecraft:stone");
-        check("a source mask leaves the reads the blocks it accepts", count(actor).equals("Count: 16"));
+        check("a source mask leaves the reads the blocks it accepts", count(actor).equals("Counted: 16"));
         CommandManager.get().dispatch(actor, "//gsmask minecraft:dirt");
-        check("a source mask hides the blocks it rejects", count(actor).equals("Count: 0"));
+        check("a source mask hides the blocks it rejects", count(actor).equals("Counted: 0"));
         CommandManager.get().dispatch(actor, "//gsmask");
         CommandManager.get().dispatch(actor, "//count minecraft:stone");
-        check("clearing the source mask restores the reads", count(actor).equals("Count: 16"));
+        check("clearing the source mask restores the reads", count(actor).equals("Counted: 16"));
     }
 
     /** Counts the selection and answers without the chat colouring. */
@@ -2471,14 +2763,14 @@ public final class SelfTestMain {
     /** The block count the last command reported, or -1 when it said nothing. */
     private static long actorBlockCount(TestActor actor) {
         java.util.regex.Matcher matcher =
-                java.util.regex.Pattern.compile("([0-9,]+) block\\(s\\) affected").matcher(
+                java.util.regex.Pattern.compile("([0-9,]+) blocks? affected").matcher(
                         actor.lastMessage() == null ? "" : actor.lastMessage().replaceAll("\u00a7.", ""));
         return matcher.find() ? Long.parseLong(matcher.group(1).replace(",", "")) : -1;
     }
 
     private static String countOf(TestActor actor, String block) {
         CommandManager.get().dispatch(actor, "//count " + block);
-        return actor.lastMessage().replaceAll("\u00a7.", "");
+        return actor.lastMessage().replaceAll("\u00a7.", "").replaceFirst("^FAWE \u00bb ", "").trim();
     }
 
     private static void testSplitCommands() {
@@ -2569,7 +2861,8 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(solidBuilder, "//pyramid stone 6");
         check("//pyramid is solid", solidWorld.getBlock(0, 75, 0) == stone);
 
-        // //fillr fills the air above the ground and stops at its depth.
+        // //fillr fills the air from its start down, stopping at its depth, and
+        // nothing above its start, as WorldEdit's does.
         TestWorld hole = new TestWorld("own-name-fill");
         hole.fillFlat(60);
         int grass = BlockState.registry().defaultState("minecraft:grass_block");
@@ -2584,7 +2877,9 @@ public final class SelfTestMain {
         }
         CommandManager.get().dispatch(digger, "//fillr stone 5 2");
         check("//fillr fills the hole", hole.getBlock(3, 61, 3) == stone
-                && hole.getBlock(4, 63, 4) == stone);
+                && hole.getBlock(4, 61, 4) == stone);
+        check("//fillr leaves what is above its start", hole.getBlock(4, 62, 4) == air
+                && hole.getBlock(4, 63, 4) == air);
         check("//fillr stops at its depth", hole.getBlock(3, 59, 3) == grass
                 && hole.getBlock(4, 60, 4) == stone);
         digger.clearMessages();
@@ -2665,7 +2960,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(planter, "//pos2 7,79,7");
         CommandManager.get().dispatch(planter, "//forestgen 5 mega_redwood 5");
         check("//forestgen takes a WorldEdit tree type",
-                plain(planter.lastMessage()).startsWith("\u00bb Planted: "));
+                plain(planter.lastMessage()).contains("\u00bb Planted: "));
         planter.clearMessages();
         CommandManager.get().dispatch(planter, "//forestgen 5 palm 5");
         check("//forestgen refuses an unknown tree type",
@@ -2681,15 +2976,18 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(sweeper, "//set stone");
         CommandManager.get().dispatch(sweeper, "//air");
         check("//air clears the selection",
-                plain(sweeper.lastMessage()).contains("Set to air: 16 block(s)"));
-        check("//air left the selection empty", count(sweeper).equals("Count: 0"));
+                plain(sweeper.lastMessage()).contains("Set to air: 16 blocks"));
+        check("//air left the selection empty", count(sweeper).equals("Counted: 0"));
 
         // //ores plants vanilla's ore distribution where the mask allows it,
         // which is FAWE's own ore command rather than the pattern form //ore is.
         TestWorld vein = new TestWorld("own-name-ores");
         vein.fillFlat(70);
         TestActor miner = new TestActor("Vale", vein, new BlockVector3(0, 71, 0));
-        CommandManager.get().dispatch(miner, "//pos1 0,60,0");
+        // The veins are placed at random, as in the game: a column from y 0 to
+        // 70 is tall enough for the coal, copper and iron bands to always land
+        // some, where eleven layers sometimes held none.
+        CommandManager.get().dispatch(miner, "//pos1 0,0,0");
         CommandManager.get().dispatch(miner, "//pos2 15,70,15");
         CommandManager.get().dispatch(miner, "//set stone");
         miner.clearMessages();
@@ -2697,7 +2995,7 @@ public final class SelfTestMain {
         check("//ores writes the ore bands into the matching rock", actorBlockCount(miner) > 0);
         int oreBlocks = 0;
         for (int x = 0; x <= 15; x++) {
-            for (int y = 60; y <= 70; y++) {
+            for (int y = 0; y <= 70; y++) {
                 for (int z = 0; z <= 15; z++) {
                     String name = BlockState.registry().name(vein.getBlock(x, y, z));
                     if (name.endsWith("_ore") || name.equals("minecraft:coal_ore")) {
@@ -2749,7 +3047,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(miner, "//pos1 0,60,0");
         CommandManager.get().dispatch(miner, "//pos2 15,70,15");
         CommandManager.get().dispatch(miner, "/setbiome minecraft:plains");
-        check("/setbiome sets the selection", miner.lastMessage().contains("biome cell(s)"));
+        check("/setbiome sets the selection", miner.lastMessage().contains("biome cells"));
         miner.clearMessages();
         CommandManager.get().dispatch(miner, "/setbiome minecraft:desert -p");
         check("/setbiome -p sets the block the player stands in",
@@ -2880,9 +3178,25 @@ public final class SelfTestMain {
         simple.clearMessages();
         CommandManager.get().dispatch(simple, "//regen");
         check("//regen without a seed regenerates", simple.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Regenerated: ")));
+                .anyMatch(message -> plain(message).contains("\u00bb Regenerated: ")));
         check("//regen without a seed says nothing failed", simple.messages().stream()
                 .noneMatch(message -> message.contains("Command failed")));
+
+        // //regen rewrote the whole chunks under the selection, past it, and
+        // could not be undone: it copies the selection out of generated terrain.
+        TestWorld kept = new TestWorld("regen-selection");
+        kept.fillFlat(70);
+        TestActor keeper = new TestActor("Keeper", kept, new BlockVector3(0, 71, 0));
+        int gold = BlockState.registry().defaultState("minecraft:gold_block");
+        kept.setBlock(2, 90, 2, gold);
+        kept.setBlock(9, 90, 9, gold);
+        CommandManager.get().dispatch(keeper, "//pos1 0,60,0");
+        CommandManager.get().dispatch(keeper, "//pos2 4,95,4");
+        CommandManager.get().dispatch(keeper, "//regen");
+        check("//regen replaces what is inside the selection", kept.getBlock(2, 90, 2) != gold);
+        check("and leaves the rest of the chunk alone", kept.getBlock(9, 90, 9) == gold);
+        CommandManager.get().dispatch(keeper, "//undo");
+        check("//undo puts back what //regen replaced", kept.getBlock(2, 90, 2) == gold);
     }
 
 
@@ -2971,14 +3285,15 @@ public final class SelfTestMain {
     private static void testChatFormatting() {
         // The highlight colours the values inside a line and leaves the words
         // alone, and a plain dump of the line is exactly what was written.
-        String written = "Cut 384 block(s) around 12, 70, -3 with 'my build' -h #perlin";
+        String written = "Cut 384 blocks around 12, 70, -3 with 'my build' -h #perlin";
         String styled = Msg.info(written).raw();
         check("the counts are highlighted", styled.contains("§b384"));
         check("the coordinates are highlighted", styled.contains("§b12") && styled.contains("§b-3"));
         check("a switch is highlighted", styled.contains("§e-h"));
         check("a pattern name is highlighted", styled.contains("§d#perlin"));
         check("a quoted name is highlighted", styled.contains("§f'my build'§7"));
-        check("the words are untouched", Msg.info(written).plain().equals(written));
+        check("the words are untouched", Msg.info(written).plain().equals(
+                com.maxlananas.fawebim.core.util.Theme.TAG + " \u00bb " + written));
 
         section("chat");
         String black = Msg.gradient("ab", 0x000000, 0xFFFFFF);
@@ -2986,9 +3301,11 @@ public final class SelfTestMain {
                 black.equals("\u00a7x\u00a70\u00a70\u00a70\u00a70\u00a70\u00a70a"
                         + "\u00a7x\u00a7f\u00a7f\u00a7f\u00a7f\u00a7f\u00a7fb"));
         check("a gradient still reads as its text", Msg.of(black).plain().equals("ab"));
-        check("a one character word is left alone", Msg.gradient("a", 0, 0xFFFFFF).equals("a"));
-        check("a title is a gradient with the marker", Msg.title("Settings").plain().equals("\u00bb Settings")
-                && Msg.title("Settings").raw().startsWith("\u00a78\u00bb \u00a7x"));
+        check("a one character word takes the first colour",
+                Msg.gradient("a", 0, 0xFFFFFF).equals(com.maxlananas.fawebim.core.util.Theme.hex(0) + "a"));
+        check("a title opens with the name in the gradient, then the marker",
+                Msg.title("Settings").plain().equals(com.maxlananas.fawebim.core.util.Theme.TAG + " \u00bb Settings")
+                && Msg.title("Settings").raw().startsWith("\u00a7x"));
 
         // The listings a player sees carry the heading, not just the helpers.
         TestWorld world = new TestWorld("chat");
@@ -3094,24 +3411,28 @@ public final class SelfTestMain {
         TestActor actor = new TestActor("Preview", world, new BlockVector3(0, 71, 0));
         CommandManager.get().dispatch(actor, "//pos1 1,2,3");
         CommandManager.get().dispatch(actor, "//pos2 12,71,14");
-        Msg size = com.maxlananas.fawebim.core.util.Cui.size(actor.session().getSelection(world));
+        Msg size = com.maxlananas.fawebim.core.util.Cui.size(actor.session().getSelector(world));
         check("the size line shows the three dimensions", size.plain().contains("12x70x12"));
-        check("the size line counts the blocks", size.plain().contains("10,080"));
-        check("the size line names both corners", size.plain().contains("1, 2, 3")
-                && size.plain().contains("12, 71, 14"));
+        check("the size line counts the blocks", size.plain().contains("10,080 blocks"));
+        check("the size line names the shape", size.plain().contains("Cuboid"));
+        // The line sits above the hotbar: it says what the selection is, not
+        // where both corners are, which made it run off the screen.
+        check("the size line is short", size.plain().length() <= 40);
         check("the size line is coloured", size.raw().contains("\u00a7"));
 
+        // The preview is off until a player asks for it.
+        check("a new session does not draw the selection", !new LocalSession().isDrawSelection());
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui false");
-        check("//cui false turns the preview off", !actor.session().isDrawSelection());
+        check("//cui false leaves the preview off", !actor.session().isDrawSelection());
         check("//cui answers with a result line", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("Selection preview")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui");
         check("//cui without an argument turns the preview on", actor.session().isDrawSelection());
-        check("//cui says where the outline is drawn", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("cyan")));
+        check("//cui says how the selection is drawn", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("particles")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cui false");
@@ -3145,9 +3466,9 @@ public final class SelfTestMain {
         int pages = integerBetween(heading, "page 1/", ")");
         check("the command list runs over several pages", pages > 1);
         check("a page lists commands", first.stream().anyMatch(message ->
-                plain(message).startsWith("  ·")));
+                plain(message).startsWith("  - ")));
         check("the first page points at the next one", first.stream().anyMatch(message ->
-                plain(message).contains("next //help -p 2")));
+                plain(message).contains("next: //help -p 2")));
 
         // The count in the heading is the number of commands the listing covers:
         // walking every page has to come back with exactly that many rows.
@@ -3160,7 +3481,7 @@ public final class SelfTestMain {
             CommandManager.get().dispatch(actor, "//help -p " + number);
             for (String message : actor.messages()) {
                 String text = plain(message);
-                if (text.startsWith("  ·")) {
+                if (text.startsWith("  - ")) {
                     rows++;
                     listed.add(text);
                 }
@@ -3173,8 +3494,8 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//help -p 2");
         List<String> second = new ArrayList<>(actor.messages());
         check("page two is a page of its own", second.stream().map(SelfTestMain::plain)
-                .filter(message -> message.startsWith("  ·")).noneMatch(first.stream()
-                        .map(SelfTestMain::plain).filter(message -> message.startsWith("  ·"))
+                .filter(message -> message.startsWith("  - ")).noneMatch(first.stream()
+                        .map(SelfTestMain::plain).filter(message -> message.startsWith("  - "))
                         .collect(java.util.stream.Collectors.toSet())::contains));
         check("page two is called page two", second.stream().anyMatch(message ->
                 plain(message).contains("page 2/")));
@@ -3210,7 +3531,7 @@ public final class SelfTestMain {
         check("a sub-command listing names them", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("Sub-commands of tool")));
         check("a sub-command listing lists them", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("  · /tool")));
+                .anyMatch(message -> plain(message).startsWith("  - /tool")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//help zznotacommand");
@@ -3259,7 +3580,7 @@ public final class SelfTestMain {
     }
 
     /** The text of a message without its colour codes. */
-    private static String plain(String message) {
+    static String plain(String message) {
         StringBuilder sb = new StringBuilder(message.length());
         for (int i = 0; i < message.length(); i++) {
             char c = message.charAt(i);
@@ -3291,13 +3612,13 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//set stone");
         check("an edit summary says how long the edit took",
                 actor.messages().stream().anyMatch(message -> plain(message)
-                        .contains("block(s) affected in ")));
+                        .contains("blocks affected in ")));
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//cut");
         String answer = actor.messages().isEmpty() ? "" : plain(actor.messages().get(0));
-        check("//cut reports the blocks and the time", answer.startsWith("\u00bb Cut: ")
-                && answer.contains("block(s) to your clipboard in "));
+        check("//cut reports the blocks and the time", answer.contains("\u00bb Cut: ")
+                && answer.contains("blocks to your clipboard in "));
 
         int left = 0;
         for (int y = 64; y <= 69; y++) {
@@ -3352,7 +3673,9 @@ public final class SelfTestMain {
         }
         check("a mostly air cut leaves the selection empty", kept == 0);
         check("a mostly air cut keeps the build", builder.session().getClipboard()
-                .getClipboard().volume() == 4 * 3 * 16 * 16);
+                .getClipboard().filled(BlockState.registry()) == 4 * 3 * 16 * 16);
+        check("a mostly air cut keeps the selection's box", builder.session().getClipboard()
+                .getClipboard().volume() == 64 * 20 * 16);
 
         // The same cut with a leave pattern writes the pattern everywhere the
         // selection is, air included, so no section may be skipped.
@@ -3398,6 +3721,9 @@ public final class SelfTestMain {
         section.clearMessages();
         CommandManager.get().dispatch(section, "//pos1 0,64,0");
         CommandManager.get().dispatch(section, "//pos2 15,79,15");
+        // The clipboard's origin is where the player stands: the corner, so
+        // the pastes below put the corner at their destination.
+        section.setPosition(new BlockVector3(0, 64, 0));
         CommandManager.get().dispatch(section, "//cut");
         check("a whole-section cut copies the section",
                 section.session().getClipboard().getClipboard().volume() == 4096);
@@ -3446,6 +3772,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(wanderer, "//pos2 15,73,15");
         CommandManager.get().dispatch(wanderer, "//set stone");
         wanderer.clearMessages();
+        wanderer.setPosition(new BlockVector3(-16, 71, -16));
         CommandManager.get().dispatch(wanderer, "//cut");
         check("a cut over four chunks moves every block of the selection",
                 wanderer.session().getClipboard().getClipboard().volume() == 32 * 3 * 32);
@@ -3480,6 +3807,7 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(copier, "//pos1 3,74,3");
         CommandManager.get().dispatch(copier, "//pos2 12,77,12");
         copier.clearMessages();
+        copier.setPosition(new BlockVector3(3, 74, 3));
         CommandManager.get().dispatch(copier, "//copy");
         check("a copy that only reaches into a section holds the selection",
                 copier.session().getClipboard().getClipboard().volume() == 10 * 4 * 10);
@@ -3490,9 +3818,9 @@ public final class SelfTestMain {
         check("a partial copy holds nothing outside the selection",
                 copier.session().getClipboard().getClipboard().getBlock(0, 64, 0) == air
                         && copier.session().getClipboard().getClipboard().getBlock(15, 79, 15) == air);
-        // The paste lands where the clipboard is asked to: its own minimum
-        // corner goes to the destination, so the box it writes is
-        // (40..49, 74..77, 40..49).
+        // The paste lands where the clipboard is asked to: its origin, the
+        // corner the player stood on, goes to the destination, so the box it
+        // writes is (40..49, 74..77, 40..49).
         CommandManager.get().dispatch(copier, "//paste 40,74,40");
         check("a partial copy pastes its blocks back",
                 boxed.getBlock(40, 74, 40) == stone && boxed.getBlock(49, 77, 49) == stone);
@@ -3511,6 +3839,7 @@ public final class SelfTestMain {
         cutter.clearMessages();
         CommandManager.get().dispatch(cutter, "//pos1 -3,71,-3");
         CommandManager.get().dispatch(cutter, "//pos2 12,75,12");
+        cutter.setPosition(new BlockVector3(-3, 71, -3));
         CommandManager.get().dispatch(cutter, "//cut");
         check("a corner cut copies its box", cutter.session().getClipboard()
                 .getClipboard().volume() == 16 * 5 * 16);
@@ -3525,9 +3854,9 @@ public final class SelfTestMain {
 
 
     /**
-     * {@code //sel} picks the selector and, with no argument, reports the one in
-     * use; {@code ;} is the spelling WorldEdit gives it, so {@code //;} has to be
-     * the same command.
+     * {@code //sel} picks the selector, {@code //sel list} lists them and, with
+     * no argument, it clears the selection, as in WorldEdit; {@code ;} is the
+     * spelling WorldEdit gives it, so {@code //;} has to be the same command.
      */
     private static void testSelectionTypes() {
         section("selection types");
@@ -3535,25 +3864,35 @@ public final class SelfTestMain {
         world.fillFlat(70);
         TestActor actor = new TestActor("Sel", world, new BlockVector3(0, 71, 0));
 
+        CommandManager.get().dispatch(actor, "//pos1 0,70,0");
+        CommandManager.get().dispatch(actor, "//pos2 3,72,3");
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel");
-        check("//sel with no type reports the one in use", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("Selection type: cuboid")));
+        check("//sel with no type clears the selection", !actor.session().isSelectionDefined(world));
+        check("and says so", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("Selection: cleared")));
+
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, "//sel list");
+        for (String type : List.of("cuboid", "extend", "poly", "ellipsoid", "sphere", "cyl", "convex",
+                "polyhedral", "fuzzy")) {
+            check("//sel list names " + type, actor.messages().stream()
+                    .anyMatch(message -> plain(message).contains("- " + type)));
+        }
 
         actor.clearMessages();
         CommandManager.get().dispatch(actor, "//sel sphere");
         check("//sel sphere sets it", actor.messages().stream()
-                .anyMatch(message -> plain(message).startsWith("\u00bb Selection type: ")
+                .anyMatch(message -> plain(message).contains("\u00bb Selection type: ")
                         && plain(message).contains("sphere")));
-        actor.clearMessages();
-        CommandManager.get().dispatch(actor, "//sel");
-        check("//sel reports the new type", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("Selection type: sphere")));
+        check("and says how the wand works for it", actor.messages().stream()
+                .anyMatch(message -> plain(message).contains("right click to set the radius")));
+        check("the session holds a sphere selector",
+                actor.session().getSelector(world).getTypeName().equals("sphere"));
 
         actor.clearMessages();
-        CommandManager.get().dispatch(actor, "//;");
-        check("//; is the same command", actor.messages().stream()
-                .anyMatch(message -> plain(message).contains("Selection type: sphere")));
+        CommandManager.get().dispatch(actor, "//; poly");
+        check("//; is the same command", actor.session().getSelector(world).getTypeName().equals("poly"));
         actor.clearMessages();
         CommandManager.get().dispatch(actor, ";");
         check("; is answered as a command", !actor.messages().isEmpty() && actor.messages().stream()
@@ -3563,6 +3902,14 @@ public final class SelfTestMain {
         CommandManager.get().dispatch(actor, "//sel nope");
         check("an unknown type lists the ones that exist", actor.messages().stream()
                 .anyMatch(message -> plain(message).contains("Unknown selection type 'nope'")));
+
+        // The aliases WorldEdit and FAWE give the types.
+        CommandManager.get().dispatch(actor, "//sel hull");
+        checkEquals("hull is the convex selector", "convex", actor.session().getSelector(world).getTypeName());
+        CommandManager.get().dispatch(actor, "//sel cylinder");
+        checkEquals("cylinder is the cyl selector", "cyl", actor.session().getSelector(world).getTypeName());
+        CommandManager.get().dispatch(actor, "//sel magic");
+        checkEquals("magic is the fuzzy selector", "fuzzy", actor.session().getSelector(world).getTypeName());
 
         // -d remembers the pick for new sessions, like WorldEdit's //sel -d.
         actor.clearMessages();
@@ -3623,18 +3970,28 @@ public final class SelfTestMain {
         section("hostile arguments");
         TestWorld world = new TestWorld("hostile");
         world.fillFlat(70);
+        // The last shapes put the largest numbers where commands take a size, a
+        // count or a thickness: each of them, with a selection, used to walk
+        // billions of blocks on the thread that answers everyone.
         String[][] shapes = {
             {"2147483647"},
             {"-2147483647", "minecraft:", "#perlin["},
             {"%50", "-5", "0"},
             {"stone,stone,stone", "1,2,3,4,5"},
             {"nan", "1e400", "0,0,0"},
+            {"1e400,0,0", "~NaN,~,~", "^1,2,3"},
+            {"30000001,64,0", "-", "\"unterminated"},
+            {"#", "[", "0x10", "9223372036854775808"},
+            {"stone", "2147483647", "2147483647"},
+            {"1000000", "1000000", "1000000"},
         };
         List<String> failed = new ArrayList<>();
         int answers = 0;
         int step = 0;
         for (CommandRegistry.Entry entry : CommandManager.get().registry().all()) {
-            for (String[] shape : shapes) {
+            for (int pass = 0; pass < 2 * shapes.length; pass++) {
+                String[] shape = shapes[pass % shapes.length];
+                boolean withSelection = pass >= shapes.length;
                 StringBuilder line = new StringBuilder(entry.name);
                 for (String argument : shape) {
                     line.append(' ').append(argument);
@@ -3643,6 +4000,18 @@ public final class SelfTestMain {
                 // id, so one name would hand a selection made by //expand to the
                 // command after it, which is how a test turns into a grind.
                 TestActor actor = new TestActor("Hostile" + (step++), world, new BlockVector3(0, 71, 0));
+                // A server that lets a player edit sets a change limit; without one
+                // a stack of millions of copies inside the world is a legitimate
+                // edit that only memory ends, which is not what this sweep is for.
+                actor.session().setMaxBlocksChanged(100_000);
+                if (withSelection) {
+                    // The second pass runs the same lines with a small selection,
+                    // so that the commands that need one get to their arguments.
+                    actor.session().getSelector(world).selectPrimary(new BlockVector3(0, 68, 0),
+                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+                    actor.session().getSelector(world).selectSecondary(new BlockVector3(3, 71, 3),
+                            com.maxlananas.fawebim.core.region.SelectorLimits.unlimited());
+                }
                 int before = TestActor.receivedMessages().size();
                 try {
                     CommandManager.get().dispatch(actor, line.toString());
@@ -3749,6 +4118,15 @@ public final class SelfTestMain {
         check("isDouble", Str.isDouble("4.2"));
         checkEquals("stripNamespace", "stone", Str.stripNamespace("minecraft:stone"));
         checkEquals("join", "a,b", Str.join(List.of("a", "b"), ","));
+        List<String> names = List.of("cylinder", "smooth", "snow", "sphere", "splatter");
+        checkEquals("closest: the name a word begins", "cylinder", Str.closest("cyl", names));
+        checkEquals("closest: a letter off", "smooth", Str.closest("smoth", names));
+        checkEquals("closest: two letters swapped", "sphere", Str.closest("shpere", names));
+        checkEquals("closest: two edits in a long word", "sphere", Str.closest("sphear", names));
+        checkEquals("closest: case does not matter", "snow", Str.closest("SNOW", names));
+        checkEquals("closest: a word under six letters takes one edit only", null, Str.closest("spehr", names));
+        checkEquals("closest: nothing near", null, Str.closest("zzz", names));
+        checkEquals("closest: a hostile word finds nothing", null, Str.closest("s".repeat(100_000), names));
         RandomCollection<String> collection = new RandomCollection<>();
         collection.add(1, "a");
         checkEquals("random collection", "a", collection.next(new Random(1)));

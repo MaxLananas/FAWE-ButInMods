@@ -54,6 +54,27 @@ public final class ToolTarget {
         return applyOffset(actor, position, settings.getTargetOffset());
     }
 
+    /**
+     * Where a brush lands on a click, as FAWE's brush tool aims it: the block
+     * the click is on, or the one the platform finds under the crosshair within
+     * the brush's range - {@code /tool range}, held to the most a brush may
+     * reach - traced again through the trace mask when the brush has one, then
+     * moved as {@code /tool target} and {@code /tool targetoffset} say. The
+     * clicks used the block under the crosshair within the most a brush may
+     * reach whatever these said.
+     *
+     * @param clicked the block a click on a block is on, or null for a click in the air
+     * @param aim     the block under the crosshair within a distance, as the platform finds it
+     */
+    public static BlockVector3 brush(World world, Actor actor, BrushSettings settings, BlockVector3 clicked,
+                                     java.util.function.IntFunction<BlockVector3> aim) {
+        int range = Math.max(1, Math.min(settings.getRange(),
+                com.maxlananas.fawebim.core.platform.Config.get().maxBrushRange));
+        BlockVector3 aimed = settings.getTraceMask() != null ? null
+                : clicked != null ? clicked : aim.apply(range);
+        return resolve(world, actor, settings, aimed);
+    }
+
     /** The first block along the view direction that the trace mask accepts. */
     public static BlockVector3 trace(World world, Actor actor, BrushSettings settings) {
         return trace(world, actor, settings.getRange(), settings.getTraceMask());

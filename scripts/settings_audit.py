@@ -25,6 +25,12 @@ DECLARATION = re.compile(
     r'\b(?:bool|integer|text)\(\s*"([^"]+)",\s*"([^"]+)"[\s\S]*?\(\)\s*->\s*(\w+)\s*,')
 
 
+def strip_comments(text: str) -> str:
+    """The source without its comments."""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    return re.sub(r"//[^\n]*", " ", text)
+
+
 def declared(config: str) -> list[tuple[str, str, str]]:
     """Every (key, path, field) the configuration declares."""
     return [(key, path, field) for key, path, field in DECLARATION.findall(config)]
@@ -44,10 +50,12 @@ def main() -> None:
     for root in options.roots:
         sources.extend(path for path in pathlib.Path(root).rglob("*.java") if path != config_path)
 
+    # A comment naming the field, or a method named after it, reads nothing.
+    texts = [strip_comments(source.read_text()) for source in sources]
     unread = []
     for key, path, field in entries:
-        pattern = re.compile(r"\b" + re.escape(field) + r"\b")
-        readers = [source for source in sources if pattern.search(source.read_text())]
+        pattern = re.compile(r"\b" + re.escape(field) + r"\b(?!\s*\()")
+        readers = [text for text in texts if pattern.search(text)]
         if not readers:
             unread.append((key, path, field))
 

@@ -31,7 +31,12 @@ public interface Tool {
 
     String describe();
 
-    /** Everything a tool needs to act. */
+    /**
+     * Everything a tool needs to act: who clicked, the block the click is
+     * about and the face of it the click met. A click in the air is about the
+     * block in sight; when there is none, {@code face} is {@code null} and the
+     * position is the end of the reach.
+     */
     final class ToolContext {
 
         public final Actor actor;
@@ -53,6 +58,11 @@ public interface Tool {
 
         public boolean hasSession() {
             return session != null;
+        }
+
+        /** True when the click is about a block, false for a click with nothing in sight. */
+        public boolean aimsAtBlock() {
+            return face != null;
         }
     }
 }

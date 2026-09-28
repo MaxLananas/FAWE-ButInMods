@@ -28,15 +28,23 @@ public final class TestWorld implements World {
      */
     private final Map<Long, Integer> sectionBlocks = new HashMap<>();
     private final Map<Long, Integer> biomes = new HashMap<>();
+    private final Map<Long, Integer> blockLight = new HashMap<>();
     /** The state a section holds, or -1 once it holds more than one. */
     private final Map<Long, Integer> sectionUniform = new HashMap<>();
     private final Map<Long, NbtCompound> blockEntities = new LinkedHashMap<>();
+    private int blockEntityReads;
     private final List<EntityData> entities = new ArrayList<>();
     private final java.util.Set<Long> loadedChunks = new java.util.HashSet<>();
+    /** The chunks written with the lighting side effect on. */
+    private final java.util.Set<BlockVector2> lit = new java.util.LinkedHashSet<>();
+    /** The chunks handed to {@link #relight} and to {@link #removeLight}. */
     private final java.util.Set<BlockVector2> relit = new java.util.LinkedHashSet<>();
+    private final java.util.Set<BlockVector2> darkened = new java.util.LinkedHashSet<>();
     private final String name;
     private long seed = 1234L;
     private int setCount;
+    /** How many times each chunk was handed to {@link #applyChunk}, by chunk key. */
+    private final Map<Long, Integer> applyCounts = new HashMap<>();
 
     public TestWorld(String name) {
         this.name = name;
@@ -207,7 +215,16 @@ public final class TestWorld implements World {
     }
 
     @Override
+    public int applyChunk(ChunkSet set, com.maxlananas.fawebim.core.session.SideEffectSet sideEffects) {
+        if (sideEffects.shouldApply(com.maxlananas.fawebim.core.session.SideEffect.LIGHTING)) {
+            lit.add(new BlockVector2(set.chunkX(), set.chunkZ()));
+        }
+        return applyChunk(set);
+    }
+
+    @Override
     public int applyChunk(ChunkSet set) {
+        applyCounts.merge(((long) set.chunkX() << 32) | (set.chunkZ() & 0xFFFFFFFFL), 1, Integer::sum);
         int applied = 0;
         int minY = set.minSection() << 4;
         for (int section = 0; section < set.sectionCount(); section++) {
@@ -221,10 +238,12 @@ public final class TestWorld implements World {
                         if (state == -1) {
                             continue;
                         }
+                        int before = getBlock(worldX, worldY, worldZ);
                         Integer previous = blocks.put(key(worldX, worldY, worldZ), state);
                         countSection(worldX, worldY, worldZ, air(previous == null ? -1 : previous),
                                 air(state));
                         trackUniform(worldX, worldY, worldZ, state);
+                        keepBlockEntity(worldX, worldY, worldZ, before, state);
                         applied++;
                     }
                 }
@@ -248,15 +267,46 @@ public final class TestWorld implements World {
             }
         }
         for (ChunkSet.BlockEntity entity : set.blockEntities()) {
-            setBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
+            applyBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
         }
         setCount += applied;
         return applied;
     }
 
+    /**
+     * What the game does with the block entity of a block it sets, and what
+     * {@link com.maxlananas.fawebim.core.world.World#applyChunk} promises: a
+     * block without one loses it, a block of another type gets a new one, a
+     * block that keeps its type keeps its data.
+     */
+    private void keepBlockEntity(int x, int y, int z, int before, int after) {
+        String type = blockEntityType(after);
+        long key = key(x, y, z);
+        if (type == null) {
+            blockEntities.remove(key);
+        } else if (!type.equals(blockEntityType(before)) || !blockEntities.containsKey(key)) {
+            blockEntities.put(key, new NbtCompound().putString("id", type));
+        }
+    }
+
+    /** The blocks of the test world that hold a block entity, as a chest and a furnace do in the game. */
+    static String blockEntityType(int state) {
+        if (state < 0) {
+            return null;
+        }
+        String name = BlockState.registry().name(state);
+        return name.equals("minecraft:chest") || name.equals("minecraft:furnace") ? name : null;
+    }
+
+    /** Loads data into the block entity of a position, and does nothing where the block has none. */
     @Override
     public void applyBlockEntity(int x, int y, int z, NbtCompound nbt) {
-        setBlockEntity(x, y, z, nbt);
+        String type = blockEntityType(getBlock(x, y, z));
+        if (type != null) {
+            NbtCompound data = nbt.clone();
+            data.putString("id", type);
+            blockEntities.put(key(x, y, z), data);
+        }
     }
 
     private static int minYSection(ChunkSet set) {
@@ -269,43 +319,89 @@ public final class TestWorld implements World {
     }
 
     @Override
-    public boolean regenerateChunk(int chunkX, int chunkZ, RegenOptions options) {
-        Random random = new Random(seed + chunkX * 3121L + chunkZ * 4021L);
-        for (int x = 0; x < 16; x++) {
-            for (int z = 0; z < 16; z++) {
-                int height = 64 + random.nextInt(8);
-                int worldX = (chunkX << 4) + x;
-                int worldZ = (chunkZ << 4) + z;
-                for (int y = minY(); y <= height; y++) {
-                    int state = y == height
-                            ? BlockState.registry().defaultState("minecraft:grass_block")
-                            : y > height - 4
-                            ? BlockState.registry().defaultState("minecraft:dirt")
-                            : BlockState.registry().defaultState("minecraft:stone");
-                    setBlock(worldX, y, worldZ, state);
-                }
-                for (int y = height + 1; y <= height + 6; y++) {
-                    setBlock(worldX, y, worldZ, BlockState.registry().air());
-                }
-            }
-        }
-        if (options != null && options.shouldRegenBiomes()) {
-            setBiome(chunkX << 4, 0, chunkZ << 4, 1);
-        }
-        return true;
+    public void removeLight(Collection<BlockVector2> chunks) {
+        darkened.addAll(chunks);
+    }
+
+    /** Block light a test puts somewhere; everywhere else is dark. */
+    void setBlockLight(int x, int y, int z, int level) {
+        blockLight.put(key(x, y, z), level);
     }
 
     @Override
-    public boolean generateTree(BlockVector3 pos, String treeType, Random random) {
-        int log = BlockState.registry().defaultState("minecraft:oak_log");
-        int leaves = BlockState.registry().defaultState("minecraft:oak_leaves");
-        if (log < 0 || leaves < 0) {
+    public int blockLight(int x, int y, int z) {
+        return blockLight.getOrDefault(key(x, y, z), 0);
+    }
+
+    /**
+     * The test world's generator: columns of stone, three of dirt and one of
+     * grass, 64 to 71 high, the same for a chunk every time.
+     */
+    @Override
+    public GeneratedTerrain generate(Collection<BlockVector2> chunks, RegenOptions options) {
+        Map<Long, int[]> heights = new HashMap<>();
+        for (BlockVector2 chunk : chunks) {
+            Random random = new Random(seed + chunk.x() * 3121L + chunk.z() * 4021L);
+            int[] columns = new int[256];
+            for (int i = 0; i < 256; i++) {
+                columns[i] = 64 + random.nextInt(8);
+            }
+            heights.put(((long) chunk.x() << 32) | (chunk.z() & 0xFFFFFFFFL), columns);
+        }
+        return new GeneratedTerrain() {
+            @Override
+            public int getBlock(int x, int y, int z) {
+                int[] columns = heights.get(((long) (x >> 4) << 32) | ((z >> 4) & 0xFFFFFFFFL));
+                if (columns == null) {
+                    return BlockState.registry().air();
+                }
+                int height = columns[((z & 15) << 4) | (x & 15)];
+                String name = y > height ? "minecraft:air" : y == height ? "minecraft:grass_block"
+                        : y > height - 4 ? "minecraft:dirt" : "minecraft:stone";
+                return BlockState.registry().defaultState(name);
+            }
+
+            @Override
+            public int getBiome(int x, int y, int z) {
+                return 1;
+            }
+
+            @Override
+            public NbtCompound getBlockEntity(int x, int y, int z) {
+                return null;
+            }
+
+            @Override
+            public void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                           BlockEntityVisitor visitor) {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+    }
+
+    /**
+     * A small oak for the tests: a trunk of five to seven logs under a crown of
+     * leaves. Like the game's trees it needs air where its trunk starts and dirt
+     * or grass under it, and its blocks go through the session, as the Fabric
+     * world's do.
+     */
+    @Override
+    public boolean generateTree(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                                String treeType, Random random) {
+        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+        int log = registry.defaultState("minecraft:oak_log");
+        int leaves = registry.defaultState("minecraft:oak_leaves");
+        if (log < 0 || leaves < 0 || !registry.isAirLike(session.getBlock(pos.x(), pos.y(), pos.z()))) {
+            return false;
+        }
+        String soil = registry.name(session.getBlock(pos.x(), pos.y() - 1, pos.z()));
+        if (!soil.equals("minecraft:grass_block") && !soil.equals("minecraft:dirt")) {
             return false;
         }
         int height = 5 + random.nextInt(3);
-        for (int y = 0; y < height; y++) {
-            setBlock(pos.x(), pos.y() + y, pos.z(), log);
-        }
         for (int dy = height - 3; dy <= height; dy++) {
             int radius = dy >= height - 1 ? 1 : 2;
             for (int dx = -radius; dx <= radius; dx++) {
@@ -313,17 +409,81 @@ public final class TestWorld implements World {
                     if (Math.abs(dx) == radius && Math.abs(dz) == radius) {
                         continue;
                     }
-                    setBlock(pos.x() + dx, pos.y() + dy, pos.z() + dz, leaves);
+                    session.setBlock(pos.x() + dx, pos.y() + dy, pos.z() + dz, leaves);
                 }
             }
+        }
+        for (int y = 0; y < height; y++) {
+            session.setBlock(pos.x(), pos.y() + y, pos.z(), log);
         }
         return true;
     }
 
+    /**
+     * The features of the test world: a block id is a feature that puts that
+     * block at the position, or on top of it when the position holds a block,
+     * as a patch of flowers settles on the ground; {@code minecraft:oak} is the
+     * test oak, grown at the position, and against the face the feature placer
+     * clicks.
+     */
     @Override
-    public boolean generateFeature(BlockVector3 pos, String featureType, Random random) {
-        // Features are placed by the platform; the test world uses its tree generator.
-        return generateTree(pos, featureType, random);
+    public boolean generateFeature(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos,
+                                   String featureType, Random random) {
+        int block = BlockState.registry().defaultState(featureType);
+        if (block < 0) {
+            return featureType.equals(OAK) && generateTree(session, pos, featureType, random);
+        }
+        int y = surface(session, pos);
+        return y != Integer.MIN_VALUE && session.setBlock(pos.x(), y, pos.z(), block);
+    }
+
+    /** The position if it is air, else the one above it if that is, else none. */
+    private static int surface(com.maxlananas.fawebim.core.extent.EditSession session, BlockVector3 pos) {
+        com.maxlananas.fawebim.core.world.BlockStateRegistry registry = BlockState.registry();
+        if (registry.isAirLike(session.getBlock(pos.x(), pos.y(), pos.z()))) {
+            return pos.y();
+        }
+        return registry.isAirLike(session.getBlock(pos.x(), pos.y() + 1, pos.z())) ? pos.y() + 1 : Integer.MIN_VALUE;
+    }
+
+    private static final String OAK = "minecraft:oak";
+
+    @Override
+    public List<String> featureIds() {
+        List<String> ids = new ArrayList<>(BlockState.registry().blockNames());
+        ids.add(OAK);
+        ids.sort(null);
+        return ids;
+    }
+
+    @Override
+    public List<String> structureIds() {
+        List<String> ids = new ArrayList<>(BlockState.registry().blockNames());
+        ids.sort(null);
+        return ids;
+    }
+
+    @Override
+    public boolean placesFeatureOnFace(String featureId) {
+        return featureId.equals(OAK);
+    }
+
+    /**
+     * The structures of the test world: a block id is a structure, a pillar
+     * of two of that block from the position, or from on top of it when the
+     * position holds a block; there is no other.
+     */
+    @Override
+    public boolean generateStructure(com.maxlananas.fawebim.core.extent.EditSession session, String structureId,
+                                     BlockVector3 pos, Random random) {
+        int block = BlockState.registry().defaultState(structureId);
+        int y = surface(session, pos);
+        if (block < 0 || y == Integer.MIN_VALUE) {
+            return false;
+        }
+        session.setBlock(pos.x(), y, pos.z(), block);
+        session.setBlock(pos.x(), y + 1, pos.z(), block);
+        return true;
     }
 
     @Override
@@ -333,16 +493,22 @@ public final class TestWorld implements World {
             double x = entity.position().x();
             double y = entity.position().y();
             double z = entity.position().z();
-            if (x >= box.minX() && x <= box.maxX() && y >= box.minY() && y <= box.maxY()
-                    && z >= box.minZ() && z <= box.maxZ()) {
+            // The box is of whole blocks, as the Fabric world reads it: an
+            // entity anywhere inside its last block is inside it.
+            if (x >= box.minX() && x < box.maxX() + 1 && y >= box.minY() && y < box.maxY() + 1
+                    && z >= box.minZ() && z < box.maxZ() + 1) {
                 found.add(entity);
             }
         }
         return found;
     }
 
+    /** Puts an entity into the world as it is, giving it an identity when it has none. */
     @Override
     public void addEntity(EntityData data) {
+        if (data.uuid() == null) {
+            data.setUuid(java.util.UUID.randomUUID().toString());
+        }
         entities.add(data);
     }
 
@@ -351,23 +517,59 @@ public final class TestWorld implements World {
         entities.remove(data);
     }
 
+    /** As the game does: a new entity from the data, refused when the identity asked for is taken. */
     @Override
-    public void setBlockEntity(int x, int y, int z, NbtCompound nbt) {
-        blockEntities.put(key(x, y, z), nbt);
+    public EntityData spawnEntity(EntityData data, String uuid) {
+        if (uuid != null && entities.stream().anyMatch(entity -> uuid.equals(entity.uuid()))) {
+            return null;
+        }
+        EntityData created = new EntityData(data.type(), data.nbt() == null ? new NbtCompound() : data.nbt().clone(),
+                data.position());
+        created.setUuid(uuid != null ? uuid : java.util.UUID.randomUUID().toString());
+        entities.add(created);
+        return created;
+    }
+
+    @Override
+    public boolean removeEntityById(String uuid) {
+        return entities.removeIf(entity -> uuid.equals(entity.uuid()));
     }
 
     @Override
     public NbtCompound getBlockEntity(int x, int y, int z) {
-        return blockEntities.get(key(x, y, z));
+        blockEntityReads++;
+        NbtCompound nbt = blockEntities.get(key(x, y, z));
+        return nbt == null ? null : nbt.clone();
+    }
+
+    /** How many times the engine asked for the data of a position, to tell a per-block walk from a per-chunk one. */
+    public int blockEntityReads() {
+        return blockEntityReads;
     }
 
     @Override
-    public void removeBlockEntity(int x, int y, int z) {
-        blockEntities.remove(key(x, y, z));
+    public void forEachBlockEntity(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                   BlockEntityVisitor visitor) {
+        for (long key : new ArrayList<>(blockEntities.keySet())) {
+            int x = (int) (key >> 38);
+            int y = (int) (key << 26 >> 52);
+            int z = (int) (key << 38 >> 38);
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ) {
+                visitor.visit(x, y, z);
+            }
+        }
+    }
+
+    public java.util.Set<BlockVector2> litChunks() {
+        return lit;
     }
 
     public java.util.Set<BlockVector2> relitChunks() {
         return relit;
+    }
+
+    public java.util.Set<BlockVector2> darkenedChunks() {
+        return darkened;
     }
 
     /**
@@ -387,6 +589,11 @@ public final class TestWorld implements World {
 
     public int setCount() {
         return setCount;
+    }
+
+    /** How many flushes wrote into a chunk. */
+    public int applyCount(int chunkX, int chunkZ) {
+        return applyCounts.getOrDefault(((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL), 0);
     }
 
     public List<EntityData> entityList() {
