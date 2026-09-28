@@ -2246,6 +2246,14 @@ public final class Brushes {
         }
     }
 
+    /**
+     * {@code /brush extinguish [radius]}: WorldEdit's and FAWE's shortcut, a
+     * sphere brush of air whose mask is the fire block - that block alone, as
+     * both give it; soul fire is left, as they leave it.
+     *
+     * <p>This took away every block whose name held "fire" or "lava" in a ball
+     * of its own: lava, campfires and fire coral went with the fire.</p>
+     */
     public static final class ExtinguishBrush extends BaseBrush {
 
         public ExtinguishBrush(double radius) {
@@ -2255,11 +2263,11 @@ public final class Brushes {
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
             BlockStateRegistry registry = BlockState.registry();
-            return Operations.forEachInSphere(position, (int) radius, false, (x, y, z) -> {
-                String name = registry.name(session.getBlock(x, y, z));
-                return (name.contains("fire") || name.contains("lava"))
-                        && session.setBlock(x, y, z, registry.air());
-            });
+            int air = registry.air();
+            return Operations.forEachInEllipsoid(position, new double[]{radius, radius, radius}, false,
+                    session.minY(), session.maxY(), (x, y, z) -> test(x, y, z)
+                            && "minecraft:fire".equals(registry.name(session.getBlock(x, y, z)))
+                            && session.setBlock(x, y, z, air));
         }
     }
 

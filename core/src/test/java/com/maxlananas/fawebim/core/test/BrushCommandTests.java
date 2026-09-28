@@ -40,6 +40,34 @@ final class BrushCommandTests {
         theImageBrushPaintsItsImage();
         theCopyPasteBrushCopiesThenPastesAboutItsOrigin();
         thePopulateBrushSetsItsSchematicsOnTheSurfaceWithoutTheirAir();
+        theExtinguishBrushPutsOutFireAlone();
+    }
+
+    /**
+     * WorldEdit's and FAWE's extinguisher is a sphere brush of air masked to
+     * the fire block: WorldEdit's sphere, half a block wider than the radius,
+     * and nothing but fire in it. It took lava, campfires and anything named
+     * with "fire" too, in a smaller ball.
+     */
+    private static void theExtinguishBrushPutsOutFireAlone() {
+        TestActor actor = actor("Extinguish");
+        TestWorld world = (TestWorld) actor.world();
+        int fire = state("minecraft:fire");
+        world.setBlock(0, 70, 0, fire);
+        world.setBlock(2, 71, 1, fire);
+        world.setBlock(1, 70, 0, state("minecraft:soul_fire"));
+        world.setBlock(-1, 70, 0, state("minecraft:lava"));
+        world.setBlock(0, 70, 1, state("minecraft:campfire"));
+        world.setBlock(0, 70, -1, state("minecraft:magma_block"));
+        answer(actor, "/brush extinguish 2");
+        stroke(actor, 0, 70, 0);
+        check("the fire goes, up to WorldEdit's sphere", world.getBlock(0, 70, 0) == BlockState.registry().air()
+                && world.getBlock(2, 71, 1) == BlockState.registry().air());
+        check("and nothing else: soul fire, lava, a campfire and magma stay",
+                world.getBlock(1, 70, 0) == state("minecraft:soul_fire")
+                        && world.getBlock(-1, 70, 0) == state("minecraft:lava")
+                        && world.getBlock(0, 70, 1) == state("minecraft:campfire")
+                        && world.getBlock(0, 70, -1) == state("minecraft:magma_block"));
     }
 
     /**

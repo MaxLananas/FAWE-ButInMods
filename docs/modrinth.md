@@ -120,7 +120,8 @@ The commands behave as FAWE's in many more places, above all the brushes.
   `targetoffset`; `/brush` alone shows what the item in hand holds
 - Brushes redone to do what FAWE's do: blendball, erode, pull, morph, dilate, rock, circle, height,
   cliff, splatter, shatter, surface, scatter, scattercommand, command, line, catenary, image, forest,
-  feature, structure, snow, biome, raise and lower
+  feature, structure, snow, biome, raise, lower, copypaste, populateschematic and extinguish; each
+  clipboard brush keeps the copy it was bound with
 - Masks and patterns: `>` `<` `$` `^`, `#offset`, `#existing`, `##tag`, `#spread`, `#surfacespread`,
   the linear and colour patterns, `#typeswap`, `#clipboard`, `#relative`, `#hotbar`; `#simplex` reads
   FAWE's own noise, so the same line places the same blocks as on a FAWE server
