@@ -235,6 +235,27 @@ CHECKS = [
     ("//pos2 724,200,724", "position 2: set"),
     ("//set minecraft:air", "Use //confirm to execute //set minecraft:air"),
     ("//undo 51", "Use //confirm to execute //undo 51"),
+    # Masks and patterns as WorldEdit and FAWE write them, read with the
+    # game's own block states, tags and biomes: the block state mask and
+    # pattern, FAWE's type swap, the mask of the block over another, the biome
+    # mask and FAWE's linear pattern. The rows that need the game's states or
+    # biomes are left out by the smoke lint.
+    ("//pos1 200,60,200", "position 1: set"),
+    ("//pos2 203,60,203", "position 2: set"),
+    ("//set minecraft:oak_log[axis=x]", "16 blocks affected"),
+    ("//count ^[axis=x]", "counted: 16"),
+    ("//count ^=[axis=y]", "counted: 0"),
+    ("//set ^[axis=z]", "16 blocks affected"),
+    ("//count minecraft:oak_log[axis=z]", "counted: 16"),
+    ("//set #typeswap[oak][spruce]", "16 blocks affected"),
+    ("//count minecraft:spruce_log[axis=z]", "counted: 16"),
+    ("//pos2 203,61,203", "position 2: set"),
+    ("//count >minecraft:spruce_log", "counted: 16"),
+    ("//count $minecraft:plains", "counted: 32"),
+    ("//pos2 203,60,203", "position 2: set"),
+    ("//set #l2d[minecraft:stone,minecraft:dirt]", "16 blocks affected"),
+    ("//count minecraft:dirt", "counted: 8"),
+    ("//set minecraft:air", "16 blocks affected"),
     # The game's own worldgen, which the smoke lint leaves out: the head-less
     # engine has none of its features and structures. A placed feature with a
     # biome filter, which the game's own placement of a feature throws on
