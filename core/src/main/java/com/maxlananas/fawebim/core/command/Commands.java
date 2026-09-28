@@ -3265,11 +3265,15 @@ public final class Commands {
         e95.arguments.add("[-p <page>]");
         e95.arguments.add("[-s]");
         e95.handler = ctx -> {
-                    String filter = ctx.arg(0, "").trim().toLowerCase(Locale.ROOT);
+                    // A command path may take two words: //help /tool tree.
+                    String filter = String.join(" ", ctx.args()).trim().toLowerCase(Locale.ROOT);
+                    CommandRegistry.Entry exact = filter.startsWith("/") ? registry.get(filter) : null;
                     if (filter.isEmpty()) {
                         Help.list(ctx, registry);
                     } else if (ctx.hasFlag("s")) {
                         Help.subCommands(ctx, registry, filter);
+                    } else if (exact != null && !ctx.hasFlag("p")) {
+                        Help.command(ctx, registry, exact, filter);
                     } else {
                         Help.search(ctx, registry, filter);
                     }

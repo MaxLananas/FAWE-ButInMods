@@ -38,6 +38,33 @@ final class CompletionTests {
         aTypeIsWhatItsCommandTakes(asked);
         flagsAndTheirValuesComplete(asked);
         theWordsOfAnAlternativeAreOffered(asked);
+        helpNamesOneCommand();
+    }
+
+    private static String answer(TestActor actor, String line) {
+        actor.clearMessages();
+        CommandManager.get().dispatch(actor, line);
+        return String.join("\n", actor.messages()).replaceAll("\u00a7.", "");
+    }
+
+    /**
+     * //help with the name of a command gives its help, as FAWE's does: it
+     * listed every command whose name held the word, and //help -s //schem
+     * found nothing, the slashes being taken for part of the name.
+     */
+    private static void helpNamesOneCommand() {
+        TestActor actor = new TestActor("Helper", new TestWorld("help"), new com.maxlananas.fawebim.core.math
+                .BlockVector3(0, 70, 0));
+        String set = answer(actor, "//help //set");
+        check("//help //set is the help of //set (" + set + ")", set.contains("//set: Set all blocks")
+                && set.contains("Usage: //set <pattern>") && set.contains("It works on the selection"));
+        check("with the commands only named like it after", set.contains("Also named so: //setblocklight"));
+        String tree = answer(actor, "//help /tool tree");
+        check("a sub-command is named with its container", tree.contains("Usage: /tool tree [type]")
+                && tree.contains("A player runs it"));
+        check("-p still lists every match", answer(actor, "//help //set -p 1").contains("Commands matching '//set'"));
+        check("and a word searches", answer(actor, "//help replace").contains("Commands matching 'replace'"));
+        check("//help -s //brush is //help -s brush", !answer(actor, "//help -s //brush").contains("No sub-command"));
     }
 
     private static List<String> complete(String command, String remaining, Supplier<World> world) {

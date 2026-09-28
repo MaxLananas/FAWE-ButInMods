@@ -166,10 +166,12 @@ final class ToolTests {
      */
     private static void eachToolIsASubCommandOfItsOwn() {
         TestActor actor = actor("ToolSubCommands");
-        check("//help //repl shows its pattern and FAWE's description",
-                answer(actor, "//help //repl").contains("//repl <pattern> - Block replacer tool"));
+        String repl = answer(actor, "//help //repl");
+        check("//help //repl shows its pattern and FAWE's description (" + repl + ")",
+                repl.contains("//repl: Block replacer tool") && repl.contains("Usage: //repl <pattern>"));
+        String tree = answer(actor, "//help //tree");
         check("and //help //tree its tree type",
-                answer(actor, "//help //tree").contains("//tree [type] - Tree generator tool"));
+                tree.contains("//tree: Tree generator tool") && tree.contains("Usage: //tree [type]"));
         check("the long range builder its two patterns", answer(actor, "//help lrbuild")
                 .contains("/tool lrbuild <primary> <secondary> - Long-range building tool"));
         check("the bind line is FAWE's, with the item",

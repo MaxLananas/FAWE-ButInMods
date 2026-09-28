@@ -84,8 +84,71 @@ final class Help {
         footer(ctx, "//help " + filter, page);
     }
 
+    /**
+     * {@code //help //set}: the help of one command, as FAWE gives it for a
+     * command it is named: what it does, how it is written, its other
+     * spellings, its flags, what it needs, and its sub-commands. The commands
+     * whose name only starts the same way are offered after it.
+     */
+    static void command(Ctx ctx, CommandRegistry registry, CommandRegistry.Entry entry, String filter) {
+        ctx.actor().suggestLink(Msg.result(entry.name, entry.description).raw(), entry.name,
+                "Put " + entry.name + " in the chat box");
+        ctx.actor().message(Msg.keyValue("Usage", entry.usage()));
+        if (entry.aliasOf != null) {
+            ctx.actor().message(Msg.keyValue("Runs", entry.aliasOf.name));
+        }
+        List<String> aliases = new ArrayList<>();
+        for (String alias : entry.aliases) {
+            if (!alias.equalsIgnoreCase(entry.name)) {
+                aliases.add(alias);
+            }
+        }
+        if (!aliases.isEmpty()) {
+            aliases.sort(null);
+            ctx.actor().message(Msg.keyValue("Also written", String.join(", ", aliases)));
+        }
+        List<String> flags = new ArrayList<>();
+        for (String flag : entry.booleanFlags) {
+            flags.add("-" + flag);
+        }
+        for (String flag : entry.valueFlags) {
+            flags.add("-" + flag + " <value>");
+        }
+        if (!flags.isEmpty()) {
+            flags.sort(null);
+            ctx.actor().message(Msg.keyValue("Flags", String.join(" ", flags)));
+        }
+        if (entry.requiresPlayer || entry.requiresSelection) {
+            ctx.actor().message(Msg.hint(entry.requiresPlayer && entry.requiresSelection
+                    ? "A player with a selection runs it"
+                    : entry.requiresPlayer ? "A player runs it" : "It works on the selection"));
+        }
+        String bare = entry.name.replaceFirst("^/+", "").toLowerCase(Locale.ROOT);
+        boolean hasSubCommands = registry.all().stream()
+                .anyMatch(other -> isUnder(other.name, bare));
+        if (hasSubCommands) {
+            ctx.actor().commandLink(Msg.hint("Its sub-commands: " + Msg.value("//help -s " + entry.name).raw()).raw(),
+                    "//help -s " + entry.name, "List the sub-commands of " + entry.name);
+        }
+        List<String> others = new ArrayList<>();
+        for (CommandRegistry.Entry other : registry.all()) {
+            if (other != entry && !other.status.equals("stub") && other.name.toLowerCase(Locale.ROOT)
+                    .startsWith(filter) && !isUnder(other.name, bare)) {
+                others.add(other.name);
+            }
+        }
+        if (!others.isEmpty()) {
+            others.sort(null);
+            ctx.actor().commandLink(Msg.hint("Also named so: " + String.join(", ",
+                            others.subList(0, Math.min(6, others.size()))) + (others.size() > 6 ? ", ..." : "")).raw(),
+                    "//help " + filter + " -p 1", "Search the commands named " + filter);
+        }
+    }
+
     /** {@code //help -s <command>}: the sub-commands registered under one name. */
-    static void subCommands(Ctx ctx, CommandRegistry registry, String filter) {
+    static void subCommands(Ctx ctx, CommandRegistry registry, String typed) {
+        // "//help -s //schem" and "//help -s schem" ask for the same container.
+        String filter = typed.replaceFirst("^/+", "");
         List<CommandRegistry.Entry> matches = new ArrayList<>();
         CommandRegistry.Entry container = null;
         for (CommandRegistry.Entry entry : registry.all()) {
