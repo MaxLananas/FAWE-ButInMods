@@ -36,10 +36,12 @@ public final class BrushParameters {
     private final BrushOptions options;
     private final BlockVector3 placement;
     private final com.maxlananas.fawebim.core.world.World world;
+    private final com.maxlananas.fawebim.core.session.ClipboardHolder clipboard;
 
     private BrushParameters(String name, Pattern pattern, int[] layers, Mask mask, Map<String, Mask> masks,
                             Map<String, String> values, BrushOptions options, BlockVector3 placement,
-                            com.maxlananas.fawebim.core.world.World world) {
+                            com.maxlananas.fawebim.core.world.World world,
+                            com.maxlananas.fawebim.core.session.ClipboardHolder clipboard) {
         this.name = name;
         this.pattern = pattern;
         this.layers = layers;
@@ -49,6 +51,7 @@ public final class BrushParameters {
         this.options = options;
         this.placement = placement;
         this.world = world;
+        this.clipboard = clipboard;
     }
 
     /**
@@ -148,7 +151,23 @@ public final class BrushParameters {
         // -o counts from the placement position of the moment the brush is bound.
         BlockVector3 placement = ctx != null && options.switchOn("o") ? ctx.placement() : null;
         return new BrushParameters(row[0], pattern, layers, sessionMask, masks, values, options, placement,
-                ctx == null ? null : ctx.world());
+                ctx == null ? null : ctx.world(), ctx == null ? null : clipboardOf(ctx.session()));
+    }
+
+    /**
+     * The clipboard of the session as it is now, with its transform: a holder
+     * of its own, which a later //copy, //rotate or //flip leaves as it was.
+     */
+    private static com.maxlananas.fawebim.core.session.ClipboardHolder clipboardOf(
+            com.maxlananas.fawebim.core.session.LocalSession session) {
+        if (!session.hasClipboard()) {
+            return null;
+        }
+        com.maxlananas.fawebim.core.session.ClipboardHolder current = session.getClipboard();
+        com.maxlananas.fawebim.core.session.ClipboardHolder kept =
+                new com.maxlananas.fawebim.core.session.ClipboardHolder(current.getClipboard());
+        kept.setTransform(current.getTransform());
+        return kept;
     }
 
     /** The parameters of a brush built without a command line, i.e. a preset. */
@@ -170,7 +189,7 @@ public final class BrushParameters {
             // are re-parsed from the command line when the brush is reloaded.
             values.put("pattern", "");
         }
-        return new BrushParameters(row[0], pattern, new int[0], null, Map.of(), values, options, null, null);
+        return new BrushParameters(row[0], pattern, new int[0], null, Map.of(), values, options, null, null, null);
     }
 
     /** The name of the brush, as FAWE spells it. */
@@ -227,6 +246,14 @@ public final class BrushParameters {
     /** The world of the player binding the brush, or null for a preset built without one. */
     public com.maxlananas.fawebim.core.world.World world() {
         return world;
+    }
+
+    /**
+     * The clipboard as it was when the brush was bound, or null when the
+     * session had none or the brush was built without a command line.
+     */
+    public com.maxlananas.fawebim.core.session.ClipboardHolder clipboard() {
+        return clipboard;
     }
 
     /** The placement position when the brush was bound with {@code -o}, else null. */

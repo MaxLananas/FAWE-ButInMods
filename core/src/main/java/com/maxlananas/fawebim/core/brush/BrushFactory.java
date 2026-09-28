@@ -220,9 +220,18 @@ public final class BrushFactory {
                 }
                 yield brush;
             }
-            case "clipboard" -> new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),
-                    parameters.flag("o"), parameters.flag("a"), parameters.flag("v"), parameters.flag("e"),
-                    parameters.flag("b"), parameters.maskValue("sourceMask"), parameters.flag("r"));
+            case "clipboard" -> {
+                // WorldEdit refuses the brush when there is nothing to paste,
+                // and keeps the clipboard it was bound with.
+                if (parameters.clipboard() == null && parameters.world() != null) {
+                    throw CommandRegistry.error("No clipboard: use //copy first");
+                }
+                Brushes.ClipboardBrush brush = new Brushes.ClipboardBrush(parameters.radius(), parameters.mask(),
+                        parameters.flag("o"), parameters.flag("a"), parameters.flag("v"), parameters.flag("e"),
+                        parameters.flag("b"), parameters.maskValue("sourceMask"), parameters.flag("r"));
+                brush.setClipboard(parameters.clipboard());
+                yield brush;
+            }
             case "copypaste" -> new Brushes.CopyPastaBrush(parameters.radius(), parameters.flag("r"),
                     parameters.flag("a"));
             case "biome" -> new Brushes.BiomeBrush(parameters.radius(), parameters.mask(), shape(parameters),

@@ -42,6 +42,76 @@ final class BindingTests {
         aPresetSavesTheBrushInHand();
         theBrushToolFiresTheBrushBoundLast();
         aLineThatNamesNoToolOrBrushKeepsWhatTheItemHolds();
+        eachClipboardBrushKeepsTheClipboardItWasBoundWith();
+    }
+
+    private static int stroke(TestActor actor, int x, int y, int z) {
+        Brush brush = BrushFactory.current(actor);
+        com.maxlananas.fawebim.core.extent.EditSession session =
+                new com.maxlananas.fawebim.core.extent.EditSession(actor.world(), actor.session(), "brush");
+        try {
+            return Brushes.apply(brush, session, new BlockVector3(x, y, z), actor);
+        } finally {
+            session.close();
+        }
+    }
+
+    /**
+     * WorldEdit's clipboard brush keeps the clipboard it is bound with, and
+     * its transform: a FAWE player copies one tree, binds it, copies another
+     * and binds it to a second item. Every clipboard brush pasted the last
+     * copy, turned by the last //rotate, and one was bound with no clipboard
+     * at all, to answer "No clipboard" on every click.
+     */
+    private static void eachClipboardBrushKeepsTheClipboardItWasBoundWith() {
+        TestActor actor = actor("BindClipboards");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = com.maxlananas.fawebim.core.world.BlockState.registry().defaultState("minecraft:gold_block");
+        int diamond = com.maxlananas.fawebim.core.world.BlockState.registry().defaultState("minecraft:diamond_block");
+        int stone = com.maxlananas.fawebim.core.world.BlockState.registry().defaultState("minecraft:stone");
+        world.setBlock(5, 70, 5, gold);
+        world.setBlock(6, 70, 5, stone);
+        answer(actor, "//pos1 5,70,5");
+        answer(actor, "//pos2 6,70,5");
+        answer(actor, "//copy");
+        actor.setHeldItem(AXE);
+        answer(actor, "/brush clipboard");
+        world.setBlock(5, 70, 5, diamond);
+        answer(actor, "//copy");
+        answer(actor, "//rotate 90");
+        actor.setHeldItem(SHOVEL);
+        answer(actor, "/brush clipboard");
+
+        actor.setHeldItem(AXE);
+        stroke(actor, 20, 80, 20);
+        check("the axe pastes the gold it was bound with, not the diamond copied after",
+                world.getBlock(20, 80, 20) == gold);
+        check("and as it was copied, not turned by the //rotate after", world.getBlock(21, 80, 20) == stone);
+        actor.setHeldItem(SHOVEL);
+        stroke(actor, 40, 80, 40);
+        // WorldEdit centres the box as it was copied and turns it about the
+        // origin of the copy, so the turned paste is found where it landed.
+        BlockVector3 found = null;
+        for (int x = 25; x <= 55 && found == null; x++) {
+            for (int y = 70; y <= 90 && found == null; y++) {
+                for (int z = 25; z <= 55 && found == null; z++) {
+                    if (world.getBlock(x, y, z) == diamond) {
+                        found = new BlockVector3(x, y, z);
+                    }
+                }
+            }
+        }
+        BlockVector3 at = found;
+        check("the shovel pastes the diamond, turned by the //rotate before it was bound", at != null
+                && world.getBlock(at.x() + 1, at.y(), at.z()) != stone
+                && (world.getBlock(at.x(), at.y(), at.z() + 1) == stone
+                        || world.getBlock(at.x(), at.y(), at.z() - 1) == stone));
+
+        TestActor empty = actor("BindNoClipboard");
+        empty.setHeldItem(AXE);
+        String refused = answer(empty, "/brush clipboard");
+        check("with no clipboard the brush is refused (" + refused + ")",
+                refused.contains("No clipboard: use //copy first") && BrushFactory.current(empty) == null);
     }
 
     /**

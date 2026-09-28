@@ -1521,6 +1521,8 @@ public final class Brushes {
         private final Mask sourceMask;
         /** {@code -r}: turn the paste by a random quarter turn. */
         private final boolean randomRotate;
+        /** The clipboard and its transform as they were when the brush was bound. */
+        private com.maxlananas.fawebim.core.session.ClipboardHolder bound;
 
         public ClipboardBrush(double radius, Mask mask, boolean pasteOnTop) {
             this(radius, mask, pasteOnTop, false, false, false, false, null, false);
@@ -1539,13 +1541,23 @@ public final class Brushes {
             this.randomRotate = randomRotate;
         }
 
+        /**
+         * Keeps the clipboard the brush pastes, as WorldEdit's brush keeps the
+         * holder it is given: a later //copy binds another brush rather than
+         * changing this one. A brush with none pastes the clipboard of the
+         * moment.
+         */
+        public void setClipboard(com.maxlananas.fawebim.core.session.ClipboardHolder clipboard) {
+            this.bound = clipboard;
+        }
+
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            if (!actor.session().hasClipboard()) {
+            var holder = bound != null ? bound : actor.session().hasClipboard() ? actor.session().getClipboard() : null;
+            if (holder == null) {
                 actor.message(Msg.error("No clipboard: use //copy first"));
                 return 0;
             }
-            var holder = actor.session().getClipboard();
             var clipboard = holder.getClipboard();
             // WorldEdit's centring: the centre of the clipboard's box goes on
             // the click, wherever its origin is. Counting half the size from
