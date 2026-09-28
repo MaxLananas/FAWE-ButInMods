@@ -46,6 +46,44 @@ final class SculptBrushTests {
         erosionCountsTypesAndNeedsOneTwice();
         erosionFillingKeepsTheLastTypeAndMorphTheFirstToLead();
         theRockTakesARadiusPerAxisAndIsNewEveryClick();
+        aFallingSphereDropsOntoTheGroundUnderEachColumn();
+    }
+
+    /**
+     * FAWE's falling sphere drops each column onto the highest block that
+     * stops movement at or under the column's top, keeping its length: over a
+     * flat floor the middle column of a sphere of radius 2 is five blocks
+     * from the grass up, beside a stone pillar the column is set in the
+     * pillar and no higher, and over a pond it falls through the water. It
+     * dropped onto the highest block of the whole column, filled beside the
+     * pillar up to its top, and landed on the water.
+     */
+    private static void aFallingSphereDropsOntoTheGroundUnderEachColumn() {
+        TestActor actor = actor("FallingSphere");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        int stone = state("minecraft:stone");
+        for (int y = 64; y <= 80; y++) {
+            world.setBlock(1, y, 0, stone);
+        }
+        for (int y = 64; y <= 66; y++) {
+            world.setBlock(-1, y, 0, state("minecraft:water"));
+        }
+        answer(actor, "/brush sphere gold_block 2 -f");
+        stroke(actor, 0, 72, 0);
+        boolean middle = true;
+        for (int y = 63; y <= 67; y++) {
+            middle &= world.getBlock(0, y, 0) == gold;
+        }
+        check("the middle column falls onto the grass and keeps its five blocks",
+                middle && world.getBlock(0, 68, 0) != gold);
+        boolean pillar = world.getBlock(1, 71, 0) == gold && world.getBlock(1, 73, 0) == gold;
+        for (int y = 74; y <= 80; y++) {
+            pillar &= world.getBlock(1, y, 0) == stone;
+        }
+        check("beside a pillar the column is set in it, no higher", pillar);
+        check("and over a pond it falls through the water", world.getBlock(-1, 64, 0) == gold
+                && world.getBlock(-1, 63, 0) == gold && world.getBlock(-1, 66, 0) != gold);
     }
 
     /**

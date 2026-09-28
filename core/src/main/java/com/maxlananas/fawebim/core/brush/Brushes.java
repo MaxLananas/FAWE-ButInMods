@@ -64,6 +64,15 @@ public final class Brushes {
     private Brushes() {
     }
 
+    /**
+     * FAWE's movement blocker, what its terrain searches land on: the game's
+     * solid blocks but the cobweb and the bamboo sapling.
+     */
+    private static boolean stopsMovement(BlockStateRegistry registry, int state) {
+        String name = registry.name(state);
+        return registry.isSolid(state) && !"minecraft:cobweb".equals(name) && !"minecraft:bamboo_sapling".equals(name);
+    }
+
     /** Shared base: holds radius, fill, mask and the settings object. */
     public abstract static class BaseBrush implements Brush {
 
@@ -212,8 +221,15 @@ public final class Brushes {
     }
 
     /**
-     * {@code /brush sphere -f}: the same sphere, but every column is filled down
-     * to the terrain below it, so the blocks land instead of floating.
+     * {@code /brush sphere -f}: FAWE's falling sphere. Each column of the ball
+     * drops onto the highest block that stops movement at or under its own
+     * top, and keeps its length; a column the ground reaches into is set from
+     * its bottom to its top as the sphere's would be.
+     *
+     * <p>This dropped each column onto the highest block of the whole column,
+     * so beside a cliff or under a tree the column was filled up to the top
+     * of the terrain, and it came down on water where FAWE's falls through
+     * to the bottom.</p>
      */
     public static final class FallingSphereBrush extends SphereBrush {
 
@@ -223,27 +239,37 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
+            BlockStateRegistry registry = BlockState.registry();
+            int minY = session.minY();
+            int maxY = session.maxY();
+            int size = (int) Math.round(radius);
+            int squared = (int) Math.round(radius * radius);
             int changed = 0;
-            int size = (int) radius;
             for (int z = -size; z <= size; z++) {
-                for (int x = -size; x <= size; x++) {
-                    int remaining = size * size - z * z - x * x;
-                    if (remaining < 0) {
+                int remaining = squared - z * z;
+                int xRadius = remaining < 0 ? 0 : (int) Math.sqrt(remaining);
+                for (int x = -xRadius; x <= xRadius; x++) {
+                    int remainingY = remaining - x * x;
+                    if (remainingY < 0) {
                         continue;
                     }
-                    int yRadius = (int) Math.sqrt(remaining);
+                    int yRadius = (int) Math.sqrt(remainingY);
                     int columnX = position.x() + x;
                     int columnZ = position.z() + z;
-                    int startY = Math.max(session.getWorld().minY(), position.y() - yRadius);
-                    int endY = Math.min(session.getWorld().maxY(), position.y() + yRadius);
-                    int floorY = session.getWorld().getHighestBlockY(columnX, columnZ);
-                    // The sphere drops until its lowest block rests on the ground.
-                    if (floorY < startY) {
-                        int drop = startY - floorY;
-                        startY -= drop;
-                        endY -= drop;
+                    int startY = Math.max(minY, position.y() - yRadius);
+                    int endY = Math.min(maxY, position.y() + yRadius);
+                    int ground = minY;
+                    for (int y = endY; y >= minY; y--) {
+                        if (stopsMovement(registry, session.getBlock(columnX, y, columnZ))) {
+                            ground = y;
+                            break;
+                        }
                     }
-                    for (int y = startY; y <= Math.max(floorY, endY); y++) {
+                    if (ground < startY) {
+                        endY -= startY - ground;
+                        startY = ground;
+                    }
+                    for (int y = startY; y <= endY; y++) {
                         if (place(session, columnX, y, columnZ)) {
                             changed++;
                         }
@@ -2009,12 +2035,6 @@ public final class Brushes {
                 }
             }
             return changed;
-        }
-
-        /** FAWE's movement blocker: the game's solid blocks but the cobweb and the bamboo sapling. */
-        private static boolean stopsMovement(BlockStateRegistry registry, int state) {
-            String name = registry.name(state);
-            return registry.isSolid(state) && !"minecraft:cobweb".equals(name) && !"minecraft:bamboo_sapling".equals(name);
         }
 
         @Override
