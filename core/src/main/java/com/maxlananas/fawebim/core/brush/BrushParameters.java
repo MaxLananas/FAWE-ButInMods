@@ -134,7 +134,6 @@ public final class BrushParameters {
                 layers[i] = Parsers.pattern(pieces.get(i).trim(), ctx).apply(0, 0, 0);
             }
         }
-        Mask sessionMask = ctx == null ? null : ctx.session().getMask();
         // Mask-valued flags are parsed here, where the session is known: -m on the
         // clipboard brush fills its source mask, -m on the blend ball its mask.
         Map<String, Mask> masks = new LinkedHashMap<>();
@@ -150,7 +149,7 @@ public final class BrushParameters {
         }
         // -o counts from the placement position of the moment the brush is bound.
         BlockVector3 placement = ctx != null && options.switchOn("o") ? ctx.placement() : null;
-        return new BrushParameters(row[0], pattern, layers, sessionMask, masks, values, options, placement,
+        return new BrushParameters(row[0], pattern, layers, null, masks, values, options, placement,
                 ctx == null ? null : ctx.world(), ctx == null ? null : clipboardOf(ctx.session()));
     }
 
@@ -207,7 +206,12 @@ public final class BrushParameters {
         return layers.clone();
     }
 
-    /** The mask of the session, applied by every brush. */
+    /**
+     * The mask a brush is bound with: none. FAWE's brush takes its mask from
+     * /tool mask; the session's global mask is not copied into it, which kept
+     * the mask of the moment of binding after //gmask changed, since the edit
+     * applies the global mask of the moment at every stroke.
+     */
     public Mask mask() {
         return mask;
     }

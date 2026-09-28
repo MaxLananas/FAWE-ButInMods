@@ -47,17 +47,28 @@ public final class Brushes {
         if (transform != null && !transform.isIdentity()) {
             session.setTransform(transform, position);
         }
-        com.maxlananas.fawebim.core.mask.Mask own = brush.settings().getSourceMask();
-        if (own == null) {
-            return brush.apply(session, position, actor);
+        // FAWE's brush tool masks the edit of every stroke with the brush's
+        // mask, /tool mask, on top of the global mask the edit already has:
+        // every brush writes through it, and the ones that walk the terrain
+        // read it from the edit.
+        Mask destination = brush.mask();
+        Mask global = session.getMask();
+        if (destination != null && destination != global) {
+            session.setMask(global == null ? destination : new Masks.IntersectionMask(List.of(global, destination)));
         }
+        com.maxlananas.fawebim.core.mask.Mask own = brush.settings().getSourceMask();
         com.maxlananas.fawebim.core.session.LocalSession local = session.getSession();
         com.maxlananas.fawebim.core.mask.Mask previous = local.getSourceMask();
-        local.setSourceMask(own);
+        if (own != null) {
+            local.setSourceMask(own);
+        }
         try {
             return brush.apply(session, position, actor);
         } finally {
-            local.setSourceMask(previous);
+            if (own != null) {
+                local.setSourceMask(previous);
+            }
+            session.setMask(global);
         }
     }
 
@@ -310,9 +321,12 @@ public final class Brushes {
     public static final class SmoothBrush extends BaseBrush {
 
         private int iterations = 4;
+        /** The blocks the height map is read from, FAWE's third argument; the brush's own mask is /tool mask. */
+        private final Mask heightmapMask;
 
-        public SmoothBrush(double radius, Mask mask) {
-            super(radius, null, mask);
+        public SmoothBrush(double radius, Mask heightmapMask) {
+            super(radius, null, null);
+            this.heightmapMask = heightmapMask;
         }
 
         /** How many smoothing passes the brush runs on every click. */
@@ -328,7 +342,7 @@ public final class Brushes {
             CuboidRegion region = new CuboidRegion(
                     BlockVector3.at(position.x() - size, position.y() - size, position.z() - size),
                     BlockVector3.at(position.x() + size, position.y() + size + 10, position.z() + size));
-            return HeightMaps.smooth(session.getWorld(), session, region, iterations, mask);
+            return HeightMaps.smooth(session.getWorld(), session, region, iterations, heightmapMask);
         }
     }
 
@@ -773,7 +787,7 @@ public final class Brushes {
          */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.surfaceSphere(session, position, radius, fill, mask);
+            return Operations.surfaceSphere(session, position, radius, fill, session.getMask());
         }
     }
 
@@ -1145,7 +1159,8 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.scatter(session, position, points, distance, radius, fill, random, overlay, mask);
+            return Operations.scatter(session, position, points, distance, radius, fill, random, overlay,
+                    session.getMask());
         }
     }
 
@@ -1166,7 +1181,7 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.shatter(session, position, radius, count, fill, mask, random);
+            return Operations.shatter(session, position, radius, count, fill, session.getMask(), random);
         }
     }
 
@@ -1203,7 +1218,8 @@ public final class Brushes {
 
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            return Operations.splatter(session, position, radius, points, recursion, solid, fill, mask, random);
+            return Operations.splatter(session, position, radius, points, recursion, solid, fill, session.getMask(),
+                    random);
         }
     }
 
@@ -1954,9 +1970,12 @@ public final class Brushes {
         private java.util.List<BlockArrayClipboard> clipboards = java.util.List.of();
         private boolean randomRotation;
         private int density = 50;
+        /** The blocks a schematic may stand on, FAWE's second argument; the brush's own mask is /tool mask. */
+        private final Mask surfaceMask;
 
-        public PopulateSchematicBrush(double radius, Mask mask) {
-            super(radius, null, mask);
+        public PopulateSchematicBrush(double radius, Mask surfaceMask) {
+            super(radius, null, null);
+            this.surfaceMask = surfaceMask;
         }
 
         /** The schematics to draw from, as the line named them and as they were read. */
@@ -2017,13 +2036,13 @@ public final class Brushes {
                     }
                     int x = (chunkX << 4) + random.nextInt(16);
                     int z = (chunkZ << 4) + random.nextInt(16);
-                    int y = HeightMaps.highestTerrain(world, mask, x, z, bottom, top);
+                    int y = HeightMaps.highestTerrain(world, surfaceMask, x, z, bottom, top);
                     // Nothing the mask accepts in the box but its floor, which
                     // FAWE only builds on when movement stops there.
                     if (y == bottom && !stopsMovement(registry, world.getBlock(x, y, z))) {
                         continue;
                     }
-                    if (mask != null && !mask.test(x, y, z)) {
+                    if (surfaceMask != null && !surfaceMask.test(x, y, z)) {
                         continue;
                     }
                     BlockArrayClipboard clipboard = clipboards.get(random.nextInt(clipboards.size()));
@@ -2342,10 +2361,14 @@ public final class Brushes {
         private final int iterations;
         private final int snowBlockLayers;
 
-        public SnowSmoothBrush(double radius, int iterations, int snowBlockLayers, Mask mask) {
-            super(radius, null, mask);
+        /** The blocks the height map is read from, FAWE's -m; the brush's own mask is /tool mask. */
+        private final Mask heightmapMask;
+
+        public SnowSmoothBrush(double radius, int iterations, int snowBlockLayers, Mask heightmapMask) {
+            super(radius, null, null);
             this.iterations = Math.max(1, iterations);
             this.snowBlockLayers = Math.max(0, snowBlockLayers);
+            this.heightmapMask = heightmapMask;
         }
 
         @Override
@@ -2356,7 +2379,8 @@ public final class Brushes {
                     BlockVector3.at(position.x() + size, position.y() + size + 10, position.z() + size));
             // FAWE blurs the snow of a brush with a wider kernel than the one
             // //snowsmooth uses, so one click evens out the whole drift.
-            return HeightMaps.snowSmooth(session.getWorld(), session, region, iterations, snowBlockLayers, mask, 10);
+            return HeightMaps.snowSmooth(session.getWorld(), session, region, iterations, snowBlockLayers,
+                    heightmapMask, 10);
         }
     }
 

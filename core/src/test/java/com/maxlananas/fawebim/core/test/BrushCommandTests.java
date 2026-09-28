@@ -41,6 +41,62 @@ final class BrushCommandTests {
         theCopyPasteBrushCopiesThenPastesAboutItsOrigin();
         thePopulateBrushSetsItsSchematicsOnTheSurfaceWithoutTheirAir();
         theExtinguishBrushPutsOutFireAlone();
+        everyBrushWritesThroughItsMaskAndTheGlobalOneOfTheMoment();
+    }
+
+    /**
+     * FAWE's brush tool masks the edit of every stroke with the brush's mask,
+     * on top of the global mask of the moment. The cylinder wrote through no
+     * mask at all; a brush bound under a //gmask kept that mask after the
+     * //gmask was cleared; and /tool mask on the populate brush replaced the
+     * mask of the blocks its schematics stand on.
+     */
+    private static void everyBrushWritesThroughItsMaskAndTheGlobalOneOfTheMoment() {
+        int gold = state("minecraft:gold_block");
+        int grass = state("minecraft:grass_block");
+        TestActor actor = actor("BrushMasks");
+        TestWorld world = (TestWorld) actor.world();
+        answer(actor, "/brush cylinder gold_block 2 3");
+        answer(actor, "/tool mask air");
+        stroke(actor, 0, 63, 0);
+        check("the cylinder writes through /tool mask: the grass stays, the air above takes gold",
+                world.getBlock(0, 63, 0) == grass && world.getBlock(0, 64, 0) == gold);
+
+        TestActor global = actor("BrushGlobalMask");
+        TestWorld globalWorld = (TestWorld) global.world();
+        answer(global, "//gmask dirt");
+        answer(global, "/brush sphere gold_block 1");
+        answer(global, "//gmask");
+        stroke(global, 10, 63, 10);
+        check("a brush bound under a //gmask follows the one of the moment once it is cleared",
+                globalWorld.getBlock(10, 63, 10) == gold);
+
+        com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard stamp =
+                new com.maxlananas.fawebim.core.clipboard.BlockArrayClipboard(new BlockVector3(0, 0, 0));
+        stamp.setBlock(0, 0, 0, gold);
+        com.maxlananas.fawebim.core.clipboard.Schematics.save(stamp, "populate-masked", "sponge.3");
+        TestActor populate = actor("BrushMaskPopulate");
+        TestWorld populated = (TestWorld) populate.world();
+        answer(populate, "/brush populateschematic populate-masked grass_block 6 100");
+        answer(populate, "/tool mask air");
+        stroke(populate, 0, 64, 0);
+        int onGrass = 0;
+        int elsewhere = 0;
+        for (int x = -24; x < 24; x++) {
+            for (int z = -24; z < 24; z++) {
+                for (int y = 55; y <= 75; y++) {
+                    if (populated.getBlock(x, y, z) == gold) {
+                        if (y == 64) {
+                            onGrass++;
+                        } else {
+                            elsewhere++;
+                        }
+                    }
+                }
+            }
+        }
+        check("/tool mask leaves the populate brush standing its schematics on the grass (" + onGrass + ", "
+                + elsewhere + ")", onGrass > 0 && elsewhere == 0);
     }
 
     /**
