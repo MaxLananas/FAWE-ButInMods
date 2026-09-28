@@ -31,6 +31,7 @@ final class PatternSyntaxTests {
         offsetsAndSpreads();
         linearPatterns();
         tagPatterns();
+        colourAndSwapPatterns();
         BlockStateRegistry previous = BlockState.registry();
         BlockState.setRegistry(new PropertyTestRegistry());
         try {
@@ -130,6 +131,47 @@ final class PatternSyntaxTests {
         answer(actor, "//set ##logs");
         check("a category is a block of it", BlockState.registry().name(world.getBlock(1, 64, 1)).endsWith("_log"));
         check("an unknown tag is refused", answer(actor, "//set ##nope").contains("Unknown block tag 'nope'"));
+    }
+
+    /**
+     * FAWE's colour patterns take a colour as [r][g][b][a], which gave white;
+     * #averagecolor and #anglecolor were that same fixed colour; #desaturate
+     * took its percent for a fraction; #typeswap swapped a fixed list of blocks
+     * and took no argument.
+     */
+    private static void colourAndSwapPatterns() {
+        TestActor actor = actor("PatternColours");
+        TestWorld world = (TestWorld) actor.world();
+        answer(actor, "//pos1 0,63,0");
+        answer(actor, "//pos2 1,63,0");
+        answer(actor, "//set #color[255][0][0][255]");
+        checkEquals("#color[r][g][b][a] is the block nearest the colour", state("minecraft:redstone_block"),
+                world.getBlock(0, 63, 0));
+        answer(actor, "//set #color[0,0,255]");
+        checkEquals("so is the older #color[r,g,b]", state("minecraft:lapis_block"), world.getBlock(0, 63, 0));
+        check("a colour by name is refused", answer(actor, "//set #color[red]").contains("#color[r][g][b][a]"));
+        answer(actor, "//set white_wool");
+        answer(actor, "//set #averagecolor[0][0][0][255]");
+        checkEquals("#averagecolor averages the block's colour with its own, white and black being grey",
+                state("minecraft:cobblestone"), world.getBlock(0, 63, 0));
+        answer(actor, "//set white_wool");
+        answer(actor, "//set #saturate[255][0][0][255]");
+        checkEquals("#saturate multiplies it, white by red being red", state("minecraft:redstone_block"),
+                world.getBlock(0, 63, 0));
+        answer(actor, "//set red_wool");
+        answer(actor, "//set #desaturate[100]");
+        checkEquals("#desaturate[100] is the grey of the colour", state("minecraft:gray_wool"),
+                world.getBlock(0, 63, 0));
+        answer(actor, "//set stone");
+        check("#anglecolor on flat ground changes nothing", answer(actor, "//set #anglecolor[2]").contains("Set: 0"));
+        world.setBlock(0, 63, 0, state("minecraft:spruce_log"));
+        world.setBlock(1, 63, 0, state("minecraft:stone"));
+        answer(actor, "//set #typeswap[spruce][oak]");
+        checkEquals("#typeswap[spruce][oak] makes the spruce oak", state("minecraft:oak_log"),
+                world.getBlock(0, 63, 0));
+        checkEquals("and leaves what has no spruce in its name", state("minecraft:stone"), world.getBlock(1, 63, 0));
+        check("it needs its input and its output",
+                answer(actor, "//set #ts[spruce]").contains("#ts[input][output]"));
     }
 
     private static void typeAndStatePatterns() {

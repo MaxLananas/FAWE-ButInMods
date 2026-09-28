@@ -439,32 +439,47 @@ public final class Patterns {
         }
     }
 
-    /** {@code #swaptype} — swaps block types, keeping properties. */
+    /**
+     * FAWE's {@code #typeswap[input][output]}: the block a position holds with
+     * {@code input} replaced by {@code output} in its id, and the properties it
+     * had that the new block has - {@code #typeswap[spruce][oak]} makes spruce
+     * planks oak planks and spruce stairs oak stairs. An input may list several,
+     * {@code a,b} or {@code a|b}. A block whose id does not change, or changes
+     * to no block, stays. It swapped a fixed list of blocks, whatever it was
+     * given.
+     */
     public static final class TypeSwap implements Pattern {
+
+        private final String[] inputs;
+        private final String output;
+
+        public TypeSwap(String input, String output) {
+            this.inputs = input.split("[|,]");
+            this.output = output;
+        }
 
         @Override
         public int apply(int x, int y, int z) {
             Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
+            BlockStateRegistry registry = BlockState.registry();
             if (extent == null) {
-                return 0;
+                return registry.air();
             }
             int id = extent.getBlock(x, y, z);
-            BlockStateRegistry registry = BlockState.registry();
             String name = registry.name(id);
-            // Mud <-> dirt, grass <-> mycelium, stone family, wood families.
-            String swapped = switch (name) {
-                case "minecraft:grass_block" -> "minecraft:mycelium";
-                case "minecraft:mycelium" -> "minecraft:grass_block";
-                case "minecraft:dirt" -> "minecraft:coarse_dirt";
-                case "minecraft:stone" -> "minecraft:cobblestone";
-                case "minecraft:cobblestone" -> "minecraft:stone";
-                default -> name.replace("_stairs", "").replace("_slab", "");
-            };
+            String swapped = name;
+            for (String input : inputs) {
+                if (!input.isEmpty()) {
+                    swapped = swapped.replace(input, output);
+                }
+            }
+            if (swapped.equals(name)) {
+                return id;
+            }
             int target = registry.defaultState(swapped);
             if (target < 0) {
                 return id;
             }
-            // Keep matching properties across the swap.
             int result = target;
             for (var entry : registry.properties(id).entrySet()) {
                 int updated = registry.withProperty(result, entry.getKey(), entry.getValue());
@@ -476,7 +491,7 @@ public final class Patterns {
         }
     }
 
-        /**
+    /**
      * FAWE's {@code #linear[pattern]}: the entries of a list one after the other,
      * a block each, in the order the edit visits them.
      */
@@ -814,14 +829,22 @@ public final class Patterns {
         }
     }
 
-    /** Blends a base colour with the block below ({@code #darken}, {@code #lighten}, ...). */
+    /**
+     * The block nearest in colour to the colour of the block a position holds,
+     * changed: {@code #lighten} and {@code #darken} move its brightness,
+     * {@code #desaturate[percent]} moves it that far towards its grey as FAWE
+     * does, {@code #averagecolor[r][g][b][a]} averages it with a colour and
+     * {@code #saturate[r][g][b][a]} multiplies it by one, as FAWE's do.
+     */
     public static final class ColorAdjust implements Pattern {
 
-        public enum Mode { LIGHTEN, DARKEN, SATURATE, DESATURATE }
+        public enum Mode { LIGHTEN, DARKEN, SATURATE, DESATURATE, AVERAGE, MULTIPLY }
 
         private final Extent extent;
         private final Mode mode;
         private final double amount;
+        /** The colour {@link Mode#AVERAGE} and {@link Mode#MULTIPLY} mix in, {@code 0xRRGGBB}. */
+        private final int color;
         /**
          * The answer for every state met so far, plus one so that 0 means not
          * yet: it depends on the state only, and working it out went through
@@ -830,9 +853,14 @@ public final class Patterns {
         private int[] answers = new int[0];
 
         public ColorAdjust(Extent extent, Mode mode, double amount) {
+            this(extent, mode, amount, 0);
+        }
+
+        public ColorAdjust(Extent extent, Mode mode, double amount, int color) {
             this.extent = extent;
             this.mode = mode;
             this.amount = amount;
+            this.color = color & 0xFFFFFF;
         }
 
         @Override
@@ -858,19 +886,131 @@ public final class Patterns {
 
         private int adjust(int state) {
             BlockStateRegistry registry = BlockState.registry();
-            int color = MapColors.colorOf(registry, state);
-            float[] hsb = java.awt.Color.RGBtoHSB((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, null);
+            int current = MapColors.colorOf(registry, state);
+            int r = (current >> 16) & 0xFF;
+            int g = (current >> 8) & 0xFF;
+            int b = current & 0xFF;
+            int rgb;
             switch (mode) {
-                case LIGHTEN -> hsb[2] = (float) Math.min(1, hsb[2] + amount);
-                case DARKEN -> hsb[2] = (float) Math.max(0, hsb[2] - amount);
-                case SATURATE -> hsb[1] = (float) Math.min(1, hsb[1] + amount);
-                case DESATURATE -> hsb[1] = (float) Math.max(0, hsb[1] - amount);
+                case DESATURATE -> {
+                    // FAWE's: each channel that far towards the luminance.
+                    double value = Math.max(0, Math.min(1, amount));
+                    double luminance = 0.3f * r + 0.6f * g + 0.1f * b;
+                    rgb = ((int) (r + value * (luminance - r)) << 16) | ((int) (g + value * (luminance - g)) << 8)
+                            | (int) (b + value * (luminance - b));
+                }
+                case AVERAGE -> rgb = (((r + ((color >> 16) & 0xFF)) >> 1) << 16)
+                        | (((g + ((color >> 8) & 0xFF)) >> 1) << 8) | ((b + (color & 0xFF)) >> 1);
+                case MULTIPLY -> rgb = ((r * ((color >> 16) & 0xFF) / 255) << 16)
+                        | ((g * ((color >> 8) & 0xFF) / 255) << 8) | (b * (color & 0xFF) / 255);
                 default -> {
+                    float[] hsb = java.awt.Color.RGBtoHSB(r, g, b, null);
+                    switch (mode) {
+                        case LIGHTEN -> hsb[2] = (float) Math.min(1, hsb[2] + amount);
+                        case DARKEN -> hsb[2] = (float) Math.max(0, hsb[2] - amount);
+                        default -> hsb[1] = (float) Math.min(1, hsb[1] + amount);
+                    }
+                    rgb = java.awt.Color.HSBtoRGB(hsb[0], hsb[1], hsb[2]) & 0xFFFFFF;
                 }
             }
-            int rgb = java.awt.Color.HSBtoRGB(hsb[0], hsb[1], hsb[2]) & 0xFFFFFF;
             int closest = MapColors.palette(registry).closest(rgb);
             return closest < 0 ? state : closest;
+        }
+    }
+
+    /**
+     * FAWE's {@code #anglecolor[distance]}: the block nearest in colour to the
+     * one a position holds, darkened by the slope of the terrain around it,
+     * measured from the surface that far away on each side. A block that is
+     * not solid stays, and so does one whose colour is black.
+     */
+    public static final class AngleColor implements Pattern {
+
+        private final int distance;
+        private final int minY;
+        private final int maxY;
+        private final double factor;
+
+        public AngleColor(int distance, int minY, int maxY) {
+            this.distance = distance;
+            this.minY = minY;
+            this.maxY = maxY;
+            this.factor = (1d / distance) * (1d / maxY);
+        }
+
+        @Override
+        public int apply(int x, int y, int z) {
+            Extent extent = com.maxlananas.fawebim.core.mask.Masks.ExtentHolder.get();
+            if (extent == null) {
+                return BlockState.registry().air();
+            }
+            BlockStateRegistry registry = BlockState.registry();
+            int block = extent.getBlock(x, y, z);
+            if (!registry.isSolid(block)) {
+                return block;
+            }
+            int color = MapColors.colorOf(registry, block);
+            if (color == 0) {
+                return block;
+            }
+            long slope = slope(extent, x, y, z);
+            if (slope == 0) {
+                return block;
+            }
+            double darken = 1 - Math.min(1, slope * factor);
+            int rgb = ((int) (((color >> 16) & 0xFF) * darken) << 16) | ((int) (((color >> 8) & 0xFF) * darken) << 8)
+                    | (int) ((color & 0xFF) * darken);
+            int closest = MapColors.palette(registry).closest(rgb);
+            return closest < 0 ? block : closest;
+        }
+
+        private long slope(Extent extent, int x, int y, int z) {
+            int height = surface(extent, x, z, y);
+            if (height > minY && !BlockState.registry().isSolid(extent.getBlock(x, height - 1, z))) {
+                return Integer.MAX_VALUE;
+            }
+            int d = distance;
+            return Math.abs(surface(extent, x + d, z, y) - surface(extent, x - d, z, y)) * 7L
+                    + Math.abs(surface(extent, x, z + d, y) - surface(extent, x, z - d, y)) * 7L
+                    + Math.abs(surface(extent, x + d, z + d, y) - surface(extent, x - d, z - d, y)) * 5L
+                    + Math.abs(surface(extent, x - d, z + d, y) - surface(extent, x + d, z - d, y)) * 5L;
+        }
+
+        /**
+         * The surface of a column nearest a height, as FAWE finds it: the first
+         * change between solid and open met going up and down from there, the
+         * solid block's height.
+         */
+        private int surface(Extent extent, int x, int z, int y) {
+            BlockStateRegistry registry = BlockState.registry();
+            y = Math.max(minY, Math.min(maxY, y));
+            boolean open = !registry.isSolid(extent.getBlock(x, y, z));
+            int offset = open ? 0 : 1;
+            int clearanceAbove = maxY - y;
+            int clearanceBelow = y - minY;
+            int clearance = Math.min(clearanceAbove, clearanceBelow);
+            for (int d = 0; d <= clearance; d++) {
+                if (!registry.isSolid(extent.getBlock(x, y + d, z)) != open) {
+                    return y + d - offset;
+                }
+                if (!registry.isSolid(extent.getBlock(x, y - d, z)) != open) {
+                    return y - d + offset;
+                }
+            }
+            if (clearanceAbove < clearanceBelow) {
+                for (int layer = y - clearance - 1; layer >= minY; layer--) {
+                    if (!registry.isSolid(extent.getBlock(x, layer, z)) != open) {
+                        return layer + offset;
+                    }
+                }
+            } else if (clearanceAbove > clearanceBelow) {
+                for (int layer = y + clearance + 1; layer <= maxY; layer++) {
+                    if (!registry.isSolid(extent.getBlock(x, layer, z)) != open) {
+                        return layer - offset;
+                    }
+                }
+            }
+            return open ? minY : maxY;
         }
     }
 

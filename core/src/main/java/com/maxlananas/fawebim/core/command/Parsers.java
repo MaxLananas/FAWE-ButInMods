@@ -509,31 +509,50 @@ public final class Parsers {
                         + ", got '" + parts.get(1).trim() + "'");
             }
             case "swaptype", "ts", "typeswap" -> {
-                return new Patterns.TypeSwap();
+                List<String> parts = Str.bracketGroups(input);
+                if (parts.size() != 2 || parts.get(0).isBlank()) {
+                    throw CommandRegistry.error("Syntax: #" + id + "[input][output], e.g. #" + id + "[spruce][oak]");
+                }
+                return new Patterns.TypeSwap(parts.get(0).trim().toLowerCase(Locale.ROOT),
+                        parts.get(1).trim().toLowerCase(Locale.ROOT));
             }
             case "rel", "r", "relative", "~" -> {
                 BlockVector3 origin = ctx.placement();
                 return new Patterns.Relative(pattern(args, ctx), origin);
             }
-            case "color", "colour", "averagecolor", "anglecolor" -> {
-                List<String> parts = Str.splitCommas(args);
-                int rgb = 0xFFFFFF;
-                if (parts.size() >= 3) {
-                    rgb = (Integer.parseInt(parts.get(0).trim()) << 16)
-                            | (Integer.parseInt(parts.get(1).trim()) << 8)
-                            | Integer.parseInt(parts.get(2).trim());
-                }
-                return new Patterns.Color(rgb);
+            case "color", "colour" -> {
+                return new Patterns.Color(colourArguments(id, input));
             }
-            case "lighten", "darken", "saturate", "desaturate" -> {
-                double amount = args.isEmpty() ? 0.1 : Double.parseDouble(args);
-                Patterns.ColorAdjust.Mode mode = switch (id) {
-                    case "lighten" -> Patterns.ColorAdjust.Mode.LIGHTEN;
-                    case "darken" -> Patterns.ColorAdjust.Mode.DARKEN;
-                    case "saturate" -> Patterns.ColorAdjust.Mode.SATURATE;
-                    default -> Patterns.ColorAdjust.Mode.DESATURATE;
-                };
-                return new Patterns.ColorAdjust(extOf(ctx), mode, amount);
+            case "averagecolor", "averagecolour" -> {
+                return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.AVERAGE, 0,
+                        colourArguments(id, input));
+            }
+            case "saturate" -> {
+                // FAWE's #saturate[r][g][b][a] multiplies by a colour; a lone
+                // number is the older saturation step.
+                if (Str.bracketGroups(input).size() == 1 && Str.isDouble(args.trim())) {
+                    return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.SATURATE,
+                            parseDouble(args.trim()));
+                }
+                return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.MULTIPLY, 0,
+                        colourArguments(id, input));
+            }
+            case "desaturate" -> {
+                double percent = args.isBlank() ? 10 : parseDouble(args.trim());
+                return new Patterns.ColorAdjust(extOf(ctx), Patterns.ColorAdjust.Mode.DESATURATE, percent / 100);
+            }
+            case "lighten", "darken" -> {
+                double amount = args.isBlank() ? 0.1 : parseDouble(args.trim());
+                return new Patterns.ColorAdjust(extOf(ctx), id.equals("lighten") ? Patterns.ColorAdjust.Mode.LIGHTEN
+                        : Patterns.ColorAdjust.Mode.DARKEN, amount);
+            }
+            case "anglecolor", "anglecolour" -> {
+                List<String> parts = Str.bracketGroups(input);
+                int distance = parts.size() == 1 ? intArgument(parts.get(0)) : 0;
+                if (distance <= 0) {
+                    throw CommandRegistry.error("Syntax: #anglecolor[distance], e.g. #anglecolor[10]");
+                }
+                return new Patterns.AngleColor(distance, ctx.world().minY(), ctx.world().maxY());
             }
             default -> throw CommandRegistry.error("Unknown pattern '" + input + "'");
         }
@@ -821,6 +840,26 @@ public final class Parsers {
             return "";
         }
         return key.substring(bracket + 1, key.length() - 1);
+    }
+
+    /**
+     * The colour of FAWE's colour patterns, {@code [r][g][b][a]} - the alpha
+     * does not change which block is nearest - or the older {@code [r,g,b]},
+     * each channel held to 0 to 255.
+     */
+    private static int colourArguments(String id, String input) {
+        List<String> parts = Str.bracketGroups(input);
+        if (parts.size() == 1) {
+            parts = Str.splitCommas(parts.get(0));
+        }
+        if (parts.size() != 3 && parts.size() != 4) {
+            throw CommandRegistry.error("Syntax: #" + id + "[r][g][b][a], e.g. #" + id + "[156][100][0][120]");
+        }
+        int rgb = 0;
+        for (int i = 0; i < 3; i++) {
+            rgb = (rgb << 8) | Math.max(0, Math.min(255, intArgument(parts.get(i))));
+        }
+        return rgb;
     }
 
     private static int intArgument(String value) {
