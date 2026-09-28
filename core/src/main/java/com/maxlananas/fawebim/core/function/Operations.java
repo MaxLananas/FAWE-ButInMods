@@ -2392,6 +2392,56 @@ public final class Operations {
     }
 
     /**
+     * {@code /brush surface <pattern> [radius]}, FAWE's SurfaceSphereBrush: the
+     * surface blocks - blocks that stop movement with a side that does not -
+     * joined to the click, diagonals included, no farther than the radius from
+     * it, take the pattern, the click included, so it paints any surface, a
+     * wall or a cave's as well as the ground.
+     */
+    public static int surfaceSphere(EditSession session, BlockVector3 center, double radius, Pattern pattern,
+                                    Mask mask) {
+        long radiusSq = (long) ((int) radius) * (int) radius;
+        LongSet visited = new LongSet();
+        LongQueue queue = new LongQueue();
+        long start = BlockArrayClipboard.positionKey(center.x(), center.y(), center.z());
+        visited.add(start);
+        queue.add(start);
+        int changed = 0;
+        while (!queue.isEmpty()) {
+            long node = queue.poll();
+            int x = BlockArrayClipboard.keyX(node);
+            int y = BlockArrayClipboard.keyY(node);
+            int z = BlockArrayClipboard.keyZ(node);
+            if ((mask == null || mask.test(x, y, z)) && session.setBlock(x, y, z, pattern.apply(x, y, z))) {
+                changed++;
+            }
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue;
+                        }
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        int nz = z + dz;
+                        if (ny < session.minY() || ny > session.maxY() || distanceSq(nx, ny, nz, center) > radiusSq) {
+                            continue;
+                        }
+                        long key = BlockArrayClipboard.positionKey(nx, ny, nz);
+                        if (visited.contains(key) || !BlockState.registry().isSolid(session.getBlock(nx, ny, nz))
+                                || openSide(session, nx, ny, nz) == null) {
+                            continue;
+                        }
+                        visited.add(key);
+                        queue.add(key);
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
      * {@code /brush shatter <pattern> [radius] [count]}, FAWE's: {@code count}
      * points on the surface - the points of {@link #scatterPoints}, a block
      * apart - each grows a patch over the surface within the radius, at random

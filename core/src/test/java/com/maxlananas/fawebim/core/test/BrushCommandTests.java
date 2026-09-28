@@ -36,6 +36,7 @@ final class BrushCommandTests {
         theSplatterBrushPaintsTheSurface();
         theLineBrushesJoinTwoClicks();
         theShatterBrushDrawsCracks();
+        theSurfaceBrushPaintsAnySurface();
     }
 
     private static TestActor actor(String name) {
@@ -203,6 +204,30 @@ final class BrushCommandTests {
         check("the shatter brush draws cracks of its pattern (" + changed + ")", changed > 0 && cracks == changed);
         checkEquals("on the surface within its radius only", 0, elsewhere);
         checkEquals("and takes no block away", 0, air);
+    }
+
+    /**
+     * FAWE's surface brush paints the surface blocks around the click, a wall
+     * as well as the ground; it laid its pattern on top of the highest block of
+     * each column, and could not reach a wall.
+     */
+    private static void theSurfaceBrushPaintsAnySurface() {
+        TestActor actor = actor("SurfaceBrush");
+        TestWorld world = (TestWorld) actor.world();
+        int gold = state("minecraft:gold_block");
+        answer(actor, "/brush surface gold_block 2");
+        stroke(actor, 0, 63, 0);
+        checkEquals("the surface brush paints the ground itself", gold, world.getBlock(1, 63, 0));
+        check("rather than laying a block on it", world.getBlock(1, 64, 0) != gold);
+        check("within its radius", world.getBlock(3, 63, 0) != gold);
+        // A wall of stone standing on the ground at x 10, painted from its side.
+        for (int y = 64; y <= 70; y++) {
+            for (int z = -3; z <= 3; z++) {
+                world.setBlock(10, y, z, state("minecraft:stone"));
+            }
+        }
+        stroke(actor, 10, 67, 0);
+        check("and a wall", world.getBlock(10, 68, 1) == gold && world.getBlock(10, 66, -1) == gold);
     }
 
     private static void theScatterBrushesPickSurfacePointsApart() {

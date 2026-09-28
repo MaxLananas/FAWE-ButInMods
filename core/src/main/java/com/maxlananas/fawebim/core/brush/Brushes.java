@@ -738,21 +738,15 @@ public final class Brushes {
             super(radius, fill, mask);
         }
 
+        /**
+         * FAWE's: paints the surface around the click, see
+         * {@link Operations#surfaceSphere}. It laid the pattern on top of the
+         * highest block of every column of a disc - the treetops, the roofs -
+         * and could paint no wall.
+         */
         @Override
         public int apply(EditSession session, BlockVector3 position, Actor actor) {
-            int changed = 0;
-            for (int z = -(int) radius; z <= radius; z++) {
-                for (int x = -(int) radius; x <= radius; x++) {
-                    if (Math.sqrt(x * x + z * z) > radius) {
-                        continue;
-                    }
-                    int highest = session.getWorld().getHighestBlockY(position.x() + x, position.z() + z);
-                    if (place(session, position.x() + x, highest + 1, position.z() + z)) {
-                        changed++;
-                    }
-                }
-            }
-            return changed;
+            return Operations.surfaceSphere(session, position, radius, fill, mask);
         }
     }
 
