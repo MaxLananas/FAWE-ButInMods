@@ -17,7 +17,6 @@ import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import com.maxlananas.fawebim.core.world.World;
 
 import java.io.IOException;
-import java.util.Locale;
 import java.util.Random;
 
 /**
