@@ -43,6 +43,7 @@ final class ShapeBrushTests {
         BlockState.setRegistry(new PropertyTestRegistry());
         try {
             theForestBrushPlantsOnItsShape();
+            theHeightBrushRaisesTheGroundItself();
             featuresAndStructuresPaintTheGround();
             raiseAndLowerDeformTheShape();
             theSnowBrushSnowsAsSnowDoes();
@@ -93,6 +94,28 @@ final class ShapeBrushTests {
         checkEquals("the brush's mask keeps its trees out of the air", 0, count(world, "minecraft:oak_log"));
         check("an unknown tree is refused when the brush is bound",
                 answer(actor, "/brush forest sphere nope").contains("Unknown tree type 'nope'"));
+    }
+
+    /**
+     * The height and cliff brushes raise the ground as WorldEdit's heightmap
+     * does, the top block going up and the column following it; they take no
+     * pattern, and raising placed air, so they only ever lowered.
+     */
+    private static void theHeightBrushRaisesTheGroundItself() {
+        TestActor actor = ground("HeightBrush");
+        TestWorld world = (TestWorld) actor.world();
+        answer(actor, "/brush height 3 1");
+        check("the height brush raises flat ground", stroke(actor, 0, 60, 0) > 0);
+        int top = world.getHighestBlockY(0, 0);
+        check("the middle goes up (" + top + ")", top > 60);
+        checkEquals("with the grass on top", state("minecraft:grass_block"), world.getBlock(0, top, 0));
+        checkEquals("and the ground under it, not air", state("minecraft:stone"), world.getBlock(0, top - 1, 0));
+        answer(actor, "//undo");
+        checkEquals("the raise is undone", 60, world.getHighestBlockY(0, 0));
+        answer(actor, "/brush cliff 2");
+        stroke(actor, 0, 60, 0);
+        check("the cliff brush raises a plateau", world.getHighestBlockY(0, 0) > 60
+                && world.getHighestBlockY(1, 0) == world.getHighestBlockY(0, 0));
     }
 
     private static void featuresAndStructuresPaintTheGround() {

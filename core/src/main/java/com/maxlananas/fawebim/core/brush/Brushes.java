@@ -544,10 +544,36 @@ public final class Brushes {
                     changed++;
                 }
             }
-            for (int y = target; y > session.getWorld().getHighestBlockY(x, z); y--) {
-                if (place(session, x, y, z)) {
+            if (target <= highest) {
+                return changed;
+            }
+            if (fill != null) {
+                for (int y = target; y > highest; y--) {
+                    if (place(session, x, y, z)) {
+                        changed++;
+                    }
+                }
+                return changed;
+            }
+            // Without a pattern the column grows as WorldEdit's heightmap grows
+            // it: its top block goes up to the new height and the blocks under
+            // it follow, so grass stays on dirt over stone. It placed air.
+            int top = session.getBlock(x, highest, z);
+            if (!registry.isSolid(top)) {
+                return changed;
+            }
+            int carried = registry.air();
+            for (int setY = target - 1, getY = highest - 1; setY >= highest; setY--, getY--) {
+                int below = getY >= session.minY() ? session.getBlock(x, getY, z) : registry.air();
+                if (!registry.isAirLike(below)) {
+                    carried = below;
+                }
+                if (test(x, setY, z) && session.setBlock(x, setY, z, carried)) {
                     changed++;
                 }
+            }
+            if (test(x, target, z) && session.setBlock(x, target, z, top)) {
+                changed++;
             }
             return changed;
         }
