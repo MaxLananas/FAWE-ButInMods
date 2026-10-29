@@ -76,8 +76,8 @@ Eight lots, in [`BUGS.md`](BUGS.md). The ones a builder would have felt:
 
 ### Build and CI
 
-- A green run compiles, runs the engine self tests (**2 495** assertions), jars the mod, boots a real
-  dedicated server with it, drives it over RCON and reads the blocks back — in about **71 s**.
+- A green run compiles, runs the engine self tests (**2 502** assertions), jars the mod, boots a real
+  dedicated server with it, drives it over RCON and reads the blocks back — in about **67 s**.
 - **Zero CI artifacts**: nothing is uploaded, and a final job deletes anything the repository still
   holds.
 - The build is cached on the whole Gradle home, because the build scripts are compiled too.
