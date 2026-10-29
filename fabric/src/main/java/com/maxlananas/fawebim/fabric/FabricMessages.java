@@ -158,7 +158,11 @@ public final class FabricMessages {
             // brushes and tools by the item in hand, air included.
             return "minecraft:air";
         }
-        return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        var key = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
+        // An item the registry does not know cannot be named, and an empty hand
+        // is what the bindings fall back to; a NullPointerException out of a
+        // click is not.
+        return key == null ? "minecraft:air" : key.toString();
     }
 
     public static BlockVector3 blockVector(BlockPos pos) {

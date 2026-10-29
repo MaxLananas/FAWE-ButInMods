@@ -336,10 +336,20 @@ public final class Commands {
         e12.description = "Count the number of blocks matching a mask";
         e12.group = "selection";
         e12.requiresSelection = true;
-        e12.arguments.add("mask");
+        e12.arguments.add("[mask]");
         e12.handler = ctx -> {
-                    Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    long count = ctx.selection().forEachPosition(mask::test);
+                    // As in WorldEdit, the mask is optional: without one every
+                    // block of the selection is counted. It was declared as
+                    // required, so //count on its own was refused with a usage
+                    // line instead of counting the selection.
+                    Mask mask = ctx.args().isEmpty() ? ctx.session().getMask()
+                            : Parsers.mask(ctx.arg(0), ctx);
+                    long count;
+                    if (mask == null) {
+                        count = ctx.selection().forEachPosition((x, y, z) -> true);
+                    } else {
+                        count = ctx.selection().forEachPosition(mask::test);
+                    }
                     ctx.actor().message(Msg.result("Counted", Msg.count(count)));
                 };
 
@@ -2650,13 +2660,21 @@ public final class Commands {
                     int changed = 0;
                     BlockVector3 min = ctx.selection().getMinimumPoint();
                     BlockVector3 max = ctx.selection().getMaximumPoint();
+                    // The walk starts on the first cell boundary and not on the
+                    // lowest block of the selection: stepping by four from a
+                    // height that is not a multiple of four made the last cell
+                    // of every column miss the last iteration, so the top four
+                    // blocks of a selection kept the biome they had. //
+                    // pos1 0,70,0 / //pos2 3,80,3 is cells 68, 72, 76 and 80,
+                    // and the walk from 70 reached 68, 72 and 76.
+                    int firstCellY = min.y() - Math.floorMod(min.y(), 4);
                     for (int x = min.x(); x <= max.x(); x++) {
                         for (int z = min.z(); z <= max.z(); z++) {
-                            for (int y = min.y(); y <= max.y(); y += 4) {
-                                if (!ctx.selection().contains(x, y, z)) {
+                            for (int y = firstCellY; y <= max.y(); y += 4) {
+                                if (!ctx.selection().contains(x, Math.max(y, min.y()), z)) {
                                     continue;
                                 }
-                                if (session.setBiome(x - Math.floorMod(x, 4), y - Math.floorMod(y, 4),
+                                if (session.setBiome(x - Math.floorMod(x, 4), y,
                                         z - Math.floorMod(z, 4), biomeId)) {
                                     changed++;
                                 }
@@ -3126,7 +3144,9 @@ public final class Commands {
         e86.group = "utility";
         e86.arguments.add("[mask]");
         e86.handler = ctx -> {
-                    if (ctx.args().isEmpty()) {
+                    // As in WorldEdit, "//gmask clear" clears the global mask:
+                    // the word is a command of its own, not the name of a mask.
+                    if (ctx.args().isEmpty() || ctx.joined(0).equalsIgnoreCase("clear")) {
                         ctx.session().setMask(null);
                         ctx.actor().message(Msg.success("Global mask cleared"));
                         return;
@@ -3149,7 +3169,8 @@ public final class Commands {
         e86b.handler = ctx -> {
                     com.maxlananas.fawebim.core.brush.Brush brush =
                             com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.actor());
-                    if (ctx.args().isEmpty()) {
+                    // As in WorldEdit, "//smask clear" clears the source mask.
+                    if (ctx.args().isEmpty() || ctx.joined(0).equalsIgnoreCase("clear")) {
                         ctx.session().setSourceMask(null);
                         if (brush != null) {
                             brush.settings().setSourceMask(null);

@@ -228,7 +228,13 @@ public final class LocalSession {
                     return com.maxlananas.fawebim.core.world.BlockState.registry().air();
                 }
             }
-            return session.getActiveWorld().getBlock(x, y, z);
+            com.maxlananas.fawebim.core.world.World world = session.getActiveWorld();
+            // The world of a session is held weakly, and the adapter builds one
+            // per click: a mask or a pattern kept in the session - #angle, a
+            // brush, /tool - can outlive the world it was parsed for. Reading
+            // "nothing" is the answer that keeps that from being a crash.
+            return world == null ? com.maxlananas.fawebim.core.world.BlockState.registry().air()
+                    : world.getBlock(x, y, z);
         }
 
         /** Masks and patterns only read. */
@@ -239,17 +245,28 @@ public final class LocalSession {
 
         @Override
         public int getBiome(int x, int y, int z) {
-            return session.getActiveWorld().getBiome(x, y, z);
+            com.maxlananas.fawebim.core.world.World world = session.getActiveWorld();
+            return world == null ? -1 : world.getBiome(x, y, z);
         }
 
+        /**
+         * The bounds of the world the session edits, or the ones every vanilla
+         * level has when it edits none: the masks and patterns of a session are
+         * parsed before the first block of an edit is read - #angle asks for
+         * them in its constructor - and a session without a world (the console
+         * before its first command, a player whose world was collected) made
+         * that a NullPointerException out of a command line.
+         */
         @Override
         public int minY() {
-            return session.getActiveWorld().minY();
+            com.maxlananas.fawebim.core.world.World world = session.getActiveWorld();
+            return world == null ? -64 : world.minY();
         }
 
         @Override
         public int maxY() {
-            return session.getActiveWorld().maxY();
+            com.maxlananas.fawebim.core.world.World world = session.getActiveWorld();
+            return world == null ? 319 : world.maxY();
         }
     }
 

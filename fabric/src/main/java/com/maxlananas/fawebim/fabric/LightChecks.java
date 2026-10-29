@@ -32,13 +32,29 @@ final class LightChecks {
      */
     private static final int BATCH = 256;
 
-    /** The cells gathered for the current section, by their index in a {@code PackedBlockArray}. */
-    private final short[] pending = new short[4096];
+    /**
+     * The cells gathered for the current section, by their index in a
+     * {@code PackedBlockArray}. Allocated on the first cell: an adapter object
+     * is built per click and per selection tick, and every one of them carried
+     * this eight kilobyte array whether it ever flushed a chunk or not.
+     */
+    private short[] pending;
     private int count;
 
     /** Gathers a cell of the current section: {@code x | z << 4 | y << 8}. */
     void add(int local) {
-        pending[count++] = (short) local;
+        short[] cells = pending;
+        if (cells == null) {
+            cells = new short[4096];
+            pending = cells;
+        } else if (count == cells.length) {
+            // A section holds 4096 cells, so this cannot happen; growing beats
+            // an ArrayIndexOutOfBoundsException out of a bulk write if the
+            // packing ever changes.
+            cells = Arrays.copyOf(cells, cells.length * 2);
+            pending = cells;
+        }
+        cells[count++] = (short) local;
     }
 
     /**

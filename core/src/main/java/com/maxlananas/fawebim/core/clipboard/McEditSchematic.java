@@ -67,6 +67,10 @@ final class McEditSchematic {
             throw new InputException("The clipboard holds " + volume
                     + " blocks, more than one schematic file can store");
         }
+        // Two bytes per block, checked against the working-buffer budget before
+        // anything is allocated.
+        com.maxlananas.fawebim.core.util.Buffers.checkBytes(volume, 2,
+                "Saving " + width + "x" + height + "x" + length + " blocks in the MCEdit format");
         byte[] blocks = new byte[(int) volume];
         byte[] data = new byte[(int) volume];
         BlockStateRegistry registry = BlockState.registry();
@@ -155,6 +159,21 @@ final class McEditSchematic {
         }
         // Numeric ids are only read when the configuration allows it, as in WorldEdit.
         boolean ancient = Config.get().allowAncientBlocks;
+        if (!ancient) {
+            // Loading the file as all air without a word looked like a reader bug:
+            // the schematic is fine, the server is refusing its numbering.
+            int nonAir = 0;
+            for (byte block : blocks) {
+                if (block != 0) {
+                    nonAir++;
+                }
+            }
+            if (nonAir > 0) {
+                com.maxlananas.fawebim.core.platform.Log.warn("Schematic '" + name + "' holds " + nonAir
+                        + " block(s) by numeric id and allow-ancient-blocks is off:"
+                        + " it loads as air. Turn the setting on to read it.");
+            }
+        }
         BlockStateRegistry registry = BlockState.registry();
         BlockArrayClipboard clipboard = new BlockArrayClipboard(BlockVector3.ZERO);
         clipboard.setName(name);

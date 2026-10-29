@@ -127,7 +127,16 @@ final class FabricWorldRegen {
     /** Frees the temporary level, after the server ran what it left behind, and deletes its folder. */
     private static void close(MinecraftServer server, ServerLevel generated, LevelStorageSource.LevelStorageAccess access,
                               Path folder) {
+        // The wait is bounded: a task queued forever - a chunk of the
+        // temporary level waiting on a worker that stopped, a packet handler
+        // of a level that is being closed - made this loop spin on the server
+        // thread and froze the whole server in the middle of a //regen.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
         while (server.pollTask()) {
+            if (System.nanoTime() > deadline) {
+                FaweMod.LOGGER.warn("The level generated for //regen still had tasks queued after 30s");
+                break;
+            }
             Thread.yield();
         }
         try {
@@ -181,6 +190,12 @@ final class FabricWorldRegen {
 
         @Override
         public int getBlock(int x, int y, int z) {
+            // A selection can reach past the build height of the generated
+            // level, and a chunk answers a position outside it with a logged
+            // warning at best: //regen over the whole column read those.
+            if (y < live.getMinY() || y > live.getMaxY()) {
+                return air;
+            }
             ChunkAccess chunk = chunk(x, z);
             return chunk == null ? air : Block.getId(chunk.getBlockState(cursor.set(x, y, z)));
         }

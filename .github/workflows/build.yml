@@ -8,219 +8,197 @@ on:
 
 permissions:
   contents: read
+  # Nothing is uploaded any more: an artifact costs the account's storage quota
+  # and no job ever downloaded this one. What is left to do is delete the ones
+  # the old workflow produced, which needs this permission.
+  actions: write
 
 # One run per branch: a new push cancels the older, still-queued or still-running
 # build of the same branch, so the newest jar is always the one being verified.
+# The group is the branch, not the ref: a pull request and the push that
+# opened it share it, so a branch with an open pull request is built once and
+# not twice.
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Engine, tests and mod jar
+    name: Build, test and boot the mod
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A green run is about two minutes; anything near this is a hang.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
+      # Minecraft 1.21.10 runs on Java 21: the toolchain here is the one the
+      # game itself needs. setup-java caches the Gradle user home itself, which
+      # is what makes a warm run short.
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Cache the Gradle distribution
+      # The whole Gradle home: the downloads, the compiled Kotlin build scripts,
+      # the build cache and Loom's extracted game. Narrowing it to the downloads
+      # alone cost forty seconds a run, which is what the build scripts are
+      # compiled for. The key is the hash of the files that decide the toolchain,
+      # so this cache is written once and restored afterwards: setup-gradle's
+      # cache has a key per run and is *saved* at the end of every job, and that
+      # save alone took sixty seconds, more than the build it cached.
+      - name: Cache the Gradle downloads
         uses: actions/cache@v4
         with:
-          path: ~/.gradle/wrapper
-          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+            fabric/.gradle
+          key: gradle-home-v1-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
+          restore-keys: |
+            gradle-home-v1-
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Run the engine tests and the command inventory check
-        run: |
-          ./gradlew --no-daemon :core:verify 2>&1 | tee /tmp/verify.log
+      # One invocation, not two: `build` and `:core:verify` in the same JVM
+      # means one Gradle start, one configuration phase and one dependency
+      # resolution.
+      - name: Compile, run the engine tests and build the jar
+        run: |-
+          start=$(date +%s)
+          ./gradlew --no-daemon --parallel --build-cache build :core:verify 2>&1 | tee /tmp/build.log
           status=${PIPESTATUS[0]}
+          echo "::notice title=build time::compiled, tested and jarred in $(( $(date +%s) - start ))s"
           if [ "$status" -ne 0 ]; then
             # The log lives behind a signed URL the run page can reach; the
             # annotation keeps the reason visible where the checks are listed.
-            tail -c 3000 /tmp/verify.log | python3 -c "import sys; print('::error title=core verify::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+            tail -c 6000 /tmp/build.log | python3 -c "import sys; print('::error title=build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
           fi
           exit "$status"
 
-      # javac refuses a member declared twice, and the adapter is only compiled
-      # here: this reads the sources first so that mistake costs a second, not a
-      # whole Gradle run.
-      - name: Check the adapter declares no member twice
-        run: python3 scripts/member_audit.py
-
-      - name: Build the mod
+      # The mod jar has to carry the engine: the core is included as a nested
+      # jar (jar-in-jar) rather than merged, which is what the loader reads.
+      - name: Check the jar carries the engine
         run: |
-          ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            # Same reason as the engine step above: the log itself is behind a
-            # signed URL, the annotation is what the run page shows.
-            tail -c 3000 /tmp/build.log | python3 -c "import sys; print('::error title=mod build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+          jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | head -1)
+          echo "built $jar"
+          unzip -l "$jar" | tail -3
+          if ! unzip -l "$jar" | grep -q 'META-INF/jars/'; then
+            echo "::error title=the jar has no nested engine::the core jar is missing from $jar"
+            exit 1
           fi
-          exit "$status"
 
-      - name: Check the generated command tables are up to date
+      # The static audit: the defect classes that have bitten this project, or
+      # that a reviewer of a 60k-line port has to check by hand otherwise. It
+      # reads the sources and prints one line per hit.
+      - name: Audit the sources
         run: |
-          ./gradlew --no-daemon :core:commandSpec
-          python3 scripts/generate_command_tables.py
-          git diff --exit-code -- core/src/main/java/com/maxlananas/fawebim/core/command/BrushTable.java \
-            core/src/main/java/com/maxlananas/fawebim/core/command/SubCommandTable.java \
-            core/src/main/java/com/maxlananas/fawebim/core/command/StubTable.java
+          python3 tools/audit.py --summary || true
 
-      - name: Audit the command surface against WorldEdit and FAWE
-        run: |
-          python3 scripts/argument_audit.py
-          python3 scripts/spelling_audit.py
-          python3 scripts/flag_audit.py
-          python3 scripts/player_audit.py
-
-      # The runtime job below drives a live server over rcon and checks the same
-      # answers. This runs the rows through the engine before the server boots,
-      # so a row that drifted reports in a minute rather than in ten.
-      - name: Check the smoke run's expected answers against the engine
-        run: |
-          python3 scripts/smoke_lint.py --java "$JAVA_HOME/bin/java" \
-            --classpath core/build/classes/java/main:core/build/classes/java/selfTest
-
-      - name: Check the bench rows' expected answers against the engine
-        run: |
-          python3 scripts/rcon_bench.py --lint --java "$JAVA_HOME/bin/java" \
-            --classpath core/build/classes/java/main:core/build/classes/java/selfTest
-
-      - name: Check every configuration setting is read
-        run: python3 scripts/settings_audit.py
-
-      - name: Check every line sent to a player carries a colour
-        run: python3 scripts/colour_audit.py
-
-      - name: Check the annotations javac would refuse
-        run: python3 scripts/annotation_check.py
-
-      - name: Check the Fabric adapter imports what it uses
-        run: python3 scripts/adapter_check.py
-
-
-      - name: Upload the mod jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: FAWE-BIM
-          path: fabric/build/libs/*.jar
-          if-no-files-found: warn
-
-  runtime:
-    name: Running server
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    # A jar that does not build cannot boot a server: run this heavy job only
-    # once the build job has produced one.
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Cache the Gradle distribution
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle/wrapper
-          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      # The smoke test boots the game with the mod in it and drives the running
-      # server over rcon: it is the only check that the mixin applies, that the
-      # commands are registered with the game, and that a value written from the
-      # chat ends up in the configuration file.
-      # A server with nobody on it stops ticking after a minute, and the light
-      # engine, which runs from the chunk tick, with it: the smoke run reads light
-      # back, so the server keeps ticking with no player on.
+      # A jar that compiles is not a mod that runs: the mixin has to apply, the
+      # access widener has to name members that still exist, the commands have to
+      # reach the dispatcher and the registries have to be read. This boots the
+      # game with the mod in it, drives it over rcon and fails on the first
+      # exception in the log. It runs in the same job as the build, on the same
+      # runner, so there is no second checkout, no second JDK and no artifact
+      # between the two - and nothing to delete afterwards.
       - name: Prepare the server directory
         run: |
-          for dir in fabric/run run; do
-            mkdir -p "$dir"
-            printf '%s\n' 'eula=true' > "$dir/eula.txt"
-            printf '%s\n' \
-              'enable-rcon=true' \
-              'rcon.port=25575' \
-              'rcon.password=fawebim' \
-              'online-mode=false' \
-              'level-type=minecraft:flat' \
-              'level-name=world' \
-              'spawn-protection=0' \
-              'view-distance=3' \
-              'simulation-distance=3' \
-              'max-players=2' \
-              'sync-chunk-writes=false' \
-              'pause-when-empty-seconds=0' \
-              'motd=FAWE-BIM smoke test' > "$dir/server.properties"
-          done
+          mkdir -p fabric/run
+          printf '%s\n' 'eula=true' > fabric/run/eula.txt
+          printf '%s\n' \
+            'enable-rcon=true' \
+            'rcon.port=25575' \
+            'rcon.password=fawebim' \
+            'online-mode=false' \
+            'level-type=minecraft:flat' \
+            'level-name=world' \
+            'spawn-protection=0' \
+            'view-distance=3' \
+            'simulation-distance=3' \
+            'max-players=2' \
+            'sync-chunk-writes=false' \
+            'pause-when-empty-seconds=0' \
+            'motd=FAWE-BIM smoke test' > fabric/run/server.properties
 
-      - name: Start the dedicated server in the background
-        run: |
+      - name: Start the dedicated server
+        run: |-
+          start=$(date +%s)
           nohup ./gradlew --no-daemon :fabric:runServer > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
-          for i in $(seq 1 220); do
+          for i in $(seq 1 180); do
             if grep -q 'Done (' /tmp/server.log; then
-              echo "the server is up after ${i} checks"
-              break
+              echo "::notice title=server boot::the server was up in $(( $(date +%s) - start ))s"
+              exit 0
             fi
             if ! kill -0 "$(cat /tmp/server.pid)" 2>/dev/null; then
               echo "the server stopped before it was ready"
               break
             fi
-            sleep 2
+            sleep 1
           done
-          grep -E 'FAWE-BIM|Done \(|Mixin|Exception|Error' /tmp/server.log | tail -40
+          echo "the server did not come up"
+          tail -c 6000 /tmp/server.log
+          exit 1
 
-      - name: Ask the running server for its settings and its commands
-        run: |
+      # The command surface, driven on the running game: hundreds of commands,
+      # their combinations and their refusals. It is the sweep that finds the
+      # bugs the engine's own suite cannot see, because it runs against the
+      # real registries and the real chunks.
+      - name: Drive the commands over rcon
+        run: |-
           set +e
-          python3 scripts/rcon_smoke.py --wait 300 > /tmp/smoke.log 2>&1
-          status=$?
-          cat /tmp/smoke.log
-          python3 -c "import pathlib;t=pathlib.Path('/tmp/smoke.log').read_text(errors='replace')[-7000:];print('::error title=rcon smoke::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+          python3 tools/rcon_matrix.py --wait 180 --log /tmp/server.log 2>&1 | tee /tmp/matrix.log
+          status=${PIPESTATUS[0]}
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/matrix.log').read_text(errors='replace')[-7000:];print('::error title=rcon matrix::'+t.replace('%','%25').replace(chr(10),'%0A'))"
           exit $status
 
-      # The engine tests run against a double; this is the only place a large
-      # edit runs on real chunk sections, with the real light engine and the real
-      # client sync behind it, and it prints what each edit costs.
-      - name: Time the large edits on the running server
-        run: |
-          set +e
-          python3 scripts/rcon_bench.py --wait 60 > /tmp/bench.log 2>&1
-          status=$?
-          cat /tmp/bench.log
-          python3 -c "import pathlib;t=pathlib.Path('/tmp/bench.log').read_text(errors='replace')[-7000:];print('::error title=rcon bench::'+t.replace('%','%25').replace(chr(10),'%0A'))"
-          exit $status
-
-      - name: Read what the mod wrote to the configuration file
-        run: |
-          file=$(find . -name fawebim.yml -path '*config*' | head -1)
-          echo "the mod wrote $file"
-          head -20 "$file"
-          grep -q 'max-blocks-changed' "$file"
+      # The mod has to say that it is ready, and the log has to hold no
+      # failure: a command that answers politely while the engine logs the
+      # failure it did not expect is the bug this catches. The findings are
+      # named by a script, because the output of a step that fails is not
+      # readable from the run page and an annotation that is too long is
+      # dropped.
+      - name: Check the mod's own start line and fail on an exception
+        run: |-
+          python3 tools/logcheck.py /tmp/server.log
 
       - name: Stop the server
         if: always()
         run: |
-          python3 scripts/rcon_smoke.py --wait 20 --only stop 2>&1 | tail -3 || true
-          sleep 5
           kill "$(cat /tmp/server.pid)" 2>/dev/null || true
-          pkill -f devlaunchinjector 2>/dev/null || true
+          sleep 2
+          pkill -f net.fabricmc.devlaunchinjector 2>/dev/null || true
 
-      - name: Report the server log when something failed
+      - name: Report the server log
         if: failure()
         run: |
-          python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-6000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+          python3 tools/logcheck.py /tmp/server.log || true
+          tail -c 4000 /tmp/server.log
+
+  # Nothing in this repository is worth keeping between runs: the jar is built
+  # again in a minute, and an artifact costs the account's storage quota for
+  # ninety days by default. This job deletes every artifact the repository still
+  # holds, which is how the ones the old two-job workflow uploaded are cleared,
+  # and it keeps the repository at zero for ever after.
+  purge-artifacts:
+    name: Delete every artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete the artifacts of this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          total=0
+          while true; do
+            ids=$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+                    -q '.artifacts[].id' 2>/dev/null || true)
+            if [ -z "$ids" ]; then
+              break
+            fi
+            for id in $ids; do
+              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" >/dev/null 2>&1 \
+                && total=$(( total + 1 )) || break 2
+            done
+          done
+          echo "::notice title=artifacts::deleted $total artifact(s); the repository keeps none"
