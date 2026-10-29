@@ -155,8 +155,14 @@ jobs:
       - name: Check the mod's own start line and fail on an exception
         run: |-
           grep 'FAWE-BIM ready' /tmp/server.log
-          if grep -E 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log; then
-            echo "::error title=the mod did not start cleanly::see the log above"
+          if grep -nE 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log | head -5; then
+            # The lines around the first one go into the message of the
+            # annotation: the output of a step that fails is not readable from
+            # the run page, the annotation is.
+            line=$(grep -nE 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log | head -1 | cut -d: -f1)
+            start=$(( line > 15 ? line - 15 : 1 ))
+            excerpt=$(sed -n "${start},$(( line + 15 ))p" /tmp/server.log | head -30)
+            echo "::error title=the mod did not start cleanly::$(echo "$excerpt" | tr '\n' ' ' | cut -c1-1500)"
             exit 1
           fi
           # An exception in the log is a bug even when the command that caused
