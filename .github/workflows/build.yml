@@ -3,6 +3,8 @@ name: Build
 on:
   push:
     branches: ['**']
+    # A tag is a release: the jar of that run is published under it.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -28,6 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     # A green run is about two minutes; anything near this is a hang.
     timeout-minutes: 25
+    permissions:
+      # The release of a tag is made of the jar of the run.
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -111,6 +116,26 @@ jobs:
           path: /tmp/jar/*.jar
           if-no-files-found: error
           retention-days: 7
+
+      # The release of a tag is made of the jar of the run: the jar is
+      # attached to the release here, so what is published is exactly what the
+      # CI compiled, tested and booted.
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          tag="${GITHUB_REF_NAME}"
+          version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)
+          jar=$(ls /tmp/jar/*.jar | head -1)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$jar" --clobber
+            echo "::notice title=the release::$tag holds the jar of this run"
+          else
+            gh release create "$tag" "$jar" \
+              --title "FAWE-BIM $version — Minecraft 1.21.10" \
+              --notes-file CHANGELOG.md
+          fi
 
       # A jar that compiles is not a mod that runs: the mixin has to apply, the
       # access widener has to name members that still exist, the commands have to
