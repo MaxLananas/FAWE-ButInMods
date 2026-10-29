@@ -324,9 +324,11 @@ case, the command says so instead of failing silently.
 
 ## Development
 
-Prerequisites: **JDK 21**. Gradle, Loom, Minecraft, the Parchment mappings and Fabric API are
-fetched automatically; the wrapper pins the Gradle release the Loom plugin of this version asks for,
-so a fresh checkout builds without touching the toolchain.
+Prerequisites: **JDK 25** — Minecraft 26.x runs on it and ships Java 25 class files. Gradle, Loom,
+Minecraft and Fabric API are fetched automatically; the wrapper pins Gradle 9.8.2 and the build
+uses the unobfuscated Loom (`net.fabricmc.fabric-loom`), because since 26.1 the game is no longer
+obfuscated: there are no mappings to declare, and `modImplementation` and friends are gone in
+favour of the plain configurations.
 
 ```bash
 ./gradlew :core:selfTest      # engine test suite, no Minecraft required
@@ -334,26 +336,20 @@ so a fresh checkout builds without touching the toolchain.
 ./gradlew build               # core + Fabric mod
 ./gradlew :fabric:runClient   # test client
 ./gradlew :fabric:runServer   # test server
-./gradlew :core:commandSpec  # dump the live registry for the audits
-python3 scripts/generate_command_tables.py   # after changing the command set
-python3 scripts/flag_audit.py                # compare the flags with upstream
+./gradlew :core:commandSpec  # dump the live registry
 ```
 
-The command tables (`SubCommandTable`, `StubTable`, `BrushTable`) are generated from
-`reference/commands-inventory.json`, which is itself extracted from the upstream sources, and from
-the registry dump — that is how the project tracks which WorldEdit/FAWE commands are ported and
-which are still missing. The audits in `scripts/` read the same two files and fail on a spelling
-that no longer resolves, an argument or switch upstream declares and this build does not, a flag
-nothing reads, or a configuration setting nothing consumes.
+The command tables (`SubCommandTable`, `StubTable`, `BrushTable`) are generated from the live
+registry dump, which is how the project tracks which WorldEdit/FAWE commands are ported and which
+are still missing.
 
 Continuous integration runs on every push and pull request
 ([`.github/workflows/build.yml`](.github/workflows/build.yml)). One job builds the engine, runs the
-self-tests and the command inventory check, builds the mod jar, and fails when the generated
-command tables or an audit have drifted. A second job boots the
-dedicated server with the mod in it and drives it over rcon: it is what proves the mixin applies,
-that the commands are registered with the game, and that `/fawebim set` writes the file the server
-reads back. It found two bugs nothing else could - the commands were registered after the game had
-built its command tree, and the gate in front of them hid every one of them from the console.
+self-tests, builds the mod jar and checks the jar carries the engine as a nested jar. A second job
+boots the dedicated server with the mod in it and drives it over rcon - it is what proves the mixin
+applies, that the access widener still names members the game has, that the commands are registered
+with the game, and that `//set` really writes blocks; `/we version`, `//pos1`, `//pos2`, `//set` and
+`//count` run there on every push.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the porting workflow, the code style and how to verify a
 change, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
