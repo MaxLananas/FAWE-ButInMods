@@ -629,9 +629,9 @@ public final class FabricWorld implements World {
      */
     private void lightPending(LevelChunk chunk, net.minecraft.server.level.ThreadedLevelLightEngine engine) {
         ChunkPos pos = chunk.getPos();
-        java.util.concurrent.CompletableFuture<?> done = engine.waitForPendingTasks(pos.x, pos.z);
+        java.util.concurrent.CompletableFuture<?> done = engine.waitForPendingTasks(pos.x(), pos.z());
         net.minecraft.server.level.ChunkHolder holder =
-                level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(pos.toLong());
+                level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(pos.pack());
         if (holder != null) {
             holder.addSaveDependency(done);
         }
@@ -931,7 +931,7 @@ public final class FabricWorld implements World {
         try (EditLevel edit = EditLevel.open(level, session)) {
             StructureStart start = structure.generate(structures.wrapAsHolder(structure), level.dimension(),
                     level.registryAccess(), generator, generator.getBiomeSource(), chunks.randomState(),
-                    level.getStructureManager(), level.getSeed(), new ChunkPos(new BlockPos(pos.x(), pos.y(), pos.z())),
+                    level.getStructureManager(), level.getSeed(), ChunkPos.containing(new BlockPos(pos.x(), pos.y(), pos.z())),
                     0, edit.level(), biome -> true);
             if (!start.isValid()) {
                 return false;
@@ -1024,7 +1024,8 @@ public final class FabricWorld implements World {
      */
     @Override
     public EntityData spawnEntity(EntityData data, String uuid) {
-        if (net.minecraft.world.entity.EntityType.byString(data.type()).isEmpty()) {
+        if (net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(
+                Identifier.tryParse(data.type())).isEmpty()) {
             return null;
         }
         java.util.UUID identity = null;

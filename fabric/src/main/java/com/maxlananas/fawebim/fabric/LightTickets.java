@@ -52,7 +52,7 @@ final class LightTickets {
      * chunk later takes the hold over, so the ticket stays until the last of it.
      */
     static void hold(ServerLevel level, ChunkPos pos, CompletableFuture<?> done) {
-        long key = pos.toLong();
+        long key = pos.pack();
         Long2ObjectOpenHashMap<CompletableFuture<?>> pending =
                 PENDING.computeIfAbsent(level, ignored -> new Long2ObjectOpenHashMap<>());
         if (pending.put(key, done) == null) {

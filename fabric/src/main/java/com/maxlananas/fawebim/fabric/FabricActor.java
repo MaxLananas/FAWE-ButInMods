@@ -280,7 +280,7 @@ public final class FabricActor implements Actor {
         if (player == null) {
             return;
         }
-        player.displayClientMessage(FabricMessages.component(message), true);
+        player.sendSystemMessage(FabricMessages.component(message), true);
     }
 
     @Override

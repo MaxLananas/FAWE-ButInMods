@@ -83,7 +83,7 @@ final class FabricWorldRegen {
         }
     }
 
-    /** The chunks, generated up to their features, keyed by {@link ChunkPos#asLong}. */
+    /** The chunks, generated up to their features, keyed by {@link ChunkPos#pack()}. */
     private static Map<Long, ChunkAccess> generateChunks(ServerLevel generated, Collection<BlockVector2> chunks) {
         List<CompletableFuture<ChunkAccess>> futures = new ArrayList<>();
         for (BlockVector2 chunk : chunks) {
@@ -105,7 +105,7 @@ final class FabricWorldRegen {
             if (chunk == null) {
                 throw new IllegalStateException("A chunk could not be generated");
             }
-            made.put(chunk.getPos().toLong(), chunk);
+            made.put(chunk.getPos().pack(), chunk);
         }
         return made;
     }
@@ -113,9 +113,9 @@ final class FabricWorldRegen {
     /** Frees the temporary level, after the server ran what it left behind, and deletes its folder. */
     private static void close(MinecraftServer server, ServerLevel generated, LevelStorageSource.LevelStorageAccess access,
                               Path folder) {
-        while (server.pollTask()) {
-            Thread.yield();
-        }
+        // What the temporary level left queued runs here, the way the server
+        // drains its own queue between ticks; pollTask is protected since 26.x.
+        server.managedBlock(() -> server.getPendingTasksCount() == 0);
         try {
             if (generated != null) {
                 generated.close();
@@ -162,7 +162,7 @@ final class FabricWorldRegen {
         }
 
         private ChunkAccess chunk(int x, int z) {
-            return chunks.get(ChunkPos.asLong(x >> 4, z >> 4));
+            return chunks.get(ChunkPos.pack(x >> 4, z >> 4));
         }
 
         @Override
