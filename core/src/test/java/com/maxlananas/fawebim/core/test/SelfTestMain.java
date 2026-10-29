@@ -924,6 +924,15 @@ public final class SelfTestMain {
             arity = expected.getMessage().contains("takes 1");
         }
         check("so is a call with the wrong number of arguments", arity);
+        boolean tooDeep = false;
+        try {
+            // A player can type this, and a macro file can hold it: the parser
+            // recursed once per bracket and ran the server thread out of stack.
+            Expression.compile("(".repeat(5_000) + "1" + ")".repeat(5_000));
+        } catch (Expression.ExpressionException expected) {
+            tooDeep = expected.getMessage().contains("nests");
+        }
+        check("a formula nested past a hundred levels is refused, not a stack overflow", tooDeep);
         checkEquals("if() evaluates only the branch it takes", 0.0, evaluate("a = 0; b = if(1, 5, a = 3); return a;"));
 
         Expression.Variables at = new Expression.Variables().set("x", 3.7).set("y", 1.2).set("z", -4.4);

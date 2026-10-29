@@ -492,3 +492,11 @@ Le motif étoile demande tous les états d'un bloc. `statesOf` passait le nom co
 `Identifier.tryParse`, qui rend `null` dès qu'il y a un crochet, donc un `*bloc[propriété]` — la
 syntaxe que WorldEdit accepte — était refusé alors que `*bloc` marchait. La propriété est retirée
 avant la lecture du nom, et tous les états du bloc sont rendus (`FabricBlockStateRegistry#statesOf`).
+
+**69. Une formule imbriquée à l'infini tuait le fil du serveur.**
+Le lecteur d'expressions est en descente récursive : `=((((…1…))))` avec quelques milliers de
+parenthèses — ce qu'un joueur peut taper et qu'un fichier de macro peut contenir — récursait jusqu'à
+la fin de la pile. Une `StackOverflowError` est une `Error`, pas une exception : elle n'est pas
+rattrapée par le `catch (RuntimeException)` des commandes et emporte le fil du serveur. Le lecteur
+compte sa profondeur (`Parser#nested`, 128 niveaux) et refuse la formule avec
+« The expression nests more than 128 levels deep » ; vérifié par une assertion sur 5 000 parenthèses.
