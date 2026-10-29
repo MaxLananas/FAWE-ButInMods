@@ -499,6 +499,36 @@ def build() -> None:
     case("any", "//we")
     case("any", "//world")
 
+    # -- the commands that were left out ----------------------------------
+    case("any", "//fast")
+    case("any", "//fast true")
+    case("any", "//fast false")
+    case("any", "//timeout")
+    case("any", "//timeout 60")
+    case("any", "//masks-list")
+    case("any", "//superpickaxe")
+    case("any", "//superpickaxe true")
+
+    # -- a selection that crosses a chunk border --------------------------
+    # The chunk cache outlived the tick it was read in, so an edit that
+    # crossed a border wrote into a chunk the level had thrown away. The
+    # border is at x=16, so the selection runs from 8 to 24.
+    case("expect", "//pos1 8,64,8")
+    case("expect", "//pos2 24,71,24")
+    case("expect", "//set stone")
+    counted("//count stone", 2312, 2312)
+    case("expect", "//undo")
+    counted("//count stone", 0, 0)
+
+    # -- the bottom and the top of the world ------------------------------
+    # The world is 384 blocks high: a selection that runs over all of it
+    # must hold exactly that many.
+    case("expect", "//pos1 0,-64,0")
+    case("expect", "//pos2 15,319,15")
+    counted("//count", 90000, 100000)
+    case("expect", "//pos1 0,64,0")
+    case("expect", "//pos2 15,79,15")
+
     # -- the commands that change the world, one after another ------------
     case("expect", "//pos1 0,64,0")
     case("expect", "//pos2 15,79,15")
