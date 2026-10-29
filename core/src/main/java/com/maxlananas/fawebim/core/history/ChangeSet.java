@@ -72,6 +72,15 @@ public final class ChangeSet {
         this.sectionY = sectionY;
     }
 
+    /**
+     * The bytes this set keeps, which is what a history of them costs: its row
+     * array, grown to the next power of two, so the estimate is the one the
+     * allocator has to find.
+     */
+    public long bytes() {
+        return (long) rows.length * Integer.BYTES;
+    }
+
     public int chunkX() {
         return chunkX;
     }

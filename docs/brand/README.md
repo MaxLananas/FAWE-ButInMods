@@ -9,12 +9,13 @@ assets ship with the source, and every one of them can be edited here.
 | `hero.svg` | 1200×360 banner: wordmark, version pills, isometric voxel cluster with a selection box | Hand-written SVG |
 | `section.svg` | The data layout of one 16³ section: palette, state index, packed longs, written bitset, one-int history rows | Hand-written SVG |
 | `bench.svg` | Throughput chart for the rows `./gradlew :core:bench` prints | Hand-written SVG, numbers from the benchmark harness |
-| `showcase.png` | Cinematic isometric build inside a cyan selection, used as the README's hero image | Generated for this project |
 
 ## Rules of the house
 
 - **Text lives in the SVG as text.** No baked-in raster labels, so translations and copy edits are a
   find-and-replace away, and the files stay a few kilobytes.
+- **Vector only.** No raster images ship here: text stays sharp at any zoom, the whole folder is a
+  handful of kilobytes, and nothing has to be regenerated when a screenshot goes stale.
 - **No embedded fonts, no external images, no scripts.** GitHub serves these through its image
   proxy, which sanitises SVG; anything that needs a script or a foreign object would not render.
 - **Palette** — background `#0a1120`→`#0d1530`, accent cyan `#3fd8ff`→`#26c6ff`, violet `#8b5cf6`,
@@ -24,6 +25,6 @@ assets ship with the source, and every one of them can be edited here.
 
 ## Licence
 
-The SVG assets and `showcase.png` are distributed under the same **GPL-3.0** licence as the mod
+The SVG assets are distributed under the same **GPL-3.0** licence as the mod
 (see `../../LICENSE.txt`). The project icon artwork credited in the README is by
 [Elfi (@elfi_draw)](https://www.instagram.com/elfi_draw) and is used with permission.

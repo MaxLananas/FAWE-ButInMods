@@ -329,3 +329,58 @@ avec le réglage coupé, chaque bloc était remplacé par de l'air et le joueur
 voyait un schéma vide, ce qui ressemble à un bug de lecture. Le lecteur compte
 ces blocs et prévient, avec le nom du fichier et le réglage à activer
 (`McEditSchematic#read`).
+
+## Lot 4 — un chunk ne fait plus tomber l'édition, et l'historique a un budget
+
+**46. Un seul chunk refusé faisait perdre le reste de l'édition.**
+`EditSession#flushQueue` vidait la file, puis appliquait les chunks dans une boucle nue :
+la première `RuntimeException` — un bloc d'un autre mod qui refuse son état, un chunk que
+le jeu n'arrive pas à écrire — sortait de la boucle, et **tous les chunks suivants étaient
+abandonnés en silence** alors que l'historique les avait déjà enregistrés : `//undo`
+« rendait » des blocs jamais écrits. La boucle isole maintenant chaque chunk, journalise
+le couple (x, z) fautif, continue et relance l'échec à la fin, quand tout le reste est
+appliqué (`EditSession#flushQueue`).
+
+**47. Deux tables primitives allouées par chunk vidé, pour ne rien y mettre.**
+`recordBlockEntities` construisait un `LongObjectMap` et un `LongSet` à chaque chunk,
+même quand le tampon ne met aucun bloc à données en file — le cas de `//set`, de toutes
+les formes et de tous les brushes. Le chemin courant n'alloue plus rien
+(`EditSession#recordBlockEntities`).
+
+**48. `applyBiomes` parcourait les 24 sections du chunk pour en écrire une.**
+Un `//setbiome` d'une couche faisait 1 536 lectures — chacune recalculant sa section et son
+indice de cellule — pour écrire les 64 cellules réellement touchées. Le flush lit
+désormais le tableau de la section concernée, et saute les sections que le tampon ne
+remplit pas (`FabricWorld#applyBiomes`).
+
+**49. Un tableau d'un élément alloué à chaque flush.**
+Le compteur de positions écrites devait vivre dans un `int[]` pour être capturé par la
+lambda du bulk write : une allocation par chunk vidé, sur le chemin de **toute** édition.
+C'est un champ de l'adaptateur (`FabricWorld#changedCount`).
+
+**50. Un bloc à données qui refuse son état faisait tomber le chunk entier.**
+L'étape 2b (celui dont le bloc change) n'avait aucune garde : la `RuntimeException` sortait
+du flush, les blocs étaient écrits mais ni les biomes, ni les données en file, ni la
+resynchronisation cliente ne l'étaient — et rien ne disait quelle position était en cause.
+La position est maintenant nommée dans le journal, et le reste du chunk est appliqué
+(`FabricWorld#applyChunk`, étape 2b).
+
+**51. Même défaut sur les données mises en file.**
+L'étape 3b appliquait les NBT de coffres, panneaux et fourneaux sans garde : une donnée
+refusée par un bloc d'un autre mod annulait tout ce qui suit dans le chunk. Elle est
+isolée par position (`FabricWorld#applyChunk`, étape 3b).
+
+**52. L'historique était borné en nombre, jamais en mémoire.**
+`history.size` limite les entrées (20 par défaut) mais pas leur taille : vingt éditions
+d'un million de blocs font 80 Mo de lignes, et un joueur qui continue finit en
+`OutOfMemoryError` **au milieu d'une édition**. `History` mesure maintenant les tableaux
+que chaque entrée garde (`ChangeSet#bytes`, `Record#estimatedBytes`) et supprime les plus
+anciennes au-delà d'un quart du tas (`History#trimToBudget`), en gardant toujours la plus
+récente pour que `//undo` de l'édition qui vient d'être faite fonctionne.
+
+**53. Un fichier de schéma illisible ne disait pas pourquoi.**
+`readAny` essayait les deux dispositions NBT puis répondait « n'est pas un schéma
+lisible », en jetant la seule information utile : l'erreur du lecteur. Le message porte
+désormais la raison du premier essai — « unexpected end of stream », « NBT nested deeper
+than 512 levels » — ce qui distingue un fichier tronqué d'un fichier qui n'est pas un
+schéma (`Schematics#readAny`, `Schematics#describe`).

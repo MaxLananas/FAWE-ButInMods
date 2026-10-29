@@ -217,6 +217,27 @@ public final class History {
         }
 
         /**
+         * The memory this record keeps, as the arrays of its change sets. A record
+         * of a million-block edit is a few megabytes; nothing bounded how many of
+         * them a session kept, so the history of a builder who edits all day could
+         * grow past the heap the server runs in.
+         */
+        public long estimatedBytes() {
+            long bytes = 0;
+            for (List<ChangeSet> sets : changes.values()) {
+                for (ChangeSet set : sets) {
+                    bytes += set.bytes();
+                }
+            }
+            for (List<BiomeChangeSet> sets : biomeChanges.values()) {
+                for (BiomeChangeSet set : sets) {
+                    bytes += set.bytes();
+                }
+            }
+            return bytes;
+        }
+
+        /**
          * The box the edit touched, as {@code {x1, y1, z1, x2, y2, z2}}, or null
          * when it recorded no block. Used by the history filters.
          */
@@ -328,6 +349,9 @@ public final class History {
         if (recordListener != null && !record.isEmpty()) {
             recordListener.accept(record);
         }
+        // A finished edit is the moment to look at what the history holds: doing
+        // it per write would walk the records on every block.
+        trimToBudget();
     }
 
     /**
@@ -369,6 +393,38 @@ public final class History {
 
     private void trim() {
         while (records.size() > maxRecords) {
+            records.remove(0);
+            currentIndex--;
+        }
+        if (currentIndex < 0) {
+            currentIndex = -1;
+        }
+        trimToBudget();
+    }
+
+    /**
+     * Drops the oldest records while the change rows they keep take more than
+     * the working memory an edit may use, which is a quarter of the heap. The
+     * newest record always stays: it is the edit that has just been made, and
+     * {@code //undo} has to be able to take it back whatever the budget says.
+     *
+     * <p>{@code history.size} bounds the number of records, not their size: twenty
+     * edits of a million blocks are 80 MB of rows, and a builder who keeps going
+     * past what the server has is an {@link OutOfMemoryError} in the middle of an
+     * edit rather than a shorter history.</p>
+     */
+    private void trimToBudget() {
+        long budget = com.maxlananas.fawebim.core.util.Buffers.budget();
+        long used = 0;
+        for (Record record : records) {
+            used += record.estimatedBytes();
+        }
+        int dropped = 0;
+        while (records.size() - dropped > 1 && used > budget) {
+            used -= records.get(dropped).estimatedBytes();
+            dropped++;
+        }
+        for (int i = 0; i < dropped; i++) {
             records.remove(0);
             currentIndex--;
         }

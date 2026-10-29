@@ -636,12 +636,35 @@ public final class EditSession implements Extent {
         List<ChunkSet> pending = chunks.values();
         chunks.clear();
         currentChunk = null;
+        // One chunk that cannot be written must not take the rest of the edit
+        // with it: the loop kept its first failure, went on with the other
+        // chunks, and throws at the end. A single bad block entity - a mod's,
+        // a chunk the game refuses - used to abort the flush, so a million-block
+        // edit applied the chunks before it and silently dropped every one
+        // after, while the history had already recorded all of them and claimed
+        // //undo would take them back.
+        RuntimeException failure = null;
         for (ChunkSet chunk : pending) {
-            if (!chunk.isEmpty()) {
+            if (chunk.isEmpty()) {
+                continue;
+            }
+            try {
                 world.loadChunk(chunk.chunkX(), chunk.chunkZ());
                 recordBlockEntities(chunk);
                 world.applyChunk(chunk, sideEffects);
+            } catch (RuntimeException e) {
+                com.maxlananas.fawebim.core.platform.Log.error("Could not write the chunk "
+                        + chunk.chunkX() + "," + chunk.chunkZ() + " of an edit; the other chunks were"
+                        + " written", e);
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
             }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -660,6 +683,18 @@ public final class EditSession implements Extent {
         int minX = chunk.chunkX() << 4;
         int minZ = chunk.chunkZ() << 4;
         List<ChunkSet.BlockEntity> queued = chunk.blockEntities();
+        if (queued.isEmpty()) {
+            // The common case of a fill or a shape: no data is queued, so the
+            // only block entities to record are the ones whose block the buffer
+            // overwrites. Two primitive maps per flushed chunk - a fill flushes
+            // sixty-four of them - allocated to say "nothing to put".
+            world.forEachBlockEntity(minX, minY, minZ, minX + 15, maxY, minZ + 15, (x, y, z) -> {
+                if (chunk.isSet(x, y, z)) {
+                    record.addBlockEntity(x, y, z, world.getBlockEntity(x, y, z), null);
+                }
+            });
+            return;
+        }
         com.maxlananas.fawebim.core.util.LongObjectMap<com.maxlananas.fawebim.core.util.NbtCompound> incoming =
                 new com.maxlananas.fawebim.core.util.LongObjectMap<>(queued.size());
         for (ChunkSet.BlockEntity entity : queued) {

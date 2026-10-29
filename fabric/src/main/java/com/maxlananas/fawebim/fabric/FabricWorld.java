@@ -85,6 +85,8 @@ public final class FabricWorld implements World {
     private int[] changedX = new int[0];
     private int[] changedY = new int[0];
     private int[] changedZ = new int[0];
+    /** How many positions the current flush wrote: the bulk write's lambda counts them. */
+    private int changedCount;
     /** The states a flush replaced and wrote, for the same positions, kept and grown like them. */
     private BlockState[] changedBefore = new BlockState[0];
     private BlockState[] changedAfter = new BlockState[0];
@@ -472,7 +474,11 @@ public final class FabricWorld implements World {
         int[] changedXs = changedX;
         int[] changedYs = changedY;
         int[] changedZs = changedZ;
-        int[] slot = {0};
+        // The count is a field rather than a one-element array: the lambda below
+        // captures it, and a captured local of a primitive type has to live in an
+        // array - one allocation per flushed chunk, on the flush path of every
+        // edit, to count what the flush is doing.
+        changedCount = 0;
         blockEntityCount = 0;
         boolean perBlockUpdate = notify && !resend;
         boolean perBlockNotify = perBlockUpdate || neighbors;
@@ -529,7 +535,7 @@ public final class FabricWorld implements World {
                 int localY = (local >> 8) & 15;
                 int localZ = (local >> 4) & 15;
                 int y = sectionY + localY;
-                int at = slot[0]++;
+                int at = changedCount++;
                 changedXs[at] = baseX + localX;
                 changedYs[at] = y;
                 changedZs[at] = baseZ + localZ;
@@ -588,19 +594,29 @@ public final class FabricWorld implements World {
         for (int i = 0; i < blockEntityCount; i++) {
             int at = blockEntitySlots[i];
             BlockPos pos = new BlockPos(changedXs[at], changedYs[at], changedZs[at]);
-            BlockState was = Block.stateById(blockEntityBefore[i]);
-            BlockState now = chunk.getBlockState(pos);
-            var existing = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.CHECK);
-            if (existing != null) {
-                if (now.is(was.getBlock()) && existing.isValidBlockState(now)) {
-                    existing.setBlockState(now);
-                    chunk.updateBlockEntityTicker(existing);
-                    continue;
+            try {
+                BlockState was = Block.stateById(blockEntityBefore[i]);
+                BlockState now = chunk.getBlockState(pos);
+                var existing = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.CHECK);
+                if (existing != null) {
+                    if (now.is(was.getBlock()) && existing.isValidBlockState(now)) {
+                        existing.setBlockState(now);
+                        chunk.updateBlockEntityTicker(existing);
+                        continue;
+                    }
+                    chunk.removeBlockEntity(pos);
                 }
-                chunk.removeBlockEntity(pos);
-            }
-            if (now.hasBlockEntity()) {
-                chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
+                if (now.hasBlockEntity()) {
+                    chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
+                }
+            } catch (RuntimeException broken) {
+                // A block entity of another mod that refuses its own state used
+                // to abort the whole flush here: the rest of the chunk's blocks
+                // were written but nothing after them was - no biomes, no queued
+                // data, no client sync - and the edit failed with no clue which
+                // position did it.
+                com.maxlananas.fawebim.core.platform.Log.error("Could not update the block entity at "
+                        + pos + "; the rest of the chunk was written", broken);
             }
         }
 
@@ -615,7 +631,13 @@ public final class FabricWorld implements World {
         //     it, and looking each of them up again was a chunk map probe per
         //     chest of a pasted structure.
         for (ChunkSet.BlockEntity entity : set.blockEntities()) {
-            applyBlockEntity(chunk, entity.x, entity.y, entity.z, entity.nbt);
+            try {
+                applyBlockEntity(chunk, entity.x, entity.y, entity.z, entity.nbt);
+            } catch (RuntimeException broken) {
+                com.maxlananas.fawebim.core.platform.Log.error("Could not write the block entity data at "
+                        + entity.x + "," + entity.y + "," + entity.z + "; the rest of the chunk was written",
+                        broken);
+            }
         }
 
         // 4. The client sync for the changed blocks only. Vanilla would have
@@ -625,8 +647,8 @@ public final class FabricWorld implements World {
         //    does it. The light engine was handed its checks section by section
         //    above; the light it computes reaches the clients with the game's
         //    own light updates, after the chunk a large flush re-sends.
-        int changedCount = slot[0];
-        for (int index = 0; perBlockNotify && index < changedCount; index++) {
+        int written = changedCount;
+        for (int index = 0; perBlockNotify && index < written; index++) {
             BlockState was = before[index];
             BlockState now = after[index];
             if (now == was) {
@@ -708,8 +730,6 @@ public final class FabricWorld implements World {
 
     /** Writes the chunk buffer's biomes into the section palettes. */
     private void applyBiomes(LevelChunk chunk, ChunkSet set) {
-        int baseX = set.chunkX() << 4;
-        int baseZ = set.chunkZ() << 4;
         Registry<net.minecraft.world.level.biome.Biome> registry =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
         FabricRegistries.ensure(level.registryAccess());
@@ -726,26 +746,35 @@ public final class FabricWorld implements World {
             // section of the chunk, which read the biomes of the bottom of the
             // world and wrote them into all 24 sections.
             int sectionBaseY = chunk.getSectionYFromSectionIndex(sectionIndex) << 4;
+            // Only the sections the buffer holds biomes for, and read straight
+            // out of its own arrays: asking the buffer for every cell of every
+            // section of the chunk was 1536 lookups - each recomputing the
+            // section and the cell index - to write the 64 cells of the one
+            // section a //setbiome touched.
+            int bufferedSection = (sectionBaseY >> 4) - set.minSection();
+            int[] cells = bufferedSection < 0 || bufferedSection >= set.sectionCount()
+                    ? null : set.biomes()[bufferedSection];
+            if (cells == null) {
+                continue;
+            }
             @SuppressWarnings("unchecked")
             PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                     (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) section.getBiomes();
             boolean touched = false;
-            for (int y = 0; y < 16; y += 4) {
-                for (int z = 0; z < 16; z += 4) {
-                    for (int x = 0; x < 16; x += 4) {
-                        int biomeId = set.getBiome(baseX + x, sectionBaseY + y, baseZ + z);
-                        if (biomeId < 0) {
-                            continue;
-                        }
-                        ResourceKey<net.minecraft.world.level.biome.Biome> key =
-                                FabricRegistries.biomeKey(biomeId);
-                        if (key == null) {
-                            continue;
-                        }
-                        container.getAndSetUnchecked(x >> 2, y >> 2, z >> 2, registry.getOrThrow(key));
-                        touched = true;
-                    }
+            for (int cell = 0; cell < cells.length; cell++) {
+                int biomeId = cells[cell];
+                if (biomeId < 0) {
+                    continue;
                 }
+                ResourceKey<net.minecraft.world.level.biome.Biome> key = FabricRegistries.biomeKey(biomeId);
+                if (key == null) {
+                    continue;
+                }
+                // The cell index is the one ChunkSet#setBiome used: y in the top
+                // two bits, then z, then x.
+                container.getAndSetUnchecked(cell & 3, (cell >> 4) & 3, (cell >> 2) & 3,
+                        registry.getOrThrow(key));
+                touched = true;
             }
             if (touched) {
                 chunk.markUnsaved();

@@ -32,10 +32,6 @@ No plugin loader. No Paper. No client mod for players. 255 of 255 upstream comma
 
 <img src="docs/brand/hero.svg" alt="FAWE-BIM — Fabric mod, Minecraft 26.2, WorldEdit 7.4 + FastAsyncWorldEdit, zero stubs, 255/255 names" width="100%">
 
-<img src="docs/brand/showcase.png" alt="An isometric voxel build inside a cyan wireframe selection" width="100%">
-
-<p align="center"><sub><i>Every block of that island is a buffer write, not a packet — and the outline is drawn by the server, with particles, for a vanilla client.</i></sub></p>
-
 ---
 
 ## What this is
@@ -239,7 +235,7 @@ fails when it stops being true.
 | Live server test | CI only | boots a dedicated server with the mod, drives it over rcon and checks that `//pos1`, `//pos2`, `//set stone` (4096 blocks) and `//count stone` (4096) really changed the world |
 
 **The defect ledger.** The audits are not decorative: every finding is triaged into
-[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **45 of 80**
+[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **53 of 80**
 documented defects today — world-apply bugs, lighting and biome indexing, save/load correctness,
 NBT and varint parsing, history retention, CI cost, and hot-path allocation. The list is public and
 incomplete on purpose: the honest count is more useful than a green checkmark.
@@ -490,7 +486,7 @@ core/      platform-free engine — regions, masks, patterns, transforms, EditSe
 fabric/    the adapter — mod entry point, Brigadier registration, world access (bulk section writes,
            lighting, entities, block entities), the block-state and biome bridge, click and
            interaction callbacks, one mixin and one access widener.
-docs/      brand assets (SVG banner, logo, engine diagrams, benchmark chart, showcase).
+docs/      brand assets: banner, logo, engine diagram, benchmark chart (hand-written SVG).
 tools/     the static auditor and the checks run over the tree.
 BUGS.md    the defect ledger: every real bug found, with cause, fix and file.
 ```
@@ -524,6 +520,7 @@ worth building for; and to the server-side classics — **EssentialsX**, **LuckP
 **Vault** — for showing what a server actually needs from an editing tool.
 
 <sub>Project icon artwork by <a href="https://www.instagram.com/elfi_draw">Elfi (@elfi_draw)</a>.
-Banner, engine diagrams and benchmark chart are hand-written SVG in <code>docs/brand/</code>.</sub>
+Banner, engine diagrams and benchmark chart are hand-written SVG in <code>docs/brand/</code> — no raster
+assets ship with the repository.</sub>
 
 <div align="center"><sub><b>FAWE-BIM</b> · unofficial · <a href="https://github.com/MaxLananas/FAWE-ButInMods/issues">issues</a> · <a href="https://discord.gg/pnJhKuU2QK">discord</a> · <a href="BUGS.md">defect ledger</a></sub></div>
