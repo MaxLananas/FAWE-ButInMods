@@ -98,11 +98,17 @@ public final class RegionFiles {
                 if (sector == 0 || sectors == 0) {
                     continue;
                 }
-                int start = sector * SECTOR;
+                // The header holds a 24-bit sector index, and the product with the
+                // sector size overflows an int: a corrupt header then gave a
+                // negative offset, readInt threw out of the whole scan and the
+                // command answered with an internal error instead of skipping the
+                // chunk. The length is checked in the same arithmetic, so a header
+                // claiming two gigabytes is skipped rather than allocated.
+                long start = (long) sector * SECTOR;
                 if (start + 5 > raw.length) {
                     continue;
                 }
-                int size = readInt(raw, start);
+                int size = readInt(raw, (int) start);
                 if (size <= 1 || start + 4 + size > raw.length) {
                     continue;
                 }
@@ -110,7 +116,7 @@ public final class RegionFiles {
                 int localZ = index >> 5;
                 NbtCompound data = null;
                 try {
-                    byte[] nbt = inflate(raw, start + 5, size - 1, raw[start + 4] & 0xFF);
+                    byte[] nbt = inflate(raw, (int) start + 5, size - 1, raw[(int) start + 4] & 0xFF);
                     data = NbtIo.readNbtOrGzip(nbt);
                 } catch (IOException | RuntimeException e) {
                     // A chunk that cannot be decoded is reported as metadata only.
@@ -143,6 +149,13 @@ public final class RegionFiles {
     }
 
     private static byte[] inflate(byte[] raw, int start, int length, int compression) throws IOException {
+        // The caller has already held the two numbers against the file, and so
+        // has every other reader of this method: a length that runs past the end
+        // is a corrupt chunk, not something to allocate and copy.
+        if (start < 0 || length < 0 || (long) start + length > raw.length) {
+            throw new IOException("Chunk data at " + start + " (" + length
+                    + " bytes) runs past the end of the region file");
+        }
         byte[] payload = new byte[length];
         System.arraycopy(raw, start, payload, 0, length);
         return switch (compression) {
@@ -160,7 +173,7 @@ public final class RegionFiles {
     }
 
     private static int readInt(byte[] data, int index) {
-        if (index + 4 > data.length) {
+        if (index < 0 || index + 4 > data.length) {
             return 0;
         }
         return ByteBuffer.wrap(data, index, 4).getInt();

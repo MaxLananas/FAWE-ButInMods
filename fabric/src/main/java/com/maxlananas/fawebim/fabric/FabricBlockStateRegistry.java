@@ -268,6 +268,13 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     @Override
     public List<Integer> statesOf(String blockName) {
         blockName = BlockStateRegistry.expandColourShorthand(blockName);
+        // "*oak_log[axis=x]" asks for every state of oak_log: WorldEdit's star
+        // pattern takes a block, and a bracket makes the name no name at all for
+        // the parse below, which answered "unknown block" for a block that exists.
+        int bracket = blockName.indexOf('[');
+        if (bracket > 0) {
+            blockName = blockName.substring(0, bracket);
+        }
         Identifier key = Identifier.tryParse(blockName);
         Block block = key == null ? null : BuiltInRegistries.BLOCK.getValue(key);
         if (block == null) {

@@ -476,3 +476,19 @@ retour à la ligne cassait la ligne lue. `quoteIfNeeded` met entre guillemets to
 lirait autrement, `quote` échappe `\`, `"`, les sauts de ligne et les tabulations, `unquote` les
 rétablit, et une liste est écrite élément par élément pour qu'une virgule ne la coupe pas en deux
 (`MiniYaml`). Vérifié par `SelfTestMain#miniYamlRoundTripsEveryKindOfValue`.
+
+## Lot 8 — un en-tête de région corrompu, et `*bloc[propriété]`
+
+**67. Un en-tête d'amas négatif faisait sortir `//anvil` en erreur interne.**
+`RegionFiles` lit l'index de secteur sur 24 bits puis le multiplie par 4096 : le produit ne tient pas
+dans un `int`, donc un en-tête corrompu donnait un décalage négatif, `readInt` levait une
+`IndexOutOfBoundsException` hors du `catch` du chunk et la commande entière tombait. Le décalage et la
+longueur sont maintenant tenus en `long` contre la taille du fichier, `readInt` refuse un index
+négatif, et `inflate` refuse une longueur qui dépasse le fichier : un en-tête qui réclame deux
+gigaoctets est ignoré au lieu d'être alloué.
+
+**68. `*oak_log[axis=x]` répondait « bloc inconnu » pour un bloc qui existe.**
+Le motif étoile demande tous les états d'un bloc. `statesOf` passait le nom complet à
+`Identifier.tryParse`, qui rend `null` dès qu'il y a un crochet, donc un `*bloc[propriété]` — la
+syntaxe que WorldEdit accepte — était refusé alors que `*bloc` marchait. La propriété est retirée
+avant la lecture du nom, et tous les états du bloc sont rendus (`FabricBlockStateRegistry#statesOf`).
