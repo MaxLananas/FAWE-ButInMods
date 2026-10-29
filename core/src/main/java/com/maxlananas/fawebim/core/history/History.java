@@ -229,7 +229,7 @@ public final class History {
                     bytes += set.bytes();
                 }
             }
-            for (List<BiomeChangeSet> sets : biomeChanges.values()) {
+            for (List<BiomeChangeSet> sets : biomes.values()) {
                 for (BiomeChangeSet set : sets) {
                     bytes += set.bytes();
                 }
