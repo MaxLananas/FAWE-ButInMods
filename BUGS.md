@@ -202,4 +202,12 @@ signature d'un joueur parti est oubliée.
 - `tools/rcon_matrix.py` — la matrice de commandes conduite sur le serveur qui
   tourne : chaque commande enregistrée par le mod, ses combinaisons, ses
   refus, et les comptes exacts (`//count` sur une sélection de 16×16×16 doit
-  répondre 4096).
+  répondre 4096). Elle lit le journal du serveur pendant qu'elle tourne : une
+  commande qui répond joliment pendant que le moteur journalise l'échec qu'il
+  n'attendait pas est un défaut, et la matrice nomme la commande qui l'a
+  provoqué.
+- `tools/logcheck.py` — lit le journal d'une passe et dit ce qu'il tient : la
+  ligne que le mod écrit quand il est prêt, et la première trace d'exception.
+  Les trouvailles sont courtes et nommées, parce que la sortie d'une étape en
+  échec ne se lit pas depuis la page du run et qu'une annotation trop longue
+  est perdue.
