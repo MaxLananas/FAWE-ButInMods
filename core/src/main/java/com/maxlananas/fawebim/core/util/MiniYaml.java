@@ -143,6 +143,18 @@ public final class MiniYaml {
         return text;
     }
 
+    /**
+     * A list item as it has to be written. A comma or a bracket in an item is
+     * list syntax to the reader - {@code [a, b]} is two items - so an item
+     * holding one is quoted whatever {@link #quoteIfNeeded} would say.
+     */
+    private static String quoteItem(String text) {
+        if (text.indexOf(',') >= 0 || text.indexOf('[') >= 0 || text.indexOf(']') >= 0) {
+            return quote(text);
+        }
+        return quoteIfNeeded(text);
+    }
+
     private static String quote(String text) {
         StringBuilder out = new StringBuilder(text.length() + 2).append('"');
         for (int i = 0; i < text.length(); i++) {
@@ -182,7 +194,7 @@ public final class MiniYaml {
                         sb.append(", ");
                     }
                     Object item = list.get(i);
-                    sb.append(item instanceof String text ? quoteIfNeeded(text) : String.valueOf(item));
+                    sb.append(item instanceof String text ? quoteItem(text) : String.valueOf(item));
                 }
                 sb.append("]\n");
             } else if (value instanceof String text) {

@@ -508,3 +508,9 @@ compte sa profondeur (`Parser#nested`, 128 niveaux) et refuse la formule avec
 parcours d'arguments (`mask` et `pattern`) comptent leur profondeur dans un compteur par fil
 (`Parsers#NESTING`, 32 niveaux) et refusent au-delà avec « The mask nests more than 32 levels deep » ;
 vérifié par une assertion sur 2 000 niveaux dans `MaskSyntaxTests`.
+
+**71. Une liste de la configuration perdait ses virgules internes.**
+Corollaire du 66 : `write` écrivait `[a, b]` pour un élément qui contient lui-même une virgule, et le
+lecteur en faisait deux éléments — un dossier nommé `a, b` revenait en `a` et `b`. Les éléments sont
+maintenant mis entre guillemets dès qu'ils contiennent une virgule ou un crochet (`quoteItem`). C'est
+l'assertion ajoutée avec le 66 qui l'a signalé, à la première exécution de la CI.
