@@ -9,6 +9,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Draws the selection with particles.
@@ -47,12 +49,38 @@ public final class SelectionPreview {
     private SelectionPreview() {
     }
 
-    /** Redraws the actor's selection, when the preview is on. */
+    /**
+     * What each player was last shown. The preview is redrawn twice a second
+     * for every player who asks for it, and a selection does not change between
+     * two clicks, so without this the same three hundred particle packets went
+     * out twice a second for as long as the player stood still.
+     */
+    private static final Map<UUID, Integer> LAST_DRAWN = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Redraws the actor's selection, when the preview is on and it changed since the last drawing. */
     public static void refresh(FabricActor actor) {
         if (!actor.isPlayer() || !actor.session().isDrawSelection()) {
+            LAST_DRAWN.remove(actor.uuid());
             return;
         }
-        draw(actor.player(), actor.session().getSelector(actor.world()));
+        ServerPlayer player = actor.player();
+        Cui.Outline outline = Cui.outline(actor.session().getSelector(actor.world()));
+        if (outline.isEmpty()) {
+            LAST_DRAWN.remove(player.getUUID());
+            return;
+        }
+        int signature = java.util.Objects.hash(player.level(), java.util.Arrays.hashCode(outline.segments()),
+                outline.primary(), outline.secondary());
+        Integer previous = LAST_DRAWN.put(player.getUUID(), signature);
+        if (previous != null && previous.intValue() == signature) {
+            return;
+        }
+        paint(player, outline);
+    }
+
+    /** Drops what was drawn for a player who left, so their id is not kept for ever. */
+    public static void forget(UUID player) {
+        LAST_DRAWN.remove(player);
     }
 
     /** Sends the outline of a selector's shape to one player. */
@@ -61,6 +89,11 @@ public final class SelectionPreview {
         if (outline.isEmpty()) {
             return;
         }
+        paint(player, outline);
+    }
+
+    /** Sends the particles of an outline that was worked out already. */
+    private static void paint(ServerPlayer player, Cui.Outline outline) {
         ServerLevel level = (ServerLevel) player.level();
         double spacing = Math.max(MIN_SPACING, outline.length() / PARTICLE_BUDGET);
         double[] segments = outline.segments();

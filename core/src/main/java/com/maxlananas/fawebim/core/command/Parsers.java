@@ -822,8 +822,14 @@ public final class Parsers {
      * {@code o} flag to keep only the blocks with air next to them.</p>
      */
     private static Mask angleMask(String id, String args, Extent extent) {
-        // FAWE writes the limits as [min][max], older documentation as min,max.
-        String[] tokens = args.replace("[", ",").replace("]", ",").replace("-", "").split("[,\\s]+");
+        // FAWE writes the limits as [min][max], older documentation as min,max,
+        // and older documentation still as the range min-max. A minus sign is
+        // the sign of the second limit as often as it is the range's separator
+        // - #angle[-45d][45d] is a selection of overhangs - and everything that
+        // stripped every '-' turned that into +45, silently keeping half the
+        // shape it was asked for. A '-' after the first character separates the
+        // two numbers; a leading one is a sign.
+        String[] tokens = args.replace("[", ",").replace("]", ",").split("[,\\s]+");
         java.util.List<String> values = new java.util.ArrayList<>();
         boolean overlay = false;
         for (String token : tokens) {
@@ -832,13 +838,21 @@ public final class Parsers {
             }
             if (token.equals("o")) {
                 overlay = true;
+                continue;
+            }
+            int separator = token.indexOf('-', token.startsWith("-") ? 1 : 0);
+            if (separator > 0 && separator < token.length() - 1) {
+                values.add(token.substring(0, separator));
+                values.add(token.substring(separator + 1));
             } else {
                 values.add(token);
             }
         }
         if (id.equals("surfaceangle")) {
-            double min = values.isEmpty() ? 0 : Double.parseDouble(values.get(0).replace("d", ""));
-            double max = values.size() < 2 ? 90 : Double.parseDouble(values.get(1).replace("d", ""));
+            // Degrees, which is what this mask counts in: the limits are not
+            // turned into tangents the way #angle's are.
+            double min = values.isEmpty() ? 0 : degrees(values.get(0));
+            double max = values.size() < 2 ? 90 : degrees(values.get(1));
             int size = values.size() < 3 ? 1 : Integer.parseInt(values.get(2));
             return new Masks.SurfaceAngleMask(extent, min, max, size);
         }
@@ -907,9 +921,26 @@ public final class Parsers {
 
     private static double slopeLimit(String value) {
         if (value.endsWith("d")) {
-            return Math.tan(Math.toRadians(Double.parseDouble(value.substring(0, value.length() - 1))));
+            return Math.tan(Math.toRadians(degrees(value)));
         }
         return Double.parseDouble(value);
+    }
+
+    /**
+     * The number of a limit that may be written in degrees with FAWE's {@code d}
+     * suffix. The suffix is dropped from the end only: replacing every 'd' of a
+     * value also ate the one of a number written in exponent form.
+     */
+    private static double degrees(String value) {
+        String trimmed = value.trim();
+        if (trimmed.endsWith("d") || trimmed.endsWith("D")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        try {
+            return Double.parseDouble(trimmed);
+        } catch (NumberFormatException notANumber) {
+            throw CommandRegistry.error("Expected an angle, got '" + value + "'");
+        }
     }
 
     private static Mask hashMask(String input, Ctx ctx) {
@@ -1032,10 +1063,6 @@ public final class Parsers {
             throw CommandRegistry.error("Unknown shape '" + shape + "'. Try sphere, cyl or cuboid.");
         }
         return factory.createCenteredAt(center, radius);
-    }
-
-    public static double parseDoubleMock(String input) {
-        return Double.parseDouble(input);
     }
 
     public static RandomCollection<String> weightedList(List<String> inputs) {

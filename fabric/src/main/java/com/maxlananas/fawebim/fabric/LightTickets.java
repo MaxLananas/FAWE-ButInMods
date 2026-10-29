@@ -62,6 +62,15 @@ final class LightTickets {
             if (pending.remove(key, done)) {
                 level.getChunkSource().removeTicketWithRadius(TYPE, pos, 0);
             }
+            if (pending.isEmpty()) {
+                // The map is keyed by the level itself, so an entry that is left
+                // behind when its last chunk is done keeps a whole ServerLevel -
+                // its chunks, its entities, its storage - alive for as long as
+                // the server runs. That is what a world unloaded and loaded again
+                // on the same server (a multiworld plugin, the single-player
+                // "quit to title") leaks.
+                PENDING.remove(level, pending);
+            }
         }, level.getServer());
     }
 

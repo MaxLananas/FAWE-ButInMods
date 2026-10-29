@@ -240,6 +240,10 @@ public final class FaweMod implements ModInitializer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             SessionManager.get().remove(handler.getPlayer().getUUID());
             FabricInteractions.forget(handler.getPlayer().getUUID());
+            // The particle preview keeps a signature per player to skip a
+            // drawing that would not change anything; a player who left never
+            // changes one again.
+            SelectionPreview.forget(handler.getPlayer().getUUID());
         });
 
         LOGGER.info("FAWE-BIM initialised");

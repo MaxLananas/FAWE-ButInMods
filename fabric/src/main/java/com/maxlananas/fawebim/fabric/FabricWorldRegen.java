@@ -115,7 +115,17 @@ final class FabricWorldRegen {
                               Path folder) {
         // What the temporary level left queued runs here, the way the server
         // drains its own queue between ticks; pollTask is protected since 26.x.
-        server.managedBlock(() -> server.getPendingTasksCount() == 0);
+        // The wait is bounded: a task queued forever - a chunk of the temporary
+        // level waiting on a worker that stopped, a packet handler of a level
+        // that is being closed - made managedBlock spin on the server thread and
+        // froze the whole server in the middle of a //regen.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+        server.managedBlock(() -> server.getPendingTasksCount() == 0
+                || System.nanoTime() > deadline);
+        if (server.getPendingTasksCount() != 0) {
+            FaweMod.LOGGER.warn("The level generated for //regen still had {} task(s) queued after 30s",
+                    server.getPendingTasksCount());
+        }
         try {
             if (generated != null) {
                 generated.close();

@@ -96,6 +96,8 @@ public final class FabricWorld implements World {
     private final LightChecks lightChecks = new LightChecks();
     private int cachedChunkX = Integer.MIN_VALUE;
     private int cachedChunkZ = Integer.MIN_VALUE;
+    /** The tick {@link #cachedChunk} was read in; a cache entry lasts one tick. */
+    private long cachedChunkTick = Long.MIN_VALUE;
 
     /**
      * Shared worker pool for the work the engine hands off the server thread.
@@ -297,6 +299,17 @@ public final class FabricWorld implements World {
      * cannot decide what is written.</p>
      */
     private LevelChunk chunkAt(int chunkX, int chunkZ) {
+        // The entry belongs to one tick. A chunk leaves the loaded set - and is
+        // replaced by a new LevelChunk when it comes back - and an edit that
+        // runs across a tick boundary (a long //set, a brush stroke on the tick
+        // after a teleport) would otherwise keep writing into the chunk object
+        // the level has thrown away: the writes land nowhere and the flush that
+        // runs them reaches the live chunk without them.
+        long tick = level.getGameTime();
+        if (tick != cachedChunkTick) {
+            cachedChunk = null;
+            cachedChunkTick = tick;
+        }
         LevelChunk cached = cachedChunk;
         if (cached != null && cachedChunkX == chunkX && cachedChunkZ == chunkZ) {
             return cached;
@@ -357,7 +370,14 @@ public final class FabricWorld implements World {
         PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                 (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) chunk
                         .getSection(sectionIndex).getBiomes();
-        container.getAndSetUnchecked(x & 3, y & 3, z & 3, registry.getOrThrow(biomeKey));
+        // A biome palette holds four cells per axis of a section, so a block
+        // coordinate reaches its cell by dropping the low two bits of its
+        // offset in the section: ((x & 15) >> 2). `x & 3` is the same number
+        // only for the first four blocks of each axis; past them it named
+        // another cell, so //setbiome wrote three quarters of its biomes in the
+        // wrong place.
+        container.getAndSetUnchecked((x & 15) >> 2, (y & 15) >> 2, (z & 15) >> 2,
+                registry.getOrThrow(biomeKey));
         chunk.markUnsaved();
         return true;
     }
@@ -677,7 +697,14 @@ public final class FabricWorld implements World {
             if (section == null) {
                 continue;
             }
-            int sectionY = chunk.getSectionYFromSectionIndex(sectionIndex);
+            // The buffer holds biomes by block Y (ChunkSet#getBiome divides it
+            // by sixteen to find its section and by four to find its cell), so
+            // the section has to be turned back into the height of its bottom
+            // block before anything is read out of it. Passing the section
+            // coordinate itself asked for y = 0..12 of the buffer for every
+            // section of the chunk, which read the biomes of the bottom of the
+            // world and wrote them into all 24 sections.
+            int sectionBaseY = chunk.getSectionYFromSectionIndex(sectionIndex) << 4;
             @SuppressWarnings("unchecked")
             PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                     (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) section.getBiomes();
@@ -685,7 +712,7 @@ public final class FabricWorld implements World {
             for (int y = 0; y < 16; y += 4) {
                 for (int z = 0; z < 16; z += 4) {
                     for (int x = 0; x < 16; x += 4) {
-                        int biomeId = set.getBiome(baseX + x, sectionY + y, baseZ + z);
+                        int biomeId = set.getBiome(baseX + x, sectionBaseY + y, baseZ + z);
                         if (biomeId < 0) {
                             continue;
                         }
@@ -821,10 +848,16 @@ public final class FabricWorld implements World {
         return FabricWorldRegen.generate(level, chunks, options);
     }
 
-    /** The temporary level of a regeneration takes the seed it is given. */
+    /**
+     * No: 26.1 moved the generation options out of the level data, so a
+     * regeneration cannot swap the seed of the temporary level any more and
+     * {@link FabricWorldRegen} refuses one. Answering yes here made
+     * {@code //regen 42} reach that refusal and surface as an internal error,
+     * where saying no makes the command tell the player the seed is ignored.
+     */
     @Override
     public boolean supportsCustomRegenSeed() {
-        return true;
+        return false;
     }
 
     @Override

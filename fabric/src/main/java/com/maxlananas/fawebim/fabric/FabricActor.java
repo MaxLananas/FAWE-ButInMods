@@ -142,8 +142,11 @@ public final class FabricActor implements Actor {
         if (player == null) {
             return 5.0;
         }
-        // FAWE's far wand reaches further; vanilla reach is 4.5 blocks.
-        return player.isCreative() ? 5.0 : 4.5;
+        // The game's own answer, from the attributes the player has: a creative
+        // player reaches five blocks, a survival one four and a half, and a
+        // datapack or a mod that changes the block interaction range moves this
+        // with it. The fixed pair it used to answer with ignored both.
+        return player.blockInteractionRange();
     }
 
     @Override
