@@ -164,10 +164,13 @@ jobs:
           # around the first one are printed, because the answer of the sweep
           # alone does not say which command it was.
           if grep -nE '^\s*(at |Caused by:)' /tmp/server.log | head -3; then
-            echo "::error title=the server logged an exception::see the lines above"
+            # The lines around the first stack trace go into the message of the
+            # annotation: the output of a step that fails is not readable from
+            # the run page, the annotation is.
             line=$(grep -nE '^\s*(at |Caused by:)' /tmp/server.log | head -1 | cut -d: -f1)
-            start=$(( line > 12 ? line - 12 : 1 ))
-            sed -n "${start},$(( line + 12 ))p" /tmp/server.log
+            start=$(( line > 15 ? line - 15 : 1 ))
+            excerpt=$(sed -n "${start},$(( line + 10 ))p" /tmp/server.log | head -25)
+            echo "::error title=the server logged an exception::$(echo "$excerpt" | tr '\n' ' ' | cut -c1-1200)"
             exit 1
           fi
 
