@@ -65,7 +65,14 @@ tasks.withType<ProcessResources> {
 }
 
 tasks.withType<Jar> {
-    archiveBaseName.set("FAWE-BIM")
     from(rootProject.file("LICENSE.txt")) { into("META-INF") }
     from(rootProject.file("NOTICE")) { into("META-INF") }
+}
+
+// The jar of the mod carries the name of the mod, not the name of the
+// project. Loom's remap task is not a Jar task, so the base name is set on
+// every archive task: on Loom 1.11 the jar was otherwise called
+// "fabric-<version>.jar".
+tasks.withType<org.gradle.api.tasks.bundling.AbstractArchiveTask>().configureEach {
+    archiveBaseName.set("FAWE-BIM")
 }
