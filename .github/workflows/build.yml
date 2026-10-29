@@ -68,9 +68,17 @@ jobs:
           status=${PIPESTATUS[0]}
           echo "::notice title=build time::compiled, tested and jarred in $(( $(date +%s) - start ))s"
           if [ "$status" -ne 0 ]; then
-            # The log lives behind a signed URL the run page can reach; the
-            # annotation keeps the reason visible where the checks are listed.
-            tail -c 6000 /tmp/build.log | python3 -c "import sys; print('::error title=build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+            # The log lives behind a signed URL the run page can reach, and an
+            # annotation is capped at 4 KiB: the tail of a Gradle log is the
+            # task list, which says nothing. What is quoted here is the lines
+            # that name the failure, whichever task it came from.
+            reason=$(grep -aE '(error: |error:|FAIL: |FAILED|Caused by:|Exception|[0-9]+ tests? failed)' /tmp/build.log \
+                    | grep -av 'warning' | head -25 | cut -c1-300 || true)
+            if [ -z "$reason" ]; then
+              reason=$(tail -n 40 /tmp/build.log)
+            fi
+            printf '%s' "$reason" | python3 -c "import sys; print('::error title=build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+            tail -n 20 /tmp/build.log | python3 -c "import sys; print('::error title=build tail::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
           fi
           exit "$status"
 
