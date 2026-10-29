@@ -157,6 +157,23 @@ Dans WorldEdit et FAWE, le masque est facultatif : `//count` seul compte tous
 les blocs de la sélection. Ici il était refusé avec une ligne d'usage, et
 `//count` ne comptait rien.
 
+**31. `//gmask clear` ne vidait pas le masque.**
+Le mot était analysé comme le nom d'un masque : `//gmask clear` installait un
+masque qui ne correspondait à rien au lieu de vider le masque global. Comme
+dans WorldEdit, le mot est une commande à part entière — `//smask clear` pour
+le masque source des brosses.
+
+**32. L'attente d'une régénération n'était pas bornée.**
+Le niveau temporaire vidait la file des tâches du serveur dans une boucle sans
+limite : une tâche en attente pour toujours la faisait tourner sur le fil du
+serveur et gelait le serveur au milieu d'un `//regen`. L'attente est bornée à
+trente secondes, et la file qui est toujours occupée est signalée.
+
+**33. Une entité d'un type inconnu vidait la copie sur une exception.**
+Le type n'a pas d'identifiant de registre à écrire, donc ses données ne
+pouvaient pas être relues dans un monde : la clé était déréférencée sans
+vérification. L'entité est laissée hors de la copie.
+
 ### Optimisations
 
 **25. Les états remplacés par un flush étaient alloués à chaque flush.**
@@ -172,7 +189,7 @@ portait ces huit kilooctets, qu'il ait ou non flushé une chunk.
 `getParameterTypes` répond un clone neuf ; un arbre ou une structure appelle
 cette méthode des milliers de fois par génération.
 
-**28. LeParticles de la sélection partaient deux fois par seconde.**
+**28. Les particules de la sélection partaient deux fois par seconde.**
 Un joueur immobile voyait les mêmes trois cents paquets de particules repartir
 sans arrêt. Le dessin n'a lieu que quand la sélection a changé, et la
 signature d'un joueur parti est oubliée.
