@@ -230,7 +230,7 @@ public final class Config {
         return INSTANCE;
     }
 
-    /** {@code Fabric 0.17.3, Fabric API 0.138.0+1.21.10}, or {@code Fabric} before the platform said. */
+    /** {@code Fabric 0.17.3, Fabric API 0.136.0+1.21.10}, or {@code Fabric} before the platform said. */
     public static String platform() {
         return platform;
     }

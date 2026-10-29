@@ -187,6 +187,7 @@ def build() -> None:
     # is a bug in the engine, not in the world. The selection is cleared
     # first, because a block that already is the one the pattern writes is
     # not a change.
+    case("expect", "//gmask clear")
     case("expect", "//pos1 0,64,0")
     case("expect", "//pos2 15,79,15")
     case("expect", "//air")

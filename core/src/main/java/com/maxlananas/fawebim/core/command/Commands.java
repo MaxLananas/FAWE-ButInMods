@@ -3144,7 +3144,9 @@ public final class Commands {
         e86.group = "utility";
         e86.arguments.add("[mask]");
         e86.handler = ctx -> {
-                    if (ctx.args().isEmpty()) {
+                    // As in WorldEdit, "//gmask clear" clears the global mask:
+                    // the word is a command of its own, not the name of a mask.
+                    if (ctx.args().isEmpty() || ctx.joined(0).equalsIgnoreCase("clear")) {
                         ctx.session().setMask(null);
                         ctx.actor().message(Msg.success("Global mask cleared"));
                         return;
@@ -3167,7 +3169,8 @@ public final class Commands {
         e86b.handler = ctx -> {
                     com.maxlananas.fawebim.core.brush.Brush brush =
                             com.maxlananas.fawebim.core.brush.BrushFactory.current(ctx.actor());
-                    if (ctx.args().isEmpty()) {
+                    // As in WorldEdit, "//smask clear" clears the source mask.
+                    if (ctx.args().isEmpty() || ctx.joined(0).equalsIgnoreCase("clear")) {
                         ctx.session().setSourceMask(null);
                         if (brush != null) {
                             brush.settings().setSourceMask(null);
