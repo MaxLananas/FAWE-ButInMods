@@ -94,6 +94,21 @@ jobs:
         run: |
           python3 tools/audit.py --summary || true
 
+      # The jar of the run is kept: a release is made of it, and a builder
+      # reads it from the run page without building it again.
+      - name: Keep the jar of the run
+        run: |-
+          jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | head -1)
+          echo "the jar is $jar"
+
+      - name: Keep the jar as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FAWE-BIM-jar
+          path: fabric/build/libs/FAWE-BIM-*.jar
+          if-no-files-found: error
+          retention-days: 7
+
       # A jar that compiles is not a mod that runs: the mixin has to apply, the
       # access widener has to name members that still exist, the commands have to
       # reach the dispatcher and the registries have to be read. This boots the
@@ -191,8 +206,10 @@ jobs:
         run: |-
           total=0
           while true; do
+            # The jar of this run is kept: the release is made of it, and the
+            # run after this one deletes it.
             ids=$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
-                    -q '.artifacts[].id' 2>/dev/null || true)
+                    -q '.artifacts[] | select(.workflow_run.id != '${{ github.run_id }}') | .id' 2>/dev/null || true)
             if [ -z "$ids" ]; then
               break
             fi
