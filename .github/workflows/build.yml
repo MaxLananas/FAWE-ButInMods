@@ -67,6 +67,12 @@ jobs:
           ./gradlew --no-daemon --parallel --build-cache build :core:verify 2>&1 | tee /tmp/build.log
           status=${PIPESTATUS[0]}
           echo "::notice title=build time::compiled, tested and jarred in $(( $(date +%s) - start ))s"
+          # How many assertions the engine suite ran, where the checks are listed:
+          # the number the README quotes is the one the last green run printed.
+          summary=$(grep -a 'Self-tests:' /tmp/build.log | tail -1 || true)
+          if [ -n "$summary" ]; then
+            echo "::notice title=engine self-tests::$summary"
+          fi
           if [ "$status" -ne 0 ]; then
             # The log lives behind a signed URL the run page can reach, and an
             # annotation is capped at 4 KiB: the tail of a Gradle log is the
