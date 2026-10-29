@@ -19,7 +19,7 @@ No plugin loader. No Paper. No client mod for players. 255 of 255 upstream comma
 [![Upstream names](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](#status)
 [![Stubs](https://img.shields.io/badge/stubs-0-3fb950?style=flat-square)](#status)
 [![Brushes](https://img.shields.io/badge/brushes-46-8957e5?style=flat-square)](#feature-matrix)
-[![Build time](https://img.shields.io/badge/compile%20%2B%20tests%20%2B%20jar-73%20s-3fb950?style=flat-square)](#continuous-integration)
+[![Build time](https://img.shields.io/badge/compile%20%2B%20tests%20%2B%20jar-~72%20s-3fb950?style=flat-square)](#continuous-integration)
 [![Artifacts](https://img.shields.io/badge/CI%20artifacts-0-3fb950?style=flat-square)](#zero-artifact-ci)
 
 [Install](#install) · [Feature matrix](#feature-matrix) · [The engine](#the-engine) · [Benchmarks](#benchmarks) ·
@@ -191,8 +191,9 @@ effects (lighting, neighbour updates, block entities) on the server thread.
 | Expressions resolved names and operators per block | resolve once, evaluate on a stack | `sin(x/10)+cos(z/10) > y/20`: 260 → 112 ns |
 | Edit timeout read the clock per block | clock every 512 blocks | one `nanoTime` call per 512 writes |
 
-The compile-time cost of that is bounded too: **73 s** from a cold Gradle home to a checked jar in
-CI (see [Continuous integration](#continuous-integration)).
+The compile cost of that is bounded too: **71 – 73 s** from a checked-out tree to a tested, verified
+jar in CI, on one Gradle invocation with a warm module cache (see
+[Continuous integration](#continuous-integration)).
 
 ---
 
@@ -275,7 +276,7 @@ deletes any artifact the repository still holds. Measured on a recent run:
 
 | Step | Time |
 |---|---|
-| Compile + self-tests + jar (`build` **and** `:core:verify`, one JVM) | **73 s** |
+| Compile + self-tests + jar (`build` **and** `:core:verify`, one JVM) | **71 – 73 s** |
 | Dedicated server up | 17 s |
 | Cache save at end of job | 3 s |
 | **Whole run** | **1 min 44 s** |
