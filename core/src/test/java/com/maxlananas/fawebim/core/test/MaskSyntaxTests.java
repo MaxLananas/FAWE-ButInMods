@@ -108,6 +108,11 @@ final class MaskSyntaxTests {
         check("a tag the mod has no category for is a mask",
                 !answer(actor, "//count ##mineable/pickaxe").contains("unknown"));
         check("an unknown tag is refused", answer(actor, "//count ##nope").contains("unknown block tag 'nope'"));
+        // A player can type this, and a macro file can hold it: the parser called
+        // itself once per bracket and ran the command thread out of stack.
+        String nested = "#beside[".repeat(2_000) + "stone" + "]".repeat(2_000);
+        check("a mask nested past thirty levels is refused, not a stack overflow",
+                answer(actor, "//count " + nested).contains("nests more than"));
     }
 
     private static void masksComplete() {

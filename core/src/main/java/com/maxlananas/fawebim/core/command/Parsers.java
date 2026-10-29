@@ -269,6 +269,11 @@ public final class Parsers {
 
     /** Parses a pattern: blocks, weighted lists, {@code #clipboard}, {@code ^} ... */
     public static Pattern pattern(String input, Ctx ctx) {
+        int[] nesting = NESTING.get();
+        if (nesting[0] >= MAX_NESTING) {
+            throw CommandRegistry.error("The pattern nests more than " + MAX_NESTING + " levels deep");
+        }
+        nesting[0]++;
         try {
             return pattern0(input, ctx);
         } catch (com.maxlananas.fawebim.core.util.InputException refusal) {
@@ -278,6 +283,10 @@ public final class Parsers {
         } catch (RuntimeException e) {
             report("pattern", e);
             throw CommandRegistry.error("Invalid pattern '" + input.trim() + "': " + describe(e));
+        } finally {
+            if (--nesting[0] == 0) {
+                NESTING.remove();
+            }
         }
     }
 
@@ -705,8 +714,25 @@ public final class Parsers {
         return extent == null ? ctx.session().worldReader() : extent;
     }
 
+    /**
+     * How deep a mask or a pattern may nest. The parsers call themselves for a
+     * nested input - {@code #beside[#beside[...]]}, {@code #buffer[#buffer[...]]}
+     * - and a line nested a thousand times, which a player can type and a macro
+     * file can hold, would recurse until the stack ran out. A
+     * {@link StackOverflowError} is an {@link Error}: the command cannot catch
+     * it and the server thread goes with it.
+     */
+    private static final int MAX_NESTING = 32;
+
+    private static final ThreadLocal<int[]> NESTING = ThreadLocal.withInitial(() -> new int[1]);
+
     /** Parses a mask expression: unions ({@code ,}), intersections ({@code &}) and {@code #id}s. */
     public static Mask mask(String input, Ctx ctx) {
+        int[] nesting = NESTING.get();
+        if (nesting[0] >= MAX_NESTING) {
+            throw CommandRegistry.error("The mask nests more than " + MAX_NESTING + " levels deep");
+        }
+        nesting[0]++;
         try {
             return mask0(input, ctx);
         } catch (com.maxlananas.fawebim.core.util.InputException refusal) {
@@ -714,6 +740,10 @@ public final class Parsers {
         } catch (RuntimeException e) {
             report("mask", e);
             throw CommandRegistry.error("Invalid mask '" + input.trim() + "': " + describe(e));
+        } finally {
+            if (--nesting[0] == 0) {
+                NESTING.remove();
+            }
         }
     }
 

@@ -3,6 +3,9 @@ name: Build
 on:
   push:
     branches: ['**']
+    # A tag is a release: the build job runs on it like on a branch, and the
+    # release job below publishes what it built.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -209,6 +212,58 @@ jobs:
         if: failure()
         run: |
           python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-7000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+
+  # A tag is what makes a release, and the release carries the jar this job
+  # builds. The jar travels as a release asset, not as a workflow artifact: the
+  # repository keeps zero artifacts, and `gh release upload` needs no storage
+  # quota. The notes are CHANGELOG.md, which is part of the tagged tree.
+  release:
+    name: Publish the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Cache the Gradle downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+            fabric/.gradle
+          key: gradle-home-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
+          restore-keys: |
+            gradle-home-v2-
+
+      - name: Build the jar the release carries
+        run: ./gradlew --no-daemon --parallel --build-cache build
+
+      - name: Publish the release and attach the jar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | head -1)
+          echo "attaching $jar to $TAG"
+          title="FAWE-BIM ${TAG#v} — Minecraft 26.2"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$jar" --clobber
+          else
+            gh release create "$TAG" "$jar" --title "$title" --notes-file CHANGELOG.md --verify-tag
+          fi
+          gh release view "$TAG" --json name,assets --jq '"::notice title=release::\(.name) carries \(.assets | length) asset(s)"'
 
   # Nothing in this repository is worth keeping between runs: the jar is built
   # again in a minute, and an artifact costs the account's storage quota for

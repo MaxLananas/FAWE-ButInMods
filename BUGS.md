@@ -500,3 +500,11 @@ la fin de la pile. Une `StackOverflowError` est une `Error`, pas une exception :
 rattrapée par le `catch (RuntimeException)` des commandes et emporte le fil du serveur. Le lecteur
 compte sa profondeur (`Parser#nested`, 128 niveaux) et refuse la formule avec
 « The expression nests more than 128 levels deep » ; vérifié par une assertion sur 5 000 parenthèses.
+
+**70. Un masque imbriqué à l'infini tuait le fil du serveur.**
+`#beside[#beside[#beside[…]]]` — saisissable, et contenu dans un fichier de macro — faisait s'appeler
+`Parsers.mask` une fois par crochet : la pile finissait par céder, et une `StackOverflowError` est une
+`Error`, donc le `catch (RuntimeException)` des commandes ne la voyait pas. Les deux entrées de
+parcours d'arguments (`mask` et `pattern`) comptent leur profondeur dans un compteur par fil
+(`Parsers#NESTING`, 32 niveaux) et refusent au-delà avec « The mask nests more than 32 levels deep » ;
+vérifié par une assertion sur 2 000 niveaux dans `MaskSyntaxTests`.
