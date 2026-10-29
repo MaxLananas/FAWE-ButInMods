@@ -514,3 +514,9 @@ Corollaire du 66 : `write` écrivait `[a, b]` pour un élément qui contient lui
 lecteur en faisait deux éléments — un dossier nommé `a, b` revenait en `a` et `b`. Les éléments sont
 maintenant mis entre guillemets dès qu'ils contiennent une virgule ou un crochet (`quoteItem`). C'est
 l'assertion ajoutée avec le 66 qui l'a signalé, à la première exécution de la CI.
+
+**72. Un motif pondéré de poids nuls écrivait de l'air sans rien dire.**
+`RandomCollection` ignore un poids nul ou négatif, et `pattern0` rendait le motif pondéré
+même vide : `0%stone` sur une sélection entière écrivait de l'air, sans message et sans erreur, alors
+que le joueur avait écrit un motif. Un motif pondéré dont aucun poids n'est gardé est maintenant refusé
+(« A weighted pattern needs at least one weight above 0 »).

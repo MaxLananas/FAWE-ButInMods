@@ -357,6 +357,12 @@ public final class Parsers {
                 }
                 weighted.add(weight, pattern(body, ctx));
             }
+            // A weight of zero or less is dropped by the collection, so
+            // "0%stone" left an empty pattern that wrote air over a whole
+            // selection without a word.
+            if (weighted.isEmpty()) {
+                throw CommandRegistry.error("A weighted pattern needs at least one weight above 0");
+            }
             return weighted;
         }
         if (trimmed.startsWith("=")) {

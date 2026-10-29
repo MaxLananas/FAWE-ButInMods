@@ -228,7 +228,7 @@ fails when it stops being true.
 the measured throughput, and the defects each release closed.
 
 **The defect ledger.** The audits are not decorative: every finding is triaged into
-[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **71 of 80**
+[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **72 of 80**
 documented defects today — world-apply bugs, lighting and biome indexing, save/load correctness,
 NBT and varint parsing, history retention, CI cost, and hot-path allocation. The list is public and
 incomplete on purpose: the honest count is more useful than a green checkmark.

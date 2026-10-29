@@ -1,7 +1,7 @@
 # Changelog
 
 Every release of FAWE-BIM, newest first. The defect ledger behind these entries — cause, fix and file for
-each of the **69** defects found so far — is [`BUGS.md`](BUGS.md).
+each of the **72** defects found so far — is [`BUGS.md`](BUGS.md).
 
 ---
 
@@ -47,7 +47,7 @@ Measured on the flat test world, 4 096-block edits unless stated otherwise.
 Hot-path work in this release: palette lookups 487 → 3.7 ns, mask tests 13 → 3.0 ns, buffer fills
 75.6 → 54.3 ms, `//hsphere` 2.0 → 0.9 ms, `//walls` 1.1 → 0.52 ms, expression evaluation 260 → 112 ns.
 
-### 69 defects found and fixed
+### 72 defects found and fixed
 
 Eight lots, in [`BUGS.md`](BUGS.md). The ones a builder would have felt:
 
