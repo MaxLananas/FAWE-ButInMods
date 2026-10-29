@@ -31,6 +31,18 @@ public final class Buffers {
         }
     }
 
+    /**
+     * Checks that {@code arrays} arrays of one byte per cell fit in the budget.
+     * The legacy schematic format is two such arrays, and it used to allocate
+     * them for whatever size it was handed: a save of a big clipboard ended in
+     * an {@link OutOfMemoryError} instead of an answer.
+     */
+    public static void checkBytes(long cells, int arrays, String what) {
+        if (cells < 0 || cells > Integer.MAX_VALUE - 8 || cells * arrays > budget()) {
+            throw tooLarge(cells, what);
+        }
+    }
+
     /** Checks that a bit per cell fits in the budget, and in one array of longs. */
     public static void checkBits(long cells, String what) {
         if (cells < 0 || cells > Integer.MAX_VALUE - 8 || cells / Byte.SIZE > budget()) {

@@ -91,8 +91,13 @@ public final class Snapshots {
             return List.of();
         }
         try (Stream<Path> files = Files.list(folder)) {
+            // Sorted by the moment of the snapshot, then by the sequence number
+            // in it, newest first. Sorting the file names compared the sequence
+            // as text, where "f" comes after "10": the sixteenth snapshot of a
+            // millisecond was listed as older than the fifteenth.
             return files.filter(path -> path.getFileName().toString().endsWith(".snap"))
-                    .sorted(Comparator.comparing((Path path) -> path.getFileName().toString()).reversed())
+                    .sorted(Comparator.comparingLong(Snapshots::timestampOf)
+                            .thenComparingLong(Snapshots::sequenceOf).reversed())
                     .toList();
         } catch (IOException e) {
             return List.of();
@@ -136,6 +141,20 @@ public final class Snapshots {
             }
         }
         return best;
+    }
+
+    /** The sequence number of a snapshot name, or {@code -1} when it carries none. */
+    public static long sequenceOf(Path path) {
+        String name = path.getFileName().toString().replace(".snap", "");
+        int dash = name.indexOf('-');
+        if (dash < 0) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(name.substring(dash + 1), 16);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     public static long timestampOf(Path path) {

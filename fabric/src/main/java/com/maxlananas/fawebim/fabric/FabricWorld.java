@@ -83,6 +83,9 @@ public final class FabricWorld implements World {
      * flush needs, so handing it to the collector every time is pure garbage.
      */
     private int[] changedX = new int[0];
+    /** The states a flush replaced and wrote, for the same positions, kept and grown like them. */
+    private BlockState[] changedBefore = new BlockState[0];
+    private BlockState[] changedAfter = new BlockState[0];
     private int[] changedY = new int[0];
     private int[] changedZ = new int[0];
     /**
@@ -96,6 +99,8 @@ public final class FabricWorld implements World {
     private final LightChecks lightChecks = new LightChecks();
     private int cachedChunkX = Integer.MIN_VALUE;
     private int cachedChunkZ = Integer.MIN_VALUE;
+    /** The tick {@link #cachedChunk} was read in; a cache entry lasts one tick. */
+    private long cachedChunkTick = Long.MIN_VALUE;
 
     /**
      * Shared worker pool for the work the engine hands off the server thread.
@@ -297,6 +302,11 @@ public final class FabricWorld implements World {
      * cannot decide what is written.</p>
      */
     private LevelChunk chunkAt(int chunkX, int chunkZ) {
+        long tick = level.getGameTime();
+        if (tick != cachedChunkTick) {
+            cachedChunk = null;
+            cachedChunkTick = tick;
+        }
         LevelChunk cached = cachedChunk;
         if (cached != null && cachedChunkX == chunkX && cachedChunkZ == chunkZ) {
             return cached;
@@ -331,12 +341,14 @@ public final class FabricWorld implements World {
         BlockPos pos = new BlockPos(x, Math.max(minY(), Math.min(maxY(), y)), z);
         Registry<net.minecraft.world.level.biome.Biome> biomes =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
+        FabricRegistries.ensure(level.registryAccess());
         ResourceLocation key = biomes.getKey(level.getBiome(pos).value());
         return key == null ? -1 : FabricRegistries.biomeId(key.toString());
     }
 
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
+        FabricRegistries.ensure(level.registryAccess());
         ResourceKey<net.minecraft.world.level.biome.Biome> biomeKey = FabricRegistries.biomeKey(biomeId);
         if (biomeKey == null || y < minY() || y > maxY()) {
             return false;
@@ -348,6 +360,7 @@ public final class FabricWorld implements World {
         }
         Registry<net.minecraft.world.level.biome.Biome> registry =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
+        FabricRegistries.ensure(level.registryAccess());
         // The biome palette is a 4x4x4 grid inside each section; sections are
         // 16 blocks tall, so the low bits of Y address the cell directly.
         // The game hands the biome grid out as a read-only view; it is the
@@ -357,7 +370,8 @@ public final class FabricWorld implements World {
         PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                 (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) chunk
                         .getSection(sectionIndex).getBiomes();
-        container.getAndSetUnchecked(x & 3, y & 3, z & 3, registry.getOrThrow(biomeKey));
+        container.getAndSetUnchecked((x & 15) >> 2, (y & 15) >> 2, (z & 15) >> 2,
+                registry.getOrThrow(biomeKey));
         chunk.markUnsaved();
         return true;
     }
@@ -449,8 +463,13 @@ public final class FabricWorld implements World {
         blockEntityCount = 0;
         boolean perBlockUpdate = notify && !resend;
         boolean perBlockNotify = perBlockUpdate || neighbors;
-        BlockState[] before = perBlockNotify ? new BlockState[count] : null;
-        BlockState[] after = perBlockNotify ? new BlockState[count] : null;
+        if (perBlockNotify && changedBefore.length < count) {
+            int size = Math.max(1024, count);
+            changedBefore = new BlockState[size];
+            changedAfter = new BlockState[size];
+        }
+        BlockState[] before = perBlockNotify ? changedBefore : null;
+        BlockState[] after = perBlockNotify ? changedAfter : null;
         var chunkSource = level.getChunkSource();
         var lightEngine = chunkSource.getLightEngine();
         boolean lightQueued = false;
@@ -672,12 +691,13 @@ public final class FabricWorld implements World {
         int baseZ = set.chunkZ() << 4;
         Registry<net.minecraft.world.level.biome.Biome> registry =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
+        FabricRegistries.ensure(level.registryAccess());
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             LevelChunkSection section = chunk.getSection(sectionIndex);
             if (section == null) {
                 continue;
             }
-            int sectionY = chunk.getSectionYFromSectionIndex(sectionIndex);
+            int sectionBaseY = chunk.getSectionYFromSectionIndex(sectionIndex) << 4;
             @SuppressWarnings("unchecked")
             PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                     (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) section.getBiomes();
@@ -685,7 +705,7 @@ public final class FabricWorld implements World {
             for (int y = 0; y < 16; y += 4) {
                 for (int z = 0; z < 16; z += 4) {
                     for (int x = 0; x < 16; x += 4) {
-                        int biomeId = set.getBiome(baseX + x, sectionY + y, baseZ + z);
+                        int biomeId = set.getBiome(baseX + x, sectionBaseY + y, baseZ + z);
                         if (biomeId < 0) {
                             continue;
                         }

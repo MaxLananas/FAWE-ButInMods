@@ -271,9 +271,43 @@ public final class Parsers {
     public static Pattern pattern(String input, Ctx ctx) {
         try {
             return pattern0(input, ctx);
-        } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
-            throw CommandRegistry.error("Invalid pattern '" + input.trim() + "': " + e.getMessage());
+        } catch (com.maxlananas.fawebim.core.util.InputException refusal) {
+            // A parser that already refused the input has said why in words the
+            // player can act on; wrapping it again only buries it.
+            throw refusal;
+        } catch (RuntimeException e) {
+            report("pattern", e);
+            throw CommandRegistry.error("Invalid pattern '" + input.trim() + "': " + describe(e));
         }
+    }
+
+    /**
+     * Keeps a parser failure that is not the player's fault in the log.
+     *
+     * <p>A syntax error is answered in chat and nothing more: a wrong word is
+     * not a bug. Anything else - a null a parser did not expect, a cast that
+     * does not hold - is one, and the test harness fails the run when the engine
+     * logs an error, so swallowing it here would hide the very bugs the suite
+     * sweeps for. The answer to the player is the same either way.</p>
+     */
+    private static void report(String kind, RuntimeException failure) {
+        if (failure instanceof IllegalArgumentException) {
+            return;
+        }
+        com.maxlananas.fawebim.core.platform.Log.error("The " + kind + " parser failed", failure);
+    }
+
+    /**
+     * The reason of a parser failure, for the message. A parser that walked off
+     * the end of its input - the usual way a rich syntax fails - has no message
+     * of its own, and "null" in a chat line is worse than naming the kind.
+     */
+    private static String describe(RuntimeException failure) {
+        String message = failure.getMessage();
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        return failure.getClass().getSimpleName();
     }
 
     private static Pattern pattern0(String input, Ctx ctx) {
@@ -671,8 +705,11 @@ public final class Parsers {
     public static Mask mask(String input, Ctx ctx) {
         try {
             return mask0(input, ctx);
-        } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
-            throw CommandRegistry.error("Invalid mask '" + input.trim() + "': " + e.getMessage());
+        } catch (com.maxlananas.fawebim.core.util.InputException refusal) {
+            throw refusal;
+        } catch (RuntimeException e) {
+            report("mask", e);
+            throw CommandRegistry.error("Invalid mask '" + input.trim() + "': " + describe(e));
         }
     }
 
@@ -822,8 +859,14 @@ public final class Parsers {
      * {@code o} flag to keep only the blocks with air next to them.</p>
      */
     private static Mask angleMask(String id, String args, Extent extent) {
-        // FAWE writes the limits as [min][max], older documentation as min,max.
-        String[] tokens = args.replace("[", ",").replace("]", ",").replace("-", "").split("[,\\s]+");
+        // FAWE writes the limits as [min][max], older documentation as min,max,
+        // and older documentation still as the range min-max. A minus sign is
+        // the sign of the second limit as often as it is the range's separator
+        // - #angle[-45d][45d] is a selection of overhangs - and everything that
+        // stripped every '-' turned that into +45, silently keeping half the
+        // shape it was asked for. A '-' after the first character separates the
+        // two numbers; a leading one is a sign.
+        String[] tokens = args.replace("[", ",").replace("]", ",").split("[,\\s]+");
         java.util.List<String> values = new java.util.ArrayList<>();
         boolean overlay = false;
         for (String token : tokens) {
@@ -832,13 +875,21 @@ public final class Parsers {
             }
             if (token.equals("o")) {
                 overlay = true;
+                continue;
+            }
+            int separator = token.indexOf('-', token.startsWith("-") ? 1 : 0);
+            if (separator > 0 && separator < token.length() - 1) {
+                values.add(token.substring(0, separator));
+                values.add(token.substring(separator + 1));
             } else {
                 values.add(token);
             }
         }
         if (id.equals("surfaceangle")) {
-            double min = values.isEmpty() ? 0 : Double.parseDouble(values.get(0).replace("d", ""));
-            double max = values.size() < 2 ? 90 : Double.parseDouble(values.get(1).replace("d", ""));
+            // Degrees, which is what this mask counts in: the limits are not
+            // turned into tangents the way #angle's are.
+            double min = values.isEmpty() ? 0 : degrees(values.get(0));
+            double max = values.size() < 2 ? 90 : degrees(values.get(1));
             int size = values.size() < 3 ? 1 : Integer.parseInt(values.get(2));
             return new Masks.SurfaceAngleMask(extent, min, max, size);
         }
@@ -907,9 +958,26 @@ public final class Parsers {
 
     private static double slopeLimit(String value) {
         if (value.endsWith("d")) {
-            return Math.tan(Math.toRadians(Double.parseDouble(value.substring(0, value.length() - 1))));
+            return Math.tan(Math.toRadians(degrees(value)));
         }
         return Double.parseDouble(value);
+    }
+
+    /**
+     * The number of a limit that may be written in degrees with FAWE's {@code d}
+     * suffix. The suffix is dropped from the end only: replacing every 'd' of a
+     * value also ate the one of a number written in exponent form.
+     */
+    private static double degrees(String value) {
+        String trimmed = value.trim();
+        if (trimmed.endsWith("d") || trimmed.endsWith("D")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        try {
+            return Double.parseDouble(trimmed);
+        } catch (NumberFormatException notANumber) {
+            throw CommandRegistry.error("Expected an angle, got '" + value + "'");
+        }
     }
 
     private static Mask hashMask(String input, Ctx ctx) {
@@ -1032,10 +1100,6 @@ public final class Parsers {
             throw CommandRegistry.error("Unknown shape '" + shape + "'. Try sphere, cyl or cuboid.");
         }
         return factory.createCenteredAt(center, radius);
-    }
-
-    public static double parseDoubleMock(String input) {
-        return Double.parseDouble(input);
     }
 
     public static RandomCollection<String> weightedList(List<String> inputs) {
