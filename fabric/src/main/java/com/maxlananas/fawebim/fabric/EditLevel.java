@@ -105,6 +105,17 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
     private boolean write(BlockPos pos, BlockState state) {
         // A generator moves one mutable position around: the key must not move with it.
         BlockPos at = pos.immutable();
+        boolean written = session.setBlock(at.getX(), at.getY(), at.getZ(), Block.getId(state));
+        if (!written) {
+            // The edit kept the block that was already there, so there is no
+            // new block entity: the fresh, empty one a generator would get must
+            // not replace the data of the one in the world. A structure that
+            // writes a chest where a chest already stands used to hand the edit
+            // an empty block entity for it, which emptied the chest when the
+            // level closed.
+            blockEntities.remove(at);
+            return false;
+        }
         BlockEntity blockEntity = state.hasBlockEntity() && state.getBlock() instanceof EntityBlock block
                 ? block.newBlockEntity(at, state) : null;
         if (blockEntity != null) {
@@ -112,7 +123,7 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
         } else {
             blockEntities.remove(at);
         }
-        return session.setBlock(at.getX(), at.getY(), at.getZ(), Block.getId(state));
+        return true;
     }
 
     /** An entity the generator adds, its passengers in its data, spawned through the edit. */
@@ -142,7 +153,11 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
     @Override
     @SuppressWarnings("unchecked")
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        Class<?>[] types = method.getParameterTypes();
+        // getParameterTypes answers a fresh clone on every call, and a tree or a
+        // structure calls this method thousands of times per generation: the
+        // parameters are the same for the same method, so they are read once.
+        Class<?>[] types = PARAMETERS.get(level.getClass())
+                .computeIfAbsent(method, Method::getParameterTypes);
         Class<?> result = method.getReturnType();
         if (types.length == 3 && types[0] == Heightmap.Types.class && result == int.class) {
             return height((Heightmap.Types) args[0], (Integer) args[1], (Integer) args[2]);
@@ -222,6 +237,14 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
             }
         });
     }
+
+    /** The parameter types of each method of a level, read once per class and method. */
+    private static final ClassValue<Map<Method, Class<?>[]>> PARAMETERS = new ClassValue<>() {
+        @Override
+        protected Map<Method, Class<?>[]> computeValue(Class<?> type) {
+            return new ConcurrentHashMap<>();
+        }
+    };
 
     /** {@link #keepsDefault} for each class of level, worked out once per method. */
     private static final ClassValue<Map<Method, Boolean>> INHERITED = new ClassValue<>() {

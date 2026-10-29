@@ -382,6 +382,15 @@ public final class FabricInteractions {
         boolean[] broken = new boolean[count];
         int air = BlockState.registry().air();
         EditSession edit = new EditSession(actor.world(), session, "superpickaxe");
+        // A change limit reached halfway stops the loop, and the edit still has
+        // to be written: what was broken before it drops, and the limit is
+        // reported afterwards. What must not happen is the opposite - a drop for
+        // a block the edit never applied - so the failure is kept, the edit is
+        // closed, the drops of the blocks the world really lost are made, and
+        // only then is the failure thrown again. The drops used to sit in a
+        // finally block that ran whether or not the flush had applied anything,
+        // which dropped the contents of a chest the player still had.
+        RuntimeException failure = null;
         try {
             for (int i = 0; i < count; i++) {
                 BlockPos pos = new BlockPos(targets[3 * i], targets[3 * i + 1], targets[3 * i + 2]);
@@ -393,24 +402,40 @@ public final class FabricInteractions {
                 }
                 broken[i] = edit.setBlock(pos.getX(), pos.getY(), pos.getZ(), air);
             }
-        } finally {
-            // A change limit reached halfway stops the loop: what was broken
-            // before it is written, and drops, and the limit is still reported.
+        } catch (RuntimeException stop) {
+            failure = stop;
+        }
+        try {
             edit.close();
-            for (int i = 0; i < count; i++) {
-                if (!broken[i]) {
-                    continue;
-                }
-                BlockPos pos = new BlockPos(targets[3 * i], targets[3 * i + 1], targets[3 * i + 2]);
-                if (drops) {
-                    net.minecraft.world.level.block.Block.dropResources(states[i], level, pos, blockEntities[i]);
-                }
-                // The breaking particles and sound, for the clicked block only:
-                // one per block of an area would be a packet per block.
-                if (pos.getX() == start.x() && pos.getY() == start.y() && pos.getZ() == start.z()) {
-                    level.levelEvent(2001, pos, net.minecraft.world.level.block.Block.getId(states[i]));
-                }
+        } catch (RuntimeException closeFailure) {
+            if (failure == null) {
+                failure = closeFailure;
+            } else {
+                failure.addSuppressed(closeFailure);
             }
+        }
+        // With the item in hand passed to the drop, a pickaxe with fortune or
+        // silk touch breaks the block the way the player's own pickaxe does:
+        // the two-argument-less call rolled the plain loot table, so an area
+        // super-pickaxe over diamond ore gave one diamond whatever the pickaxe.
+        net.minecraft.world.item.ItemStack tool = player.getMainHandItem();
+        for (int i = 0; i < count; i++) {
+            if (!broken[i]) {
+                continue;
+            }
+            BlockPos pos = new BlockPos(targets[3 * i], targets[3 * i + 1], targets[3 * i + 2]);
+            if (drops) {
+                net.minecraft.world.level.block.Block.dropResources(states[i], level, pos, blockEntities[i],
+                        player, tool);
+            }
+            // The breaking particles and sound, for the clicked block only:
+            // one per block of an area would be a packet per block.
+            if (pos.getX() == start.x() && pos.getY() == start.y() && pos.getZ() == start.z()) {
+                level.levelEvent(2001, pos, net.minecraft.world.level.block.Block.getId(states[i]));
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
         return true;
     }

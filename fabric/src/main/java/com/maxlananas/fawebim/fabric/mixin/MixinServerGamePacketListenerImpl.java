@@ -59,22 +59,46 @@ public abstract class MixinServerGamePacketListenerImpl {
         }
     }
 
+    /** The slot the player held before the carried-item packet that is being handled. */
+    @Unique
+    private int bim$previousSlot = -1;
+
     /**
      * Scrolling the mouse wheel moves the hotbar, which is how {@code /tool scroll}
      * reaches the server: the binding gets one step and the slot is put back, so
      * the player keeps the item they were holding.
+     *
+     * <p>The slot is put back after the handler ran, not before it. This
+     * injection used to sit at the head of the handler and restore the slot
+     * there, and the handler then set the slot of the packet - the line that
+     * follows the two checks - so the restore was undone a few statements later
+     * and scrolling a bound item both moved the hotbar and turned the binding.
+     * The head of the handler only remembers the slot now; the restore is the
+     * last thing to run.</p>
      */
     @Inject(method = "handleSetCarriedItem", at = @At("HEAD"))
-    private void bim$onSetCarriedItem(ServerboundSetCarriedItemPacket packet, CallbackInfo callback) {
+    private void bim$rememberCarriedItem(ServerboundSetCarriedItemPacket packet, CallbackInfo callback) {
+        this.bim$previousSlot = -1;
         if (!bim$onServerThread()) {
             return;
         }
         int previous = this.player.getInventory().getSelectedSlot();
         int slot = packet.getSlot();
-        if (slot == previous || slot < 0 || slot > 8) {
+        if (slot != previous && slot >= 0 && slot <= 8) {
+            this.bim$previousSlot = previous;
+        }
+    }
+
+    /** Turns the scroll into one step of the binding, then puts the held slot back. */
+    @Inject(method = "handleSetCarriedItem", at = @At("RETURN"))
+    private void bim$onSetCarriedItem(ServerboundSetCarriedItemPacket packet, CallbackInfo callback) {
+        int previous = this.bim$previousSlot;
+        this.bim$previousSlot = -1;
+        if (previous < 0 || !bim$onServerThread()) {
             return;
         }
-        if (FabricInteractions.onSlotChange(this.player, slot, previous)) {
+        if (FabricInteractions.onSlotChange(this.player, packet.getSlot(), previous)
+                && this.player.getInventory().getSelectedSlot() != previous) {
             this.player.getInventory().setSelectedSlot(previous);
             this.player.connection.send(new ClientboundSetHeldSlotPacket(previous));
         }
