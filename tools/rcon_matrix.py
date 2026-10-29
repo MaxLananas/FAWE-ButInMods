@@ -731,8 +731,10 @@ def main() -> int:
     refusals_without_a_reason = 0
 
     print(f"::notice title=rcon matrix::running {len(cases)} commands")
+    offsets = []
     for kind, command, fragments in cases:
         before = log_length(args.log) if args.log else 0
+        offsets.append((command, before))
         try:
             answer = rcon.command(command)
         except (ConnectionError, socket.timeout, OSError) as failure:
@@ -793,6 +795,18 @@ def main() -> int:
     for failure in failures:
         print("FAIL " + failure)
     print()
+    # What the log holds that no command answered: a worker thread that threw
+    # while a command ran is named after the command that was running.
+    if args.log:
+        for command, offset in offsets:
+            written = log_since(args.log, offset)
+            if not written:
+                continue
+            if FAILURE_IN_LOG.search(written) and not any(command in failure for failure in failures):
+                failures.append(f"{command}: the server logged a failure while it ran:\n"
+                                + written.strip()[:800])
+                break
+
     print(f"{len(cases)} commands, {len(failures)} failure(s), {crashes} crash(es), "
           f"{refusals_without_a_reason} silent refusal(s)")
 
