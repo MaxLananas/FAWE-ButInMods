@@ -175,3 +175,71 @@ il n'a pas de monde.
 
 L'audit continue : les lots suivants ajoutent leurs entrées ici, numérotées à
 la suite, avec la même forme (défaut, effet, correction, preuve).
+
+## Lot 2 — CI, robustesse et performance
+
+Le reste du travail demandé ne relève pas d'un défaut mais d'un coût : la CI
+gardait 1,1 Mo d'artefact par exécution (187 artefacts, ~200 Mo, le quota de
+stockage du compte) pour un jar que **personne ne téléchargeait**, et elle
+passait la moitié de son temps à sauvegarder un cache.
+
+**21. Aucun artefact.** L'étape `upload-artifact` est supprimée et le job
+`purge-artifacts` supprime tout ce que le dépôt contient encore (il lui faut
+`actions: write`) : le dépôt est à zéro et le reste.
+
+**22. Un seul job au lieu de deux.** La compilation, les tests du moteur, la
+vérification du jar et le test rcon partagent un checkout, un JDK et un
+répertoire Gradle : plus de second démarrage, plus d'artefact à faire circuler.
+
+**23. Une seule invocation de Gradle.** `build` et `:core:verify` tournaient dans
+deux JVM : une phase de configuration, une résolution de dépendances et un
+démarrage de Gradle pour rien.
+
+**24. Un cache dont la clé ne change pas.** Le cache de `setup-gradle` a une clé
+par exécution : il était donc **sauvegardé** à la fin de chaque job, et cette
+sauvegarde prenait 61 s — plus que la compilation qu'elle évitait. Le cache est
+maintenant un `actions/cache` sur tout le répertoire Gradle, avec la clé des
+fichiers qui décident de l'outillage : écrit une fois, restauré ensuite, jamais
+réécrit.
+
+**25. Les tests du moteur sont cachables.** `:core:selfTest` déclare son entrée
+(classpath) et une sortie (un tampon) : une poussée qui ne touche pas au moteur
+reprend le résultat du cache de build au lieu de rejouer la suite. Il tourne en
+plus sur le collecteur série, qui démarre plus vite qu'un collecteur parallèle
+pour un processus court.
+
+**26. `LightChecks` alloue son tampon de 4096 cellules à la première cellule.**
+Un `FabricWorld` est construit par clic et par tick d'aperçu : chacun portait
+8 Ko d'array qu'il n'utilisait presque jamais.
+
+**27. `applyChunk` garde ses tableaux d'états entre deux flushs.** Ils étaient
+réalloués à chaque chunk : 1,5 Mo de références par flush de 98 000 blocs.
+
+**28. `applyChunk` passe son chunk à `applyBlockEntity`** au lieu de le
+rechercher une fois par bloc à données (une sonde de la table des chunks par
+coffre d'une structure collée).
+
+**29. `EditLevel` mémorise les types de paramètres d'une méthode.**
+`getParameterTypes()` rend un clone à chaque appel, et un arbre ou une structure
+appelle le proxy des milliers de fois par génération.
+
+**30. Trois gardes de plus.** Un type d'entité sans identifiant de registre est
+ignoré au lieu de lever ; un item sans identifiant est nommé `minecraft:air` ; un
+contour de sélection dont le nombre de segments n'est pas un multiple de six est
+dessiné jusqu'où il va ; `//regen` répond air hors de la hauteur de construction
+au lieu d'interroger un chunk pour une position qu'il n'a pas.
+
+**31. Un masque ou un motif qui échoue rend un message, plus une « erreur
+interne ».** Le refus d'analyse est répond telle quelle, une exception
+inattendue est journalisée en erreur (le banc de tests continue donc de compter
+les vrais bugs) et le joueur lit `Invalid mask '...' : <raison>`.
+
+### Mesures
+
+| étape | avant | après |
+|---|---|---|
+| compilation + tests + jar | 100–108 s (2 invocations, cache à clé par run) | 60 s |
+| démarrage du serveur | 15–23 s | 15–23 s |
+| sauvegarde du cache en fin de job | 61 s | 0 s |
+| **job complet** | **2 min 30 s** | **1 min 40 s** |
+| artefacts gardés | 187 (≈200 Mo) | 0 |
