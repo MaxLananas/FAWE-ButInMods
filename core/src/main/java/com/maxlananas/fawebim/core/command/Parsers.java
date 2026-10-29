@@ -271,9 +271,43 @@ public final class Parsers {
     public static Pattern pattern(String input, Ctx ctx) {
         try {
             return pattern0(input, ctx);
-        } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
-            throw CommandRegistry.error("Invalid pattern '" + input.trim() + "': " + e.getMessage());
+        } catch (com.maxlananas.fawebim.core.util.InputException refusal) {
+            // A parser that already refused the input has said why in words the
+            // player can act on; wrapping it again only buries it.
+            throw refusal;
+        } catch (RuntimeException e) {
+            report("pattern", e);
+            throw CommandRegistry.error("Invalid pattern '" + input.trim() + "': " + describe(e));
         }
+    }
+
+    /**
+     * Keeps a parser failure that is not the player's fault in the log.
+     *
+     * <p>A syntax error is answered in chat and nothing more: a wrong word is
+     * not a bug. Anything else - a null a parser did not expect, a cast that
+     * does not hold - is one, and the test harness fails the run when the engine
+     * logs an error, so swallowing it here would hide the very bugs the suite
+     * sweeps for. The answer to the player is the same either way.</p>
+     */
+    private static void report(String kind, RuntimeException failure) {
+        if (failure instanceof IllegalArgumentException) {
+            return;
+        }
+        com.maxlananas.fawebim.core.platform.Log.error("The " + kind + " parser failed", failure);
+    }
+
+    /**
+     * The reason of a parser failure, for the message. A parser that walked off
+     * the end of its input - the usual way a rich syntax fails - has no message
+     * of its own, and "null" in a chat line is worse than naming the kind.
+     */
+    private static String describe(RuntimeException failure) {
+        String message = failure.getMessage();
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        return failure.getClass().getSimpleName();
     }
 
     private static Pattern pattern0(String input, Ctx ctx) {
@@ -671,8 +705,11 @@ public final class Parsers {
     public static Mask mask(String input, Ctx ctx) {
         try {
             return mask0(input, ctx);
-        } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
-            throw CommandRegistry.error("Invalid mask '" + input.trim() + "': " + e.getMessage());
+        } catch (com.maxlananas.fawebim.core.util.InputException refusal) {
+            throw refusal;
+        } catch (RuntimeException e) {
+            report("mask", e);
+            throw CommandRegistry.error("Invalid mask '" + input.trim() + "': " + describe(e));
         }
     }
 

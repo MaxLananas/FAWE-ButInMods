@@ -177,6 +177,12 @@ final class FabricWorldRegen {
 
         @Override
         public int getBlock(int x, int y, int z) {
+            // A selection can reach past the build height of the generated
+            // level, and a chunk answers a position outside it with a logged
+            // warning at best: //regen over the whole column read those.
+            if (y < live.getMinY() || y > live.getMaxY()) {
+                return air;
+            }
             ChunkAccess chunk = chunk(x, z);
             return chunk == null ? air : Block.getId(chunk.getBlockState(cursor.set(x, y, z)));
         }
