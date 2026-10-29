@@ -515,6 +515,10 @@ def build() -> None:
     # border is at x=16, so the selection runs from 8 to 24.
     case("expect", "//pos1 8,64,8")
     case("expect", "//pos2 24,71,24")
+    # The region is emptied first, so what the undo has to bring back is
+    # known: the undo restores the state before the last edit, not nothing.
+    case("expect", "//set air")
+    counted("//count stone", 0, 0)
     case("expect", "//set stone")
     counted("//count stone", 2312, 2312)
     case("expect", "//undo")
