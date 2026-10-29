@@ -68,3 +68,146 @@ jobs:
           name: FAWE-BIM
           path: fabric/build/libs/*.jar
           if-no-files-found: warn
+
+  runtime:
+    name: Boot the game with the mod
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Cache the Gradle distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # A jar that compiles is not a mod that runs: the mixin has to apply, the
+      # access widener has to name members that still exist, the commands have to
+      # reach the dispatcher and the registries have to be read. This boots the
+      # game with the mod in it, drives it over rcon and fails on the first
+      # exception in the log.
+      - name: Prepare the server directory
+        run: |
+          mkdir -p fabric/run
+          printf '%s\n' 'eula=true' > fabric/run/eula.txt
+          printf '%s\n' \
+            'enable-rcon=true' \
+            'rcon.port=25575' \
+            'rcon.password=fawebim' \
+            'online-mode=false' \
+            'level-type=minecraft:flat' \
+            'level-name=world' \
+            'spawn-protection=0' \
+            'view-distance=3' \
+            'simulation-distance=3' \
+            'max-players=2' \
+            'sync-chunk-writes=false' \
+            'pause-when-empty-seconds=0' \
+            'motd=FAWE-BIM smoke test' > fabric/run/server.properties
+
+      - name: Start the dedicated server
+        run: |
+          nohup ./gradlew --no-daemon :fabric:runServer > /tmp/server.log 2>&1 &
+          echo $! > /tmp/server.pid
+          for i in $(seq 1 300); do
+            if grep -q 'Done (' /tmp/server.log; then
+              echo "the server is up after $((i * 2))s"
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/server.pid)" 2>/dev/null; then
+              echo "the server stopped before it was ready"
+              break
+            fi
+            sleep 2
+          done
+          echo "the server did not come up"
+          tail -c 6000 /tmp/server.log
+          exit 1
+
+      - name: Ask the running server what it is, over rcon
+        run: |
+          python3 - <<'PY'
+          import socket, struct, sys, time
+
+          def packet(request_id, kind, body):
+              payload = struct.pack('<ii', request_id, kind) + body.encode('utf8') + b'\x00\x00'
+              return struct.pack('<i', len(payload)) + payload
+
+          def read(sock):
+              raw = sock.recv(4)
+              if len(raw) < 4:
+                  return None, None
+              (length,) = struct.unpack('<i', raw)
+              data = b''
+              while len(data) < length:
+                  chunk = sock.recv(length - len(data))
+                  if not chunk:
+                      break
+                  data += chunk
+              ident, _kind = struct.unpack('<ii', data[:8])
+              return ident, data[8:-2].decode('utf8', 'replace')
+
+          deadline = time.time() + 120
+          while time.time() < deadline:
+              try:
+                  sock = socket.create_connection(('127.0.0.1', 25575), timeout=10)
+                  break
+              except OSError:
+                  time.sleep(2)
+          else:
+              sys.exit('rcon never answered')
+
+          sock.sendall(packet(1, 3, 'fawebim'))
+          ident, body = read(sock)
+          if ident == -1:
+              sys.exit('rcon refused the password')
+
+          def command(text):
+              sock.sendall(packet(2, 2, text))
+              return read(sock)[1]
+
+          version = command('we version')
+          print('we version ->', version)
+          if '26.2' not in version:
+              sys.exit('the version command did not name 26.2: ' + version)
+
+          # The engine itself, through the console: a selection and a fill on the
+          # flat world, then a read back of what was written.
+          print(command('//pos1 0,0,0'))
+          print(command('//pos2 15,15,15'))
+          print(command('//set stone'))
+          print(command('//count stone'))
+          command('stop')
+          print('the server was asked to stop')
+          PY
+
+      - name: Check the mod's own start line and fail on an exception
+        run: |
+          grep 'FAWE-BIM ready' /tmp/server.log
+          if grep -E 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log; then
+            echo "::error title=the mod did not start cleanly::see the log above"
+            exit 1
+          fi
+
+      - name: Stop the server
+        if: always()
+        run: |
+          kill "$(cat /tmp/server.pid)" 2>/dev/null || true
+          sleep 10
+          pkill -f net.fabricmc.devlaunchinjector 2>/dev/null || true
+
+      - name: Report the server log
+        if: failure()
+        run: |
+          python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-7000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
