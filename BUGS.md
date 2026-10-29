@@ -384,3 +384,17 @@ lisible », en jetant la seule information utile : l'erreur du lecteur. Le messa
 désormais la raison du premier essai — « unexpected end of stream », « NBT nested deeper
 than 512 levels » — ce qui distingue un fichier tronqué d'un fichier qui n'est pas un
 schéma (`Schematics#readAny`, `Schematics#describe`).
+
+**54. Le brush de terrain construisait une chaîne par bloc.**
+`HeightmapBrush#isSnowLayer` comparait `registry.describe(state)` à `minecraft:snow[` :
+une chaîne allouée — « minecraft:snow[layers=3] » — pour lire deux caractères, à chaque bloc
+d'une colonne parcourue. Les états du bloc neige sont trouvés une fois par brush et le test
+est un balayage de quelques entiers, avec la forme textuelle en repli pour un registre qui
+ne sait pas énumérer les états (`Brushes#isSnowLayer`).
+
+**55. `//snowsmooth` faisait de même, et compilait une expression régulière par colonne.**
+`HeightMaps#snowLayers` analysait la description de chaque bloc avec un motif pour en
+extraire le nombre de couches. Les identifiants des états de la neige et leurs couches sont
+maintenant lus une fois par registre — un tableau d'entiers, aucune allocation sur le chemin
+d'une colonne, et la même repli textuel si le registre ne sait pas énumérer
+(`HeightMaps#snowLayers`, `HeightMaps#layersOf`).

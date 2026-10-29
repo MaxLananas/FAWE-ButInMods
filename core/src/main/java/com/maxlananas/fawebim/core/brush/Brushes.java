@@ -619,7 +619,36 @@ public final class Brushes {
             return changed;
         }
 
+        /**
+         * The state ids of the snow block, found once per brush.
+         *
+         * <p>Asking the registry for the description of every block of a column
+         * built a string per block - "minecraft:snow[layers=3]" - just to compare
+         * its first characters. The states of one block are a handful of ids, so
+         * the test is a scan of them.
+         */
+        private int[] snowStates;
+
         private boolean isSnowLayer(BlockStateRegistry registry, int state) {
+            int[] snow = snowStates;
+            if (snow == null) {
+                List<Integer> states = registry.statesOf("minecraft:snow");
+                snow = new int[states.size()];
+                for (int i = 0; i < snow.length; i++) {
+                    snow[i] = states.get(i);
+                }
+                snowStates = snow;
+            }
+            if (snow.length > 1) {
+                for (int id : snow) {
+                    if (id == state) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            // A registry that cannot enumerate the states of a block - the
+            // interface allows it - gets the string test back.
             return registry.describe(state).startsWith("minecraft:snow[");
         }
     }
