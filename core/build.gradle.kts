@@ -1,5 +1,3 @@
-import org.gradle.api.tasks.ClasspathNormalizer
-
 plugins {
     `java-library`
 }
@@ -26,21 +24,23 @@ tasks.named<Test>("test") {
     enabled = false
 }
 
-val selfTest by tasks.registering(JavaExec::class) {
+// `tasks.register` rather than the `by tasks.registering` delegate: the delegate
+// is deprecated from Gradle 9.6 on, and the named form is what compiles clean.
+val selfTest = tasks.register<JavaExec>("selfTest") {
     description = "Runs the built-in engine test-suite (no external test framework needed)."
     group = "verification"
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
     mainClass.set("com.maxlananas.fawebim.core.test.SelfTestMain")
     // The suite is a short, single-threaded run: the serial collector starts
-    // faster than the parallel one and never pauses it, and one gigabyte is
-    // several times what it allocates.
+    // faster than the parallel one, and one gigabyte is several times what it
+    // allocates.
     jvmArgs("-XX:+UseSerialGC", "-Xmx1g", "-XX:-UsePerfData")
-    // What the run reads: the compiled engine, the tests and the command
-    // inventory the runner checks itself against.
+    // What the run reads: the compiled engine, the tests, and the runner that
+    // is named here so a change of entry point is not taken from the cache.
     inputs.files(sourceSets["selfTest"].runtimeClasspath)
         .withPropertyName("testClasspath")
-        .withNormalizer(ClasspathNormalizer::class)
+        .withNormalizer(org.gradle.api.tasks.ClasspathNormalizer::class)
     inputs.property("mainClass", "com.maxlananas.fawebim.core.test.SelfTestMain")
     // A run that passed leaves its stamp; a run that failed never writes it, so
     // the next one runs again.  With the stamp declared as an output the result
@@ -51,11 +51,11 @@ val selfTest by tasks.registering(JavaExec::class) {
     outputs.file(stamp)
     outputs.cacheIf { true }
     doLast {
-        stamp.get().asFile.writeText("the self-tests passed on " + java.time.Instant.now() + "\n")
+        stamp.get().asFile.writeText("the self-tests passed at " + System.currentTimeMillis() + "\n")
     }
 }
 
-val bench by tasks.registering(JavaExec::class) {
+val bench = tasks.register<JavaExec>("bench") {
     description = "Prints the throughput of the engine's write path (informational)."
     group = "verification"
     dependsOn("selfTestClasses")
@@ -63,7 +63,7 @@ val bench by tasks.registering(JavaExec::class) {
     mainClass.set("com.maxlananas.fawebim.core.test.BenchMain")
 }
 
-val commandSpec by tasks.registering(JavaExec::class) {
+val commandSpec = tasks.register<JavaExec>("commandSpec") {
     description = "Writes build/commands-spec.json, the live registry dump the audits read."
     group = "verification"
     dependsOn("selfTestClasses")
@@ -73,7 +73,7 @@ val commandSpec by tasks.registering(JavaExec::class) {
          layout.projectDirectory.file("../reference/commands-inventory.json").asFile.absolutePath)
 }
 
-val checkInventory by tasks.registering(JavaExec::class) {
+val checkInventory = tasks.register<JavaExec>("checkInventory") {
     description = "Checks every WorldEdit and FAWE command name against the dispatcher's own lookup."
     group = "verification"
     dependsOn("selfTestClasses")
