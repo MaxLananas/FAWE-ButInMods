@@ -19,7 +19,7 @@ permissions:
 # opened it share it, so a branch with an open pull request is built once and
 # not twice.
 concurrency:
-  group: build-${{ github.head_ref || github.ref }}
+  group: build-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
