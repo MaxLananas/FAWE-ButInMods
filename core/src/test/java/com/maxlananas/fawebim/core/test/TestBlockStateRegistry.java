@@ -10,7 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * A head-less block registry: enough of the Minecraft 1.21.10 block list to
+ * A head-less block registry: enough of the Minecraft 26.2 block list to
  * exercise every engine code path without starting the game.
  *
  * <p>State ids are assigned as {@code blockIndex * 16 + variant}, mirroring the

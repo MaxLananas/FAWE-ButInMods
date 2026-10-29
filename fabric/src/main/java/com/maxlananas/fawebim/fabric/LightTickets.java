@@ -3,7 +3,7 @@ package com.maxlananas.fawebim.fabric;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
@@ -44,7 +44,7 @@ final class LightTickets {
     /** At mod load, while the game's registries still take entries. */
     static void register() {
         Registry.register(BuiltInRegistries.TICKET_TYPE,
-                ResourceLocation.fromNamespaceAndPath(FaweMod.MOD_ID, "light"), TYPE);
+                Identifier.fromNamespaceAndPath(FaweMod.MOD_ID, "light"), TYPE);
     }
 
     /**

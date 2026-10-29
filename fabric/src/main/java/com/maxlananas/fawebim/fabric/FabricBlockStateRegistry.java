@@ -4,7 +4,7 @@ import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -130,7 +130,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
             properties = key.substring(bracket + 1, key.length() - 1);
             key = key.substring(0, bracket);
         }
-        ResourceLocation id = ResourceLocation.tryParse(key.contains(":") ? key : "minecraft:" + key);
+        Identifier id = Identifier.tryParse(key.contains(":") ? key : "minecraft:" + key);
         if (id == null) {
             return -1;
         }
@@ -178,7 +178,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     @Override
     public int defaultState(String blockName) {
         blockName = BlockStateRegistry.expandColourShorthand(blockName);
-        ResourceLocation id = ResourceLocation.tryParse(blockName.contains(":") ? blockName
+        Identifier id = Identifier.tryParse(blockName.contains(":") ? blockName
                 : "minecraft:" + blockName);
         if (id == null) {
             return -1;
@@ -251,7 +251,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (blockName == null) {
             return air();
         }
-        Block block = BuiltInRegistries.BLOCK.getValue(ResourceLocation.parse(blockName));
+        Block block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(blockName));
         if (block == null) {
             return air();
         }
@@ -268,7 +268,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     @Override
     public List<Integer> statesOf(String blockName) {
         blockName = BlockStateRegistry.expandColourShorthand(blockName);
-        ResourceLocation key = ResourceLocation.tryParse(blockName);
+        Identifier key = Identifier.tryParse(blockName);
         Block block = key == null ? null : BuiltInRegistries.BLOCK.getValue(key);
         if (block == null) {
             return List.of();
@@ -349,8 +349,10 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         BlockState state = stateOf(stateId);
         Map<String, String> map = new LinkedHashMap<>();
         if (state != null) {
-            for (Map.Entry<Property<?>, Comparable<?>> entry : state.getValues().entrySet()) {
-                map.put(entry.getKey().getName(), valueName(entry.getKey(), entry.getValue()));
+            // Since 26.1 the values of a state come back as a stream of
+            // property/value pairs rather than as a map.
+            for (Property.Value<?> value : state.getValues().toList()) {
+                map.put(value.property().getName(), valueName(value.property(), value.value()));
             }
         }
         Map<String, String> built = java.util.Collections.unmodifiableMap(map);
@@ -402,7 +404,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         }
         java.util.Optional<TagKey<Block>> key = tagCache.computeIfAbsent(
                 tag.startsWith("#") ? tag.substring(1) : tag, name -> {
-                    ResourceLocation id = ResourceLocation.tryParse(name);
+                    Identifier id = Identifier.tryParse(name);
                     return id == null
                             ? java.util.Optional.empty()
                             : java.util.Optional.of(TagKey.create(Registries.BLOCK, id));
@@ -516,7 +518,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public int blockFromItem(String itemName) {
-        ResourceLocation id = ResourceLocation.tryParse(itemName.contains(":") ? itemName
+        Identifier id = Identifier.tryParse(itemName.contains(":") ? itemName
                 : "minecraft:" + itemName);
         if (id == null) {
             return -1;
@@ -566,7 +568,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public int item(String name) {
-        ResourceLocation id = ResourceLocation.tryParse(name.contains(":") ? name : "minecraft:" + name);
+        Identifier id = Identifier.tryParse(name.contains(":") ? name : "minecraft:" + name);
         if (id == null) {
             return -1;
         }

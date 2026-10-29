@@ -10,7 +10,7 @@ import net.minecraft.data.worldgen.features.TreeFeatures;
 import net.minecraft.data.worldgen.features.VegetationFeatures;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.biome.Biome;
 
@@ -49,7 +49,7 @@ final class FabricRegistries {
             return;
         }
         List<String> names = registryAccess.lookupOrThrow(Registries.BIOME).keySet().stream()
-                .map(ResourceLocation::toString)
+                .map(Identifier::toString)
                 .sorted()
                 .toList();
         Map<String, Integer> ids = new HashMap<>(names.size() * 2);
@@ -65,7 +65,7 @@ final class FabricRegistries {
                 .forEach(key -> features.add(key.toString()));
         featureIds = List.copyOf(features);
         structureIds = registryAccess.lookupOrThrow(Registries.STRUCTURE).keySet().stream()
-                .map(ResourceLocation::toString)
+                .map(Identifier::toString)
                 .sorted()
                 .toList();
         access = registryAccess;
@@ -117,7 +117,7 @@ final class FabricRegistries {
                         continue;
                     }
                     try {
-                        ids.add(((ResourceKey<?>) field.get(null)).location().toString());
+                        ids.add(((ResourceKey<?>) field.get(null)).identifier().toString());
                     } catch (IllegalAccessException | RuntimeException skipped) {
                         FaweMod.LOGGER.debug("Feature key {} not read", field, skipped);
                     }
@@ -128,7 +128,7 @@ final class FabricRegistries {
                     CaveFeatures.CAVE_VINE_IN_MOSS, CaveFeatures.MOSS_VEGETATION, CaveFeatures.DRIPLEAF,
                     EndFeatures.CHORUS_PLANT, EndFeatures.END_PLATFORM, NetherFeatures.SMALL_BASALT_COLUMNS,
                     NetherFeatures.LARGE_BASALT_COLUMNS, NetherFeatures.GLOWSTONE_EXTRA)) {
-                ids.add(key.location().toString());
+                ids.add(key.identifier().toString());
             }
             return java.util.Set.copyOf(ids);
         }
@@ -159,7 +159,7 @@ final class FabricRegistries {
 
     static ResourceKey<Biome> biomeKey(int id) {
         String name = biomeName(id);
-        ResourceLocation location = name == null ? null : ResourceLocation.tryParse(name);
+        Identifier location = name == null ? null : Identifier.tryParse(name);
         return location == null ? null : ResourceKey.create(Registries.BIOME, location);
     }
 }

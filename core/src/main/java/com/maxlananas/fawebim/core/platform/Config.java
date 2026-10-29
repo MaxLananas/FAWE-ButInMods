@@ -26,10 +26,10 @@ import java.util.function.Supplier;
  */
 public final class Config {
 
-    public static final String VERSION = "1.1.0";
-    public static final String MINECRAFT_VERSION = "1.21.10";
+    public static final String VERSION = "1.2.0";
+    public static final String MINECRAFT_VERSION = "26.2";
     /** The game's data version for {@link #MINECRAFT_VERSION}, which the files this mod writes declare. */
-    public static final int DATA_VERSION = 4556;
+    public static final int DATA_VERSION = 4903;
 
     private static final Config INSTANCE = new Config();
 
@@ -230,7 +230,7 @@ public final class Config {
         return INSTANCE;
     }
 
-    /** {@code Fabric 0.17.3, Fabric API 0.138.0+1.21.10}, or {@code Fabric} before the platform said. */
+    /** {@code Fabric 0.20.1, Fabric API 0.161.0+26.2}, or {@code Fabric} before the platform said. */
     public static String platform() {
         return platform;
     }

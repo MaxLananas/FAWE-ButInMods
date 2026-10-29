@@ -4,10 +4,10 @@ import com.maxlananas.fawebim.core.math.BlockVector2;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.RegenOptions;
 import com.maxlananas.fawebim.core.world.World;
-import net.minecraft.Util;
+import net.minecraft.util.Util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProblemReporter;
@@ -17,11 +17,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.dimension.LevelStem;
-import net.minecraft.world.level.levelgen.WorldOptions;
-import net.minecraft.world.level.storage.DerivedLevelData;
-import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.LevelStorageSource;
-import net.minecraft.world.level.storage.PrimaryLevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.minecraft.world.level.storage.TagValueOutput;
 
@@ -34,7 +30,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
@@ -59,31 +54,32 @@ final class FabricWorldRegen {
     }
 
     static World.GeneratedTerrain generate(ServerLevel level, Collection<BlockVector2> chunks, RegenOptions options) {
+        // 26.1 moved the world's generation options out of the level data and
+        // into the server's own settings, so there is no per-level seed left to
+        // swap for the length of a generation. Upstream WorldEdit refuses a seed
+        // for the same reason; the terrain still comes from the level's own
+        // generator, dimension and seed.
+        if (options.shouldUseSeed()) {
+            throw new UnsupportedOperationException(
+                    "Minecraft 26.2 does not support overriding the seed for //regen");
+        }
         MinecraftServer server = level.getServer();
-        PrimaryLevelData data = primary(level.getLevelData());
-        WorldOptions original = data.worldGenOptions();
-        long seed = options.shouldUseSeed() ? options.getSeed() : level.getSeed();
+        long seed = level.getSeed();
         Path folder = null;
         LevelStorageSource.LevelStorageAccess access = null;
         ServerLevel generated = null;
         try {
             folder = Files.createTempDirectory("fawebim-regen");
             access = LevelStorageSource.createDefault(folder).createAccess("fawebim-regen");
-            if (options.shouldUseSeed()) {
-                // What the structures are placed from; the noise takes the seed below.
-                data.worldOptions = original.withSeed(OptionalLong.of(seed));
-            }
             generated = new ServerLevel(server, Util.backgroundExecutor(), access,
                     (ServerLevelData) level.getLevelData(), level.dimension(),
                     new LevelStem(level.dimensionTypeRegistration(), level.getChunkSource().getGenerator()),
-                    level.isDebug(), seed, List.of(), false, level.getRandomSequences());
+                    level.isDebug(), seed, List.of(), false);
             Map<Long, ChunkAccess> made = generateChunks(generated, chunks);
             return new Terrain(level, generated, access, folder, made);
         } catch (Exception | LinkageError failure) {
             close(server, generated, access, folder);
             throw new IllegalStateException("Could not generate the terrain to regenerate from", failure);
-        } finally {
-            data.worldOptions = original;
         }
     }
 
@@ -112,16 +108,6 @@ final class FabricWorldRegen {
             made.put(chunk.getPos().toLong(), chunk);
         }
         return made;
-    }
-
-    private static PrimaryLevelData primary(LevelData data) {
-        if (data instanceof DerivedLevelData derived) {
-            return primary(derived.wrapped);
-        }
-        if (data instanceof PrimaryLevelData primary) {
-            return primary;
-        }
-        throw new IllegalStateException("Unknown level data " + data.getClass().getName());
     }
 
     /** Frees the temporary level, after the server ran what it left behind, and deletes its folder. */
@@ -191,7 +177,7 @@ final class FabricWorldRegen {
             if (chunk == null) {
                 return -1;
             }
-            ResourceLocation key = live.registryAccess().lookupOrThrow(Registries.BIOME)
+            Identifier key = live.registryAccess().lookupOrThrow(Registries.BIOME)
                     .getKey(chunk.getNoiseBiome(x >> 2, y >> 2, z >> 2).value());
             return key == null ? -1 : FabricRegistries.biomeId(key.toString());
         }

@@ -3,7 +3,7 @@ package com.maxlananas.fawebim.fabric.client;
 import com.maxlananas.fawebim.core.platform.Config;
 import com.maxlananas.fawebim.core.platform.ConfigUi;
 import com.maxlananas.fawebim.core.platform.Setting;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -287,7 +287,7 @@ public final class ConfigurationScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         // A dimmed world behind a raised panel, a header for what is shown and a
         // sidebar for the groups; the selected group carries an accent bar.
         // Bands rather than a gradient call: the frame stays on the plain fill
@@ -303,11 +303,11 @@ public final class ConfigurationScreen extends Screen {
         graphics.fill(PADDING, panelTop(), this.width - PADDING, headerBottom, HEADER_COLOUR);
         graphics.fill(PADDING, headerBottom, this.width - PADDING, headerBottom + 1, ACCENT_DIM);
 
-        graphics.drawString(this.font, "FAWE-BIM", PADDING + 12, panelTop() + 9, ACCENT, true);
+        graphics.text(this.font, "FAWE-BIM", PADDING + 12, panelTop() + 9, ACCENT, true);
         int titleX = PADDING + SIDEBAR_WIDTH + 14;
         int titleRoom = searchLeft() - 12 - titleX;
-        graphics.drawString(this.font, clipped(group, titleRoom), titleX, panelTop() + 9, LABEL, true);
-        graphics.drawString(this.font, clipped(visibleCount + " setting(s)   page " + (page + 1) + "/"
+        graphics.text(this.font, clipped(group, titleRoom), titleX, panelTop() + 9, LABEL, true);
+        graphics.text(this.font, clipped(visibleCount + " setting(s)   page " + (page + 1) + "/"
                 + pageCount, titleRoom), titleX, panelTop() + 22, DIM, false);
         graphics.fill(PADDING + SIDEBAR_WIDTH - 5, headerBottom, PADDING + SIDEBAR_WIDTH - 4,
                 panelBottom(), PANEL_BORDER);
@@ -326,32 +326,32 @@ public final class ConfigurationScreen extends Screen {
             graphics.fill(cardLeft + 2, row.y - 3, cardRight, row.y - 2, PANEL_BORDER);
             graphics.fill(cardLeft + 2, row.y + EDITOR_HEIGHT + 1, cardRight, row.y + EDITOR_HEIGHT + 2,
                     PANEL_BORDER);
-            graphics.drawString(this.font, row.setting.key(), PADDING + SIDEBAR_WIDTH + 14, row.y + 5,
+            graphics.text(this.font, row.setting.key(), PADDING + SIDEBAR_WIDTH + 14, row.y + 5,
                     changed ? CHANGED : LABEL, false);
         }
 
-        super.render(graphics, mouseX, mouseY, partialTick);
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         int textX = PADDING + SIDEBAR_WIDTH + 10;
         Row described = hovered != null ? hovered : (rows.isEmpty() ? null : rows.get(0));
         graphics.fill(PADDING + SIDEBAR_WIDTH + 4, panelBottom() - 72, this.width - PADDING - 4,
                 panelBottom() - 71, PANEL_BORDER);
         if (described != null) {
-            graphics.drawString(this.font, clipped(described.setting.description(), this.width - PADDING - textX),
+            graphics.text(this.font, clipped(described.setting.description(), this.width - PADDING - textX),
                     textX, panelBottom() - 66, DIM, false);
-            graphics.drawString(this.font, clipped(described.setting.path() + "   default "
+            graphics.text(this.font, clipped(described.setting.path() + "   default "
                             + described.setting.defaultValue() + "   " + ConfigUi.expectedOf(described.setting),
                     this.width - PADDING - textX), textX, panelBottom() - 54, DIM, false);
         }
         if (!status.isEmpty()) {
             graphics.fill(textX - 2, panelBottom() - 38, textX, panelBottom() - 36, statusGood ? GOOD : BAD);
-            graphics.drawString(this.font, clipped(status, this.width - PADDING - textX),
+            graphics.text(this.font, clipped(status, this.width - PADDING - textX),
                     textX + 6, panelBottom() - 40, statusGood ? GOOD : BAD, false);
         }
     }
 
     /** A filled panel with a one pixel border. */
-    private void panel(GuiGraphics graphics, int x1, int y1, int x2, int y2, int fill) {
+    private void panel(GuiGraphicsExtractor graphics, int x1, int y1, int x2, int y2, int fill) {
         graphics.fill(x1, y1, x2, y2, fill);
         graphics.fill(x1, y1, x2, y1 + 1, PANEL_BORDER);
         graphics.fill(x1, y2 - 1, x2, y2, PANEL_BORDER);
@@ -407,7 +407,7 @@ public final class ConfigurationScreen extends Screen {
         }
         // The opener: the mod list when Mod Menu opened this screen, null when
         // the command did, which is the same close vanilla does.
-        Minecraft.getInstance().setScreen(parent);
+        Minecraft.getInstance().gui.setScreen(parent);
     }
 
     @Override

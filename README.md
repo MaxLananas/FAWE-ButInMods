@@ -5,14 +5,14 @@
 **FastAsyncWorldEdit — but in mods**
 
 The complete **WorldEdit 7.3.17** + **FastAsyncWorldEdit** command set, running as a standalone
-**Fabric** mod for **Minecraft 1.21.10**. No plugin, no server software, no client mod, no
+**Fabric** mod for **Minecraft 26.2**. No plugin, no server software, no client mod, no
 placeholder commands.
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square&logo=gnu&logoColor=white)](LICENSE.txt)
-[![Minecraft 1.21.10](https://img.shields.io/badge/minecraft-1.21.10-62b47a?style=flat-square)](https://www.minecraft.net/)
-[![Fabric Loader](https://img.shields.io/badge/fabric%20loader-0.17.3%2B-dbb69c?style=flat-square)](https://fabricmc.net/)
-[![Fabric API](https://img.shields.io/badge/fabric%20api-0.136.0%2B1.21.10-dbb69c?style=flat-square)](https://modrinth.com/mod/fabric-api)
-[![Java 21](https://img.shields.io/badge/java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
+[![Minecraft 26.2](https://img.shields.io/badge/minecraft-26.2-62b47a?style=flat-square)](https://www.minecraft.net/)
+[![Fabric Loader](https://img.shields.io/badge/fabric%20loader-0.20.1%2B-dbb69c?style=flat-square)](https://fabricmc.net/)
+[![Fabric API](https://img.shields.io/badge/fabric%20api-0.161.0%2B26.2-dbb69c?style=flat-square)](https://modrinth.com/mod/fabric-api)
+[![Java 25](https://img.shields.io/badge/java-25-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Build](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
 [![Engine tests](https://img.shields.io/badge/engine%20tests-2488%20passing-3fb950?style=flat-square)](.github/workflows/build.yml)
@@ -75,12 +75,12 @@ a WorldEdit player expects is here, and it runs in singleplayer as well as on a 
 
 | Component | Version |
 |---|---|
-| Minecraft | **1.21.10** |
-| Fabric Loader | 0.17.3 or newer |
-| [Fabric API](https://modrinth.com/mod/fabric-api) | 0.136.0+1.21.10 or newer |
-| Java | 21 |
+| Minecraft | **26.2** |
+| Fabric Loader | 0.20.1 or newer |
+| [Fabric API](https://modrinth.com/mod/fabric-api) | 0.161.0+26.2 or newer |
+| Java | 25 |
 
-1. Install **Fabric Loader** for **Minecraft 1.21.10**.
+1. Install **Fabric Loader** for **Minecraft 26.2**.
 2. Drop [Fabric API](https://modrinth.com/mod/fabric-api) and the FAWE-BIM jar into `.minecraft/mods`.
 3. Launch the game.
 
@@ -377,7 +377,7 @@ scripts/   the table generator and the audits that compare this build with that 
 FAWE-BIM is licensed **GPL-3.0** ([`LICENSE.txt`](LICENSE.txt), the WorldEdit 7.3.17 licence).
 
 It is an independent implementation whose behaviour is derived from the GPL-3.0 projects
-[WorldEdit](https://github.com/EngineHub/WorldEdit) (7.3.17, the Minecraft 1.21.10 release) and
+[WorldEdit](https://github.com/EngineHub/WorldEdit) (7.3.17, the Minecraft 26.2 release) and
 [FastAsyncWorldEdit](https://github.com/IntellectualSites/FastAsyncWorldEdit). Command names,
 aliases, switches, argument order, parsers and messages follow those projects; see
 [`NOTICE`](NOTICE) for the full attribution and

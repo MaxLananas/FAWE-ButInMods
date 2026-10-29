@@ -21,7 +21,7 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProblemReporter;
@@ -165,7 +165,7 @@ public final class FabricWorld implements World {
 
     @Override
     public String name() {
-        return level.dimension().location().toString();
+        return level.dimension().identifier().toString();
     }
 
     @Override
@@ -331,7 +331,7 @@ public final class FabricWorld implements World {
         BlockPos pos = new BlockPos(x, Math.max(minY(), Math.min(maxY(), y)), z);
         Registry<net.minecraft.world.level.biome.Biome> biomes =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
-        ResourceLocation key = biomes.getKey(level.getBiome(pos).value());
+        Identifier key = biomes.getKey(level.getBiome(pos).value());
         return key == null ? -1 : FabricRegistries.biomeId(key.toString());
     }
 
@@ -848,7 +848,7 @@ public final class FabricWorld implements World {
      */
     @Override
     public boolean generateFeature(EditSession session, BlockVector3 pos, String featureType, Random random) {
-        ResourceLocation id = ResourceLocation.tryParse(featureType.contains(":") ? featureType
+        Identifier id = Identifier.tryParse(featureType.contains(":") ? featureType
                 : "minecraft:" + featureType);
         if (id == null) {
             return false;
@@ -866,7 +866,7 @@ public final class FabricWorld implements World {
 
     /** The placed feature an id names on this server, or null. */
     private PlacedFeature placedFeature(String id) {
-        ResourceLocation location = ResourceLocation.tryParse(id);
+        Identifier location = Identifier.tryParse(id);
         return location == null ? null
                 : level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
     }
@@ -916,7 +916,7 @@ public final class FabricWorld implements World {
      */
     @Override
     public boolean generateStructure(EditSession session, String structureId, BlockVector3 pos, Random random) {
-        ResourceLocation id = ResourceLocation.tryParse(structureId.contains(":") ? structureId
+        Identifier id = Identifier.tryParse(structureId.contains(":") ? structureId
                 : "minecraft:" + structureId);
         if (id == null) {
             return false;
@@ -1148,8 +1148,8 @@ public final class FabricWorld implements World {
         // The data of a chest is not loaded into the furnace that stands where
         // the chest was meant to go.
         String id = nbt.getString("id", null);
-        ResourceLocation type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
-        if (id != null && type != null && !type.equals(ResourceLocation.tryParse(id))) {
+        Identifier type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
+        if (id != null && type != null && !type.equals(Identifier.tryParse(id))) {
             FaweMod.LOGGER.debug("The data at {},{},{} is for {}, the block entity there is {}", x, y, z, id, type);
             return;
         }
@@ -1324,7 +1324,7 @@ public final class FabricWorld implements World {
             if (level.dimension().equals(net.minecraft.world.level.Level.END)) {
                 return root.resolve("DIM1").resolve("region");
             }
-            net.minecraft.resources.ResourceLocation location = level.dimension().location();
+            net.minecraft.resources.Identifier location = level.dimension().identifier();
             return root.resolve("dimensions").resolve(location.getNamespace())
                     .resolve(location.getPath()).resolve("region");
         } catch (RuntimeException e) {

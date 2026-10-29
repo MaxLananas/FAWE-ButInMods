@@ -21,8 +21,8 @@ public final class FaweModClient implements ClientModInitializer {
             // The command runs on the server thread of the integrated server, so
             // the screen is opened on the client thread through its executor.
             client.execute(() -> {
-                if (!(client.screen instanceof ConfigurationScreen)) {
-                    client.setScreen(new ConfigurationScreen());
+                if (!(client.gui.screen() instanceof ConfigurationScreen)) {
+                    client.gui.setScreen(new ConfigurationScreen());
                 }
             });
         });

@@ -3,11 +3,11 @@ FAWE-BIM
 
 FAWE-BIM ("FastAsyncWorldEdit, but in mods") is an independent port of the
 feature set and command surface of FastAsyncWorldEdit and WorldEdit to the
-Fabric mod loader for Minecraft 1.21.10, with no plugin or server platform
+Fabric mod loader for Minecraft 26.2, with no plugin or server platform
 dependency. It is maintained by MaxLananas.
 
 It reproduces:
-  * the WorldEdit 7.3.17 command surface for Minecraft 1.21.10 plus the
+  * the WorldEdit 7.3.17 command surface for Minecraft 26.2 plus the
     commands FastAsyncWorldEdit adds on top of it,
   * WorldEdit's selection, mask, pattern, transform, brush and tool model,
   * FAWE's data model: palette-packed chunk sections, bulk chunk application,
