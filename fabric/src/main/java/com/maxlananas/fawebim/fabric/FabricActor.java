@@ -255,7 +255,7 @@ public final class FabricActor implements Actor {
         if (id == null) {
             return false;
         }
-        var mcItem = BuiltInRegistries.ITEM.getValue(id);
+        var mcItem = FabricRegistries.value(BuiltInRegistries.ITEM, id);
         if (mcItem == null) {
             return false;
         }

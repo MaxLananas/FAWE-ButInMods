@@ -134,7 +134,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (id == null) {
             return -1;
         }
-        Block block = BuiltInRegistries.BLOCK.getValue(id);
+        Block block = block(id);
         if (block == null) {
             return -1;
         }
@@ -183,7 +183,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (id == null) {
             return -1;
         }
-        Block block = BuiltInRegistries.BLOCK.getValue(id);
+        Block block = block(id);
         if (block == null) {
             return -1;
         }
@@ -251,7 +251,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (blockName == null) {
             return air();
         }
-        Block block = BuiltInRegistries.BLOCK.getValue(ResourceLocation.parse(blockName));
+        Block block = block(ResourceLocation.parse(blockName));
         if (block == null) {
             return air();
         }
@@ -269,7 +269,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     public List<Integer> statesOf(String blockName) {
         blockName = BlockStateRegistry.expandColourShorthand(blockName);
         ResourceLocation key = ResourceLocation.tryParse(blockName);
-        Block block = key == null ? null : BuiltInRegistries.BLOCK.getValue(key);
+        Block block = block(key);
         if (block == null) {
             return List.of();
         }
@@ -521,7 +521,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (id == null) {
             return -1;
         }
-        var item = BuiltInRegistries.ITEM.getValue(id);
+        var item = item(id);
         if (item == null) {
             return -1;
         }
@@ -570,10 +570,44 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (id == null) {
             return -1;
         }
-        var item = BuiltInRegistries.ITEM.getValue(id);
+        var item = item(id);
         if (item == null) {
             return -1;
         }
         return BuiltInRegistries.ITEM.getId(item);
     }
+
+    /**
+     * The block a name names, or null when the registry holds no such key.
+     *
+     * <p>{@code Registry#getValue} answers the registry's default value for a
+     * key it does not hold - air for the blocks - so an unknown name was
+     * answered with air and the check for null never fired: {@code //set
+     * notablock} filled the selection with air, and {@code //replace stone
+     * notablock} erased the stone instead of refusing the name. The key of
+     * what came back is what tells an unknown name from the default one.</p>
+     */
+    private static Block block(ResourceLocation id) {
+        if (id == null) {
+            return null;
+        }
+        Block block = BuiltInRegistries.BLOCK.getValue(id);
+        if (block == null || !id.equals(BuiltInRegistries.BLOCK.getKey(block))) {
+            return null;
+        }
+        return block;
+    }
+
+    /** The item a name names, or null when the registry holds no such key. */
+    private static net.minecraft.world.item.Item item(ResourceLocation id) {
+        if (id == null) {
+            return null;
+        }
+        net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.getValue(id);
+        if (item == null || !id.equals(BuiltInRegistries.ITEM.getKey(item))) {
+            return null;
+        }
+        return item;
+    }
+
 }

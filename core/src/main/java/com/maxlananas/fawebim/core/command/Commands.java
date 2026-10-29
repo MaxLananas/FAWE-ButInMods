@@ -336,10 +336,20 @@ public final class Commands {
         e12.description = "Count the number of blocks matching a mask";
         e12.group = "selection";
         e12.requiresSelection = true;
-        e12.arguments.add("mask");
+        e12.arguments.add("[mask]");
         e12.handler = ctx -> {
-                    Mask mask = Parsers.mask(ctx.arg(0), ctx);
-                    long count = ctx.selection().forEachPosition(mask::test);
+                    // As in WorldEdit, the mask is optional: without one every
+                    // block of the selection is counted. It was declared as
+                    // required, so //count on its own was refused with a usage
+                    // line instead of counting the selection.
+                    Mask mask = ctx.args().isEmpty() ? ctx.session().getMask()
+                            : Parsers.mask(ctx.arg(0), ctx);
+                    long count;
+                    if (mask == null) {
+                        count = ctx.selection().forEachPosition((x, y, z) -> true);
+                    } else {
+                        count = ctx.selection().forEachPosition(mask::test);
+                    }
                     ctx.actor().message(Msg.result("Counted", Msg.count(count)));
                 };
 

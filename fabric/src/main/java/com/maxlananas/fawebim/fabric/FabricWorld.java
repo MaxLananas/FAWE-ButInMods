@@ -873,8 +873,8 @@ public final class FabricWorld implements World {
         if (id == null) {
             return false;
         }
-        ConfiguredFeature<?, ?> configured = level.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE)
-                .getValue(id);
+        ConfiguredFeature<?, ?> configured = FabricRegistries.value(
+                level.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE), id);
         if (configured == null) {
             return placeFeature(session, pos, placedFeature(id.toString()), random);
         }
@@ -887,8 +887,8 @@ public final class FabricWorld implements World {
     /** The placed feature an id names on this server, or null. */
     private PlacedFeature placedFeature(String id) {
         ResourceLocation location = ResourceLocation.tryParse(id);
-        return location == null ? null
-                : level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
+        return location == null ? null : FabricRegistries.value(
+                level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE), location);
     }
 
     /**
@@ -942,7 +942,7 @@ public final class FabricWorld implements World {
             return false;
         }
         Registry<Structure> structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
-        Structure structure = structures.getValue(id);
+        Structure structure = FabricRegistries.value(structures, id);
         if (structure == null) {
             return false;
         }
