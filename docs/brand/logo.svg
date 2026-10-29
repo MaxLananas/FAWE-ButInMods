@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="FAWE-BIM logo: a wireframe selection cube cut by a builder's axe">
+  <defs>
+    <linearGradient id="lbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a1324"/>
+      <stop offset="1" stop-color="#0d2233"/>
+    </linearGradient>
+    <linearGradient id="lcyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7ff0ff"/>
+      <stop offset="1" stop-color="#2aa7d8"/>
+    </linearGradient>
+    <linearGradient id="lwood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e0b376"/>
+      <stop offset="1" stop-color="#a9713a"/>
+    </linearGradient>
+    <linearGradient id="lsteel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8f6ff"/>
+      <stop offset="1" stop-color="#8fb6cc"/>
+    </linearGradient>
+    <filter id="lglow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="url(#lbg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="none" stroke="#1c3b52" stroke-width="3"/>
+
+  <!-- isometric selection cube -->
+  <g filter="url(#lglow)">
+    <path d="M256 122 L392 200 L392 344 L256 422 L120 344 L120 200 Z" fill="#3fd8ff" fill-opacity="0.07"/>
+    <g fill="none" stroke="url(#lcyan)" stroke-width="11" stroke-linejoin="round">
+      <path d="M256 122 L392 200 L392 344 L256 422 L120 344 L120 200 Z"/>
+      <path d="M256 200 L392 200" stroke-opacity="0.55"/>
+      <path d="M256 200 L120 200" stroke-opacity="0.55"/>
+      <path d="M256 200 L256 422" stroke-opacity="0.55"/>
+    </g>
+  </g>
+
+  <!-- axe: handle + head, cutting the cube's front face -->
+  <g transform="translate(256 268) rotate(-38)">
+    <rect x="-15" y="-104" width="30" height="240" rx="12" fill="url(#lwood)" stroke="#6e4620" stroke-width="4"/>
+    <path d="M-15 -132 C-96 -126 -118 -64 -104 -18 C-72 -44 -40 -56 -15 -54 Z" fill="url(#lsteel)" stroke="#5d7f93" stroke-width="4"/>
+    <path d="M15 -132 C74 -128 92 -96 88 -62 C60 -82 36 -90 15 -88 Z" fill="#b9d7e6" stroke="#5d7f93" stroke-width="4"/>
+  </g>
+
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <text x="256" y="472" font-size="34" font-weight="800" letter-spacing="4" fill="#cfeeff">FAWE-BIM</text>
+  </g>
+</svg>

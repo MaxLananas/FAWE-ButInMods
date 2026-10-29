@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="500" viewBox="0 0 1040 500" role="img" aria-label="Measured throughput of the FAWE-BIM engine: undo 78 to 92 million blocks per second, copy 68 to 72, writes without history 63 to 66, set 41 to 43, sphere 32 to 43, paste 31 to 33, replace 30 to 33, writes with history 34 to 38">
+  <defs>
+    <linearGradient id="barb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1d7fa8"/><stop offset="1" stop-color="#5fe3ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1040" height="500" rx="22" fill="#0b1220"/>
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="40" y="52" font-size="14" font-weight="700" letter-spacing="4" fill="#5fd6ff">MEASURED THROUGHPUT · ./gradlew :core:bench</text>
+    <text x="40" y="80" font-size="13" fill="#7d90a8">256×256×128 in-JVM world, single thread, best of seven after warm-up. Bars end at the best value of the range.</text>
+  </g>
+
+  <!-- grid -->
+  <g stroke="#1b2740" stroke-width="1">
+    <path d="M200 118 V452"/><path d="M325 118 V452"/><path d="M450 118 V452"/><path d="M575 118 V452"/><path d="M700 118 V452"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#4f6480" text-anchor="middle">
+    <text x="200" y="112">0</text><text x="325" y="112">25M</text><text x="450" y="112">50M</text><text x="575" y="112">75M</text><text x="700" y="112">100M</text>
+    <text x="760" y="112" fill="#5b708c">blocks/s</text>
+  </g>
+
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#c7d5e6" text-anchor="end">
+    <text x="186" y="155">//undo &amp; //redo</text>
+    <text x="186" y="195">//copy</text>
+    <text x="186" y="235">block writes, no history</text>
+    <text x="186" y="275">//set</text>
+    <text x="186" y="315">//sphere r=40</text>
+    <text x="186" y="355">//paste</text>
+    <text x="186" y="395">//replace</text>
+    <text x="186" y="435">block writes, with history</text>
+  </g>
+
+  <g fill="url(#barb)">
+    <rect x="200" y="132" width="460" height="26" rx="7"/>
+    <rect x="200" y="172" width="360" height="26" rx="7"/>
+    <rect x="200" y="212" width="330" height="26" rx="7"/>
+    <rect x="200" y="252" width="215" height="26" rx="7"/>
+    <rect x="200" y="292" width="215" height="26" rx="7"/>
+    <rect x="200" y="332" width="165" height="26" rx="7"/>
+    <rect x="200" y="372" width="165" height="26" rx="7"/>
+    <rect x="200" y="412" width="190" height="26" rx="7"/>
+  </g>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#eaf6ff">
+    <text x="672" y="151">78–92M</text>
+    <text x="572" y="191">68–72M</text>
+    <text x="542" y="231">63–66M</text>
+    <text x="427" y="271">41–43M</text>
+    <text x="427" y="311">32–43M</text>
+    <text x="377" y="351">31–33M</text>
+    <text x="377" y="391">30–33M</text>
+    <text x="402" y="431">34–38M</text>
+  </g>
+
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#7d90a8">
+    <text x="40" y="478">The spread between two runs of the same binary is wider than the effect of most changes — the ranges are what the harness supports, not a peak.</text>
+  </g>
+</svg>
