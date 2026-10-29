@@ -62,6 +62,18 @@ jobs:
           fi
           exit "$status"
 
+      # The mod jar has to carry the engine: the core is included as a nested
+      # jar (jar-in-jar) rather than merged, which is what the loader reads.
+      - name: Check the jar carries the engine
+        run: |
+          jar=$(ls fabric/build/libs/*.jar | head -1)
+          echo "built $jar"
+          unzip -l "$jar"
+          if ! unzip -l "$jar" | grep -q 'META-INF/jars/'; then
+            echo "::error title=the jar has no nested engine::the core jar is missing from $jar"
+            exit 1
+          fi
+
       - name: Upload the mod jar
         uses: actions/upload-artifact@v4
         with:
@@ -175,7 +187,11 @@ jobs:
 
           def command(text):
               sock.sendall(packet(2, 2, text))
-              return read(sock)[1]
+              answer = read(sock)[1]
+              # ::notice lines are readable from the run page, which is how the
+              # answers of the console commands are inspected.
+              print('::notice title=rcon ' + text + '::' + answer.replace('%', '%25').replace(chr(10), '%0A'))
+              return answer
 
           version = command('we version')
           print('we version ->', version)
