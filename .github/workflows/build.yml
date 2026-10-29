@@ -37,14 +37,22 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      # Keeps the Gradle user home and its build cache between runs, so the
-      # engine's 46k lines and the game's jars are compiled and unpacked once.
-      # This is the only cache of the build: setup-java's own Gradle cache would
-      # save and restore the same directory a second time.
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      # The downloads of the build, and nothing else: the game's jars, the
+      # loader, the dependency modules and the Gradle distribution itself. The
+      # key is the hash of the files that decide them, so this cache is written
+      # once per toolchain and restored afterwards - a cache with a per-run key
+      # (setup-gradle's) is *saved* at the end of every job, and that save alone
+      # took sixty seconds, more than the whole build.
+      - name: Cache the Gradle downloads
+        uses: actions/cache@v4
         with:
-          cache-read-only: false
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/caches/fabric-loom
+            ~/.gradle/wrapper/dists
+          key: gradle-deps-v1-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
+          restore-keys: |
+            gradle-deps-v1-
 
       # One invocation, not two: `verify` and `build` in the same JVM means one
       # Gradle start, one configuration phase and one dependency resolution.
@@ -192,7 +200,7 @@ jobs:
         if: always()
         run: |
           kill "$(cat /tmp/server.pid)" 2>/dev/null || true
-          sleep 5
+          sleep 2
           pkill -f net.fabricmc.devlaunchinjector 2>/dev/null || true
 
       - name: Report the server log
