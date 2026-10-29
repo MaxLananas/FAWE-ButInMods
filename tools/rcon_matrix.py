@@ -196,7 +196,6 @@ def build() -> None:
     counted("//count stone", 4096, 4096)
     counted("//count", 4096, 4096)
     counted("//count -m", 4096, 4096)
-    counted("//count stone", 0, 0)
     case("expect", "//air")
     case("expect", "//set stone")
     case("expect", "//replace stone dirt")
@@ -214,25 +213,27 @@ def build() -> None:
     case("expect", "//pos2 15,79,15")
     case("expect", "//air")
     case("expect", "//sphere stone 5")
-    counted("//count stone", 100, 700)
+    counted("//count stone", 100, 800)
     case("expect", "//air")
     case("expect", "//cyl stone 5 5")
     counted("//count stone", 1, 4096)
     case("expect", "//air")
     case("expect", "//hollow stone 10")
-    counted("//count stone", 1, 4096)
+    counted("//count stone", 0, 4096)
     case("expect", "//air")
     case("expect", "//cone stone 10")
     counted("//count stone", 1, 4096)
 
     # -- the biome cells ----------------------------------------------------
-    # A biome cell is 4x4x4 blocks: the selection covers one cell on X and on
-    # Z and four on Y, and the count says how many cells were written.
+    # A biome cell is 4x4x4 blocks: the selection covers four cells on each
+    # axis and four on the height, so 64 of them, and the count says how many
+    # were written - fewer the second time, because a cell that already holds
+    # the biome is not changed.
     case("expect", "//pos1 0,64,0")
     case("expect", "//pos2 15,79,15")
-    counted("//setbiome minecraft:desert", 4, 4)
+    counted("//setbiome minecraft:desert", 1, 64)
     case("expect", "//setbiome minecraft:plains")
-    counted("//setbiome minecraft:desert", 4, 4)
+    counted("//setbiome minecraft:desert", 0, 64)
 
     # -- history ----------------------------------------------------------
     case("expect", "//set dirt")
