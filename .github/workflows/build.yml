@@ -37,22 +37,24 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      # The downloads of the build, and nothing else: the game's jars, the
-      # loader, the dependency modules and the Gradle distribution itself. The
-      # key is the hash of the files that decide them, so this cache is written
-      # once per toolchain and restored afterwards - a cache with a per-run key
-      # (setup-gradle's) is *saved* at the end of every job, and that save alone
-      # took sixty seconds, more than the whole build.
+      # The whole Gradle home: the downloads, the compiled Kotlin build scripts,
+      # the build cache and Loom's extracted game. Narrowing it to the downloads
+      # alone cost forty seconds a run, which is what the build scripts are
+      # compiled for. The key is the hash of the files that decide the toolchain,
+      # so this cache is written once and restored afterwards: setup-gradle's
+      # cache has a key per run and is *saved* at the end of every job, and that
+      # save alone took sixty seconds, more than the build it cached.
       - name: Cache the Gradle downloads
         uses: actions/cache@v4
         with:
           path: |
-            ~/.gradle/caches/modules-2
-            ~/.gradle/caches/fabric-loom
-            ~/.gradle/wrapper/dists
-          key: gradle-deps-v1-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+            fabric/.gradle
+          key: gradle-home-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
           restore-keys: |
-            gradle-deps-v1-
+            gradle-home-v2-
 
       # One invocation, not two: `verify` and `build` in the same JVM means one
       # Gradle start, one configuration phase and one dependency resolution.
