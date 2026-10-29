@@ -432,3 +432,35 @@ La paire de coordonnées était lue avec `Double.parseDouble` sans garde. Elle r
 `//brush splatter`, `//brush shatter` et `//brush layer` gardaient leurs fronts de parcours dans des
 `List<Long>` : chaque nœud visité boxait un `Long`. Les trois utilisent `LongQueue`, une file
 d'`long` primitifs en anneau (`Operations#splatter`, `Operations#shatter`, `Brushes#layer`).
+
+## Lot 6 — une table qui perdait ses clés, et des arguments qui plantaient
+
+**62. `LongObjectMap.remove` rendait injoignables les clés voisines.**
+La table est à adressage ouvert avec sondage linéaire : une lecture avance depuis la case d'accueil
+jusqu'à la clé ou une case vide. Retirer une entrée vidait sa case au milieu d'un amas, et toute clé
+insérée après elle devenait introuvable — elle restait dans la table, `get` ne la voyait plus. Dans
+`EditSession`, c'est un tampon de chunk jeté sous un voisin déjà écrit : ses écritures en attente
+disparaissaient sans bruit. Le trou est maintenant refermé en décalant l'amas (`LongObjectMap#closeHole`,
+avec la condition de décalage prise dans le sens du sondage), et
+`CommandLimitTests#longObjectMapSurvivesRemoval` compare 100 000 `put`/`get`/`remove` à une `HashMap`
+sur 400 clés seulement, pour que les amas s'empilent.
+
+**63. Un argument de masque non numérique remontait en exception de parsing.**
+`#extrema[a]`, `#surface[abc]`, `#buffer[stone][x]`, `~[stone][deux]`, `#surfaceangle[0][90][x]`,
+`#xaxis[abc]`, `#angle[a][b]` appelaient `Integer.parseInt`/`Double.parseDouble` directement : la
+commande répondait `Invalid mask '#extrema[a]': For input string: "a"` au lieu de dire quoi corriger,
+et `weightedList` laissait sortir la même exception en erreur interne. Tous passent par `intArg`,
+`finiteArg` et `Str.isDouble`, avec les bornes vérifiées (`requireRange`) : `#extrema[10][2]`,
+`~[stone][5][2]`, `#beside[stone][4][1]` et `{8}{2}` sont refusés au lieu d'être des masques qui ne
+correspondent jamais à rien, une taille de buffer nulle est refusée, un poids nul ou négatif aussi.
+
+**64. L'identité de biome gardée en cache survivait à un `/reload`.**
+`getBiome` répond l'identifiant du dernier holder lu sans repasser par les registres. Un rechargement
+de datapack renumérote les biomes : le holder était le même objet, l'identifiant ne l'était plus, et
+`//copy -b` recopiait le biome d'avant le rechargement. Le cache porte maintenant la génération des
+registres sous laquelle son identifiant a été lu (`FabricWorld#lastBiomeGeneration`).
+
+**65. `//undo` d'un `//setbiome` comptait les cellules qu'il avait sautées.**
+`EditSession#applyBiomeChangeSet` renvoyait le nombre de lignes du record, alors que `setBiome` en
+saute deux fois : une cellule déjà à la valeur demandée, et une cellule changée deux fois dans le même
+record. Le compte affiché est celui des cellules réellement modifiées.

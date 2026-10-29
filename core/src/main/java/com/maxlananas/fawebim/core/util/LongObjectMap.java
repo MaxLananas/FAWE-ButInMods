@@ -109,6 +109,8 @@ public final class LongObjectMap<V> {
      * Drops a key, so a caller can hold one representation of a section at a
      * time: a section kept as a whole array is not the same entry as the runs a
      * partial read of it makes.
+     *
+     * <p>The slot is closed rather than emptied: see {@link #closeHole}.</p>
      */
     @SuppressWarnings("unchecked")
     public V remove(long key) {
@@ -120,11 +122,42 @@ public final class LongObjectMap<V> {
                 return null;
             }
             if (keys[slot] == key) {
-                values[slot] = null;
+                V removed = (V) value;
                 size--;
-                return (V) value;
+                closeHole(slot, mask);
+                return removed;
             }
             slot = (slot + 1) & mask;
+        }
+    }
+
+    /**
+     * Closes the slot a removal emptied, by shifting the rest of the cluster
+     * back into it.
+     *
+     * <p>A lookup walks forward from the home slot of a key until it meets the
+     * key or an empty slot, so emptying a slot in the middle of a cluster cut
+     * every walk that passed through it: a key inserted after the removed one
+     * was still in the table and could never be found again. In an edit session
+     * that is a chunk buffer dropped under a neighbour that had already been
+     * written to - the writes it still held were lost, silently.</p>
+     */
+    private void closeHole(int hole, int mask) {
+        values[hole] = null;
+        int scan = (hole + 1) & mask;
+        while (values[scan] != null) {
+            int home = spread(keys[scan]) & mask;
+            // The entry may move back into the hole only when the hole lies on
+            // its own walk from its home slot, that is when the home reaches the
+            // hole no later than the slot the entry sits in - the walk is
+            // forward, so both distances are taken from the home slot.
+            if (((hole - home) & mask) <= ((scan - home) & mask)) {
+                keys[hole] = keys[scan];
+                values[hole] = values[scan];
+                values[scan] = null;
+                hole = scan;
+            }
+            scan = (scan + 1) & mask;
         }
     }
 

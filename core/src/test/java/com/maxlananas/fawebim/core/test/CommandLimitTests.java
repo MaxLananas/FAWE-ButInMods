@@ -46,6 +46,7 @@ final class CommandLimitTests {
         section("primitive collections");
         longSetMatchesAHashSet();
         longQueueMatchesADeque();
+        longObjectMapSurvivesRemoval();
         stateCountsMatchAMap();
     }
 
@@ -323,6 +324,34 @@ final class CommandLimitTests {
         check("the long set answers add and contains like a hash set", agree);
         checkEquals("the long set counts what it holds", reference.size(), set.size());
         check("zero is a value like any other", set.contains(0) == reference.contains(0L));
+    }
+
+    /**
+     * An evicted entry must not take its neighbours with it: emptying a slot in
+     * the middle of a probe cluster used to hide every key inserted after it, so
+     * a chunk buffer dropped from an edit session left the ones beside it
+     * unreachable and their pending writes were lost.
+     */
+    private static void longObjectMapSurvivesRemoval() {
+        com.maxlananas.fawebim.core.util.LongObjectMap<Integer> map =
+                new com.maxlananas.fawebim.core.util.LongObjectMap<>(4);
+        Map<Long, Integer> reference = new java.util.HashMap<>();
+        Random random = new Random(13);
+        boolean agree = true;
+        for (int i = 0; i < 100_000 && agree; i++) {
+            // Few distinct keys, so the probe walks pile up and a removal lands
+            // in the middle of a cluster.
+            long key = random.nextInt(400);
+            if (random.nextInt(3) > 0) {
+                agree = java.util.Objects.equals(map.put(key, i), reference.put(key, i));
+            } else {
+                agree = java.util.Objects.equals(map.remove(key), reference.remove(key));
+            }
+            long probe = random.nextInt(400);
+            agree &= java.util.Objects.equals(map.get(probe), reference.get(probe))
+                    && map.size() == reference.size();
+        }
+        check("the long object map keeps its keys reachable after a removal", agree);
     }
 
     private static void longQueueMatchesADeque() {

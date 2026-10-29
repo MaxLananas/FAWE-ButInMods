@@ -426,18 +426,25 @@ public final class EditSession implements Extent {
      */
     public int applyBiomeChangeSet(com.maxlananas.fawebim.core.history.BiomeChangeSet set, boolean undo) {
         int size = set.size();
+        int changed = 0;
         if (undo) {
             int[] values = set.before();
             for (int i = size - 1; i >= 0; i--) {
-                setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+                if (setBiome(set.x(i), set.y(i), set.z(i), values[i])) {
+                    changed++;
+                }
             }
         } else {
             int[] values = set.after();
             for (int i = 0; i < size; i++) {
-                setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+                if (setBiome(set.x(i), set.y(i), set.z(i), values[i])) {
+                    changed++;
+                }
             }
         }
-        return size;
+        // Cells that were already at the value the record holds are skipped by
+        // setBiome, so counting the rows would report cells nothing changed.
+        return changed;
     }
 
     @Override

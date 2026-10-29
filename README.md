@@ -225,7 +225,7 @@ fails when it stops being true.
 | Live server test | CI only | boots a dedicated server with the mod, drives it over rcon and checks that `//pos1`, `//pos2`, `//set stone` (4096 blocks) and `//count stone` (4096) really changed the world |
 
 **The defect ledger.** The audits are not decorative: every finding is triaged into
-[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **61 of 80**
+[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **65 of 80**
 documented defects today — world-apply bugs, lighting and biome indexing, save/load correctness,
 NBT and varint parsing, history retention, CI cost, and hot-path allocation. The list is public and
 incomplete on purpose: the honest count is more useful than a green checkmark.

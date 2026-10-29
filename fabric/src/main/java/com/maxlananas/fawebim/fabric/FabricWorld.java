@@ -360,7 +360,10 @@ public final class FabricWorld implements World {
         // registries of the server, see FabricRegistries#ensure.
         FabricRegistries.ensure(level.registryAccess());
         var holder = level.getBiome(pos);
-        if (holder == lastBiomeHolder) {
+        // The cached id is only valid for the numbering it was read under: a
+        // datapack reload renumbers the biomes, and answering with the id of the
+        // holder from before it would write the wrong biome.
+        if (holder == lastBiomeHolder && lastBiomeGeneration == FabricRegistries.generation()) {
             return lastBiomeId;
         }
         Registry<net.minecraft.world.level.biome.Biome> biomes =
@@ -369,12 +372,15 @@ public final class FabricWorld implements World {
         int id = key == null ? -1 : FabricRegistries.biomeId(key.toString());
         lastBiomeHolder = holder;
         lastBiomeId = id;
+        lastBiomeGeneration = FabricRegistries.generation();
         return id;
     }
 
     /** The biome holder of the last block read, and the engine's id for it. */
     private Object lastBiomeHolder;
     private int lastBiomeId = -1;
+    /** The registry numbering {@link #lastBiomeId} was read under. */
+    private int lastBiomeGeneration = -1;
 
     /**
      * The holder of a biome id, kept per id.

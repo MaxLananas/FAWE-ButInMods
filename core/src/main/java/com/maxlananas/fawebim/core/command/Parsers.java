@@ -497,7 +497,10 @@ public final class Parsers {
                             : "Syntax: #buffer[pattern][size]");
                 }
                 Pattern inner = pattern(parts.get(0), ctx);
-                int size = parts.size() > 1 ? Integer.parseInt(parts.get(1).trim()) : 128;
+                int size = parts.size() > 1 ? intArg(parts.get(1), "the buffer size") : 128;
+                if (size < 1) {
+                    throw CommandRegistry.error("The buffer size must be above 0");
+                }
                 return new Patterns.Buffered(inner, size, id.equals("buffer2d"));
             }
             case "nx", "nox", "!x", "ny", "noy", "!y", "nz", "noz", "!z" -> {
@@ -677,8 +680,9 @@ public final class Parsers {
             throw CommandRegistry.error("Syntax: #beside[mask][min][max]");
         }
         Mask source = mask(parts.get(0), ctx);
-        int min = parts.size() > 1 ? Integer.parseInt(parts.get(1).trim()) : 1;
-        int max = parts.size() > 2 ? Integer.parseInt(parts.get(2).trim()) : 8;
+        int min = parts.size() > 1 ? intArg(parts.get(1), "the minimum") : 1;
+        int max = parts.size() > 2 ? intArg(parts.get(2), "the maximum") : 8;
+        requireRange(min, max, "#beside");
         return new Masks.WallMask(source, min, max);
     }
 
@@ -769,8 +773,9 @@ public final class Parsers {
                 throw CommandRegistry.error("Syntax: ~[mask][min][max]");
             }
             Mask source = mask(parts.get(0), ctx);
-            int min = parts.size() > 1 ? Integer.parseInt(parts.get(1).trim()) : 1;
-            int max = parts.size() > 2 ? Integer.parseInt(parts.get(2).trim()) : flat ? 4 : 8;
+            int min = parts.size() > 1 ? intArg(parts.get(1), "the minimum") : 1;
+            int max = parts.size() > 2 ? intArg(parts.get(2), "the maximum") : flat ? 4 : 8;
+            requireRange(min, max, flat ? "~2d" : "~");
             if (min == 1 && max >= (flat ? 4 : 8)) {
                 return flat ? new Masks.AdjacentAny2DMask(source) : new Masks.AdjacentAnyMask(source);
             }
@@ -784,8 +789,10 @@ public final class Parsers {
             if (parts.size() != 2) {
                 throw CommandRegistry.error("Syntax: {[min][max]");
             }
-            return new Masks.RadiusShellMask(Integer.parseInt(parts.get(0).trim()),
-                    Integer.parseInt(parts.get(1).trim()));
+            int inner = intArg(parts.get(0), "the inner radius");
+            int outer = intArg(parts.get(1), "the outer radius");
+            requireRange(inner, outer, "{");
+            return new Masks.RadiusShellMask(inner, outer);
         }
         if (trimmed.startsWith("/")) {
             return angleMask("angle", trimmed.substring(1), extOf(ctx));
@@ -890,7 +897,7 @@ public final class Parsers {
             // turned into tangents the way #angle's are.
             double min = values.isEmpty() ? 0 : degrees(values.get(0));
             double max = values.size() < 2 ? 90 : degrees(values.get(1));
-            int size = values.size() < 3 ? 1 : Integer.parseInt(values.get(2));
+            int size = values.size() < 3 ? 1 : intArg(values.get(2), "the sample size");
             return new Masks.SurfaceAngleMask(extent, min, max, size);
         }
         double min = values.isEmpty() ? 0 : slopeLimit(values.get(0));
@@ -904,7 +911,7 @@ public final class Parsers {
     /** Degrees with the {@code d} suffix become tangents; anything else is a tangent. */
     /** A percentage of the noise band as FAWE reads it: {@code 50} is the middle. */
     private static double noisePercent(String value) {
-        return (Double.parseDouble(value.trim()) - 50d) / 50d;
+        return (finiteArg(value, "the noise percentage") - 50d) / 50d;
     }
 
     /**
@@ -940,6 +947,13 @@ public final class Parsers {
         return rgb;
     }
 
+    /** A bound pair that is the wrong way round matches nothing, which reads as a typo. */
+    private static void requireRange(int min, int max, String what) {
+        if (min > max) {
+            throw CommandRegistry.error("The minimum of " + what + " must not be above its maximum");
+        }
+    }
+
     private static int intArgument(String value) {
         try {
             return Integer.parseInt(value.trim());
@@ -957,10 +971,10 @@ public final class Parsers {
     }
 
     private static double slopeLimit(String value) {
-        if (value.endsWith("d")) {
+        if (value.endsWith("d") || value.endsWith("D")) {
             return Math.tan(Math.toRadians(degrees(value)));
         }
-        return Double.parseDouble(value);
+        return degrees(value);
     }
 
     /**
@@ -1009,8 +1023,8 @@ public final class Parsers {
                         new Masks.WallMask(new Masks.AirMask(extent, false), 1, 8)));
             }
             case "surface" -> {
-                int offset = args.isEmpty() ? 1 : Integer.parseInt(args);
-                return new Masks.SurfaceMask(extent, offset, false);
+                int offset = args.isEmpty() ? 1 : intArg(args, "the offset");
+                return new Masks.SurfaceMask(extent, Math.max(1, offset), false);
             }
             case "angle", "surfaceangle", "roc" -> {
                 return angleMask(id, args, extent);
@@ -1020,13 +1034,14 @@ public final class Parsers {
             }
             case "extrema" -> {
                 String[] parts = args.split(",");
-                int minY = parts.length > 0 && !parts[0].isEmpty() ? Integer.parseInt(parts[0]) : -64;
-                int maxY = parts.length > 1 ? Integer.parseInt(parts[1]) : 319;
+                int minY = parts.length > 0 && !parts[0].isBlank() ? intArg(parts[0], "the lowest y") : -64;
+                int maxY = parts.length > 1 && !parts[1].isBlank() ? intArg(parts[1], "the highest y") : 319;
+                requireRange(minY, maxY, "#extrema");
                 return new Masks.ExtremaMask(extent, minY, maxY);
             }
             case "xaxis", "yaxis", "zaxis" -> {
                 int axis = id.equals("xaxis") ? 0 : id.equals("yaxis") ? 1 : 2;
-                double radius = args.isEmpty() ? 8 : Double.parseDouble(args);
+                double radius = args.isEmpty() ? 8 : finiteArg(args, "the radius");
                 return new Masks.AxisMask(axis, radius);
             }
             case "true" -> {
@@ -1109,9 +1124,12 @@ public final class Parsers {
             double weight = 1;
             String body = piece;
             int percent = piece.indexOf('%');
-            if (percent > 0) {
+            if (percent > 0 && Str.isDouble(piece.substring(0, percent))) {
                 weight = Double.parseDouble(piece.substring(0, percent));
                 body = piece.substring(percent + 1);
+            }
+            if (!Double.isFinite(weight) || weight <= 0) {
+                throw CommandRegistry.error("The weight of '" + piece + "' must be above 0");
             }
             collection.add(weight, body);
         }
