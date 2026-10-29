@@ -152,33 +152,15 @@ jobs:
           python3 -c "import pathlib;t=pathlib.Path('/tmp/matrix.log').read_text(errors='replace')[-7000:];print('::error title=rcon matrix::'+t.replace('%','%25').replace(chr(10),'%0A'))"
           exit $status
 
+      # The mod has to say that it is ready, and the log has to hold no
+      # failure: a command that answers politely while the engine logs the
+      # failure it did not expect is the bug this catches. The findings are
+      # named by a script, because the output of a step that fails is not
+      # readable from the run page and an annotation that is too long is
+      # dropped.
       - name: Check the mod's own start line and fail on an exception
         run: |-
-          grep 'FAWE-BIM ready' /tmp/server.log
-          if grep -nE 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log | head -5; then
-            # The lines around the first one go into the message of the
-            # annotation: the output of a step that fails is not readable from
-            # the run page, the annotation is.
-            line=$(grep -nE 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log | head -1 | cut -d: -f1)
-            start=$(( line > 15 ? line - 15 : 1 ))
-            excerpt=$(sed -n "${start},$(( line + 15 ))p" /tmp/server.log | head -30)
-            echo "::error title=the mod did not start cleanly::$(echo "$excerpt" | tr '\n' ' ' | cut -c1-1500)"
-            exit 1
-          fi
-          # An exception in the log is a bug even when the command that caused
-          # it answered politely: the sweep says what went wrong. The lines
-          # around the first one are printed, because the answer of the sweep
-          # alone does not say which command it was.
-          if grep -nE '^\s*(at |Caused by:)' /tmp/server.log | head -3; then
-            # The lines around the first stack trace go into the message of the
-            # annotation: the output of a step that fails is not readable from
-            # the run page, the annotation is.
-            line=$(grep -nE '^\s*(at |Caused by:)' /tmp/server.log | head -1 | cut -d: -f1)
-            start=$(( line > 15 ? line - 15 : 1 ))
-            excerpt=$(sed -n "${start},$(( line + 10 ))p" /tmp/server.log | head -25)
-            echo "::error title=the server logged an exception::$(echo "$excerpt" | tr '\n' ' ' | cut -c1-1200)"
-            exit 1
-          fi
+          python3 tools/logcheck.py /tmp/server.log
 
       - name: Stop the server
         if: always()
@@ -190,7 +172,8 @@ jobs:
       - name: Report the server log
         if: failure()
         run: |
-          python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-7000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+          python3 tools/logcheck.py /tmp/server.log || true
+          tail -c 4000 /tmp/server.log
 
   # Nothing in this repository is worth keeping between runs: the jar is built
   # again in a minute, and an artifact costs the account's storage quota for
