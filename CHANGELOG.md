@@ -76,7 +76,7 @@ Eight lots, in [`BUGS.md`](BUGS.md). The ones a builder would have felt:
 
 ### Build and CI
 
-- A green run compiles, runs the engine self tests (**2 488** assertions), jars the mod, boots a real
+- A green run compiles, runs the engine self tests (**2 495** assertions), jars the mod, boots a real
   dedicated server with it, drives it over RCON and reads the blocks back — in about **71 s**.
 - **Zero CI artifacts**: nothing is uploaded, and a final job deletes anything the repository still
   holds.

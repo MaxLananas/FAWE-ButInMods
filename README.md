@@ -12,7 +12,7 @@ No plugin loader. No Paper. No client mod for players. 255 of 255 upstream comma
 [![Fabric API](https://img.shields.io/badge/fabric%20api-0.161.0%2B26.2-dbb69c?style=flat-square)](https://modrinth.com/mod/fabric-api)
 [![Java](https://img.shields.io/badge/java-25-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
-[![Engine tests](https://img.shields.io/badge/engine%20tests-2488%20passing-3fb950?style=flat-square)](#verification)
+[![Engine tests](https://img.shields.io/badge/engine%20tests-2495%20passing-3fb950?style=flat-square)](#verification)
 [![Commands](https://img.shields.io/badge/commands-300%20registered-58a6ff?style=flat-square)](#status)
 [![Upstream names](https://img.shields.io/badge/upstream%20names-255%2F255-3fb950?style=flat-square)](#status)
 [![Stubs](https://img.shields.io/badge/stubs-0-3fb950?style=flat-square)](#status)
@@ -32,7 +32,7 @@ No plugin loader. No Paper. No client mod for players. 255 of 255 upstream comma
 
 FAWE-BIM is the WorldEdit + FastAsyncWorldEdit feature set, reimplemented as a **Fabric mod**. The
 editing engine is written from scratch in platform-free Java (`core/`), and a thin Fabric adapter
-(`fabric/`) teaches it about the game. That split is not cosmetic: the whole engine, its 2488
+(`fabric/`) teaches it about the game. That split is not cosmetic: the whole engine, its 2495
 assertions included, runs in a plain JVM without ever launching Minecraft, which is how a 67k-line
 port stays testable.
 
@@ -218,7 +218,7 @@ fails when it stops being true.
 
 | Check | Command | What it proves |
 |---|---|---|
-| Engine self-test | `./gradlew :core:selfTest` | **2488 assertions, 0 failing**, no Minecraft needed: regions, masks, patterns, transforms, clipboard formats, history, brushes, commands |
+| Engine self-test | `./gradlew :core:selfTest` | **2495 assertions, 0 failing**, no Minecraft needed: regions, masks, patterns, transforms, clipboard formats, history, brushes, commands |
 | Dispatcher verify | `./gradlew :core:verify` | all **457 command spellings** — the 255 upstream names, their 201 aliases and the FAWE-only ones — resolve to an implemented command |
 | Command registry dump | `./gradlew :core:commandSpec` | the live registry, which the tables are generated from |
 | Static audit | `python3 tools/audit.py` | **16 rules** over every source file: dead private members, empty catches, boxed `==`, int overflow, unguarded parses, shared static maps, resource leaks, `Math.random`, locale-dependent casing, swallowed failures |
@@ -283,7 +283,7 @@ and that a `//set` really writes blocks — is proven inside the run, not stored
 
 | | |
 |---|---|
-| Engine tests | **2488 passing, 0 failing** |
+| Engine tests | **2495 passing, 0 failing** |
 | Commands registered | **300** |
 | Implemented | **253** (+ 47 aliases of an implemented command) |
 | WorldEdit + FAWE command names that resolve | **255 / 255** |
