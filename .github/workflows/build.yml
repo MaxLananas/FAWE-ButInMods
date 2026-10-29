@@ -15,8 +15,11 @@ permissions:
 
 # One run per branch: a new push cancels the older, still-queued or still-running
 # build of the same branch, so the newest jar is always the one being verified.
+# The group is the branch, not the ref: a pull request and the push that
+# opened it share it, so a branch with an open pull request is built once and
+# not twice.
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -123,13 +123,33 @@ def hit(rule: str, source: Source, offset: int, message: str) -> None:
 BOXED = {"Integer", "Long", "Short", "Byte", "Boolean", "Character", "Double", "Float"}
 
 
+def count_calls(index: str) -> dict[str, int]:
+    """How many times each name is called in the index."""
+    counts: dict[str, int] = {}
+    for name in re.findall(r"\b([a-z]\w*)\s*\(", index):
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def count_words(index: str) -> dict[str, int]:
+    """How many times each word appears in the index."""
+    counts: dict[str, int] = {}
+    for name in re.findall(r"\b([A-Za-z_]\w*)\b", index):
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def rule_dead_private_method(sources, index):
+    # The calls of every name are counted once for the whole index: running a
+    # regular expression over the index for every declaration made the audit
+    # quadratic, and it was the slowest step of the CI by a wide margin.
+    calls = count_calls(index)
     for source in sources:
         for m in re.finditer(r"^[ \t]*private (?:(?:static|final|synchronized) )*"
                              r"(?:<[^>]+> )?([A-Za-z_][\w<>\[\], ?.]*) ([a-z]\w*)\s*\(",
                              source.code, re.M):
             name = m.group(2)
-            uses = len(re.findall(r"\b" + re.escape(name) + r"\s*\(", index))
+            uses = calls.get(name, 0)
             decl = len(re.findall(r"^[ \t]*(?:public |private |protected |static |final |synchronized )*"
                                   r"[\w<>\[\], ?.]+ +" + re.escape(name) + r"\s*\(", source.code, re.M))
             if uses == 0 and decl == 1:
@@ -137,14 +157,16 @@ def rule_dead_private_method(sources, index):
 
 
 def rule_dead_private_field(sources, index):
+    # The names of the index are counted once, for the same reason as the
+    # methods above.
+    words = count_words(index)
     for source in sources:
         for m in re.finditer(r"^[ \t]*private (?:(?:static|final|volatile|transient) )*"
                              r"([A-Za-z_][\w<>\[\], ?.]*) ([a-z]\w*)\s*(?:=|;)", source.code, re.M):
             name = m.group(2)
             if name.endswith("__"):
                 continue
-            uses = len(re.findall(r"\b" + re.escape(name) + r"\b", index))
-            if uses <= 1:
+            if words.get(name, 0) <= 1:
                 hit("dead-field", source, m.start(), f"private field {name} is never read")
 
 
