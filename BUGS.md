@@ -11,7 +11,7 @@ valeurs encadrées, `toLowerCase()` sans locale, nombres analysés sans garde,
 méthodes privées jamais appelées…). Le reste vient d'une lecture du code
 comparée aux sources officielles 26.2 (`/tmp/dx/docs/official-262`).
 
-## Lot 1 — 17 défauts corrigés
+## Lot 1 — 19 défauts corrigés
 
 ### Monde Fabric (`FabricWorld`)
 
@@ -129,6 +129,26 @@ Aucun appelant dans le moteur, aucun test : la seule chose qu'il pouvait faire
 La marche sur X et Z avançait de 1 et ramenait chaque bloc à sa cellule : 16
 appels à `session.setBiome` par cellule, dont 15 sans effet. Les cellules de
 l'axe vertical sont maintenant visitées une fois chacune.
+
+### Registres et génération
+
+**18. `/reload` laissait les tables des registres périmées.**
+`FabricRegistries.install` n'était appelée qu'au démarrage. Un paquet de données
+rechargé reconstruit le `RegistryAccess` du serveur : un biome ajouté n'a plus
+d'identifiant, et comme les identifiants sont les noms triés, un biome inséré au
+milieu **renumérote** tous les suivants — `//setbiome` nommait alors le mauvais
+biome pour la moitié de l'alphabet, et les identifiants écrits dans un
+schématique ou un historique pointaient sur leurs voisins. `ensure(...)` compare
+l'identité du `RegistryAccess` (ce qu'un rechargement change) et reconstruit les
+tables ; elle est appelée là où les tables sont lues (biomes, features,
+structures).
+
+**19. Une écriture de générateur qui ne changeait rien vidait le bloc à données.**
+`EditLevel#write` enregistrait un bloc à données **neuf** avant de demander
+l'écriture ; quand l'édition gardait le bloc déjà en place (`setBlock` rend
+`false`), ce bloc neuf — vide — remplaçait à la fermeture les données de celui
+du monde : une structure qui écrit un coffre là où un coffre se trouve déjà
+vidait le coffre. L'enregistrement n'a lieu que si l'écriture a bien eu lieu.
 
 ## Vérification
 

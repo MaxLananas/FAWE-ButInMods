@@ -105,6 +105,17 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
     private boolean write(BlockPos pos, BlockState state) {
         // A generator moves one mutable position around: the key must not move with it.
         BlockPos at = pos.immutable();
+        boolean written = session.setBlock(at.getX(), at.getY(), at.getZ(), Block.getId(state));
+        if (!written) {
+            // The edit kept the block that was already there, so there is no
+            // new block entity: the fresh, empty one a generator would get must
+            // not replace the data of the one in the world. A structure that
+            // writes a chest where a chest already stands used to hand the edit
+            // an empty block entity for it, which emptied the chest when the
+            // level closed.
+            blockEntities.remove(at);
+            return false;
+        }
         BlockEntity blockEntity = state.hasBlockEntity() && state.getBlock() instanceof EntityBlock block
                 ? block.newBlockEntity(at, state) : null;
         if (blockEntity != null) {
@@ -112,7 +123,7 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
         } else {
             blockEntities.remove(at);
         }
-        return session.setBlock(at.getX(), at.getY(), at.getZ(), Block.getId(state));
+        return true;
     }
 
     /** An entity the generator adds, its passengers in its data, spawned through the edit. */

@@ -344,12 +344,16 @@ public final class FabricWorld implements World {
         BlockPos pos = new BlockPos(x, Math.max(minY(), Math.min(maxY(), y)), z);
         Registry<net.minecraft.world.level.biome.Biome> biomes =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
+        // The table of names to ids is rebuilt when a reload replaced the
+        // registries of the server, see FabricRegistries#ensure.
+        FabricRegistries.ensure(level.registryAccess());
         Identifier key = biomes.getKey(level.getBiome(pos).value());
         return key == null ? -1 : FabricRegistries.biomeId(key.toString());
     }
 
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
+        FabricRegistries.ensure(level.registryAccess());
         ResourceKey<net.minecraft.world.level.biome.Biome> biomeKey = FabricRegistries.biomeKey(biomeId);
         if (biomeKey == null || y < minY() || y > maxY()) {
             return false;
@@ -692,6 +696,7 @@ public final class FabricWorld implements World {
         int baseZ = set.chunkZ() << 4;
         Registry<net.minecraft.world.level.biome.Biome> registry =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
+        FabricRegistries.ensure(level.registryAccess());
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             LevelChunkSection section = chunk.getSection(sectionIndex);
             if (section == null) {
@@ -985,11 +990,13 @@ public final class FabricWorld implements World {
 
     @Override
     public List<String> featureIds() {
+        FabricRegistries.ensure(level.registryAccess());
         return FabricRegistries.featureIds();
     }
 
     @Override
     public List<String> structureIds() {
+        FabricRegistries.ensure(level.registryAccess());
         return FabricRegistries.structureIds();
     }
 
