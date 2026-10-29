@@ -390,7 +390,10 @@ public final class EditSession implements Extent {
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
         checkOpen();
-        if (y < minY || y > maxY) {
+        // A negative id is "this reader has no biome here" - //regen of a chunk
+        // it could not generate, a schematic naming one - and recording it puts
+        // a biome change in the history that no undo can put back.
+        if (y < minY || y > maxY || biomeId < 0) {
             return false;
         }
         ChunkSet chunk = chunkFor(x, z, true);

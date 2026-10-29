@@ -2593,6 +2593,15 @@ public final class Commands {
         return other;
     }
 
+    /** One half of a chunk coordinate pair, or the refusal a player can act on. */
+    private static int chunkCoordinate(String text, String whole) {
+        try {
+            return (int) Double.parseDouble(text.trim());
+        } catch (NumberFormatException notANumber) {
+            throw CommandRegistry.error("Expected two chunk coordinates like 12,-3, got '" + whole + "'");
+        }
+    }
+
     /** The count {@code //undo} and {@code //redo} take: one unless a number was given. */
     private static int undoCount(Ctx.Argument first) {
         return first == null || !first.isNumber() ? 1 : Math.max(1, (int) Math.round(
@@ -2819,9 +2828,12 @@ public final class Commands {
                     } else {
                         String coordinate = ctx.arg(0, null);
                         if (coordinate != null && coordinate.contains(",")) {
+                            // A pair is read as numbers, and "1,x" used to throw
+                            // a NumberFormatException out of the command, which
+                            // the dispatcher answers as an internal error.
                             String[] parts = coordinate.split(",", 2);
-                            cx = (int) Double.parseDouble(parts[0].trim());
-                            cz = (int) Double.parseDouble(parts[1].trim());
+                            cx = chunkCoordinate(parts[0], coordinate);
+                            cz = chunkCoordinate(parts[1], coordinate);
                         } else if (coordinate != null) {
                             cx = ctx.intArg(0);
                             cz = 0;

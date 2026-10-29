@@ -638,7 +638,17 @@ final class AnvilCommands {
     private Predicate<RegionFiles.Chunk> unvisitedFilter(Ctx ctx) {
         long ticks = ctx.intArg(0);
         String fileArgument = ctx.arg(1, "60000");
-        long fileMillis = fileArgument.matches("\\d+") ? Long.parseLong(fileArgument) : 60_000L;
+        // A value that is all digits can still be past what a long holds -
+        // "99999999999999999999" - and Long.parseLong then threw out of the
+        // command, which the dispatcher answers as an internal error.
+        long fileMillis = 60_000L;
+        if (fileArgument.matches("\\d+")) {
+            try {
+                fileMillis = Long.parseLong(fileArgument);
+            } catch (NumberFormatException tooBig) {
+                fileMillis = Long.MAX_VALUE;
+            }
+        }
         long cutoff = (System.currentTimeMillis() - fileMillis) / 1000L;
         return chunk -> ChunkData.inhabitedTicks(chunk.data()) < ticks
                 && (chunk.modifiedSeconds() == 0 || chunk.modifiedSeconds() < cutoff);

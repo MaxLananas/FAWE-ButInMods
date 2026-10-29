@@ -2569,13 +2569,17 @@ public final class Operations {
         for (BlockVector3 seed : scatterPoints(session, center, radius, points, 1, mask, random)) {
             Pattern fill = solid ? new FixedPattern(pattern.apply(seed.x(), seed.y(), seed.z())) : pattern;
             LongSet visited = new LongSet();
-            List<Long> level = new ArrayList<>();
+            // Queues of primitive longs: a node of the flood is one long, and the
+            // List<Long> this used to be boxed one object per block reached - a
+            // splatter brush reaches millions of them.
+            LongQueue level = new LongQueue();
             long start = BlockArrayClipboard.positionKey(seed.x(), seed.y(), seed.z());
             visited.add(start);
             level.add(start);
             for (int depth = 0; !level.isEmpty() && depth <= recursion; depth++) {
-                List<Long> next = new ArrayList<>();
-                for (long node : level) {
+                LongQueue next = new LongQueue();
+                while (!level.isEmpty()) {
+                    long node = level.poll();
                     int x = BlockArrayClipboard.keyX(node);
                     int y = BlockArrayClipboard.keyY(node);
                     int z = BlockArrayClipboard.keyZ(node);
@@ -2679,14 +2683,17 @@ public final class Operations {
         long radiusSq = (long) (radius * radius);
         LongSet claimed = new LongSet();
         List<LongSet> reached = new ArrayList<>(seeds.size());
-        List<List<Long>> frontiers = new ArrayList<>(seeds.size());
+        // One queue of primitive longs per patch, as in splatter: the frontier of
+        // a shatter is millions of nodes over its life, each of which used to be
+        // a boxed Long in a List.
+        List<LongQueue> frontiers = new ArrayList<>(seeds.size());
         for (BlockVector3 seed : seeds) {
             long key = BlockArrayClipboard.positionKey(seed.x(), seed.y(), seed.z());
             claimed.add(key);
             LongSet own = new LongSet();
             own.add(key);
             reached.add(own);
-            List<Long> frontier = new ArrayList<>();
+            LongQueue frontier = new LongQueue();
             frontier.add(key);
             frontiers.add(frontier);
         }
@@ -2696,11 +2703,12 @@ public final class Operations {
         while (growing) {
             growing = false;
             for (int i = 0; i < frontiers.size(); i++) {
-                List<Long> frontier = frontiers.get(i);
+                LongQueue frontier = frontiers.get(i);
                 growing |= !frontier.isEmpty();
                 LongSet own = reached.get(i);
-                List<Long> next = new ArrayList<>();
-                for (long node : frontier) {
+                LongQueue next = new LongQueue();
+                while (!frontier.isEmpty()) {
+                    long node = frontier.poll();
                     // A patch grows at random speed: half its edge waits a turn.
                     if (random.nextInt(2) == 0) {
                         next.add(node);

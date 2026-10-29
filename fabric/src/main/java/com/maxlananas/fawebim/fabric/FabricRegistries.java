@@ -31,6 +31,12 @@ import java.util.Map;
 final class FabricRegistries {
 
     private static volatile RegistryAccess access;
+    /**
+     * Incremented every time the tables are rebuilt. The adapter caches the
+     * holders it hands the game, and a {@code /reload} makes every one of those
+     * caches stale: this is how they know.
+     */
+    private static volatile int generation;
     private static volatile List<String> biomeNames = List.of();
     private static volatile Map<String, Integer> biomeIds = Map.of();
     private static volatile List<String> featureIds = List.of();
@@ -69,6 +75,12 @@ final class FabricRegistries {
                 .sorted()
                 .toList();
         access = registryAccess;
+        generation++;
+    }
+
+    /** How many times the tables were rebuilt, for caches built from them. */
+    static int generation() {
+        return generation;
     }
 
     /**
@@ -162,6 +174,11 @@ final class FabricRegistries {
 
     static List<String> biomeNames() {
         return biomeNames;
+    }
+
+    /** How many biomes the server has, which is what an id table is sized for. */
+    static int biomeCount() {
+        return biomeNames.size();
     }
 
     /** The name of a biome id, or {@code null} when the id is not one of ours. */

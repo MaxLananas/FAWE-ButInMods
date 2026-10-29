@@ -344,23 +344,87 @@ public final class FabricWorld implements World {
         return true;
     }
 
+    /**
+     * The biome of a position, and the id of the biome the game holds there.
+     *
+     * <p>{@code //copy -b} and {@code //setbiome} ask this of every block of a
+     * selection, and the answer used to cost a registry lookup, a name built from
+     * the key and a map lookup - per block, for a value that only changes when the
+     * column enters another 4x4x4 cell. The last holder and the last id are kept,
+     * which answers the run a copy walks in an identity comparison.</p>
+     */
     @Override
     public int getBiome(int x, int y, int z) {
         BlockPos pos = new BlockPos(x, Math.max(minY(), Math.min(maxY(), y)), z);
-        Registry<net.minecraft.world.level.biome.Biome> biomes =
-                level.registryAccess().lookupOrThrow(Registries.BIOME);
         // The table of names to ids is rebuilt when a reload replaced the
         // registries of the server, see FabricRegistries#ensure.
         FabricRegistries.ensure(level.registryAccess());
-        Identifier key = biomes.getKey(level.getBiome(pos).value());
-        return key == null ? -1 : FabricRegistries.biomeId(key.toString());
+        var holder = level.getBiome(pos);
+        if (holder == lastBiomeHolder) {
+            return lastBiomeId;
+        }
+        Registry<net.minecraft.world.level.biome.Biome> biomes =
+                level.registryAccess().lookupOrThrow(Registries.BIOME);
+        Identifier key = biomes.getKey(holder.value());
+        int id = key == null ? -1 : FabricRegistries.biomeId(key.toString());
+        lastBiomeHolder = holder;
+        lastBiomeId = id;
+        return id;
     }
+
+    /** The biome holder of the last block read, and the engine's id for it. */
+    private Object lastBiomeHolder;
+    private int lastBiomeId = -1;
+
+    /**
+     * The holder of a biome id, kept per id.
+     *
+     * <p>{@code registry.getOrThrow(key)} walks the registry for a resource key:
+     * {@code //setbiome} over a selection asked it once per block, for the same
+     * handful of ids. The holder is the same object for every call, so a table
+     * indexed by the id answers the next one with an array read; the table is
+     * rebuilt when a reload renumbered the biomes.</p>
+     */
+    private net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biomeHolder(int biomeId) {
+        if (biomeId < 0) {
+            // -1 is what a reader answers for a biome it does not know - a
+            // //regen of a chunk it could not generate, a schematic naming one -
+            // and it used to index the table with it.
+            return null;
+        }
+        if (biomeByIdGeneration != FabricRegistries.generation() || biomeId >= biomeById.length) {
+            int size = Math.max(64, Math.max(biomeId + 1, FabricRegistries.biomeCount() + 1));
+            @SuppressWarnings("unchecked")
+            net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>[] table =
+                    new net.minecraft.core.Holder[size];
+            biomeById = table;
+            biomeByIdGeneration = FabricRegistries.generation();
+        }
+        var cached = biomeById[biomeId];
+        if (cached != null) {
+            return cached;
+        }
+        ResourceKey<net.minecraft.world.level.biome.Biome> key = FabricRegistries.biomeKey(biomeId);
+        if (key == null) {
+            return null;
+        }
+        var holder = level.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(key);
+        biomeById[biomeId] = holder;
+        return holder;
+    }
+
+    @SuppressWarnings("unchecked")
+    private net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>[] biomeById =
+            new net.minecraft.core.Holder[0];
+    private int biomeByIdGeneration = -1;
 
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
         FabricRegistries.ensure(level.registryAccess());
-        ResourceKey<net.minecraft.world.level.biome.Biome> biomeKey = FabricRegistries.biomeKey(biomeId);
-        if (biomeKey == null || y < minY() || y > maxY()) {
+        if (y < minY() || y > maxY()) {
+            return false;
+        }
+        if (biomeHolder(biomeId) == null) {
             return false;
         }
         LevelChunk chunk = chunkAt(x >> 4, z >> 4);
@@ -368,8 +432,6 @@ public final class FabricWorld implements World {
         if (sectionIndex < 0 || sectionIndex >= chunk.getSections().length) {
             return false;
         }
-        Registry<net.minecraft.world.level.biome.Biome> registry =
-                level.registryAccess().lookupOrThrow(Registries.BIOME);
         // The biome palette is a 4x4x4 grid inside each section; sections are
         // 16 blocks tall, so the low bits of Y address the cell directly.
         // The game hands the biome grid out as a read-only view; it is the
@@ -385,8 +447,7 @@ public final class FabricWorld implements World {
         // only for the first four blocks of each axis; past them it named
         // another cell, so //setbiome wrote three quarters of its biomes in the
         // wrong place.
-        container.getAndSetUnchecked((x & 15) >> 2, (y & 15) >> 2, (z & 15) >> 2,
-                registry.getOrThrow(biomeKey));
+        container.getAndSetUnchecked((x & 15) >> 2, (y & 15) >> 2, (z & 15) >> 2, biomeHolder(biomeId));
         chunk.markUnsaved();
         return true;
     }
@@ -730,8 +791,6 @@ public final class FabricWorld implements World {
 
     /** Writes the chunk buffer's biomes into the section palettes. */
     private void applyBiomes(LevelChunk chunk, ChunkSet set) {
-        Registry<net.minecraft.world.level.biome.Biome> registry =
-                level.registryAccess().lookupOrThrow(Registries.BIOME);
         FabricRegistries.ensure(level.registryAccess());
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             LevelChunkSection section = chunk.getSection(sectionIndex);
@@ -766,14 +825,13 @@ public final class FabricWorld implements World {
                 if (biomeId < 0) {
                     continue;
                 }
-                ResourceKey<net.minecraft.world.level.biome.Biome> key = FabricRegistries.biomeKey(biomeId);
-                if (key == null) {
+                var holder = biomeHolder(biomeId);
+                if (holder == null) {
                     continue;
                 }
                 // The cell index is the one ChunkSet#setBiome used: y in the top
                 // two bits, then z, then x.
-                container.getAndSetUnchecked(cell & 3, (cell >> 4) & 3, (cell >> 2) & 3,
-                        registry.getOrThrow(key));
+                container.getAndSetUnchecked(cell & 3, (cell >> 4) & 3, (cell >> 2) & 3, holder);
                 touched = true;
             }
             if (touched) {

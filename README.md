@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/brand/logo.svg" alt="FAWE-BIM" width="128" height="128">
-
 # FAWE-BIM
 
 **WorldEdit 7.4 + FastAsyncWorldEdit, as a single Fabric mod for Minecraft 26.2.**
@@ -27,10 +25,6 @@ No plugin loader. No Paper. No client mod for players. 255 of 255 upstream comma
 [Contributing](CONTRIBUTING.md) · [Discord](https://discord.gg/pnJhKuU2QK)
 
 </div>
-
----
-
-<img src="docs/brand/hero.svg" alt="FAWE-BIM — Fabric mod, Minecraft 26.2, WorldEdit 7.4 + FastAsyncWorldEdit, zero stubs, 255/255 names" width="100%">
 
 ---
 
@@ -164,8 +158,6 @@ A `//set` over a million blocks does not become a million calls into the world. 
 million writes into per-chunk buffers, then one bulk write per chunk, then one flush of the side
 effects (lighting, neighbour updates, block entities) on the server thread.
 
-<img src="docs/brand/section.svg" alt="How a 16x16x16 section is stored: palette, index table, packed longs with a written bitset, and one int per history row" width="100%">
-
 **The three ideas that do most of the work**
 
 | Idea | What it buys |
@@ -194,8 +186,6 @@ jar in CI, on one Gradle invocation with a warm module cache (see
 ---
 
 ## Benchmarks
-
-<img src="docs/brand/bench.svg" alt="Measured throughput of the engine: undo 78-92M blocks/s, copy 68-72M, writes without history 63-66M, set 41-43M, sphere 32-43M, paste 31-33M, replace 30-33M, writes with history 34-38M" width="100%">
 
 `./gradlew :core:bench` prints that table on your machine: an in-JVM `256×256×128` world,
 single-threaded, best of seven runs after warm-up. The ranges come from several runs of the same
@@ -235,7 +225,7 @@ fails when it stops being true.
 | Live server test | CI only | boots a dedicated server with the mod, drives it over rcon and checks that `//pos1`, `//pos2`, `//set stone` (4096 blocks) and `//count stone` (4096) really changed the world |
 
 **The defect ledger.** The audits are not decorative: every finding is triaged into
-[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **55 of 80**
+[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **61 of 80**
 documented defects today — world-apply bugs, lighting and biome indexing, save/load correctness,
 NBT and varint parsing, history retention, CI cost, and hot-path allocation. The list is public and
 incomplete on purpose: the honest count is more useful than a green checkmark.
@@ -486,7 +476,6 @@ core/      platform-free engine — regions, masks, patterns, transforms, EditSe
 fabric/    the adapter — mod entry point, Brigadier registration, world access (bulk section writes,
            lighting, entities, block entities), the block-state and biome bridge, click and
            interaction callbacks, one mixin and one access widener.
-docs/      brand assets: banner, logo, engine diagram, benchmark chart (hand-written SVG).
 tools/     the static auditor and the checks run over the tree.
 BUGS.md    the defect ledger: every real bug found, with cause, fix and file.
 ```
@@ -520,7 +509,6 @@ worth building for; and to the server-side classics — **EssentialsX**, **LuckP
 **Vault** — for showing what a server actually needs from an editing tool.
 
 <sub>Project icon artwork by <a href="https://www.instagram.com/elfi_draw">Elfi (@elfi_draw)</a>.
-Banner, engine diagrams and benchmark chart are hand-written SVG in <code>docs/brand/</code> — no raster
 assets ship with the repository.</sub>
 
 <div align="center"><sub><b>FAWE-BIM</b> · unofficial · <a href="https://github.com/MaxLananas/FAWE-ButInMods/issues">issues</a> · <a href="https://discord.gg/pnJhKuU2QK">discord</a> · <a href="BUGS.md">defect ledger</a></sub></div>

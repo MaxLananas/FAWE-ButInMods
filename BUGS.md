@@ -398,3 +398,37 @@ extraire le nombre de couches. Les identifiants des états de la neige et leurs 
 maintenant lus une fois par registre — un tableau d'entiers, aucune allocation sur le chemin
 d'une colonne, et la même repli textuel si le registre ne sait pas énumérer
 (`HeightMaps#snowLayers`, `HeightMaps#layersOf`).
+
+## Lot 5 — biomes, arguments et parcours de proche en proche
+
+**56. `//setbiome` résolvait le holder du registre à chaque bloc.**
+`FabricWorld#setBiome` appelait `registry.getOrThrow(key)` par position : `EditSession#setBiome`
+est appelé pour chaque bloc de la sélection, donc une marche dans le registre (et un `ResourceKey`
+reconstruit) 4 096 fois pour les 64 cellules réellement écrites d'une section. Le holder est mis en
+table par identifiant, et la table est reconstruite quand un `/reload` renumérote les biomes
+(`FabricWorld#biomeHolder`, `FabricRegistries#generation`).
+
+**57. `getBiome` faisait trois recherches par bloc.**
+`//copy -b` et `//setbiome` lisent le biome de chaque bloc : `level.getBiome` puis
+`biomes.getKey` puis la table nom → id. Le dernier holder et son identifiant sont gardés, ce qui
+répond d'une comparaison d'identité le long d'une colonne (`FabricWorld#getBiome`).
+
+**58. Un biome inconnu (`-1`) indexait la table des holders.**
+Un `//regen` d'un chunk qu'il n'a pas pu générer, ou un schéma nommant un biome absent du jeu,
+rend `-1` ; l'ancien code l'aurait passé tel quel à `getOrThrow` (et la table indexée par lui :
+`ArrayIndexOutOfBoundsException`). `biomeHolder` refuse les identifiants négatifs, et
+`EditSession#setBiome` ne les enregistre plus dans l'historique (`//undo` n'aurait rien pu rendre).
+
+**59. `/anvil deleteallunvisited` levait une « erreur interne » sur un grand nombre.**
+L'argument passe par `matches("\\d+")` puis `Long.parseLong` : « 99999999999999999999 » est fait de
+chiffres et ne tient pas dans un `long`, donc `NumberFormatException` sortait de la commande.
+L'analyse est gardée et sature à `Long.MAX_VALUE` (`AnvilCommands#unvisitedFilter`).
+
+**60. `//chunk 12,abc` levait une « erreur interne ».**
+La paire de coordonnées était lue avec `Double.parseDouble` sans garde. Elle rend maintenant
+`Expected two chunk coordinates like 12,-3, got '12,abc'` (`Commands#chunkCoordinate`).
+
+**61. Les brushes de proche en proche allouaient un objet par bloc atteint.**
+`//brush splatter`, `//brush shatter` et `//brush layer` gardaient leurs fronts de parcours dans des
+`List<Long>` : chaque nœud visité boxait un `Long`. Les trois utilisent `LongQueue`, une file
+d'`long` primitifs en anneau (`Operations#splatter`, `Operations#shatter`, `Brushes#layer`).

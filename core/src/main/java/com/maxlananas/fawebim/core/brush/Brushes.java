@@ -688,7 +688,10 @@ public final class Brushes {
             long start = BlockArrayClipboard.positionKey(position.x(), position.y(), position.z());
             visited.add(start);
             queue.add(start);
-            java.util.List<Long> surface = new java.util.ArrayList<>();
+            // Primitive longs, as in the flood fills of Operations: a layer brush
+            // over a cliff keeps the whole surface it walks, and a List<Long>
+            // boxed one object per block of it.
+            LongQueue surface = new LongQueue();
             while (!queue.isEmpty()) {
                 long current = queue.poll();
                 surface.add(current);
@@ -720,10 +723,11 @@ public final class Brushes {
             }
             // The layers, one step in per entry of the list.
             int changed = 0;
-            java.util.List<Long> current = surface;
+            LongQueue current = surface;
             for (int depth = 0; depth < layers.length && !current.isEmpty(); depth++) {
-                java.util.List<Long> inner = new java.util.ArrayList<>();
-                for (long key : current) {
+                LongQueue inner = new LongQueue();
+                while (!current.isEmpty()) {
+                    long key = current.poll();
                     int x = BlockArrayClipboard.keyX(key);
                     int y = BlockArrayClipboard.keyY(key);
                     int z = BlockArrayClipboard.keyZ(key);
