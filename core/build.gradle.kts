@@ -16,6 +16,14 @@ sourceSets {
     }
 }
 
+// The suite in src/test/java is a plain main() with its own asserts, run by the
+// selfTest task and checked by :core:verify - there is no JUnit test to
+// discover there.  Gradle 9 fails a test task that has sources and no tests, so
+// the stock task is turned off rather than left to trip the build.
+tasks.named<Test>("test") {
+    enabled = false
+}
+
 val selfTest by tasks.registering(JavaExec::class) {
     description = "Runs the built-in engine test-suite (no external test framework needed)."
     group = "verification"
