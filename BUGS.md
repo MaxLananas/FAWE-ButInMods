@@ -243,3 +243,89 @@ les vrais bugs) et le joueur lit `Invalid mask '...' : <raison>`.
 | sauvegarde du cache en fin de job | 61 s | 0 s |
 | **job complet** | **2 min 30 s** | **1 min 40 s** |
 | artefacts gardés | 187 (≈200 Mo) | 0 |
+
+## Lot 3 — persistance, schémas et historique
+
+Ce lot est la relecture du chemin qui touche au disque : NBT, fichiers de
+schéma, fichiers d'historique. Une erreur y est plus grave qu'ailleurs, parce
+qu'elle survit au redémarrage.
+
+**32. Le lecteur de varint acceptait un octet de trop.** `readVarInt` lisait
+jusqu'à six octets et jetait silencieusement les bits du dernier : un flux
+tronqué ou hostile se décodait en un nombre qui n'était pas celui écrit. Il
+s'arrête maintenant à cinq octets, la limite du format, et lève au-delà
+(`NbtIo.Reader#readVarInt`).
+
+**33. Même défaut pour `readVarLong`, à onze octets.** La limite est dix
+(`NbtIo.Reader#readVarLong`).
+
+**34. Un `Boolean` posé dans un compound faisait planter l'écriture.**
+`Writer#typeOf` l'annonçait comme `TAG_BYTE`, puis `writePayload` le castait en
+`Number` : `ClassCastException` à la sauvegarde. Il s'écrit maintenant comme
+l'octet 0 ou 1 qu'il annonce (`NbtIo.Writer#writePayload`).
+
+**35. Le flux décompressé n'était jamais fermé.** `NbtIo.read(...)` ouvrait un
+`GZIPInputStream` et le laissait au ramasse-miettes : l'`Inflater` garde de la
+mémoire native que seul `close()` rend. Un `try`/`finally` le ferme, sans
+toucher au flux de l'appelant (`NbtIo#read(InputStream, boolean, boolean, long)`).
+
+**36. `isGzip` exigeait trois octets pour un magic de deux.** Chaque appelant
+qui n'avait lu que l'en-tête devait donc fabriquer un troisième octet
+(`new byte[]{head[0], head[1], 0}`) pour se faire comprendre. La fonction lit
+les deux octets du magic, et l'appelant lit le fichier tel qu'il est
+(`NbtIo#isGzip`, `Schematics#readAny`).
+
+**37. `//schem save` collait une seconde extension.** Enregistrer `house.schem`
+au format MCEdit écrivait `house.schem.schematic` — un fichier qu'aucun autre
+programme n'ouvre, et que la liste montrait sous un nom à double extension. Le
+nom perd d'abord une extension de schéma connue, puis prend celle du format
+(`Schematics#serialize`).
+
+**38. La liste des schémas contournait `files.allow-symbolic-links`.**
+`entries()` filtrait les liens, `collect()` — celle de `//schem list` et de
+`//schem loadall` — non : un lien vers l'extérieur du dossier apparaissait dans
+la liste, et le chargement le refusait ensuite. Les deux appliquent la même
+règle (`Schematics#collect`).
+
+**39. Une extension en majuscules rendait un schéma invisible.**
+`isSchematic` comparait `.schem` à la casse près, alors que `formatOf` et
+`resolveExisting` ne la regardent pas : `House.SCHEM`, écrit par un autre
+programme ou sur un disque insensible à la casse, n'était jamais listé et ne
+pouvait donc pas être chargé par son nom (`Schematics#isSchematic`).
+
+**40. Les fichiers d'historique ne disparaissaient jamais.** La mémoire est
+bornée à 128 entrées (`CAPACITY`), mais chaque édition terminée écrivait un
+fichier `.snap` et rien n'en supprimait aucun : un serveur occupé remplissait son
+disque avec un historique qu'il ne pouvait plus lire. Le dossier garde
+`MAX_FILES = 4 × CAPACITY` fichiers, les plus anciens sont supprimés juste après
+l'écriture, sur le fil d'écriture (`EditLog#prune`).
+
+**41. `EditLog.load` gonflait tous les fichiers du dossier au démarrage.**
+Chaque fichier de l'historique était lu et décompressé, pour n'en garder que
+128 ; le temps de démarrage grandissait donc sans fin avec l'âge du serveur. Il
+trie et ne lit que les 128 plus récents (`EditLog#historyFiles`).
+
+**42. L'historique triait ses fichiers par nom, donc pas par date.** Le numéro
+de séquence est écrit en décimal : « 9 » se compare après « 10 », si bien que
+les fichiers de la même milliseconde n'étaient ni chargés ni conservés dans le
+bon ordre. Le tri se fait sur l'instant puis sur le numéro relus depuis le nom
+(`EditLog#timeInName`, `EditLog#sequenceInName`).
+
+**43. `Snapshots.list` avait le même défaut, en hexadécimal.** Le seizième
+snapshot d'une milliseconde (« …-10 ») était listé comme plus ancien que le
+quinzième (« …-f »), donc `//snapshot list` et `//snapshot restore <nom>`
+prenaient le mauvais fichier. Le tri se fait sur l'instant et la séquence
+(`Snapshots#list`, `Snapshots#sequenceOf`).
+
+**44. `//schem save` au format MCEdit allouait sans budget.** Deux tableaux
+d'un octet par bloc, pour un volume accepté jusqu'à `2^31 - 8` : 4 Go demandés
+d'un coup, donc `OutOfMemoryError` au milieu d'une commande. `Buffers.checkBytes`
+refuse la demande avant la première allocation, avec le message habituel
+(`Buffers#checkBytes`, `McEditSchematic#write`).
+
+**45. Un `.schematic` chargé sans `allow-ancient-blocks` devenait de l'air sans
+un mot.** Le format ne nomme ses blocs que par des identifiants numériques ;
+avec le réglage coupé, chaque bloc était remplacé par de l'air et le joueur
+voyait un schéma vide, ce qui ressemble à un bug de lecture. Le lecteur compte
+ces blocs et prévient, avec le nom du fichier et le réglage à activer
+(`McEditSchematic#read`).

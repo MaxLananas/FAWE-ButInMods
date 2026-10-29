@@ -215,8 +215,12 @@ public final class Schematics {
         if (!Files.isDirectory(folder)) {
             return;
         }
+        // The same policy entries() applies: a link out of the folder is not a
+        // schematic of it, and this walk used to list one anyway, so a listing
+        // could name a file every other command then refused to load.
+        boolean links = Config.get().allowSymlinks;
         try (Stream<Path> files = Files.list(folder)) {
-            files.filter(Files::isRegularFile)
+            files.filter(path -> Files.isRegularFile(path) && (links || !Files.isSymbolicLink(path)))
                     .map(path -> path.getFileName().toString())
                     .filter(Schematics::isSchematic)
                     .forEach(names::add);
@@ -225,8 +229,15 @@ public final class Schematics {
         }
     }
 
+    /**
+     * True for a name a schematic can carry. The extension is compared without
+     * case: a file saved as {@code House.SCHEM} by another program, or by a
+     * player on a case-insensitive disk, is a schematic every reader here can
+     * read, and it was invisible to the listing that is the only way to find it.
+     */
     private static boolean isSchematic(String name) {
-        return name.endsWith(".schem") || name.endsWith(".schematic") || name.endsWith(".nbt");
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        return lower.endsWith(".schem") || lower.endsWith(".schematic") || lower.endsWith(".nbt");
     }
 
     /**
@@ -491,7 +502,17 @@ public final class Schematics {
             }
         }
         String suffix = format.suffix();
-        String fileName = name.endsWith(suffix) ? name : name + suffix;
+        // A name that already carries a schematic extension keeps its stem, so
+        // //schem save house.schem mcedit writes house.schematic rather than
+        // house.schem.schematic: a file no other program opens.
+        String stem = name;
+        for (String known : FILE_EXTENSIONS) {
+            if (stem.length() > known.length() && stem.toLowerCase(java.util.Locale.ROOT).endsWith(known)) {
+                stem = stem.substring(0, stem.length() - known.length());
+                break;
+            }
+        }
+        String fileName = stem.toLowerCase(java.util.Locale.ROOT).endsWith(suffix) ? stem : stem + suffix;
         try {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             NbtIo.write(root, rootName, buffer, true);
@@ -581,8 +602,7 @@ public final class Schematics {
     private static NbtCompound readAny(Path path, String name) throws IOException {
         boolean gzipped;
         try (java.io.InputStream in = Files.newInputStream(path)) {
-            byte[] head = in.readNBytes(2);
-            gzipped = NbtIo.isGzip(head.length == 2 ? new byte[]{head[0], head[1], 0} : head);
+            gzipped = NbtIo.isGzip(in.readNBytes(2));
         }
         long budget = NbtIo.defaultBudget();
         for (boolean varint : new boolean[]{false, true}) {

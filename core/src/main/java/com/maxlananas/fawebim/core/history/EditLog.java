@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
@@ -33,6 +34,14 @@ public final class EditLog {
 
     /** How many edits stay searchable; older ones fall off the end. */
     private static final int CAPACITY = 128;
+
+    /**
+     * How many history files the folder keeps. The log in memory holds
+     * {@link #CAPACITY} entries, but every finished edit also wrote a file and
+     * nothing ever removed one: a busy server filled its disk with history it
+     * could no longer read, and a restart then read all of it back.
+     */
+    private static final int MAX_FILES = CAPACITY * 4;
 
     private static final Deque<Entry> ENTRIES = new ArrayDeque<>();
 
@@ -151,6 +160,7 @@ public final class EditLog {
             // Gzipped, like every other file the mod reads back.
             com.maxlananas.fawebim.core.util.AtomicFiles.write(folder.resolve(name),
                     out -> NbtIo.write(root, out, false, true));
+            prune(folder, name);
         } catch (IOException | RuntimeException e) {
             // A history that cannot be written must never take the edit down,
             // but whoever runs the server has to hear about it.
@@ -158,15 +168,89 @@ public final class EditLog {
         }
     }
 
-    /** Reads the history folder back into the log, oldest entry first. */
+    /** The moment in a history file's name, or -1 when it carries none. */
+    private static long timeInName(Path path) {
+        String name = path.getFileName().toString();
+        int dash = name.indexOf('-');
+        try {
+            return Long.parseLong(dash < 0 ? name : name.substring(0, dash));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** The sequence number in a history file's name, or -1 when it carries none. */
+    private static long sequenceInName(Path path) {
+        String name = path.getFileName().toString();
+        int first = name.indexOf('-');
+        int second = first < 0 ? -1 : name.indexOf('-', first + 1);
+        if (second < 0) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(name.substring(first + 1, second));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * The history files newest first. Sorted by the moment of the edit and then
+     * by the sequence number, not by name: the sequence is written as text, where
+     * the ninth edit of a millisecond comes after the tenth, so the newest file
+     * of a busy millisecond was neither loaded first nor kept first.
+     */
+    private static List<Path> historyFiles(Path folder, int limit) throws IOException {
+        try (Stream<Path> files = Files.list(folder)) {
+            return files.filter(file -> file.getFileName().toString().endsWith(".snap"))
+                    .sorted(Comparator.comparingLong(EditLog::timeInName)
+                            .thenComparingLong(EditLog::sequenceInName).reversed())
+                    .limit(limit)
+                    .toList();
+        }
+    }
+
+    /**
+     * Removes the oldest history files once the folder holds more than
+     * {@link #MAX_FILES} of them. Runs on the writer thread, just after a file
+     * was written, so the newest file - {@code kept} - is never a candidate.
+     */
+    private static void prune(Path folder, String kept) {
+        try {
+            List<Path> snaps = historyFiles(folder, Integer.MAX_VALUE);
+            if (snaps.size() <= MAX_FILES) {
+                return;
+            }
+            for (Path path : snaps.subList(MAX_FILES, snaps.size())) {
+                if (path.getFileName().toString().equals(kept)) {
+                    continue;
+                }
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    com.maxlananas.fawebim.core.platform.Log.warn("Could not remove the old history file "
+                            + path.getFileName(), e);
+                }
+            }
+        } catch (IOException e) {
+            // Pruning is housekeeping: a folder that cannot be listed keeps its files.
+        }
+    }
+
+    /**
+     * Reads the history folder back into the log, oldest entry first. Only the
+     * newest {@link #CAPACITY} files are read: the rest could not be kept in the
+     * log either, and reading them meant inflating every file a server ever
+     * wrote before it could answer its first command.
+     */
     public static synchronized int load() {
         Path folder = directory;
         if (folder == null || !Files.isDirectory(folder)) {
             return 0;
         }
         List<Entry> loaded = new ArrayList<>();
-        try (Stream<Path> files = Files.list(folder)) {
-            for (Path path : files.filter(file -> file.getFileName().toString().endsWith(".snap")).toList()) {
+        try {
+            for (Path path : historyFiles(folder, CAPACITY)) {
                 try {
                     NbtCompound root = NbtIo.readNbtOrGzip(Files.readAllBytes(path));
                     History.Record record = Snapshots.toRecord(root);

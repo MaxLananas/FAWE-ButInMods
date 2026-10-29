@@ -78,7 +78,9 @@ public final class NbtIo {
 
     /** True when the bytes start with the gzip magic number. */
     public static boolean isGzip(byte[] data) {
-        return data.length > 2 && (data[0] & 0xFF) == 0x1F && (data[1] & 0xFF) == 0x8B;
+        // Two bytes are the whole magic: a caller that only read the header of a
+        // file has exactly that and nothing more.
+        return data.length >= 2 && (data[0] & 0xFF) == 0x1F && (data[1] & 0xFF) == 0x8B;
     }
 
     public static NbtCompound read(byte[] data, boolean varint) throws IOException {
@@ -97,8 +99,16 @@ public final class NbtIo {
      */
     public static NbtCompound read(InputStream stream, boolean varint, boolean gzipped, long budget)
             throws IOException {
+        // The inflater holds native memory that only close() gives back, and the
+        // reader does not own the stream it was handed, so it is closed here.
         InputStream in = gzipped ? new GZIPInputStream(stream) : stream;
-        return new Reader(new DataInputStream(new java.io.BufferedInputStream(in)), varint, budget).readRoot();
+        try {
+            return new Reader(new DataInputStream(new java.io.BufferedInputStream(in)), varint, budget).readRoot();
+        } finally {
+            if (gzipped) {
+                in.close();
+            }
+        }
     }
 
     public static byte[] write(NbtCompound compound, boolean varint) throws IOException {
@@ -234,35 +244,31 @@ public final class NbtIo {
         }
 
         public int readVarInt() throws IOException {
+            // Five bytes, the format's limit: the sixth byte used to be read and
+            // its bits silently dropped, so a truncated or hostile stream decoded
+            // to a number that was not the one written.
             int result = 0;
-            int shift = 0;
-            while (true) {
+            for (int shift = 0; shift < 35; shift += 7) {
                 byte b = in.readByte();
                 result |= (b & 0x7F) << shift;
                 if ((b & 0x80) == 0) {
                     return result;
                 }
-                shift += 7;
-                if (shift > 35) {
-                    throw new IOException("VarInt too big");
-                }
             }
+            throw new IOException("VarInt too big");
         }
 
         public long readVarLong() throws IOException {
+            // Ten bytes, the format's limit, for the reason readVarInt gives.
             long result = 0;
-            int shift = 0;
-            while (true) {
+            for (int shift = 0; shift < 70; shift += 7) {
                 byte b = in.readByte();
                 result |= (long) (b & 0x7F) << shift;
                 if ((b & 0x80) == 0) {
                     return result;
                 }
-                shift += 7;
-                if (shift > 70) {
-                    throw new IOException("VarLong too big");
-                }
             }
+            throw new IOException("VarLong too big");
         }
 
         private NbtCompound readCompoundPayload() throws IOException {
@@ -480,7 +486,10 @@ public final class NbtIo {
 
         private void writePayload(Object value) throws IOException {
             switch (typeOf(value)) {
-                case TAG_BYTE -> out.writeByte(((Number) value).byteValue());
+                // A Boolean is written as the byte 0 or 1: typeOf names it as one
+                // and this used to cast it to Number, which it is not.
+                case TAG_BYTE -> out.writeByte(value instanceof Boolean flag ? (flag ? 1 : 0)
+                        : ((Number) value).byteValue());
                 case TAG_SHORT -> out.writeShort(((Number) value).shortValue());
                 case TAG_INT -> out.writeInt(((Number) value).intValue());
                 case TAG_LONG -> out.writeLong(((Number) value).longValue());
