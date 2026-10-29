@@ -11,7 +11,7 @@ valeurs encadrées, `toLowerCase()` sans locale, nombres analysés sans garde,
 méthodes privées jamais appelées…). Le reste vient d'une lecture du code
 comparée aux sources officielles 26.2 (`/tmp/dx/docs/official-262`).
 
-## Lot 1 — 19 défauts corrigés
+## Lot 1 — 20 défauts corrigés
 
 ### Monde Fabric (`FabricWorld`)
 
@@ -149,6 +149,19 @@ l'écriture ; quand l'édition gardait le bloc déjà en place (`setBlock` rend
 `false`), ce bloc neuf — vide — remplaçait à la fermeture les données de celui
 du monde : une structure qui écrit un coffre là où un coffre se trouve déjà
 vidait le coffre. L'enregistrement n'a lieu que si l'écriture a bien eu lieu.
+
+### Session
+
+**20. Un masque de session plantait quand sa lecture de monde avait disparu.**
+`LocalSession.WorldReader` déréférençait `session.getActiveWorld()` sans test
+dans `getBlock`, `getBiome`, `minY` et `maxY`. Or le monde actif de la session
+est gardé par une **référence faible**, et l'adaptateur construit un
+`FabricWorld` par clic : un masque conservé dans la session (`#angle`, une
+brosse, un `/tool`) peut donc vivre plus longtemps que le monde pour lequel il a
+été analysé — et `#angle` lit `maxY()` **dans son constructeur**, ce qui donnait
+un `NullPointerException` sorti d'une ligne de commande au lieu d'un masque.
+Le lecteur répond maintenant « rien » (air, biome inconnu, bornes -64/319) quand
+il n'a pas de monde.
 
 ## Vérification
 
