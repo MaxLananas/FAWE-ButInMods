@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import socket
 import struct
@@ -666,6 +667,29 @@ def build() -> None:
 
 COUNT = re.compile(r"(\d+)")
 
+# What a log line that holds a failure looks like. The engine logs an error
+# for a failure it did not expect, and a stack trace below it: the command
+# that caused it is the one the log grew on.
+FAILURE_IN_LOG = re.compile(r"^\s*(at |Caused by:|\tat )|Exception|ERROR\]|\bERROR\b", re.M)
+
+
+def log_length(path):
+    """How many bytes the log holds, or 0 when there is none."""
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+def log_since(path, offset):
+    """What the log holds since the offset."""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(offset)
+            return handle.read().decode("utf8", "replace")
+    except OSError:
+        return ""
+
 
 def broken(answer: str) -> str:
     lowered = answer.lower()
@@ -683,6 +707,8 @@ def main() -> int:
     parser.add_argument("--wait", type=int, default=120)
     parser.add_argument("--only", default=None,
                         help="only run the cases whose command holds this fragment")
+    parser.add_argument("--log", default=None,
+                        help="the server log to watch: a command that logs an exception is named")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -706,6 +732,7 @@ def main() -> int:
 
     print(f"::notice title=rcon matrix::running {len(cases)} commands")
     for kind, command, fragments in cases:
+        before = log_length(args.log) if args.log else 0
         try:
             answer = rcon.command(command)
         except (ConnectionError, socket.timeout, OSError) as failure:

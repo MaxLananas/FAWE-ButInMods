@@ -147,7 +147,7 @@ jobs:
       - name: Drive the commands over rcon
         run: |-
           set +e
-          python3 tools/rcon_matrix.py --wait 180 2>&1 | tee /tmp/matrix.log
+          python3 tools/rcon_matrix.py --wait 180 --log /tmp/server.log 2>&1 | tee /tmp/matrix.log
           status=${PIPESTATUS[0]}
           python3 -c "import pathlib;t=pathlib.Path('/tmp/matrix.log').read_text(errors='replace')[-7000:];print('::error title=rcon matrix::'+t.replace('%','%25').replace(chr(10),'%0A'))"
           exit $status
@@ -160,9 +160,14 @@ jobs:
             exit 1
           fi
           # An exception in the log is a bug even when the command that caused
-          # it answered politely: the sweep says what went wrong.
-          if grep -E '^\s*(at |java\.lang\.|net\.minecraft\.|com\.maxlananas\.)' /tmp/server.log | grep -v 'at com.maxlananas.fawebim.core.test' | head -5; then
-            echo "::error title=the server logged an exception::see the log above"
+          # it answered politely: the sweep says what went wrong. The lines
+          # around the first one are printed, because the answer of the sweep
+          # alone does not say which command it was.
+          if grep -nE '^\s*(at |Caused by:)' /tmp/server.log | head -3; then
+            echo "::error title=the server logged an exception::see the lines above"
+            line=$(grep -nE '^\s*(at |Caused by:)' /tmp/server.log | head -1 | cut -d: -f1)
+            start=$(( line > 12 ? line - 12 : 1 ))
+            sed -n "${start},$(( line + 12 ))p" /tmp/server.log
             exit 1
           fi
 
