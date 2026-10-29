@@ -1044,8 +1044,11 @@ public final class FabricWorld implements World {
         tag.putString("id", data.type());
         Vector3 at = data.position();
         boolean hangs = tag.contains("block_pos");
+        // 26.x wraps the spawn reason in a request, which also says whether the
+        // usual spawn checks are skipped; a pasted entity is placed regardless.
         Entity created = net.minecraft.world.entity.EntityType.loadEntityRecursive(tag, level,
-                net.minecraft.world.entity.EntitySpawnReason.COMMAND, loaded -> {
+                new net.minecraft.world.entity.EntitySpawnRequest(
+                        net.minecraft.world.entity.EntitySpawnReason.COMMAND, true), loaded -> {
                     // A painting, an item frame or a leash knot sits where its
                     // block_pos puts it. Moving it to a position takes the block
                     // that contains the position instead, which for a painting
