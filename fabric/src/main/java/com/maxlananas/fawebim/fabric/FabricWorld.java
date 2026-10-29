@@ -85,6 +85,9 @@ public final class FabricWorld implements World {
     private int[] changedX = new int[0];
     private int[] changedY = new int[0];
     private int[] changedZ = new int[0];
+    /** The states a flush replaced and wrote, for the same positions, kept and grown like them. */
+    private BlockState[] changedBefore = new BlockState[0];
+    private BlockState[] changedAfter = new BlockState[0];
     /**
      * The changes of a flush whose block entity has to follow the block: the
      * index of the change in {@link #changedX}, and the state it replaced.
@@ -473,8 +476,18 @@ public final class FabricWorld implements World {
         blockEntityCount = 0;
         boolean perBlockUpdate = notify && !resend;
         boolean perBlockNotify = perBlockUpdate || neighbors;
-        BlockState[] before = perBlockNotify ? new BlockState[count] : null;
-        BlockState[] after = perBlockNotify ? new BlockState[count] : null;
+        // The states before and after each change, for the updates and the
+        // neighbour notifications of step 4. They are kept between flushes for
+        // the same reason as the positions: a large edit flushes one chunk after
+        // another, and a 98k block flush allocated two arrays of 98k references
+        // every time - a megabyte and a half of garbage per chunk.
+        if (perBlockNotify && changedBefore.length < count) {
+            int size = Math.max(1024, count);
+            changedBefore = new BlockState[size];
+            changedAfter = new BlockState[size];
+        }
+        BlockState[] before = perBlockNotify ? changedBefore : null;
+        BlockState[] after = perBlockNotify ? changedAfter : null;
         var chunkSource = level.getChunkSource();
         var lightEngine = chunkSource.getLightEngine();
         boolean lightQueued = false;
@@ -597,9 +610,12 @@ public final class FabricWorld implements World {
         }
 
         // 3b. The data of the block entities the buffer put down, now that their
-        //     blocks exist.
+        //     blocks exist. The chunk is the one this flush already holds: the
+        //     buffer is per chunk, so every one of its block entities lives in
+        //     it, and looking each of them up again was a chunk map probe per
+        //     chest of a pasted structure.
         for (ChunkSet.BlockEntity entity : set.blockEntities()) {
-            applyBlockEntity(entity.x, entity.y, entity.z, entity.nbt);
+            applyBlockEntity(chunk, entity.x, entity.y, entity.z, entity.nbt);
         }
 
         // 4. The client sync for the changed blocks only. Vanilla would have
@@ -1018,13 +1034,23 @@ public final class FabricWorld implements World {
         List<EntityData> entities = new ArrayList<>();
         for (Entity entity : level.getEntities((Entity) null, aabb,
                 candidate -> !(candidate instanceof net.minecraft.world.entity.player.Player))) {
-            entities.add(describe(entity));
+            EntityData data = describe(entity);
+            if (data != null) {
+                entities.add(data);
+            }
         }
         return entities;
     }
 
     private EntityData describe(Entity entity) {
-        EntityData data = new EntityData(entity, BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
+        Identifier type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        if (type == null) {
+            // A type the registry does not know has no id to write, so the data
+            // of this entity could not be read back into a world: answering null
+            // keeps it out of a copy instead of failing on it.
+            return null;
+        }
+        EntityData data = new EntityData(entity, type.toString(),
                 () -> saveEntity(entity), new Vector3(entity.getX(), entity.getY(), entity.getZ()));
         data.setUuid(entity.getStringUUID());
         data.setPassenger(entity.isPassenger());
@@ -1180,7 +1206,11 @@ public final class FabricWorld implements World {
 
     @Override
     public void applyBlockEntity(int x, int y, int z, NbtCompound nbt) {
-        LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
+        applyBlockEntity(level.getChunk(x >> 4, z >> 4), x, y, z, nbt);
+    }
+
+    /** The same, in the chunk the caller already holds. */
+    private void applyBlockEntity(LevelChunk chunk, int x, int y, int z, NbtCompound nbt) {
         BlockPos pos = new BlockPos(x, y, z);
         // The flush created the block entity of every block it wrote; IMMEDIATE
         // also covers data queued for a block the flush did not write.

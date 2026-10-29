@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+  # Nothing is uploaded any more: an artifact costs the account's storage quota
+  # and no job ever downloaded this one. What is left to do is delete the ones
+  # the old workflow produced, which needs this permission.
+  actions: write
 
 # One run per branch: a new push cancels the older, still-queued or still-running
 # build of the same branch, so the newest jar is always the one being verified.
@@ -17,48 +21,44 @@ concurrency:
 
 jobs:
   build:
-    name: Engine, tests and mod jar
+    name: Build, test and boot the mod
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # A green run is about a minute and a half; anything near this is a hang.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       # Minecraft 26.x runs on Java 25 and its class files are major version 69:
-      # the toolchain here is the one the game itself needs.
+      # the toolchain here is the one the game itself needs. setup-java caches
+      # the Gradle user home itself, which is what makes a warm run short.
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
 
-      - name: Cache the Gradle distribution
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle/wrapper
-          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-
+      # Keeps the Gradle user home and its build cache between runs, so the
+      # engine's 46k lines and the game's jars are compiled and unpacked once.
+      # This is the only cache of the build: setup-java's own Gradle cache would
+      # save and restore the same directory a second time.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-cleanup: true
 
-      - name: Run the engine tests and the command inventory check
+      # One invocation, not two: `verify` and `build` in the same JVM means one
+      # Gradle start, one configuration phase and one dependency resolution.
+      - name: Compile, run the engine tests and build the jar
         run: |-
-          ./gradlew --no-daemon :core:verify 2>&1 | tee /tmp/verify.log
+          start=$(date +%s)
+          ./gradlew --no-daemon --parallel --build-cache build :core:verify 2>&1 | tee /tmp/build.log
           status=${PIPESTATUS[0]}
+          echo "::notice title=build time::compiled, tested and jarred in $(( $(date +%s) - start ))s"
           if [ "$status" -ne 0 ]; then
             # The log lives behind a signed URL the run page can reach; the
             # annotation keeps the reason visible where the checks are listed.
-            tail -c 3000 /tmp/verify.log | python3 -c "import sys; print('::error title=core verify::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
-          fi
-          exit "$status"
-
-      - name: Build the mod
-        run: |-
-          ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            # Same reason as the engine step above: the log itself is behind a
-            # signed URL, the annotation is what the run page shows.
-            tail -c 6000 /tmp/build.log | python3 -c "import sys; print('::error title=mod build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+            tail -c 6000 /tmp/build.log | python3 -c "import sys; print('::error title=build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
           fi
           exit "$status"
 
@@ -68,47 +68,19 @@ jobs:
         run: |
           jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | head -1)
           echo "built $jar"
-          unzip -l "$jar"
+          unzip -l "$jar" | tail -3
           if ! unzip -l "$jar" | grep -q 'META-INF/jars/'; then
             echo "::error title=the jar has no nested engine::the core jar is missing from $jar"
             exit 1
           fi
 
-      - name: Upload the mod jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: FAWE-BIM
-          path: fabric/build/libs/*.jar
-          if-no-files-found: warn
-
-  runtime:
-    name: Boot the game with the mod
-    runs-on: ubuntu-latest
-    needs: build
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - name: Cache the Gradle distribution
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle/wrapper
-          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
       # A jar that compiles is not a mod that runs: the mixin has to apply, the
       # access widener has to name members that still exist, the commands have to
       # reach the dispatcher and the registries have to be read. This boots the
       # game with the mod in it, drives it over rcon and fails on the first
-      # exception in the log.
+      # exception in the log. It runs in the same job as the build, on the same
+      # runner, so there is no second checkout, no second JDK and no artifact
+      # between the two - and nothing to delete afterwards.
       - name: Prepare the server directory
         run: |
           mkdir -p fabric/run
@@ -129,19 +101,20 @@ jobs:
             'motd=FAWE-BIM smoke test' > fabric/run/server.properties
 
       - name: Start the dedicated server
-        run: |
+        run: |-
+          start=$(date +%s)
           nohup ./gradlew --no-daemon :fabric:runServer > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
-          for i in $(seq 1 300); do
+          for i in $(seq 1 180); do
             if grep -q 'Done (' /tmp/server.log; then
-              echo "the server is up after $((i * 2))s"
+              echo "::notice title=server boot::the server was up in $(( $(date +%s) - start ))s"
               exit 0
             fi
             if ! kill -0 "$(cat /tmp/server.pid)" 2>/dev/null; then
               echo "the server stopped before it was ready"
               break
             fi
-            sleep 2
+            sleep 1
           done
           echo "the server did not come up"
           tail -c 6000 /tmp/server.log
@@ -170,13 +143,13 @@ jobs:
               ident, _kind = struct.unpack('<ii', data[:8])
               return ident, data[8:-2].decode('utf8', 'replace')
 
-          deadline = time.time() + 120
+          deadline = time.time() + 60
           while time.time() < deadline:
               try:
                   sock = socket.create_connection(('127.0.0.1', 25575), timeout=10)
                   break
               except OSError:
-                  time.sleep(2)
+                  time.sleep(1)
           else:
               sys.exit('rcon never answered')
 
@@ -209,7 +182,7 @@ jobs:
           PY
 
       - name: Check the mod's own start line and fail on an exception
-        run: |
+        run: |-
           grep 'FAWE-BIM ready' /tmp/server.log
           if grep -E 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log; then
             echo "::error title=the mod did not start cleanly::see the log above"
@@ -220,10 +193,38 @@ jobs:
         if: always()
         run: |
           kill "$(cat /tmp/server.pid)" 2>/dev/null || true
-          sleep 10
+          sleep 5
           pkill -f net.fabricmc.devlaunchinjector 2>/dev/null || true
 
       - name: Report the server log
         if: failure()
         run: |
           python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-7000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
+
+  # Nothing in this repository is worth keeping between runs: the jar is built
+  # again in a minute, and an artifact costs the account's storage quota for
+  # ninety days by default. This job deletes every artifact the repository still
+  # holds, which is how the ones the old two-job workflow uploaded are cleared,
+  # and it keeps the repository at zero for ever after.
+  purge-artifacts:
+    name: Delete every artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete the artifacts of this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          total=0
+          while true; do
+            ids=$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+                    -q '.artifacts[].id' 2>/dev/null || true)
+            if [ -z "$ids" ]; then
+              break
+            fi
+            for id in $ids; do
+              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" >/dev/null 2>&1 \
+                && total=$((total + 1)) || break 2
+            done
+          done
+          echo "::notice title=artifacts::deleted $total artifact(s); the repository keeps none"

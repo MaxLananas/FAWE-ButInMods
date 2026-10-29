@@ -97,7 +97,9 @@ public final class SelectionPreview {
         ServerLevel level = (ServerLevel) player.level();
         double spacing = Math.max(MIN_SPACING, outline.length() / PARTICLE_BUDGET);
         double[] segments = outline.segments();
-        for (int i = 0; i < segments.length; i += 6) {
+        // Six numbers a segment: the bound is on the last one a segment needs,
+        // so a truncated outline draws what it has instead of reading past it.
+        for (int i = 0; i + 5 < segments.length; i += 6) {
             double x0 = segments[i];
             double y0 = segments[i + 1];
             double z0 = segments[i + 2];

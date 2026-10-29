@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.ClasspathNormalizer
+
 plugins {
     `java-library`
 }
@@ -30,6 +32,27 @@ val selfTest by tasks.registering(JavaExec::class) {
     dependsOn("selfTestClasses")
     classpath = sourceSets["selfTest"].runtimeClasspath
     mainClass.set("com.maxlananas.fawebim.core.test.SelfTestMain")
+    // The suite is a short, single-threaded run: the serial collector starts
+    // faster than the parallel one and never pauses it, and one gigabyte is
+    // several times what it allocates.
+    jvmArgs("-XX:+UseSerialGC", "-Xmx1g", "-XX:-UsePerfData")
+    // What the run reads: the compiled engine, the tests and the command
+    // inventory the runner checks itself against.
+    inputs.files(sourceSets["selfTest"].runtimeClasspath)
+        .withPropertyName("testClasspath")
+        .withNormalizer(ClasspathNormalizer::class)
+    inputs.property("mainClass", "com.maxlananas.fawebim.core.test.SelfTestMain")
+    // A run that passed leaves its stamp; a run that failed never writes it, so
+    // the next one runs again.  With the stamp declared as an output the result
+    // is cached: a push that only touches the mod's resources or the docs takes
+    // the engine's tests from the build cache instead of running them for
+    // twenty seconds.
+    val stamp = layout.buildDirectory.file("selfTest.ok")
+    outputs.file(stamp)
+    outputs.cacheIf { true }
+    doLast {
+        stamp.get().asFile.writeText("the self-tests passed on " + java.time.Instant.now() + "\n")
+    }
 }
 
 val bench by tasks.registering(JavaExec::class) {
