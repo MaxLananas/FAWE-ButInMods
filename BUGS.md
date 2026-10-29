@@ -464,3 +464,15 @@ registres sous laquelle son identifiant a été lu (`FabricWorld#lastBiomeGenera
 `EditSession#applyBiomeChangeSet` renvoyait le nombre de lignes du record, alors que `setBiome` en
 saute deux fois : une cellule déjà à la valeur demandée, et une cellule changée deux fois dans le même
 record. Le compte affiché est celui des cellules réellement modifiées.
+
+## Lot 7 — la configuration ne relisait pas ce qu'elle avait écrit
+
+**66. `MiniYaml.write` écrivait les chaînes sans les protéger.**
+Le lecteur transforme `12` en entier, `true` en booléen, `[a, b]` en liste, retire les guillemets
+d'une valeur entre guillemets et lit une valeur vide comme une section. Une chaîne écrite telle
+quelle revenait donc en un autre type : un dossier de schémas nommé `2024` revenait en `Integer`, une
+macro nommée `true` en `Boolean`, la chaîne vide en section vide — et une valeur contenant `:` ou un
+retour à la ligne cassait la ligne lue. `quoteIfNeeded` met entre guillemets tout ce que le lecteur
+lirait autrement, `quote` échappe `\`, `"`, les sauts de ligne et les tabulations, `unquote` les
+rétablit, et une liste est écrite élément par élément pour qu'une virgule ne la coupe pas en deux
+(`MiniYaml`). Vérifié par `SelfTestMain#miniYamlRoundTripsEveryKindOfValue`.

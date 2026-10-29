@@ -296,6 +296,36 @@ public final class SelfTestMain {
         }
     }
 
+    /**
+     * Whatever the configuration holds has to come back as what it was. A value
+     * written raw came back as another type - {@code 2024} as an integer,
+     * {@code true} as a boolean, the empty string as an empty section - and a
+     * value holding a comma inside a list came back in two pieces.
+     */
+    private static void miniYamlRoundTripsEveryKindOfValue() {
+        Map<String, Object> written = new java.util.LinkedHashMap<>();
+        Map<String, Object> section = new java.util.LinkedHashMap<>();
+        written.put("section", section);
+        String[] awkward = {"2024", "true", "", " spaced ", "a: b", "#hash", "C:\\server\\dir",
+                "quote \" inside", "line\nbreak", "plain"};
+        for (int i = 0; i < awkward.length; i++) {
+            section.put("value" + i, awkward[i]);
+        }
+        section.put("list", java.util.List.of("a, b", "2024", "plain"));
+        section.put("number", 12);
+        section.put("flag", true);
+        Map<String, Object> read = MiniYaml.parse(MiniYaml.write(written));
+        boolean same = true;
+        for (int i = 0; i < awkward.length; i++) {
+            same &= awkward[i].equals(MiniYaml.path(read, "section.value" + i, null));
+        }
+        check("MiniYaml gives back the strings it was handed", same);
+        check("MiniYaml gives back a list whole",
+                java.util.List.of("a, b", "2024", "plain").equals(MiniYaml.path(read, "section.list", null)));
+        checkEquals("MiniYaml keeps a number a number", 12, MiniYaml.path(read, "section.number", null));
+        checkEquals("MiniYaml keeps a flag a flag", true, MiniYaml.path(read, "section.flag", null));
+    }
+
     static void check(String name, boolean condition) {
         if (condition) {
             passed++;
@@ -4139,6 +4169,7 @@ public final class SelfTestMain {
         checkEquals("MiniYaml path", "true",
                 String.valueOf(com.maxlananas.fawebim.core.util.MiniYaml.path(
                         com.maxlananas.fawebim.core.util.MiniYaml.parse("b:\n  c: true\n"), "b.c", null)));
+        miniYamlRoundTripsEveryKindOfValue();
         check("regen options", new RegenOptions().setRegenBiomes(true).shouldRegenBiomes());
         check("world target block", new TestWorld("ray").getTargetBlock(
                 new TestActor("Ray", new TestWorld("ray"), new BlockVector3(0, 0, 0)), 10) != null);

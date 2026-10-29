@@ -65,7 +65,10 @@ public final class MiniYaml {
 
     public static Object scalar(String value) {
         String v = value;
-        if (v.length() > 1 && (v.startsWith("\"") && v.endsWith("\"") || v.startsWith("'") && v.endsWith("'"))) {
+        if (v.length() > 1 && v.startsWith("\"") && v.endsWith("\"")) {
+            return unquote(v.substring(1, v.length() - 1));
+        }
+        if (v.length() > 1 && v.startsWith("'") && v.endsWith("'")) {
             return v.substring(1, v.length() - 1);
         }
         if (v.startsWith("[") && v.endsWith("]")) {
@@ -94,6 +97,70 @@ public final class MiniYaml {
         return v;
     }
 
+    /** The text of a quoted value, with the escapes {@link #quote} writes undone. */
+    private static String unquote(String text) {
+        if (text.indexOf('\\') < 0) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c != '\\' || i + 1 >= text.length()) {
+                out.append(c);
+                continue;
+            }
+            char escaped = text.charAt(++i);
+            switch (escaped) {
+                case 'n' -> out.append('\n');
+                case 'r' -> out.append('\r');
+                case 't' -> out.append('\t');
+                default -> out.append(escaped);
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * A string as it has to be written to come back as the same string.
+     *
+     * <p>The reader turns {@code 12}, {@code true}, {@code [a, b]} into an
+     * integer, a boolean and a list, strips the quotes around a quoted value and
+     * reads an empty value as a nested map. A string value written raw therefore
+     * came back as another type - a schematic folder named {@code 2024}, a macro
+     * whose name is {@code true}, or the empty string, which came back as an
+     * empty section. Such a value is quoted, and so is one whose first character
+     * or spacing would be eaten by the reader.</p>
+     */
+    private static String quoteIfNeeded(String text) {
+        if (text.isEmpty() || !text.equals(text.trim()) || text.indexOf('\n') >= 0 || text.indexOf('\r') >= 0
+                || text.equalsIgnoreCase("true") || text.equalsIgnoreCase("false")
+                || Str.isInteger(text) || Str.isDouble(text)
+                || (text.startsWith("[") && text.endsWith("]"))
+                || text.indexOf(':') >= 0 || text.startsWith("#")
+                || text.indexOf('"') >= 0 || text.indexOf('\\') >= 0) {
+            return quote(text);
+        }
+        return text;
+    }
+
+    private static String quote(String text) {
+        StringBuilder out = new StringBuilder(text.length() + 2).append('"');
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '\\' -> out.append("\\\\");
+                case '"' -> out.append("\\\"");
+                // One value, one line: a newline would end the line the reader
+                // is splitting on and the rest of the value would be read as a key.
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> out.append(c);
+            }
+        }
+        return out.append('"').toString();
+    }
+
     public static String write(java.util.Map<String, Object> map) {
         StringBuilder sb = new StringBuilder();
         writeMap(sb, map, 0);
@@ -108,6 +175,18 @@ public final class MiniYaml {
             if (value instanceof java.util.Map<?, ?> nested) {
                 sb.append('\n');
                 writeMap(sb, (java.util.Map<String, Object>) nested, indent + 2);
+            } else if (value instanceof java.util.List<?> list) {
+                sb.append(" [");
+                for (int i = 0; i < list.size(); i++) {
+                    if (i > 0) {
+                        sb.append(", ");
+                    }
+                    Object item = list.get(i);
+                    sb.append(item instanceof String text ? quoteIfNeeded(text) : String.valueOf(item));
+                }
+                sb.append("]\n");
+            } else if (value instanceof String text) {
+                sb.append(' ').append(quoteIfNeeded(text)).append('\n');
             } else {
                 sb.append(' ').append(String.valueOf(value)).append('\n');
             }
