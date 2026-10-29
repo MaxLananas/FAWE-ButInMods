@@ -106,7 +106,10 @@ jobs:
           mkdir -p /tmp/jar
           ls -l fabric/build/libs/
           jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | grep -v -- -dev | head -1)
-          cp "$jar" /tmp/jar/
+          version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)
+          # The name of the jar of the release is the name of the mod, with
+          # or without the build script that named it.
+          cp "$jar" "/tmp/jar/FAWE-BIM-$version.jar"
           echo "::notice title=the jar of the run::$jar"
 
       - name: Keep the jar as an artifact
