@@ -310,13 +310,13 @@ and that a `//set` really writes blocks — is proven inside the run, not stored
 ## The ecosystem it lives in
 
 FAWE-BIM is deliberately boring to everything else in your mods folder. It touches **no rendering**,
-ships **one mixin** (the server packet listener, to tell a mining swing from a brush swing) and asks
+ships **one mixin** (the server packet listener: mining swings, brush swings, wheel scrolls) and asks
 the game to open **ten entries** with an access widener — two nested classes and eight members, each
 one commented in the file with the reason it is there.
 
 | Hooking into the game | What and why |
 |---|---|
-| **1 mixin** | `ServerGamePacketListenerImpl` — swing packets, so a brush fires once per swing and never while you are mining |
+| **1 mixin** | `ServerGamePacketListenerImpl` — arm swings and hotbar-slot changes: a brush fires once per swing and never while you are mining, and the mouse wheel drives `scroll` actions. The injections sit before the game's own thread check, so only the server-thread call acts |
 | **8 widened members** | the "is mining" flag, the command source behind a command, the server main-thread executor, `LevelChunk#updateBlockEntityTicker`, the light engine's `addTask`/`blockEngine`/`skyEngine`, and `ChunkHolder#addSaveDependency` |
 | **2 widened classes** | `ServerChunkCache$MainThreadExecutor` and `ThreadedLevelLightEngine$TaskType` — both private since 26.1 |
 
