@@ -105,24 +105,6 @@ final class FabricRegistries {
         }
     }
 
-    /**
-     * Numbers the registries again when the server replaced them.
-     *
-     * <p>{@code /reload} (and anything that adds a data pack at run time) makes
-     * the server build a new {@link RegistryAccess}: a biome added by the pack
-     * has no id, and because the ids are the sorted names, one biome inserted
-     * in the middle renumbers every biome after it. The table was only built at
-     * start-up, so after a reload {@code //setbiome} named the wrong biome for
-     * half the alphabet, and the ids a schematic or a history file had written
-     * pointed at their neighbours. The check is an identity comparison, which
-     * is what a reload changes.</p>
-     */
-    static void ensure(RegistryAccess registryAccess) {
-        if (registryAccess != null && registryAccess != access) {
-            install(registryAccess);
-        }
-    }
-
     static void clear() {
         access = null;
         biomeNames = List.of();
@@ -230,7 +212,7 @@ final class FabricRegistries {
      * the player an empty stack. The key of what came back is what tells an
      * unknown name from the default one.</p>
      */
-    static <T> T value(Registry<T> registry, net.minecraft.resources.ResourceLocation id) {
+    static <T> T value(Registry<T> registry, Identifier id) {
         if (registry == null || id == null) {
             return null;
         }

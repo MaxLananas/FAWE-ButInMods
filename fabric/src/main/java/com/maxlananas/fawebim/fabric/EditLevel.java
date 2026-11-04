@@ -5,7 +5,7 @@ import com.maxlananas.fawebim.core.math.Vector3;
 import com.maxlananas.fawebim.core.util.NbtCompound;
 import com.maxlananas.fawebim.core.world.EntityData;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -133,7 +133,7 @@ final class EditLevel implements InvocationHandler, AutoCloseable {
         if (data == null) {
             return false;
         }
-        ResourceLocation type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        Identifier type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         if (type == null) {
             // A type the registry does not know has no id to write, so the
             // entity could not be read back into a world: it is left out.
