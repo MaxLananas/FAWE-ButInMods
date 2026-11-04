@@ -61,7 +61,7 @@ final class FabricWorldRegen {
         // generator, dimension and seed.
         if (options.shouldUseSeed()) {
             throw new UnsupportedOperationException(
-                    "Minecraft 26.2 does not support overriding the seed for //regen");
+                    "Minecraft 26.3 does not support overriding the seed for //regen");
         }
         MinecraftServer server = level.getServer();
         long seed = level.getSeed();

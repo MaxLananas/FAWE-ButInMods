@@ -1,53 +1,90 @@
 name: Build
 
+# ---------------------------------------------------------------------------
+# What runs, and why so little of it
+# ---------------------------------------------------------------------------
+# Every run costs the account something: minutes on a runner, a cache entry, an
+# artifact kept for ninety days. A workflow that ran on every branch, kept an
+# artifact of every build and cached the Gradle home under a key that never
+# matched is how a repository ends up with thousands of runs and six gigabytes
+# of caches. This one runs on three occasions and no more:
+#
+#   * a push to `main` - the branch that ships, verified end to end;
+#   * a pull request into `main` - compiled and tested before it is merged;
+#   * a tag `v*` - the same build, plus the GitHub release it publishes.
+#
+# A push to a feature branch deliberately does not run anything: the pull
+# request that opens it does, once, and every later push to that branch updates
+# the same run instead of adding one (see `concurrency`). `workflow_dispatch`
+# stays for a run on demand, on any branch. A push that only touches prose -
+# the README, the changelog, the licence - is skipped entirely.
 on:
   push:
-    branches: ['**']
-    # A tag is a release: the build job runs on it like on a branch, and the
-    # release job below publishes what it built.
+    branches: ['main']
     tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE.txt'
+      - 'NOTICE'
+      - '.github/**'
   pull_request:
+    branches: ['main']
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE.txt'
+      - 'NOTICE'
   workflow_dispatch:
+  # The weekly sweep of stored artifacts and stale caches below.
+  schedule:
+    - cron: '17 4 * * 1'
 
+# Nothing is uploaded as a workflow artifact: an artifact is kept for ninety
+# days against the account's storage quota, and no job ever downloaded this
+# one. The jar travels as a release asset on a tag instead, which costs no
+# storage quota. What is left to write is the release, hence `contents: write`.
 permissions:
-  contents: read
-  # Nothing is uploaded any more: an artifact costs the account's storage quota
-  # and no job ever downloaded this one. What is left to do is delete the ones
-  # the old workflow produced, which needs this permission.
-  actions: write
+  contents: write
 
-# One run per branch: a new push cancels the older, still-queued or still-running
-# build of the same branch, so the newest jar is always the one being verified.
+# One run per ref: a new push cancels the older, still-queued or still-running
+# run of the same branch, so the newest commit is always the one being
+# verified and a branch under work never queues a build per push.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # One job, not three. Each job a workflow starts pays for a fresh runner, a
+  # fresh checkout and a fresh warm-up of the JVM; the release used to be a
+  # second job that built the same jar a second time, and a third job existed
+  # only to delete artifacts that are no longer uploaded. The build, the jar
+  # check, the smoke test and - on a tag - the release are steps of this one.
   build:
-    name: Build, test and boot the mod
+    name: Build, test, boot the mod and release
     runs-on: ubuntu-latest
-    # A green run is about a minute and a half; anything near this is a hang.
-    timeout-minutes: 20
+    # A green run is about four minutes; anything near this is a hang.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
       # Minecraft 26.x runs on Java 25 and its class files are major version 69:
-      # the toolchain here is the one the game itself needs. setup-java caches
-      # the Gradle user home itself, which is what makes a warm run short.
+      # the toolchain here is the one the game itself needs.
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
 
-      # The whole Gradle home: the downloads, the compiled Kotlin build scripts,
-      # the build cache and Loom's extracted game. Narrowing it to the downloads
-      # alone cost forty seconds a run, which is what the build scripts are
-      # compiled for. The key is the hash of the files that decide the toolchain,
-      # so this cache is written once and restored afterwards: setup-gradle's
-      # cache has a key per run and is *saved* at the end of every job, and that
-      # save alone took sixty seconds, more than the build it cached.
-      - name: Cache the Gradle downloads
+      # One cache entry, and it is only written when the files that decide the
+      # toolchain change - a version bump, not a code change. `restore-keys`
+      # lets a bump start from the previous entry, so a port downloads only
+      # what is new. The whole Gradle home is cached: the downloads, the
+      # compiled Kotlin build scripts, the build cache and Loom's extracted
+      # game, which is what makes a warm run short.
+      #
+      # The key moved from v1/v2 to v3 when the workflow was cleaned up: the
+      # entries the old keys left behind - six gigabytes of them, most of them
+      # never read again - were deleted, and this one starts empty.
+      - name: Cache the Gradle home
         uses: actions/cache@v4
         with:
           path: |
@@ -55,11 +92,11 @@ jobs:
             ~/.gradle/wrapper
             .gradle
             fabric/.gradle
-          key: gradle-home-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
+          key: gradle-home-v3-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
           restore-keys: |
-            gradle-home-v2-
+            gradle-home-v3-
 
-      # One invocation, not two: `verify` and `build` in the same JVM means one
+      # One invocation, not two: `build` and `verify` in the same JVM means one
       # Gradle start, one configuration phase and one dependency resolution.
       - name: Compile, run the engine tests and build the jar
         run: |-
@@ -79,7 +116,7 @@ jobs:
             # task list, which says nothing. What is quoted here is the lines
             # that name the failure, whichever task it came from.
             reason=$(grep -aE '(error: |error:|FAIL: |FAILED|Caused by:|Exception|[0-9]+ tests? failed)' /tmp/build.log \
-                    | grep -av 'warning' | head -25 | cut -c1-300 || true)
+                    | grep -av 'warning' | head -40 | cut -c1-300 || true)
             if [ -z "$reason" ]; then
               reason=$(tail -n 40 /tmp/build.log)
             fi
@@ -107,7 +144,12 @@ jobs:
       # exception in the log. It runs in the same job as the build, on the same
       # runner, so there is no second checkout, no second JDK and no artifact
       # between the two - and nothing to delete afterwards.
+      #
+      # A pull request skips it: a branch under review is compiled and tested
+      # there, and the boot - the slowest step, which downloads and starts a
+      # server - is the one `main` pays for after the merge.
       - name: Prepare the server directory
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p fabric/run
           printf '%s\n' 'eula=true' > fabric/run/eula.txt
@@ -127,6 +169,7 @@ jobs:
             'motd=FAWE-BIM smoke test' > fabric/run/server.properties
 
       - name: Start the dedicated server
+        if: github.event_name != 'pull_request'
         run: |-
           start=$(date +%s)
           nohup ./gradlew --no-daemon :fabric:runServer > /tmp/server.log 2>&1 &
@@ -147,6 +190,7 @@ jobs:
           exit 1
 
       - name: Ask the running server what it is, over rcon
+        if: github.event_name != 'pull_request'
         run: |
           python3 - <<'PY'
           import socket, struct, sys, time
@@ -194,8 +238,8 @@ jobs:
 
           version = command('we version')
           print('we version ->', version)
-          if '26.2' not in version:
-              sys.exit('the version command did not name 26.2: ' + version)
+          if '26.3' not in version:
+              sys.exit('the version command did not name 26.3: ' + version)
 
           # The engine itself, through the console: a selection and a fill on the
           # flat world, then a read back of what was written.
@@ -208,6 +252,7 @@ jobs:
           PY
 
       - name: Check the mod's own start line and fail on an exception
+        if: github.event_name != 'pull_request'
         run: |-
           grep 'FAWE-BIM ready' /tmp/server.log
           if grep -E 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log; then
@@ -216,62 +261,32 @@ jobs:
           fi
 
       - name: Stop the server
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: |
           kill "$(cat /tmp/server.pid)" 2>/dev/null || true
           sleep 2
           pkill -f net.fabricmc.devlaunchinjector 2>/dev/null || true
 
       - name: Report the server log
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         run: |
           python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-7000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
 
-  # A tag is what makes a release, and the release carries the jar this job
-  # builds. The jar travels as a release asset, not as a workflow artifact: the
-  # repository keeps zero artifacts, and `gh release upload` needs no storage
-  # quota. The notes are CHANGELOG.md, which is part of the tagged tree.
-  release:
-    name: Publish the release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - name: Cache the Gradle downloads
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            .gradle
-            fabric/.gradle
-          key: gradle-home-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
-          restore-keys: |
-            gradle-home-v2-
-
-      - name: Build the jar the release carries
-        run: ./gradlew --no-daemon --parallel --build-cache build
-
+      # A tag is what makes a release, and the release carries the jar this job
+      # just built: there is no second checkout and no second compile. The jar
+      # travels as a release asset, not as a workflow artifact, so the
+      # repository keeps zero artifacts and the account keeps its storage.
+      # The notes are CHANGELOG.md, which is part of the tagged tree.
       - name: Publish the release and attach the jar
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: |
+        run: |-
           set -eu
           jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | head -1)
           echo "attaching $jar to $TAG"
-          title="FAWE-BIM ${TAG#v} — Minecraft 26.2"
+          title="FAWE-BIM ${TAG#v} — Minecraft 26.3"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$jar" --clobber
           else
@@ -279,17 +294,20 @@ jobs:
           fi
           gh release view "$TAG" --json name,assets --jq '"::notice title=release::\(.name) carries \(.assets | length) asset(s)"'
 
-  # Nothing in this repository is worth keeping between runs: the jar is built
-  # again in a minute, and an artifact costs the account's storage quota for
-  # ninety days by default. This job deletes every artifact the repository still
-  # holds, which is how the ones the old two-job workflow uploaded are cleared,
-  # and it keeps the repository at zero for ever after.
-  purge-artifacts:
-    name: Delete every artifact
+  # Storage is the part of the account's quota a run spends and never gives
+  # back: caches are counted against ten gigabytes and artifacts for ninety
+  # days. Nothing here needs to survive a run - the jar is built again in four
+  # minutes - so the repository is swept once a week rather than after every
+  # build, which is one short run a week instead of a job on every push.
+  housekeeping:
+    name: Sweep the stored artifacts and stale caches
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: write
     steps:
-      - name: Delete the artifacts of this repository
+      - name: Delete every artifact and every stale cache
         env:
           GH_TOKEN: ${{ github.token }}
         run: |-
@@ -306,3 +324,17 @@ jobs:
             done
           done
           echo "::notice title=artifacts::deleted $total artifact(s); the repository keeps none"
+
+          # A cache is only useful while its key still matches a push. The ones
+          # left by a version the build no longer uses are dead weight against
+          # the ten-gigabyte limit, and pushing them out costs a full download
+          # on the next run instead. Anything older than three weeks goes.
+          cut=$(date -u -d '-21 days' +%Y-%m-%dT%H:%M:%SZ)
+          stale=$(gh api --paginate "repos/${{ github.repository }}/actions/caches?per_page=100" 2>/dev/null \
+                  | jq -r --arg cut "$cut" '.actions_caches[] | select(.last_accessed_at < $cut) | .id' 2>/dev/null || true)
+          removed=0
+          for id in $stale; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" >/dev/null 2>&1 \
+              && removed=$((removed + 1)) || true
+          done
+          echo "::notice title=caches::deleted $removed cache(s) last read before $cut"

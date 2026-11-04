@@ -6,7 +6,7 @@ plugins {
     `java-library`
 }
 
-description = "FAWE-BIM — Fabric platform adapter for Minecraft 26.2."
+description = "FAWE-BIM — Fabric platform adapter for Minecraft 26.3."
 
 val minecraftVersion = property("minecraft_version") as String
 val loaderVersion = property("fabric_loader_version") as String

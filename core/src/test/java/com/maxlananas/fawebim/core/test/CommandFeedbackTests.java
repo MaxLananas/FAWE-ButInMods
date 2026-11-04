@@ -107,11 +107,11 @@ final class CommandFeedbackTests {
         // The loader the platform read, where it printed "Fabric 0.17.x"
         // whatever the loader was.
         String platform = com.maxlananas.fawebim.core.platform.Config.platform();
-        com.maxlananas.fawebim.core.platform.Config.setPlatform("Fabric 0.20.1, Fabric API 0.161.0+26.2");
+        com.maxlananas.fawebim.core.platform.Config.setPlatform("Fabric 0.20.1, Fabric API 0.165.2+26.3");
         try {
             String version = answer(actor, "/we version");
             check("/we version names the loader and Fabric API the platform read (" + version + ")",
-                    version.contains("Minecraft: 26.2, Fabric 0.20.1, Fabric API 0.161.0+26.2"));
+                    version.contains("Minecraft: 26.3, Fabric 0.20.1, Fabric API 0.165.2+26.3"));
         } finally {
             com.maxlananas.fawebim.core.platform.Config.setPlatform(platform);
         }
