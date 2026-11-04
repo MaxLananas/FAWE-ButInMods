@@ -15,8 +15,13 @@ accessible field net/minecraft/commands/CommandSourceStack source Lnet/minecraft
 
 # The chunk source's main-thread executor is used when a bulk edit has to hand
 # work back to the server thread.
+# 26.3 made this a member class of the chunk cache, where it used to be a
+# nested one; the name is unchanged, the class file still calls it
+# ServerChunkCache$MainThreadExecutor.  Only the class is widened: the
+# managedBlock the //regen path drives is declared by BlockableEventLoop
+# and is public there, and a widener entry has to name the class that
+# declares the member.
 accessible class net/minecraft/server/level/ServerChunkCache$MainThreadExecutor
-accessible method net/minecraft/server/level/ServerChunkCache$MainThreadExecutor managedBlock (Ljava/util/function/BooleanSupplier;)V
 accessible field net/minecraft/server/level/ServerChunkCache mainThreadProcessor Lnet/minecraft/server/level/ServerChunkCache$MainThreadExecutor;
 
 # LevelChunk#setBlockState rebinds the ticker of a block entity whose block
