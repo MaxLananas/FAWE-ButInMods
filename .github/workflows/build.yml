@@ -64,12 +64,12 @@ jobs:
     # A green run is about four minutes; anything near this is a hang.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Minecraft 26.x runs on Java 25 and its class files are major version 69:
       # the toolchain here is the one the game itself needs.
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
@@ -85,7 +85,7 @@ jobs:
       # entries the old keys left behind - six gigabytes of them, most of them
       # never read again - were deleted, and this one starts empty.
       - name: Cache the Gradle home
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
