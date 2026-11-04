@@ -36,6 +36,11 @@ public final class BiomeChangeSet {
         return sectionY;
     }
 
+    /** The bytes this set keeps: its three cell arrays, as {@link ChangeSet#bytes()}. */
+    public long bytes() {
+        return (long) (cells.length + before.length + after.length) * Integer.BYTES;
+    }
+
     public int size() {
         return size;
     }

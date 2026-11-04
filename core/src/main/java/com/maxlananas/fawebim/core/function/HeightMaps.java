@@ -1,5 +1,6 @@
 package com.maxlananas.fawebim.core.function;
 
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -146,14 +147,58 @@ public final class HeightMaps {
         return minY;
     }
 
+    /**
+     * The snow block's states and the layers each carries, found once per
+     * registry: {@code //snowsmooth} asks this of every block of every column of
+     * the selection, and building "minecraft:snow[layers=3]" per block to read one
+     * digit out of it was a string per block.
+     */
+    private static BlockStateRegistry snowRegistry;
+    private static int[] snowIds = new int[0];
+    private static int[] snowLayers = new int[0];
+
     /** The number of layers of a snow block, or zero when the block is not snow. */
     public static int snowLayers(BlockStateRegistry registry, int state) {
+        if (registry != snowRegistry) {
+            List<Integer> states = registry.statesOf("minecraft:snow");
+            int[] ids = new int[states.size()];
+            int[] layers = new int[states.size()];
+            for (int i = 0; i < ids.length; i++) {
+                ids[i] = states.get(i);
+                layers[i] = layersOf(registry.properties(ids[i]).get("layers"));
+            }
+            snowIds = ids;
+            snowLayers = layers;
+            snowRegistry = registry;
+        }
+        if (snowIds.length > 1) {
+            for (int i = 0; i < snowIds.length; i++) {
+                if (snowIds[i] == state) {
+                    return snowLayers[i];
+                }
+            }
+            return 0;
+        }
+        // A registry that cannot enumerate the states of a block keeps the text
+        // form, which is what this used to do for every block.
         String description = registry.describe(state);
         if (!description.startsWith("minecraft:snow[")) {
             return 0;
         }
         Matcher matcher = SNOW_LAYERS.matcher(description);
         return matcher.find() ? Integer.parseInt(matcher.group(1)) : 1;
+    }
+
+    /** The layer count a snow state's {@code layers} property names, one when it has none. */
+    private static int layersOf(String value) {
+        if (value == null) {
+            return 1;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return 1;
+        }
     }
 
     /** A normalised 2D bell curve, the kernel WorldEdit blurs height maps with. */

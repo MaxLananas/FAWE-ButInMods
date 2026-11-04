@@ -3,7 +3,7 @@ package com.maxlananas.fawebim.fabric;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
@@ -44,7 +44,7 @@ final class LightTickets {
     /** At mod load, while the game's registries still take entries. */
     static void register() {
         Registry.register(BuiltInRegistries.TICKET_TYPE,
-                ResourceLocation.fromNamespaceAndPath(FaweMod.MOD_ID, "light"), TYPE);
+                Identifier.fromNamespaceAndPath(FaweMod.MOD_ID, "light"), TYPE);
     }
 
     /**
@@ -52,7 +52,7 @@ final class LightTickets {
      * chunk later takes the hold over, so the ticket stays until the last of it.
      */
     static void hold(ServerLevel level, ChunkPos pos, CompletableFuture<?> done) {
-        long key = pos.toLong();
+        long key = pos.pack();
         Long2ObjectOpenHashMap<CompletableFuture<?>> pending =
                 PENDING.computeIfAbsent(level, ignored -> new Long2ObjectOpenHashMap<>());
         if (pending.put(key, done) == null) {
@@ -61,6 +61,15 @@ final class LightTickets {
         done.whenCompleteAsync((ignored, error) -> {
             if (pending.remove(key, done)) {
                 level.getChunkSource().removeTicketWithRadius(TYPE, pos, 0);
+            }
+            if (pending.isEmpty()) {
+                // The map is keyed by the level itself, so an entry that is left
+                // behind when its last chunk is done keeps a whole ServerLevel -
+                // its chunks, its entities, its storage - alive for as long as
+                // the server runs. That is what a world unloaded and loaded again
+                // on the same server (a multiworld plugin, the single-player
+                // "quit to title") leaks.
+                PENDING.remove(level, pending);
             }
         }, level.getServer());
     }

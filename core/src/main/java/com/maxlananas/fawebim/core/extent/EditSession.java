@@ -390,7 +390,10 @@ public final class EditSession implements Extent {
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
         checkOpen();
-        if (y < minY || y > maxY) {
+        // A negative id is "this reader has no biome here" - //regen of a chunk
+        // it could not generate, a schematic naming one - and recording it puts
+        // a biome change in the history that no undo can put back.
+        if (y < minY || y > maxY || biomeId < 0) {
             return false;
         }
         ChunkSet chunk = chunkFor(x, z, true);
@@ -423,18 +426,25 @@ public final class EditSession implements Extent {
      */
     public int applyBiomeChangeSet(com.maxlananas.fawebim.core.history.BiomeChangeSet set, boolean undo) {
         int size = set.size();
+        int changed = 0;
         if (undo) {
             int[] values = set.before();
             for (int i = size - 1; i >= 0; i--) {
-                setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+                if (setBiome(set.x(i), set.y(i), set.z(i), values[i])) {
+                    changed++;
+                }
             }
         } else {
             int[] values = set.after();
             for (int i = 0; i < size; i++) {
-                setBiome(set.x(i), set.y(i), set.z(i), values[i]);
+                if (setBiome(set.x(i), set.y(i), set.z(i), values[i])) {
+                    changed++;
+                }
             }
         }
-        return size;
+        // Cells that were already at the value the record holds are skipped by
+        // setBiome, so counting the rows would report cells nothing changed.
+        return changed;
     }
 
     @Override
@@ -636,12 +646,35 @@ public final class EditSession implements Extent {
         List<ChunkSet> pending = chunks.values();
         chunks.clear();
         currentChunk = null;
+        // One chunk that cannot be written must not take the rest of the edit
+        // with it: the loop kept its first failure, went on with the other
+        // chunks, and throws at the end. A single bad block entity - a mod's,
+        // a chunk the game refuses - used to abort the flush, so a million-block
+        // edit applied the chunks before it and silently dropped every one
+        // after, while the history had already recorded all of them and claimed
+        // //undo would take them back.
+        RuntimeException failure = null;
         for (ChunkSet chunk : pending) {
-            if (!chunk.isEmpty()) {
+            if (chunk.isEmpty()) {
+                continue;
+            }
+            try {
                 world.loadChunk(chunk.chunkX(), chunk.chunkZ());
                 recordBlockEntities(chunk);
                 world.applyChunk(chunk, sideEffects);
+            } catch (RuntimeException e) {
+                com.maxlananas.fawebim.core.platform.Log.error("Could not write the chunk "
+                        + chunk.chunkX() + "," + chunk.chunkZ() + " of an edit; the other chunks were"
+                        + " written", e);
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
             }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -660,6 +693,18 @@ public final class EditSession implements Extent {
         int minX = chunk.chunkX() << 4;
         int minZ = chunk.chunkZ() << 4;
         List<ChunkSet.BlockEntity> queued = chunk.blockEntities();
+        if (queued.isEmpty()) {
+            // The common case of a fill or a shape: no data is queued, so the
+            // only block entities to record are the ones whose block the buffer
+            // overwrites. Two primitive maps per flushed chunk - a fill flushes
+            // sixty-four of them - allocated to say "nothing to put".
+            world.forEachBlockEntity(minX, minY, minZ, minX + 15, maxY, minZ + 15, (x, y, z) -> {
+                if (chunk.isSet(x, y, z)) {
+                    record.addBlockEntity(x, y, z, world.getBlockEntity(x, y, z), null);
+                }
+            });
+            return;
+        }
         com.maxlananas.fawebim.core.util.LongObjectMap<com.maxlananas.fawebim.core.util.NbtCompound> incoming =
                 new com.maxlananas.fawebim.core.util.LongObjectMap<>(queued.size());
         for (ChunkSet.BlockEntity entity : queued) {

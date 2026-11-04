@@ -4,7 +4,7 @@ import com.maxlananas.fawebim.core.world.BlockStateRegistry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -130,11 +130,11 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
             properties = key.substring(bracket + 1, key.length() - 1);
             key = key.substring(0, bracket);
         }
-        ResourceLocation id = ResourceLocation.tryParse(key.contains(":") ? key : "minecraft:" + key);
+        Identifier id = Identifier.tryParse(key.contains(":") ? key : "minecraft:" + key);
         if (id == null) {
             return -1;
         }
-        Block block = block(id);
+        Block block = BuiltInRegistries.BLOCK.getValue(id);
         if (block == null) {
             return -1;
         }
@@ -178,12 +178,12 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     @Override
     public int defaultState(String blockName) {
         blockName = BlockStateRegistry.expandColourShorthand(blockName);
-        ResourceLocation id = ResourceLocation.tryParse(blockName.contains(":") ? blockName
+        Identifier id = Identifier.tryParse(blockName.contains(":") ? blockName
                 : "minecraft:" + blockName);
         if (id == null) {
             return -1;
         }
-        Block block = block(id);
+        Block block = BuiltInRegistries.BLOCK.getValue(id);
         if (block == null) {
             return -1;
         }
@@ -251,7 +251,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         if (blockName == null) {
             return air();
         }
-        Block block = block(ResourceLocation.parse(blockName));
+        Block block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(blockName));
         if (block == null) {
             return air();
         }
@@ -268,8 +268,15 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
     @Override
     public List<Integer> statesOf(String blockName) {
         blockName = BlockStateRegistry.expandColourShorthand(blockName);
-        ResourceLocation key = ResourceLocation.tryParse(blockName);
-        Block block = block(key);
+        // "*oak_log[axis=x]" asks for every state of oak_log: WorldEdit's star
+        // pattern takes a block, and a bracket makes the name no name at all for
+        // the parse below, which answered "unknown block" for a block that exists.
+        int bracket = blockName.indexOf('[');
+        if (bracket > 0) {
+            blockName = blockName.substring(0, bracket);
+        }
+        Identifier key = Identifier.tryParse(blockName);
+        Block block = key == null ? null : BuiltInRegistries.BLOCK.getValue(key);
         if (block == null) {
             return List.of();
         }
@@ -349,8 +356,10 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         BlockState state = stateOf(stateId);
         Map<String, String> map = new LinkedHashMap<>();
         if (state != null) {
-            for (Map.Entry<Property<?>, Comparable<?>> entry : state.getValues().entrySet()) {
-                map.put(entry.getKey().getName(), valueName(entry.getKey(), entry.getValue()));
+            // Since 26.1 the values of a state come back as a stream of
+            // property/value pairs rather than as a map.
+            for (Property.Value<?> value : state.getValues().toList()) {
+                map.put(value.property().getName(), valueName(value.property(), value.value()));
             }
         }
         Map<String, String> built = java.util.Collections.unmodifiableMap(map);
@@ -402,7 +411,7 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
         }
         java.util.Optional<TagKey<Block>> key = tagCache.computeIfAbsent(
                 tag.startsWith("#") ? tag.substring(1) : tag, name -> {
-                    ResourceLocation id = ResourceLocation.tryParse(name);
+                    Identifier id = Identifier.tryParse(name);
                     return id == null
                             ? java.util.Optional.empty()
                             : java.util.Optional.of(TagKey.create(Registries.BLOCK, id));
@@ -516,12 +525,12 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public int blockFromItem(String itemName) {
-        ResourceLocation id = ResourceLocation.tryParse(itemName.contains(":") ? itemName
+        Identifier id = Identifier.tryParse(itemName.contains(":") ? itemName
                 : "minecraft:" + itemName);
         if (id == null) {
             return -1;
         }
-        var item = item(id);
+        var item = BuiltInRegistries.ITEM.getValue(id);
         if (item == null) {
             return -1;
         }
@@ -566,48 +575,14 @@ public final class FabricBlockStateRegistry implements BlockStateRegistry {
 
     @Override
     public int item(String name) {
-        ResourceLocation id = ResourceLocation.tryParse(name.contains(":") ? name : "minecraft:" + name);
+        Identifier id = Identifier.tryParse(name.contains(":") ? name : "minecraft:" + name);
         if (id == null) {
             return -1;
         }
-        var item = item(id);
+        var item = BuiltInRegistries.ITEM.getValue(id);
         if (item == null) {
             return -1;
         }
         return BuiltInRegistries.ITEM.getId(item);
     }
-
-    /**
-     * The block a name names, or null when the registry holds no such key.
-     *
-     * <p>{@code Registry#getValue} answers the registry's default value for a
-     * key it does not hold - air for the blocks - so an unknown name was
-     * answered with air and the check for null never fired: {@code //set
-     * notablock} filled the selection with air, and {@code //replace stone
-     * notablock} erased the stone instead of refusing the name. The key of
-     * what came back is what tells an unknown name from the default one.</p>
-     */
-    private static Block block(ResourceLocation id) {
-        if (id == null) {
-            return null;
-        }
-        Block block = BuiltInRegistries.BLOCK.getValue(id);
-        if (block == null || !id.equals(BuiltInRegistries.BLOCK.getKey(block))) {
-            return null;
-        }
-        return block;
-    }
-
-    /** The item a name names, or null when the registry holds no such key. */
-    private static net.minecraft.world.item.Item item(ResourceLocation id) {
-        if (id == null) {
-            return null;
-        }
-        net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.getValue(id);
-        if (item == null || !id.equals(BuiltInRegistries.ITEM.getKey(item))) {
-            return null;
-        }
-        return item;
-    }
-
 }

@@ -205,7 +205,10 @@ public final class FabricActor implements Actor {
      * operator.
      */
     static boolean mayEdit(CommandSourceStack source) {
-        if (source.hasPermission(2)) {
+        // Since 26.1 a source carries a permission set rather than an op level
+        // to compare: the check is the same "gamemasters and up" vanilla asks
+        // for with /fill.
+        if (source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
             return true;
         }
         ServerPlayer player = source.getPlayer();
@@ -251,7 +254,7 @@ public final class FabricActor implements Actor {
         if (player == null) {
             return false;
         }
-        var id = net.minecraft.resources.ResourceLocation.tryParse(item);
+        var id = net.minecraft.resources.Identifier.tryParse(item);
         if (id == null) {
             return false;
         }
@@ -261,7 +264,9 @@ public final class FabricActor implements Actor {
         }
         ItemStack stack = new ItemStack(mcItem);
         if (!player.getInventory().add(stack)) {
-            player.drop(stack, false);
+            // 26.3 asks where the drop happened: `PREDICTED` is the value the
+            // server uses for its own drops, and the client drops nothing here.
+            player.drop(stack, false, net.minecraft.util.Prediction.PREDICTED);
         }
         return true;
     }
@@ -280,7 +285,7 @@ public final class FabricActor implements Actor {
         if (player == null) {
             return;
         }
-        player.displayClientMessage(FabricMessages.component(message), true);
+        player.sendSystemMessage(FabricMessages.component(message), true);
     }
 
     @Override

@@ -11,7 +11,7 @@ import net.minecraft.data.worldgen.features.TreeFeatures;
 import net.minecraft.data.worldgen.features.VegetationFeatures;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.biome.Biome;
 
@@ -32,6 +32,12 @@ import java.util.Map;
 final class FabricRegistries {
 
     private static volatile RegistryAccess access;
+    /**
+     * Incremented every time the tables are rebuilt. The adapter caches the
+     * holders it hands the game, and a {@code /reload} makes every one of those
+     * caches stale: this is how they know.
+     */
+    private static volatile int generation;
     private static volatile List<String> biomeNames = List.of();
     private static volatile Map<String, Integer> biomeIds = Map.of();
     private static volatile List<String> featureIds = List.of();
@@ -50,7 +56,7 @@ final class FabricRegistries {
             return;
         }
         List<String> names = registryAccess.lookupOrThrow(Registries.BIOME).keySet().stream()
-                .map(ResourceLocation::toString)
+                .map(Identifier::toString)
                 .sorted()
                 .toList();
         Map<String, Integer> ids = new HashMap<>(names.size() * 2);
@@ -60,16 +66,25 @@ final class FabricRegistries {
         biomeNames = names;
         biomeIds = ids;
         java.util.TreeSet<String> features = new java.util.TreeSet<>();
-        registryAccess.lookupOrThrow(Registries.CONFIGURED_FEATURE).keySet()
+        // 26.3 folded ConfiguredFeature into Feature: what was the configured
+        // feature registry is `worldgen/feature` now, and it is the registry a
+        // feature is looked up in as well as listed from.
+        registryAccess.lookupOrThrow(Registries.FEATURE).keySet()
                 .forEach(key -> features.add(key.toString()));
         registryAccess.lookupOrThrow(Registries.PLACED_FEATURE).keySet()
                 .forEach(key -> features.add(key.toString()));
         featureIds = List.copyOf(features);
         structureIds = registryAccess.lookupOrThrow(Registries.STRUCTURE).keySet().stream()
-                .map(ResourceLocation::toString)
+                .map(Identifier::toString)
                 .sorted()
                 .toList();
         access = registryAccess;
+        generation++;
+    }
+
+    /** How many times the tables were rebuilt, for caches built from them. */
+    static int generation() {
+        return generation;
     }
 
     /**
@@ -136,7 +151,7 @@ final class FabricRegistries {
                         continue;
                     }
                     try {
-                        ids.add(((ResourceKey<?>) field.get(null)).location().toString());
+                        ids.add(((ResourceKey<?>) field.get(null)).identifier().toString());
                     } catch (IllegalAccessException | RuntimeException skipped) {
                         FaweMod.LOGGER.debug("Feature key {} not read", field, skipped);
                     }
@@ -147,7 +162,7 @@ final class FabricRegistries {
                     CaveFeatures.CAVE_VINE_IN_MOSS, CaveFeatures.MOSS_VEGETATION, CaveFeatures.DRIPLEAF,
                     EndFeatures.CHORUS_PLANT, EndFeatures.END_PLATFORM, NetherFeatures.SMALL_BASALT_COLUMNS,
                     NetherFeatures.LARGE_BASALT_COLUMNS, NetherFeatures.GLOWSTONE_EXTRA)) {
-                ids.add(key.location().toString());
+                ids.add(key.identifier().toString());
             }
             return java.util.Set.copyOf(ids);
         }
@@ -165,6 +180,11 @@ final class FabricRegistries {
         return biomeNames;
     }
 
+    /** How many biomes the server has, which is what an id table is sized for. */
+    static int biomeCount() {
+        return biomeNames.size();
+    }
+
     /** The name of a biome id, or {@code null} when the id is not one of ours. */
     static String biomeName(int id) {
         List<String> names = biomeNames;
@@ -178,7 +198,7 @@ final class FabricRegistries {
 
     static ResourceKey<Biome> biomeKey(int id) {
         String name = biomeName(id);
-        ResourceLocation location = name == null ? null : ResourceLocation.tryParse(name);
+        Identifier location = name == null ? null : Identifier.tryParse(name);
         return location == null ? null : ResourceKey.create(Registries.BIOME, location);
     }
 
@@ -192,7 +212,7 @@ final class FabricRegistries {
      * the player an empty stack. The key of what came back is what tells an
      * unknown name from the default one.</p>
      */
-    static <T> T value(Registry<T> registry, net.minecraft.resources.ResourceLocation id) {
+    static <T> T value(Registry<T> registry, Identifier id) {
         if (registry == null || id == null) {
             return null;
         }

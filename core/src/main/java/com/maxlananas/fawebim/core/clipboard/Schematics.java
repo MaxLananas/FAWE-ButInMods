@@ -605,11 +605,17 @@ public final class Schematics {
             gzipped = NbtIo.isGzip(in.readNBytes(2));
         }
         long budget = NbtIo.defaultBudget();
+        // The reason the first layout failed, so a corrupt file says what is wrong
+        // with it instead of the generic "not a readable schematic".
+        String firstProblem = null;
         for (boolean varint : new boolean[]{false, true}) {
             try (java.io.InputStream in = Files.newInputStream(path)) {
                 NbtCompound root = NbtIo.read(in, varint, gzipped, budget);
                 if (isSchematicRoot(root)) {
                     return root;
+                }
+                if (firstProblem == null) {
+                    firstProblem = "it holds no schematic data";
                 }
             } catch (NbtIo.TooLargeException e) {
                 if (!varint) {
@@ -619,10 +625,21 @@ public final class Schematics {
             } catch (java.nio.file.NoSuchFileException e) {
                 throw e;
             } catch (IOException | RuntimeException e) {
-                // Not this layout; the next one gets a turn.
+                // Not this layout; the next one gets a turn, with this one's
+                // reason kept for the answer if neither reads.
+                if (firstProblem == null) {
+                    firstProblem = describe(e);
+                }
             }
         }
-        throw new com.maxlananas.fawebim.core.util.InputException("'" + name + "' is not a readable schematic file");
+        throw new com.maxlananas.fawebim.core.util.InputException("'" + name
+                + "' is not a readable schematic file" + (firstProblem == null ? "" : ": " + firstProblem));
+    }
+
+    /** What went wrong with a file, naming the exception when it says nothing. */
+    private static String describe(Throwable error) {
+        String message = error.getMessage();
+        return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
     }
 
     /** True when a parsed root carries one of the containers a schematic uses. */

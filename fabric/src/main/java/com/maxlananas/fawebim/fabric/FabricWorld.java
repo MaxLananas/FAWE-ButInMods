@@ -21,7 +21,7 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProblemReporter;
@@ -36,11 +36,12 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
-import net.minecraft.world.level.levelgen.placement.BiomeFilter;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
+import net.minecraft.world.level.levelgen.feature.Feature;
+import net.minecraft.world.level.levelgen.placement.FeaturePlacer;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
-import net.minecraft.world.level.levelgen.placement.PlacementContext;
 import net.minecraft.world.level.levelgen.placement.PlacementModifier;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
@@ -83,11 +84,13 @@ public final class FabricWorld implements World {
      * flush needs, so handing it to the collector every time is pure garbage.
      */
     private int[] changedX = new int[0];
+    private int[] changedY = new int[0];
+    private int[] changedZ = new int[0];
+    /** How many positions the current flush wrote: the bulk write's lambda counts them. */
+    private int changedCount;
     /** The states a flush replaced and wrote, for the same positions, kept and grown like them. */
     private BlockState[] changedBefore = new BlockState[0];
     private BlockState[] changedAfter = new BlockState[0];
-    private int[] changedY = new int[0];
-    private int[] changedZ = new int[0];
     /**
      * The changes of a flush whose block entity has to follow the block: the
      * index of the change in {@link #changedX}, and the state it replaced.
@@ -170,7 +173,7 @@ public final class FabricWorld implements World {
 
     @Override
     public String name() {
-        return level.dimension().location().toString();
+        return level.dimension().identifier().toString();
     }
 
     @Override
@@ -302,6 +305,12 @@ public final class FabricWorld implements World {
      * cannot decide what is written.</p>
      */
     private LevelChunk chunkAt(int chunkX, int chunkZ) {
+        // The entry belongs to one tick. A chunk leaves the loaded set - and is
+        // replaced by a new LevelChunk when it comes back - and an edit that
+        // runs across a tick boundary (a long //set, a brush stroke on the tick
+        // after a teleport) would otherwise keep writing into the chunk object
+        // the level has thrown away: the writes land nowhere and the flush that
+        // runs them reaches the live chunk without them.
         long tick = level.getGameTime();
         if (tick != cachedChunkTick) {
             cachedChunk = null;
@@ -336,21 +345,93 @@ public final class FabricWorld implements World {
         return true;
     }
 
+    /**
+     * The biome of a position, and the id of the biome the game holds there.
+     *
+     * <p>{@code //copy -b} and {@code //setbiome} ask this of every block of a
+     * selection, and the answer used to cost a registry lookup, a name built from
+     * the key and a map lookup - per block, for a value that only changes when the
+     * column enters another 4x4x4 cell. The last holder and the last id are kept,
+     * which answers the run a copy walks in an identity comparison.</p>
+     */
     @Override
     public int getBiome(int x, int y, int z) {
         BlockPos pos = new BlockPos(x, Math.max(minY(), Math.min(maxY(), y)), z);
+        // The table of names to ids is rebuilt when a reload replaced the
+        // registries of the server, see FabricRegistries#ensure.
+        FabricRegistries.ensure(level.registryAccess());
+        var holder = level.getBiome(pos);
+        // The cached id is only valid for the numbering it was read under: a
+        // datapack reload renumbers the biomes, and answering with the id of the
+        // holder from before it would write the wrong biome.
+        if (holder == lastBiomeHolder && lastBiomeGeneration == FabricRegistries.generation()) {
+            return lastBiomeId;
+        }
         Registry<net.minecraft.world.level.biome.Biome> biomes =
                 level.registryAccess().lookupOrThrow(Registries.BIOME);
-        FabricRegistries.ensure(level.registryAccess());
-        ResourceLocation key = biomes.getKey(level.getBiome(pos).value());
-        return key == null ? -1 : FabricRegistries.biomeId(key.toString());
+        Identifier key = biomes.getKey(holder.value());
+        int id = key == null ? -1 : FabricRegistries.biomeId(key.toString());
+        lastBiomeHolder = holder;
+        lastBiomeId = id;
+        lastBiomeGeneration = FabricRegistries.generation();
+        return id;
     }
+
+    /** The biome holder of the last block read, and the engine's id for it. */
+    private Object lastBiomeHolder;
+    private int lastBiomeId = -1;
+    /** The registry numbering {@link #lastBiomeId} was read under. */
+    private int lastBiomeGeneration = -1;
+
+    /**
+     * The holder of a biome id, kept per id.
+     *
+     * <p>{@code registry.getOrThrow(key)} walks the registry for a resource key:
+     * {@code //setbiome} over a selection asked it once per block, for the same
+     * handful of ids. The holder is the same object for every call, so a table
+     * indexed by the id answers the next one with an array read; the table is
+     * rebuilt when a reload renumbered the biomes.</p>
+     */
+    private net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biomeHolder(int biomeId) {
+        if (biomeId < 0) {
+            // -1 is what a reader answers for a biome it does not know - a
+            // //regen of a chunk it could not generate, a schematic naming one -
+            // and it used to index the table with it.
+            return null;
+        }
+        if (biomeByIdGeneration != FabricRegistries.generation() || biomeId >= biomeById.length) {
+            int size = Math.max(64, Math.max(biomeId + 1, FabricRegistries.biomeCount() + 1));
+            @SuppressWarnings("unchecked")
+            net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>[] table =
+                    new net.minecraft.core.Holder[size];
+            biomeById = table;
+            biomeByIdGeneration = FabricRegistries.generation();
+        }
+        var cached = biomeById[biomeId];
+        if (cached != null) {
+            return cached;
+        }
+        ResourceKey<net.minecraft.world.level.biome.Biome> key = FabricRegistries.biomeKey(biomeId);
+        if (key == null) {
+            return null;
+        }
+        var holder = level.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(key);
+        biomeById[biomeId] = holder;
+        return holder;
+    }
+
+    @SuppressWarnings("unchecked")
+    private net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>[] biomeById =
+            new net.minecraft.core.Holder[0];
+    private int biomeByIdGeneration = -1;
 
     @Override
     public boolean setBiome(int x, int y, int z, int biomeId) {
         FabricRegistries.ensure(level.registryAccess());
-        ResourceKey<net.minecraft.world.level.biome.Biome> biomeKey = FabricRegistries.biomeKey(biomeId);
-        if (biomeKey == null || y < minY() || y > maxY()) {
+        if (y < minY() || y > maxY()) {
+            return false;
+        }
+        if (biomeHolder(biomeId) == null) {
             return false;
         }
         LevelChunk chunk = chunkAt(x >> 4, z >> 4);
@@ -358,9 +439,6 @@ public final class FabricWorld implements World {
         if (sectionIndex < 0 || sectionIndex >= chunk.getSections().length) {
             return false;
         }
-        Registry<net.minecraft.world.level.biome.Biome> registry =
-                level.registryAccess().lookupOrThrow(Registries.BIOME);
-        FabricRegistries.ensure(level.registryAccess());
         // The biome palette is a 4x4x4 grid inside each section; sections are
         // 16 blocks tall, so the low bits of Y address the cell directly.
         // The game hands the biome grid out as a read-only view; it is the
@@ -370,8 +448,13 @@ public final class FabricWorld implements World {
         PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                 (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) chunk
                         .getSection(sectionIndex).getBiomes();
-        container.getAndSetUnchecked((x & 15) >> 2, (y & 15) >> 2, (z & 15) >> 2,
-                registry.getOrThrow(biomeKey));
+        // A biome palette holds four cells per axis of a section, so a block
+        // coordinate reaches its cell by dropping the low two bits of its
+        // offset in the section: ((x & 15) >> 2). `x & 3` is the same number
+        // only for the first four blocks of each axis; past them it named
+        // another cell, so //setbiome wrote three quarters of its biomes in the
+        // wrong place.
+        container.getAndSetUnchecked((x & 15) >> 2, (y & 15) >> 2, (z & 15) >> 2, biomeHolder(biomeId));
         chunk.markUnsaved();
         return true;
     }
@@ -459,10 +542,19 @@ public final class FabricWorld implements World {
         int[] changedXs = changedX;
         int[] changedYs = changedY;
         int[] changedZs = changedZ;
-        int[] slot = {0};
+        // The count is a field rather than a one-element array: the lambda below
+        // captures it, and a captured local of a primitive type has to live in an
+        // array - one allocation per flushed chunk, on the flush path of every
+        // edit, to count what the flush is doing.
+        changedCount = 0;
         blockEntityCount = 0;
         boolean perBlockUpdate = notify && !resend;
         boolean perBlockNotify = perBlockUpdate || neighbors;
+        // The states before and after each change, for the updates and the
+        // neighbour notifications of step 4. They are kept between flushes for
+        // the same reason as the positions: a large edit flushes one chunk after
+        // another, and a 98k block flush allocated two arrays of 98k references
+        // every time - a megabyte and a half of garbage per chunk.
         if (perBlockNotify && changedBefore.length < count) {
             int size = Math.max(1024, count);
             changedBefore = new BlockState[size];
@@ -511,7 +603,7 @@ public final class FabricWorld implements World {
                 int localY = (local >> 8) & 15;
                 int localZ = (local >> 4) & 15;
                 int y = sectionY + localY;
-                int at = slot[0]++;
+                int at = changedCount++;
                 changedXs[at] = baseX + localX;
                 changedYs[at] = y;
                 changedZs[at] = baseZ + localZ;
@@ -570,19 +662,29 @@ public final class FabricWorld implements World {
         for (int i = 0; i < blockEntityCount; i++) {
             int at = blockEntitySlots[i];
             BlockPos pos = new BlockPos(changedXs[at], changedYs[at], changedZs[at]);
-            BlockState was = Block.stateById(blockEntityBefore[i]);
-            BlockState now = chunk.getBlockState(pos);
-            var existing = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.CHECK);
-            if (existing != null) {
-                if (now.is(was.getBlock()) && existing.isValidBlockState(now)) {
-                    existing.setBlockState(now);
-                    chunk.updateBlockEntityTicker(existing);
-                    continue;
+            try {
+                BlockState was = Block.stateById(blockEntityBefore[i]);
+                BlockState now = chunk.getBlockState(pos);
+                var existing = chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.CHECK);
+                if (existing != null) {
+                    if (now.is(was.getBlock()) && existing.isValidBlockState(now)) {
+                        existing.setBlockState(now);
+                        chunk.updateBlockEntityTicker(existing);
+                        continue;
+                    }
+                    chunk.removeBlockEntity(pos);
                 }
-                chunk.removeBlockEntity(pos);
-            }
-            if (now.hasBlockEntity()) {
-                chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
+                if (now.hasBlockEntity()) {
+                    chunk.getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
+                }
+            } catch (RuntimeException broken) {
+                // A block entity of another mod that refuses its own state used
+                // to abort the whole flush here: the rest of the chunk's blocks
+                // were written but nothing after them was - no biomes, no queued
+                // data, no client sync - and the edit failed with no clue which
+                // position did it.
+                com.maxlananas.fawebim.core.platform.Log.error("Could not update the block entity at "
+                        + pos + "; the rest of the chunk was written", broken);
             }
         }
 
@@ -592,9 +694,18 @@ public final class FabricWorld implements World {
         }
 
         // 3b. The data of the block entities the buffer put down, now that their
-        //     blocks exist.
+        //     blocks exist. The chunk is the one this flush already holds: the
+        //     buffer is per chunk, so every one of its block entities lives in
+        //     it, and looking each of them up again was a chunk map probe per
+        //     chest of a pasted structure.
         for (ChunkSet.BlockEntity entity : set.blockEntities()) {
-            applyBlockEntity(chunk, entity.x, entity.y, entity.z, entity.nbt);
+            try {
+                applyBlockEntity(chunk, entity.x, entity.y, entity.z, entity.nbt);
+            } catch (RuntimeException broken) {
+                com.maxlananas.fawebim.core.platform.Log.error("Could not write the block entity data at "
+                        + entity.x + "," + entity.y + "," + entity.z + "; the rest of the chunk was written",
+                        broken);
+            }
         }
 
         // 4. The client sync for the changed blocks only. Vanilla would have
@@ -604,8 +715,8 @@ public final class FabricWorld implements World {
         //    does it. The light engine was handed its checks section by section
         //    above; the light it computes reaches the clients with the game's
         //    own light updates, after the chunk a large flush re-sends.
-        int changedCount = slot[0];
-        for (int index = 0; perBlockNotify && index < changedCount; index++) {
+        int written = changedCount;
+        for (int index = 0; perBlockNotify && index < written; index++) {
             BlockState was = before[index];
             BlockState now = after[index];
             if (now == was) {
@@ -648,9 +759,9 @@ public final class FabricWorld implements World {
      */
     private void lightPending(LevelChunk chunk, net.minecraft.server.level.ThreadedLevelLightEngine engine) {
         ChunkPos pos = chunk.getPos();
-        java.util.concurrent.CompletableFuture<?> done = engine.waitForPendingTasks(pos.x, pos.z);
+        java.util.concurrent.CompletableFuture<?> done = engine.waitForPendingTasks(pos.x(), pos.z());
         net.minecraft.server.level.ChunkHolder holder =
-                level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(pos.toLong());
+                level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(pos.pack());
         if (holder != null) {
             holder.addSaveDependency(done);
         }
@@ -687,37 +798,48 @@ public final class FabricWorld implements World {
 
     /** Writes the chunk buffer's biomes into the section palettes. */
     private void applyBiomes(LevelChunk chunk, ChunkSet set) {
-        int baseX = set.chunkX() << 4;
-        int baseZ = set.chunkZ() << 4;
-        Registry<net.minecraft.world.level.biome.Biome> registry =
-                level.registryAccess().lookupOrThrow(Registries.BIOME);
         FabricRegistries.ensure(level.registryAccess());
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             LevelChunkSection section = chunk.getSection(sectionIndex);
             if (section == null) {
                 continue;
             }
+            // The buffer holds biomes by block Y (ChunkSet#getBiome divides it
+            // by sixteen to find its section and by four to find its cell), so
+            // the section has to be turned back into the height of its bottom
+            // block before anything is read out of it. Passing the section
+            // coordinate itself asked for y = 0..12 of the buffer for every
+            // section of the chunk, which read the biomes of the bottom of the
+            // world and wrote them into all 24 sections.
             int sectionBaseY = chunk.getSectionYFromSectionIndex(sectionIndex) << 4;
+            // Only the sections the buffer holds biomes for, and read straight
+            // out of its own arrays: asking the buffer for every cell of every
+            // section of the chunk was 1536 lookups - each recomputing the
+            // section and the cell index - to write the 64 cells of the one
+            // section a //setbiome touched.
+            int bufferedSection = (sectionBaseY >> 4) - set.minSection();
+            int[] cells = bufferedSection < 0 || bufferedSection >= set.sectionCount()
+                    ? null : set.biomes()[bufferedSection];
+            if (cells == null) {
+                continue;
+            }
             @SuppressWarnings("unchecked")
             PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>> container =
                     (PalettedContainer<Holder<net.minecraft.world.level.biome.Biome>>) section.getBiomes();
             boolean touched = false;
-            for (int y = 0; y < 16; y += 4) {
-                for (int z = 0; z < 16; z += 4) {
-                    for (int x = 0; x < 16; x += 4) {
-                        int biomeId = set.getBiome(baseX + x, sectionBaseY + y, baseZ + z);
-                        if (biomeId < 0) {
-                            continue;
-                        }
-                        ResourceKey<net.minecraft.world.level.biome.Biome> key =
-                                FabricRegistries.biomeKey(biomeId);
-                        if (key == null) {
-                            continue;
-                        }
-                        container.getAndSetUnchecked(x >> 2, y >> 2, z >> 2, registry.getOrThrow(key));
-                        touched = true;
-                    }
+            for (int cell = 0; cell < cells.length; cell++) {
+                int biomeId = cells[cell];
+                if (biomeId < 0) {
+                    continue;
                 }
+                var holder = biomeHolder(biomeId);
+                if (holder == null) {
+                    continue;
+                }
+                // The cell index is the one ChunkSet#setBiome used: y in the top
+                // two bits, then z, then x.
+                container.getAndSetUnchecked(cell & 3, (cell >> 4) & 3, (cell >> 2) & 3, holder);
+                touched = true;
             }
             if (touched) {
                 chunk.markUnsaved();
@@ -841,10 +963,16 @@ public final class FabricWorld implements World {
         return FabricWorldRegen.generate(level, chunks, options);
     }
 
-    /** The temporary level of a regeneration takes the seed it is given. */
+    /**
+     * No: 26.1 moved the generation options out of the level data, so a
+     * regeneration cannot swap the seed of the temporary level any more and
+     * {@link FabricWorldRegen} refuses one. Answering yes here made
+     * {@code //regen 42} reach that refusal and surface as an internal error,
+     * where saying no makes the command tell the player the seed is ignored.
+     */
     @Override
     public boolean supportsCustomRegenSeed() {
-        return true;
+        return false;
     }
 
     @Override
@@ -868,27 +996,29 @@ public final class FabricWorld implements World {
      */
     @Override
     public boolean generateFeature(EditSession session, BlockVector3 pos, String featureType, Random random) {
-        ResourceLocation id = ResourceLocation.tryParse(featureType.contains(":") ? featureType
+        Identifier id = Identifier.tryParse(featureType.contains(":") ? featureType
                 : "minecraft:" + featureType);
         if (id == null) {
             return false;
         }
-        ConfiguredFeature<?, ?> configured = FabricRegistries.value(
-                level.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE), id);
-        if (configured == null) {
+        // 26.3 became the registry of the feature itself: there is no
+        // configured feature to unwrap any more, and `place` is the method the
+        // interface keeps.
+        Feature feature = level.registryAccess().lookupOrThrow(Registries.FEATURE).getValue(id);
+        if (feature == null) {
             return placeFeature(session, pos, placedFeature(id.toString()), random);
         }
         try (EditLevel edit = EditLevel.open(level, session)) {
-            return configured.place(edit.level(), level.getChunkSource().getGenerator(),
+            return feature.place(edit.level(), level.getChunkSource().getGenerator(),
                     RandomSource.create(random.nextLong()), new BlockPos(pos.x(), pos.y(), pos.z()));
         }
     }
 
     /** The placed feature an id names on this server, or null. */
     private PlacedFeature placedFeature(String id) {
-        ResourceLocation location = ResourceLocation.tryParse(id);
-        return location == null ? null : FabricRegistries.value(
-                level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE), location);
+        Identifier location = Identifier.tryParse(id);
+        return location == null ? null
+                : level.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE).getValue(location);
     }
 
     /**
@@ -896,11 +1026,13 @@ public final class FabricWorld implements World {
      * the edit sees it and its blocks become the edit's, so they are masked,
      * counted against the limit and undone with it. Server thread only.
      *
-     * <p>It is placed as the game's {@code PlacedFeature#place} places it - its
-     * placement modifiers in turn, then the configured feature at every
-     * position they leave - but for the biome filter, which asks the biome
-     * whether it generates the feature and throws when no biome's generation
-     * is placing it, as no command's is.</p>
+     * <p>26.3 moved the walk over the placement modifiers out of
+     * {@code PlacedFeature} and into {@link FeaturePlacer}, which is also what
+     * the biome filter reads: a modifier list is processed position by
+     * position, and the filter asks the context for the feature being placed,
+     * throwing when nothing is - as no command's is. {@code #place}, and not
+     * {@code #placeWithBiomeCheck}, is therefore the call that places a
+     * feature for a command: the same choice the mod has always made.</p>
      *
      * @return false when there is no such feature or it did not fit
      */
@@ -911,20 +1043,8 @@ public final class FabricWorld implements World {
         RandomSource source = RandomSource.create(random.nextLong());
         ChunkGenerator generator = level.getChunkSource().getGenerator();
         try (EditLevel edit = EditLevel.open(level, session)) {
-            WorldGenLevel target = edit.level();
-            PlacementContext context = new PlacementContext(target, generator, java.util.Optional.empty());
-            java.util.stream.Stream<BlockPos> positions = java.util.stream.Stream.of(
-                    new BlockPos(pos.x(), pos.y(), pos.z()));
-            for (PlacementModifier modifier : feature.placement()) {
-                if (!(modifier instanceof BiomeFilter)) {
-                    positions = positions.flatMap(at -> modifier.getPositions(context, source, at));
-                }
-            }
-            ConfiguredFeature<?, ?> configured = feature.feature().value();
-            // Every position is placed, in the order the game places them: a
-            // reduction does not stop at the first success as a match would.
-            return positions.map(at -> configured.place(target, generator, source, at))
-                    .reduce(false, Boolean::logicalOr);
+            return new FeaturePlacer(edit.level(), generator)
+                    .place(feature, source, new BlockPos(pos.x(), pos.y(), pos.z()));
         }
     }
 
@@ -936,22 +1056,28 @@ public final class FabricWorld implements World {
      */
     @Override
     public boolean generateStructure(EditSession session, String structureId, BlockVector3 pos, Random random) {
-        ResourceLocation id = ResourceLocation.tryParse(structureId.contains(":") ? structureId
+        Identifier id = Identifier.tryParse(structureId.contains(":") ? structureId
                 : "minecraft:" + structureId);
         if (id == null) {
             return false;
         }
         Registry<Structure> structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
-        Structure structure = FabricRegistries.value(structures, id);
+        Structure structure = structures.getValue(id);
         if (structure == null) {
             return false;
         }
         ServerChunkCache chunks = level.getChunkSource();
         ChunkGenerator generator = chunks.getGenerator();
         try (EditLevel edit = EditLevel.open(level, session)) {
+            // 26.3 asks for the chunk's climate sampler beside its random state:
+            // the game builds it from the level's density samplers, and so does
+            // this, with no cache - the structure is generated once, here.
+            Climate.Sampler climate = chunks.randomState().createClimateSampler(
+                    SamplerContext.builder().build());
             StructureStart start = structure.generate(structures.wrapAsHolder(structure), level.dimension(),
-                    level.registryAccess(), generator, generator.getBiomeSource(), chunks.randomState(),
-                    level.getStructureManager(), level.getSeed(), new ChunkPos(new BlockPos(pos.x(), pos.y(), pos.z())),
+                    level.registryAccess(), generator, generator.getBiomeSource(), climate,
+                    chunks.randomState(), level.getStructureTemplateManager(), level.getSeed(),
+                    ChunkPos.containing(new BlockPos(pos.x(), pos.y(), pos.z())),
                     0, edit.level(), biome -> true);
             if (!start.isValid()) {
                 return false;
@@ -972,11 +1098,13 @@ public final class FabricWorld implements World {
 
     @Override
     public List<String> featureIds() {
+        FabricRegistries.ensure(level.registryAccess());
         return FabricRegistries.featureIds();
     }
 
     @Override
     public List<String> structureIds() {
+        FabricRegistries.ensure(level.registryAccess());
         return FabricRegistries.structureIds();
     }
 
@@ -1007,7 +1135,7 @@ public final class FabricWorld implements World {
     }
 
     private EntityData describe(Entity entity) {
-        ResourceLocation type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        Identifier type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         if (type == null) {
             // A type the registry does not know has no id to write, so the data
             // of this entity could not be read back into a world: answering null
@@ -1054,7 +1182,8 @@ public final class FabricWorld implements World {
      */
     @Override
     public EntityData spawnEntity(EntityData data, String uuid) {
-        if (net.minecraft.world.entity.EntityType.byString(data.type()).isEmpty()) {
+        if (net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(
+                Identifier.tryParse(data.type())).isEmpty()) {
             return null;
         }
         java.util.UUID identity = null;
@@ -1073,8 +1202,11 @@ public final class FabricWorld implements World {
         tag.putString("id", data.type());
         Vector3 at = data.position();
         boolean hangs = tag.contains("block_pos");
+        // 26.x wraps the spawn reason in a request, which also says whether the
+        // usual spawn checks are skipped; a pasted entity is placed regardless.
         Entity created = net.minecraft.world.entity.EntityType.loadEntityRecursive(tag, level,
-                net.minecraft.world.entity.EntitySpawnReason.COMMAND, loaded -> {
+                new net.minecraft.world.entity.EntitySpawnRequest(
+                        net.minecraft.world.entity.EntitySpawnReason.COMMAND, true), loaded -> {
                     // A painting, an item frame or a leash knot sits where its
                     // block_pos puts it. Moving it to a position takes the block
                     // that contains the position instead, which for a painting
@@ -1169,13 +1301,7 @@ public final class FabricWorld implements World {
         applyBlockEntity(level.getChunk(x >> 4, z >> 4), x, y, z, nbt);
     }
 
-    /**
-     * The same, in the chunk the caller already holds.
-     *
-     * <p>The flush is per chunk and the buffer it writes holds the block
-     * entities of that chunk, so looking each of them up again was a chunk map
-     * probe per chest of a pasted structure.</p>
-     */
+    /** The same, in the chunk the caller already holds. */
     private void applyBlockEntity(LevelChunk chunk, int x, int y, int z, NbtCompound nbt) {
         BlockPos pos = new BlockPos(x, y, z);
         // The flush created the block entity of every block it wrote; IMMEDIATE
@@ -1188,8 +1314,8 @@ public final class FabricWorld implements World {
         // The data of a chest is not loaded into the furnace that stands where
         // the chest was meant to go.
         String id = nbt.getString("id", null);
-        ResourceLocation type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
-        if (id != null && type != null && !type.equals(ResourceLocation.tryParse(id))) {
+        Identifier type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
+        if (id != null && type != null && !type.equals(Identifier.tryParse(id))) {
             FaweMod.LOGGER.debug("The data at {},{},{} is for {}, the block entity there is {}", x, y, z, id, type);
             return;
         }
@@ -1364,7 +1490,7 @@ public final class FabricWorld implements World {
             if (level.dimension().equals(net.minecraft.world.level.Level.END)) {
                 return root.resolve("DIM1").resolve("region");
             }
-            net.minecraft.resources.ResourceLocation location = level.dimension().location();
+            net.minecraft.resources.Identifier location = level.dimension().identifier();
             return root.resolve("dimensions").resolve(location.getNamespace())
                     .resolve(location.getPath()).resolve("region");
         } catch (RuntimeException e) {

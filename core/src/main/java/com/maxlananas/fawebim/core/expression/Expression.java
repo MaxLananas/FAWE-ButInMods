@@ -639,11 +639,33 @@ public final class Expression {
 
     private static final class Parser {
 
+        /**
+         * How deep a formula may nest. The parser is a recursive descent, so a
+         * line of a thousand brackets - which a player can type, and which a
+         * macro file can hold - would recurse until the stack ran out. A
+         * {@link StackOverflowError} is an {@link Error}, not an exception: it
+         * takes the server thread with it and cannot be caught here.
+         */
+        private static final int MAX_DEPTH = 128;
+
         private final String input;
         private int pos;
+        private int depth;
 
         Parser(String input) {
             this.input = input;
+        }
+
+        /** Runs a nested parse, refusing the formula once it nests too deep. */
+        private Node nested(java.util.function.Supplier<Node> parse) {
+            if (++depth > MAX_DEPTH) {
+                throw new ExpressionException("The expression nests more than " + MAX_DEPTH + " levels deep");
+            }
+            try {
+                return parse.get();
+            } finally {
+                depth--;
+            }
         }
 
         Node parseStatements() {
@@ -727,11 +749,11 @@ public final class Expression {
             skipWhitespaceAndSemicolons();
             if (pos < input.length() && input.charAt(pos) == '{') {
                 pos++;
-                Node body = parseStatements();
+                Node body = nested(this::parseStatements);
                 expect('}');
                 return body;
             }
-            return parseStatement();
+            return nested(this::parseStatement);
         }
 
         private Node parseParenExpression() {
@@ -916,7 +938,7 @@ public final class Expression {
                 char c = input.charAt(pos);
                 if (c == '-' || c == '+' || c == '!') {
                     pos++;
-                    return new Unary(c, parseUnary());
+                    return new Unary(c, nested(this::parseUnary));
                 }
             }
             return parsePrimary();
@@ -932,7 +954,7 @@ public final class Expression {
             char c = input.charAt(pos);
             if (c == '(') {
                 pos++;
-                Node node = parseExpression();
+                Node node = nested(this::parseExpression);
                 expect(')');
                 return node;
             }
@@ -955,7 +977,7 @@ public final class Expression {
                     java.util.List<Node> args = new java.util.ArrayList<>();
                     skipWhitespace();
                     if (pos < input.length() && input.charAt(pos) != ')') {
-                        args.add(parseExpression());
+                        args.add(nested(this::parseExpression));
                         while (true) {
                             skipWhitespace();
                             if (pos < input.length() && input.charAt(pos) == ',') {

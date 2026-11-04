@@ -1,117 +1,141 @@
 # Changelog
 
 Every release of FAWE-BIM, newest first. The defect ledger behind these entries — cause, fix and file for
-each of the **33** defects found on this line — is [`BUGS.md`](BUGS.md).
+each of the **72** defects found so far — is internal; the entries below quote the ones a builder feels.
 
 ---
 
-## 1.2.1 — Minecraft 1.21.10
+## 1.3.0 — Minecraft 26.3
 
-The mod for **Minecraft 1.21.10**: Java 21, Fabric Loader 0.17.3, Fabric API 0.136.0+1.21.10, Loom
-1.11.8, against the official Mojang mappings with the parchment layer. It is not a recompile of the
-26.2 build: the engine is the same one, the adapter is written for the 1.21.10 game.
+The mod is now built for **Minecraft 26.3** (Wilderness Bound, 15 September 2026), on Java 25, against
+Fabric Loader 0.20.1 and Fabric API 0.165.2+26.3, with Loom 1.19 and Gradle 9.8.2 — the toolchain the
+Fabric example mod for 26.3 ships with. Mod Menu 21.0.0 is the client's optional menu build, and the
+files the mod writes now declare data version **5023**.
 
-### 33 defects found and fixed
+### The port
 
-The audit of the 26.2 line was replayed on this port, and the CI of this branch boots the game with the
-mod in it and drives **512 commands** over rcon — every command the mod registers, its combinations, its
-refusals and the counts that must be exactly right. It reads the log of the server while it runs: a
-command that answers politely while the engine logs the failure it did not expect is a defect, and the
-sweep names the command that caused it. The ones a builder would have felt:
+26.3 is a data-driven release more than an API one, and the mod reads the game through the registries
+26.3 keeps rather than through the tables it removed.
 
-- **An unknown block name was worth air.** `BuiltInRegistries.BLOCK.getValue` answers the default value
-  of the registry for a key it does not hold — air for blocks — and the check for null was never true:
-  `//set notablock` filled the selection with air, and `//replace stone notablock` erased the stone
-  instead of refusing the name. The same was true of the features, the placed features, the structures
-  and the items: `//feature pasunefeature` placed the default feature, and an item that does not exist
-  gave the player an empty stack.
-- **`//setbiome` wrote three quarters of its biomes in the wrong cell** (`x & 3` instead of
-  `(x & 15) >> 2`), and the biome flush read the biomes of the bottom of the world for every section:
-  the section index was used where the height belongs, so `//setbiome` wrote the biome of y=0..12 into
-  the twenty-four sections above it.
-- **`//setbiome` walked its cells from the lowest block of the selection.** A biome cell covers 4×4×4
-  blocks, so a selection from y=70 to y=80 holds the cells 68, 72, 76 and 80, and the walk from 70
-  reached 68, 72 and 76: the top of every column kept its biome.
-- **The chunk cache could name a chunk the level had thrown away.** A chunk that is unloaded and loaded
-  again is a **new** object: the writes of a long edit went into the old one, and therefore nowhere. The
-  cache is tied to the tick now.
-- **The biome ids were only read at start-up.** `/reload` — or a datapack added on the fly — replaces
-  the registry access of the server, and a biome added in the middle renumbers all the ones after it,
-  because the ids are the sorted names: `//setbiome` named the wrong biome for half the alphabet, and
-  the ids written into a schematic or a history file pointed at their neighbours.
-- **The super pickaxe dropped the contents of a chest the player still had**, and ignored the tool in
-  hand, so fortune and silk touch did nothing: a super pickaxe on diamond ore gave a diamond, whatever
-  the pickaxe was.
-- **The scroll binding restored the held slot before the packet had moved it.** The injection was at the
-  `HEAD` of `handleSetCarriedItem`, and the vanilla body sets the slot *after* it: the restore was
-  undone two lines later, so a scroll on a bound tool moved the hotbar **and** fired the binding.
-- **The reach was a fixed pair of numbers**, so a datapack that moved the range of the block
-  interaction was ignored. The game answers now.
-- **A generator emptied a chest that was already there**: the block was written after its block entity,
-  so the chest was emptied when the level closed.
-- **`//count` refused to run without a mask**, though the mask is optional in WorldEdit and in FAWE.
-- **`//gmask clear` installed a mask that matched nothing** instead of clearing the global mask, and
-  `//smask clear` did the same for the brush mask.
-- **The wait for a regeneration was not bounded.** The temporary level drained the queue of the server's
-  tasks in a loop without a limit: a task that waited for ever froze the server in the middle of a
-  `//regen`. The wait is bounded to thirty seconds now, and a queue that is still busy is reported.
-- **An entity of an unknown type emptied the copy with an exception.** The type has no registry id to
-  write, so its data could not be read back into a world: the key was dereferenced without a check. The
-  entity is left out of the copy.
-- **A session whose world was gone threw a `NullPointerException`.** The world of a session is held
-  weakly, and the adapter makes one per click: a mask or a brush (`#angle`, `/tool`) can live longer than
-  the world it was parsed for.
-- **The pattern and mask parsers swallowed every runtime failure**, so a bug in one of them looked like
-  a syntax error, and the message of a failure without a text said "null", which is worse than naming
-  the kind of error.
-- **`#angle` and `#surfaceangle` dropped the sign of a negative limit.** The parser took every `-` out
-  of the string: `#angle[-45d][45d]` selected exactly what `#angle[45d][45d]` selected. A `-` after the
-  first character separates two numbers; a `-` at the front is a sign.
-- **The super pickaxe dropped its loot in a `finally`**: the block ran even when the flush had failed,
-  so the drops of a chest the player still had could appear. The loop keeps the failure, closes the
-  edit, drops only the blocks the world really lost, and throws the failure again.
-- **The history folder was never pruned**, and the history and the snapshot files were sorted as text,
-  where "f" comes after "10": the sixteenth file of a millisecond was read as the oldest.
-- **The NBT reader never closed the inflater it opened** (native memory leaked), **the varint reader
-  read a sixth byte and dropped its bits**, and **a schematic in the MCEdit format allocated two arrays
-  of the size of the volume**: a big clipboard ended in an `OutOfMemoryError` instead of an answer.
-- **`//schem save house.schem mcedit` wrote `house.schem.schematic`**, a file nothing else opens, and a
-  schematic whose extension was not in lower case was invisible to the listing.
+| Area | What 26.3 changed | What the mod does |
+| --- | --- | --- |
+| Features | `ConfiguredFeature` folded into `Feature`, configurations split into `FeatureConfiguration` | `//feature`, `//tree`, `//ores` place a feature through the registry, which is where 26.3 looks one up |
+| Worldgen data | features, material rules, material conditions, number providers and block state providers are registered in data packs | `//regen` copies the terrain the server generated; the mod registers nothing of its own there |
+| Registries | recipes and advancements joined the reloadable registries | the biome and feature tables are rebuilt on every `RegistryAccess` swap, as before |
+| Fluids and components | composting, fuel and block transformers became item components; `CompostingChanceRegistry`, `FuelRegistry`, `StrippableBlockRegistry`, `TillableBlockRegistry` and `FlattenableBlockRegistry` removed | none of them was used: the mod places blocks and states, it does not register items |
+| Input | GLFW replaced by SDL | the client screen uses `InputConstants` and vanilla widgets, so the SDL backend needs nothing from it |
 
-### Optimisations
+The adapter already read the game through `Registries.CONFIGURED_FEATURE`, `Registries.PLACED_FEATURE`
+and the biome `RegistryAccess`, which is the path 26.3 keeps, so the port is a version bump plus the
+`//regen` message that names the version it cannot take a seed from.
 
-- The states a flush replaced are kept between flushes: a big edit flushed a chunk after the other and
-  allocated two arrays of 98k references every time, one and a half megabytes of garbage per chunk.
-- The array of the light cells is allocated on the first cell, not for every adapter: one is built per
-  click and per selection tick, and each one carried eight kilobytes whether it flushed a chunk or not.
-- The parameter types of a method of the level are read once per class: `getParameterTypes` answers a
-  fresh clone, and a tree or a structure calls it thousands of times per generation.
-- The particles of the selection are drawn when it changed: a player who stood still saw the same three
-  hundred packets go out again and again, and the signature of a player who left is forgotten.
+### Build and CI
 
-### The CI
-
-The workflow of the 26.2 line, adapted to 1.21.10 and much faster: one job, one Gradle invocation, one
-JDK, one checkout, a warm cache, and no artifact between the build and the server that runs the mod.
-
-- **512 commands** driven over rcon against the running game: every command the mod registers, its
-  combinations, its refusals, and the counts that must be exactly right (a 16×16×16 selection holds
-  4096 blocks). The sweep reads the log of the server while it runs and names the command whose worker
-  failed.
-- The log is read by `tools/logcheck.py`, which asks for the line the mod writes when it is ready and
-  fails on the first stack trace it holds. The findings are short and named, because the output of a
-  step that fails is not readable from the run page.
-- The engine's own bench runs in the same Gradle invocation (`build :core:verify`): the **35** test
-  classes of the engine, among them the audit tests that cover the parsers of the patterns and the
-  masks, the cells of the biomes and the history.
-- The static audit (`tools/audit.py`) reads the sources and prints the defect classes that have bitten
-  this project; it runs in about eighteen seconds.
-- **Under three minutes** for the whole run on a warm cache: the build takes seconds, the server is up
-  in sixteen, and the sweep answers every command.
-
-### Install
-
-Drop the jar in `mods/`, with Fabric API `0.136.0+1.21.10` and Fabric Loader `0.17.3` or newer, on
-Java 21.
+- **The workflow costs what a build costs and no more.** It used to run on every branch, keep an
+  artifact of every build against the ninety-day storage quota, and save the whole Gradle home under a
+  key derived from the commit — twenty-five caches, **6.5 GB** against a ten-gigabyte limit, written
+  again on every run.
+- It now runs on a **push to `main`, a pull request into `main` and a tag `v*`**, skips a push that only
+  touches prose, and cancels the previous run of the same ref. A feature branch costs nothing until it
+  is proposed.
+- **One job instead of three**: the release used to be a second job that checked out and built the same
+  jar again, and a third existed only to delete artifacts. On a tag the jar of the first job is
+  published as a **release asset** — no storage quota, no second compile.
+- **One cache entry**, keyed by the build files with a `restore-keys` prefix: a version bump restores
+  the previous entry and downloads only what is new.
+- **One weekly sweep** (a `schedule` run) deletes every artifact and any cache last read more than
+  three weeks ago, instead of a job on every push. The entries the old keys left behind were deleted
+  by hand.
 
 ---
+
+## 1.2.0 — Minecraft 26.2
+
+The mod is now built for **Minecraft 26.2**, on Java 25, against Fabric Loader 0.20.1 and Fabric API
+0.161.0+26.2, with Loom 1.19 and Gradle 9.8.2. It is not a recompile: 26.1 removed the obfuscation
+tables, renamed `ResourceLocation` to `Identifier`, moved NBT onto `ValueInput`/`ValueOutput`, made
+`ChunkAccess#getNoiseBiome` the biome path and changed how a ticket keeps a chunk loaded. Every one of
+those is handled in the source, not papered over by a stub.
+
+### The port
+
+| Area | What 26.2 changed | What the mod does |
+| --- | --- | --- |
+| Identifiers | `ResourceLocation` → `Identifier`, `fromNamespaceAndPath` | every registry key, tag key and pattern name |
+| NBT | reader/writer on `ValueInput` / `ValueOutput` | `.schem`, `.schematic`, `.nbt`, snapshots, clipboard files |
+| Biomes | 4×4×4 palette container per section | `//setbiome`, `//copy -b`, `//regen` write the palette directly |
+| Chunks | `TicketType` with flags, light thread | `LightTickets` holds a chunk with light work queued on it |
+| Blocks | unobfuscated class files, no mappings | plain `implementation` dependency, no remapping step |
+| Worldgen | `ChunkAccess#getNoiseBiome(x>>2, y>>2, z>>2)` | `//regen` reads the generator the way the game does |
+
+Commands: **300** spellings, **253** implemented commands plus **47** aliases, **255/255** upstream
+WorldEdit names answered, **146** console-runnable, **46** brushes, **43** configuration settings, and
+**1** mixin.
+
+### Engine throughput
+
+Measured on the flat test world, 4 096-block edits unless stated otherwise.
+
+| Operation | Rate |
+| --- | --- |
+| `//undo` / `//redo` | 78–92 M blocks/s |
+| `//copy` | 68–72 M blocks/s |
+| writes without history | 63–66 M blocks/s |
+| `//set` | 41–43 M blocks/s |
+| `//sphere r40` | 32–43 M blocks/s |
+| `//paste` | 31–33 M blocks/s |
+| `//replace` | 30–33 M blocks/s |
+| writes with history | 34–38 M blocks/s |
+| mask checks | 262–294 M checks/s |
+
+Hot-path work in this release: palette lookups 487 → 3.7 ns, mask tests 13 → 3.0 ns, buffer fills
+75.6 → 54.3 ms, `//hsphere` 2.0 → 0.9 ms, `//walls` 1.1 → 0.52 ms, expression evaluation 260 → 112 ns.
+
+### 72 defects found and fixed
+
+Eight lots. The ones a builder would have felt:
+
+- **`LongObjectMap` lost keys behind a removal.** A linear-probe table emptied the slot of a removed
+  key, which hid every key inserted after it: an edit session dropping one chunk buffer made the
+  buffers beside it unreachable, and the writes they still held vanished without an error. The hole is
+  closed by shifting the cluster back, and a self test compares 100 000 `put`/`get`/`remove` against a
+  `HashMap` on 400 keys so the clusters pile up.
+- **The configuration did not reload what it had saved.** `MiniYaml` wrote strings raw, and its own
+  reader turns `2024` into an integer, `true` into a flag, `[a, b]` into a list and an empty value into
+  a section — so a schematic folder named `2024` did not survive a save.
+- **A corrupt region header crashed `//anvil`.** A 24-bit sector index times 4096 overflows an `int`;
+  the negative offset threw out of the whole scan instead of skipping one chunk.
+- **A deeply nested formula took the server thread with it.** `StackOverflowError` is an `Error`, not
+  something a command can catch; the expression parser now bounds its nesting at 128 levels.
+- **`//undo` of `//setbiome` counted cells it had not touched**, and a negative biome id was recorded in
+  the history where no undo could put it back.
+- **Text that reached the world as the wrong block**: biome holders are cached per id and per registry
+  generation, so a datapack reload can no longer renumber what `//copy -b` writes.
+- **Arguments that answered with a parse exception** — `#extrema[a]`, `#surface[abc]`,
+  `#buffer[stone][x]`, `~[stone][deux]`, `#xaxis[abc]`, `/anvil deleteallunvisited 99999999999999999999`,
+  `//chunk 12,abc` — now name what to correct, and reversed bounds (`#extrema[10][2]`, `{8}{2}`) are
+  refused instead of matching nothing for ever.
+- **Primitive walks, everywhere they matter**: `splatter`, `shatter`, the layer brush, the flood fills
+  and the height maps no longer box a `Long` or build a string per block.
+
+### Build and CI
+
+- A green run compiles, runs the engine self tests (**2 502** assertions), jars the mod, boots a real
+  dedicated server with it, drives it over RCON and reads the blocks back — in about **67 s**.
+- **Zero CI artifacts**: nothing is uploaded, and a final job deletes anything the repository still
+  holds.
+- The build is cached on the whole Gradle home, because the build scripts are compiled too.
+
+### Documentation
+
+`README.md` is written for developers: the engine, the measured numbers, the verification table, the
+configuration reference, the known platform limits and the migration notes. No artwork, no banner —
+the diagrams it once carried are text now.
+
+---
+
+## 1.0.0 — first public build
+
+Region, generation, brush, tool, clipboard, selection, anvil, navigation, utility, history, snapshot,
+chunk, biome and schematic commands; the palette/index/packed-long section format; the undo history
+with a memory budget; the WorldEdit 7.4 + FastAsyncWorldEdit command surface, with no stubs left in it.
