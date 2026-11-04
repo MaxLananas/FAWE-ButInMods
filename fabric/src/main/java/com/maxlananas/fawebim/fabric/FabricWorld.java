@@ -1076,7 +1076,7 @@ public final class FabricWorld implements World {
                     SamplerContext.builder().build());
             StructureStart start = structure.generate(structures.wrapAsHolder(structure), level.dimension(),
                     level.registryAccess(), generator, generator.getBiomeSource(), climate,
-                    chunks.randomState(), level.structureManager(), level.getSeed(),
+                    chunks.randomState(), level.getStructureTemplateManager(), level.getSeed(),
                     ChunkPos.containing(new BlockPos(pos.x(), pos.y(), pos.z())),
                     0, edit.level(), biome -> true);
             if (!start.isValid()) {
