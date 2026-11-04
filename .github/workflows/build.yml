@@ -84,16 +84,23 @@ jobs:
       # The key moved from v1/v2 to v3 when the workflow was cleaned up: the
       # entries the old keys left behind - six gigabytes of them, most of them
       # never read again - were deleted, and this one starts empty.
-      - name: Cache the Gradle home
-        uses: actions/cache@v6
+      # Restore here, save at the end of the job, and only on `main`: a cache
+      # belongs to the ref that wrote it, so a single save step saved one entry
+      # per ref - main, the tag, every pull request, every branch - at half a
+      # gigabyte each, against a ten-gigabyte limit. A branch reads what `main`
+      # wrote, which is what `restore-keys` is for; only `main` writes.
+      - name: Restore the Gradle home
+        id: gradle-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
             .gradle
             fabric/.gradle
-          key: gradle-home-v3-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
+          key: gradle-home-v4-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
           restore-keys: |
+            gradle-home-v4-
             gradle-home-v3-
 
       # One invocation, not two: `build` and `verify` in the same JVM means one
@@ -294,6 +301,20 @@ jobs:
           fi
           gh release view "$TAG" --json name,assets --jq '"::notice title=release::\(.name) carries \(.assets | length) asset(s)"'
 
+      # The other half of the cache: one entry, on the default branch, keyed by
+      # the files that decide the toolchain. `if` looks at the branch and not at
+      # what was restored - a hit from main still does not save anything here.
+      - name: Save the Gradle home
+        if: github.ref == 'refs/heads/main' && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+            fabric/.gradle
+          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
+
   # Storage is the part of the account's quota a run spends and never gives
   # back: caches are counted against ten gigabytes and artifacts for ninety
   # days. Nothing here needs to survive a run - the jar is built again in four
@@ -325,10 +346,21 @@ jobs:
           done
           echo "::notice title=artifacts::deleted $total artifact(s); the repository keeps none"
 
-          # A cache is only useful while its key still matches a push. The ones
-          # left by a version the build no longer uses are dead weight against
-          # the ten-gigabyte limit, and pushing them out costs a full download
-          # on the next run instead. Anything older than three weeks goes.
+          # A cache is only useful while it is read. A key the workflow no
+          # longer computes is dead weight at any age; anything last read more
+          # than three weeks ago is dead weight too, and leaving it costs the
+          # account its ten-gigabyte budget while evicting a live entry.
+          # `gradle-home-v1-` and `gradle-home-v2-` are what the old save step
+          # wrote, once per commit; nothing reads them again.
+          legacy=$(gh api --paginate "repos/${{ github.repository }}/actions/caches?per_page=100" 2>/dev/null \
+                   | jq -r '.actions_caches[] | select(.key | test("^gradle-home-v[12]-")) | .id' 2>/dev/null || true)
+          legacy_count=0
+          for id in $legacy; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" >/dev/null 2>&1 \
+              && legacy_count=$((legacy_count + 1)) || true
+          done
+          echo "::notice title=caches::deleted $legacy_count cache(s) written under a key the workflow no longer uses"
+
           cut=$(date -u -d '-21 days' +%Y-%m-%dT%H:%M:%SZ)
           stale=$(gh api --paginate "repos/${{ github.repository }}/actions/caches?per_page=100" 2>/dev/null \
                   | jq -r --arg cut "$cut" '.actions_caches[] | select(.last_accessed_at < $cut) | .id' 2>/dev/null || true)
