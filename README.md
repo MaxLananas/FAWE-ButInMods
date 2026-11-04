@@ -2,14 +2,14 @@
 
 # FAWE-BIM
 
-**WorldEdit 7.4 + FastAsyncWorldEdit, as a single Fabric mod for Minecraft 26.2.**
+**WorldEdit 7.4 + FastAsyncWorldEdit, as a single Fabric mod for Minecraft 26.3.**
 No plugin loader. No Paper. No client mod for players. 255 of 255 upstream command names, zero stubs.
 
 [![CI](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml/badge.svg)](https://github.com/MaxLananas/FAWE-ButInMods/actions/workflows/build.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square&logo=gnu&logoColor=white)](LICENSE.txt)
-[![Minecraft](https://img.shields.io/badge/minecraft-26.2-62b47a?style=flat-square)](https://www.minecraft.net/)
+[![Minecraft](https://img.shields.io/badge/minecraft-26.3-62b47a?style=flat-square)](https://www.minecraft.net/)
 [![Fabric Loader](https://img.shields.io/badge/fabric%20loader-0.20.1%2B-dbb69c?style=flat-square)](https://fabricmc.net/)
-[![Fabric API](https://img.shields.io/badge/fabric%20api-0.161.0%2B26.2-dbb69c?style=flat-square)](https://modrinth.com/mod/fabric-api)
+[![Fabric API](https://img.shields.io/badge/fabric%20api-0.165.2%2B26.3-dbb69c?style=flat-square)](https://modrinth.com/mod/fabric-api)
 [![Java](https://img.shields.io/badge/java-25-ed8b00?style=flat-square&logo=openjdk&logoColor=white)](https://adoptium.net/)
 
 [![Engine tests](https://img.shields.io/badge/engine%20tests-2502%20passing-3fb950?style=flat-square)](#verification)
@@ -41,7 +41,7 @@ port stays testable.
 | **For players** | Every `//` and `/` command you already type, the brushes you already bind, the schematics you already saved. Wands, `/cui` outlines and hotbar selection sizes work on an unmodded client. |
 | **For builders** | Multi-million-block `//set`, `//stack`, `//copy`, `//paste` with undo that costs megabytes instead of a heap of boxed objects. |
 | **For server owners** | One jar, server-side editing, no plugin manager, no client install, block-change caps, timeouts, `//confirm` on large edits. |
-| **For developers** | A platform-independent engine with a real benchmark harness, a 16-rule static auditor, a self-test suite, and an audit ledger of every defect found (see [BUGS.md](BUGS.md)). |
+| **For developers** | A platform-independent engine with a real benchmark harness, a 16-rule static auditor and a self-test suite that runs without Minecraft. |
 
 > [!NOTE]
 > **Unofficial.** FAWE-BIM is independent work and is not affiliated with, endorsed by or supported
@@ -67,13 +67,13 @@ port stays testable.
 
 | Component | Version | Side |
 |---|---|---|
-| Minecraft | **26.2** | client or server |
+| Minecraft | **26.3** | client or server |
 | [Fabric Loader](https://fabricmc.net/use/) | 0.20.1 or newer | required |
-| [Fabric API](https://modrinth.com/mod/fabric-api) | 0.161.0+26.2 or newer | required |
+| [Fabric API](https://modrinth.com/mod/fabric-api) | 0.165.2+26.3 or newer | required |
 | Java | 25 (the game's own runtime) | required |
-| [Mod Menu](https://modrinth.com/mod/modmenu) | any 26.2 build | optional, client |
+| [Mod Menu](https://modrinth.com/mod/modmenu) | 21.0.0 or newer, client | optional |
 
-1. Install Fabric Loader for Minecraft 26.2.
+1. Install Fabric Loader for Minecraft 26.3.
 2. Drop **Fabric API** and **FAWE-BIM** into `.minecraft/mods` (or your server's `mods/`).
 3. Launch, then run `//wand` and click two corners.
 
@@ -224,11 +224,11 @@ fails when it stops being true.
 | Static audit | `python3 tools/audit.py` | **16 rules** over every source file: dead private members, empty catches, boxed `==`, int overflow, unguarded parses, shared static maps, resource leaks, `Math.random`, locale-dependent casing, swallowed failures |
 | Live server test | CI only | boots a dedicated server with the mod, drives it over rcon and checks that `//pos1`, `//pos2`, `//set stone` (4096 blocks) and `//count stone` (4096) really changed the world |
 
-**The changelog.** [`CHANGELOG.md`](CHANGELOG.md) carries the release notes: what the 26.2 port changed,
+**The changelog.** [`CHANGELOG.md`](CHANGELOG.md) carries the release notes: what the 26.3 port changed,
 the measured throughput, and the defects each release closed.
 
-**The defect ledger.** The audits are not decorative: every finding is triaged into
-[`BUGS.md`](BUGS.md), a numbered list of real defects with cause, fix and file. It is at **72 of 80**
+**The defect ledger.** The audits are not decorative: every finding is triaged into an internal numbered
+list of real defects with cause, fix and file, of which the releases quote the ones a builder would feel. It is at **72 of 80**
 documented defects today — world-apply bugs, lighting and biome indexing, save/load correctness,
 NBT and varint parsing, history retention, CI cost, and hot-path allocation. The list is public and
 incomplete on purpose: the honest count is more useful than a green checkmark.
@@ -251,31 +251,49 @@ incomplete on purpose: the honest count is more useful than a green checkmark.
 
 ```mermaid
 flowchart LR
-    A[checkout] --> B[setup-java 25]
-    B --> C["actions/cache<br/>whole Gradle home<br/>stable key"]
-    C --> D["one Gradle invocation<br/>build + :core:verify"]
-    D --> E["jar carries the engine?"]
-    E --> F[":fabric:runServer<br/>headless"]
-    F --> G["rcon smoke test<br/>//set 4096 · //count 4096"]
-    G --> H["stop · purge-artifacts<br/>0 artifacts kept"]
+    A["push to main<br/>PR into main<br/>tag v*"] --> B[checkout]
+    B --> C[setup-java 25]
+    C --> D["actions/cache<br/>whole Gradle home<br/>one key, reused"]
+    D --> E["one Gradle invocation<br/>build + :core:verify"]
+    E --> F["jar carries the engine?"]
+    F --> G[":fabric:runServer<br/>headless · main and tags"]
+    G --> H["rcon smoke test<br/>//set 4096 · //count 4096"]
+    H --> I["tag? release + jar asset<br/>0 artifacts kept"]
 ```
 
-There is **one job**, one checkout, one JDK and one Gradle invocation — plus a second tiny job that
-deletes any artifact the repository still holds. Measured on a recent run:
+There is **one job**, one checkout, one JDK and one Gradle invocation. The build, the jar check, the
+smoke test and — on a tag — the release are steps of that job, not jobs of their own. Measured on a
+recent run:
 
 | Step | Time |
 |---|---|
 | Compile + self-tests + jar (`build` **and** `:core:verify`, one JVM) | **71 – 73 s** |
 | Dedicated server up | 17 s |
-| Cache save at end of job | 3 s |
-| **Whole run** | **1 min 44 s** |
+| **Whole run** | **about 2 min** |
 
-### Zero-artifact CI
+### A CI that does not spend what it does not need to
 
-GitHub Actions storage is a resource, and build outputs are not worth it: the `purge-artifacts` job
-keeps the repository at **0 artifacts**, and the workflow uploads none. What a CI run has to prove —
-that the mod compiles, that the engine tests pass, that the mixin applies, that commands register
-and that a `//set` really writes blocks — is proven inside the run, not stored afterwards.
+GitHub Actions bills minutes and storage, and a workflow that runs everywhere spends both. This one
+is written against that:
+
+- **It runs on three occasions.** A push to `main`, a pull request into `main`, and a tag `v*`.
+  A feature branch costs nothing until it is proposed; `workflow_dispatch` stays for a run on demand.
+- **It skips prose.** A push that only touches a `*.md` file, the licence or the notice does not start
+  a run at all.
+- **One run per ref.** A second push cancels the first, so a branch under work never queues a build
+  per commit.
+- **Zero artifacts.** Nothing is uploaded: an artifact is kept for ninety days against the storage
+  quota, and no job ever downloaded this one. On a tag the jar travels as a **release asset**, which
+  costs no storage quota.
+- **One cache, reused.** The Gradle home is cached under a key derived from the build files, with a
+  `restore-keys` prefix so a version bump restores the previous entry and downloads only what is new.
+  A key per commit — what this workflow used to do — writes a 500 MB entry on every run.
+- **One scheduled sweep.** A weekly `schedule` run deletes every artifact and any cache last read more
+  than three weeks ago, instead of a job on every push.
+
+What a run has to prove — that the mod compiles, that the engine tests pass, that the mixin applies,
+that commands register and that a `//set` really writes blocks — is proven inside the run, not stored
+afterwards.
 
 ---
 
@@ -401,7 +419,7 @@ case, the command says so instead of failing silently.
 <details>
 <summary><b>Do players on my server need to install it?</b></summary>
 
-No. FAWE-BIM + Fabric API on the server is enough: vanilla 26.2 clients can join, use wands, see
+No. FAWE-BIM + Fabric API on the server is enough: vanilla 26.3 clients can join, use wands, see
 selection sizes and watch `/cui` outlines. The client install is only needed for singleplayer or for
 the graphical settings screen.
 </details>
@@ -480,7 +498,6 @@ fabric/    the adapter — mod entry point, Brigadier registration, world access
            lighting, entities, block entities), the block-state and biome bridge, click and
            interaction callbacks, one mixin and one access widener.
 tools/     the static auditor and the checks run over the tree.
-BUGS.md    the defect ledger: every real bug found, with cause, fix and file.
 ```
 
 Where to start reading: `core/.../extent/EditSession.java` (the pipeline), `core/.../world/ChunkSet.java`
@@ -507,11 +524,11 @@ Command names, aliases, switches, argument order, parsers and messages follow th
 [`NOTICE`](NOTICE) for the full attribution.
 
 Thanks to the wider ecosystem whose work shaped this one: **Sodium**, **Iris**, **Lithium**,
-**FerriteCore**, **Mod Menu** and the shader packs listed above, for making a modded 26.2 client
+**FerriteCore**, **Mod Menu** and the shader packs listed above, for making a modded 26.3 client
 worth building for; and to the server-side classics — **EssentialsX**, **LuckPerms**, **CoreProtect**,
 **Vault** — for showing what a server actually needs from an editing tool.
 
 <sub>Project icon artwork by <a href="https://www.instagram.com/elfi_draw">Elfi (@elfi_draw)</a>.
 assets ship with the repository.</sub>
 
-<div align="center"><sub><b>FAWE-BIM</b> · unofficial · <a href="https://github.com/MaxLananas/FAWE-ButInMods/issues">issues</a> · <a href="https://discord.gg/pnJhKuU2QK">discord</a> · <a href="BUGS.md">defect ledger</a></sub></div>
+<div align="center"><sub><b>FAWE-BIM</b> · unofficial · <a href="https://github.com/MaxLananas/FAWE-ButInMods/issues">issues</a> · <a href="https://discord.gg/pnJhKuU2QK">discord</a></sub></div>

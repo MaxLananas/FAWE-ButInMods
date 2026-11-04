@@ -1,7 +1,51 @@
 # Changelog
 
 Every release of FAWE-BIM, newest first. The defect ledger behind these entries — cause, fix and file for
-each of the **72** defects found so far — is [`BUGS.md`](BUGS.md).
+each of the **72** defects found so far — is internal; the entries below quote the ones a builder feels.
+
+---
+
+## 1.3.0 — Minecraft 26.3
+
+The mod is now built for **Minecraft 26.3** (Wilderness Bound, 15 September 2026), on Java 25, against
+Fabric Loader 0.20.1 and Fabric API 0.165.2+26.3, with Loom 1.19 and Gradle 9.8.2 — the toolchain the
+Fabric example mod for 26.3 ships with. Mod Menu 21.0.0 is the client's optional menu build, and the
+files the mod writes now declare data version **5023**.
+
+### The port
+
+26.3 is a data-driven release more than an API one, and the mod reads the game through the registries
+26.3 keeps rather than through the tables it removed.
+
+| Area | What 26.3 changed | What the mod does |
+| --- | --- | --- |
+| Features | `ConfiguredFeature` folded into `Feature`, configurations split into `FeatureConfiguration` | `//feature`, `//tree`, `//ores` place a feature through the registry, which is where 26.3 looks one up |
+| Worldgen data | features, material rules, material conditions, number providers and block state providers are registered in data packs | `//regen` copies the terrain the server generated; the mod registers nothing of its own there |
+| Registries | recipes and advancements joined the reloadable registries | the biome and feature tables are rebuilt on every `RegistryAccess` swap, as before |
+| Fluids and components | composting, fuel and block transformers became item components; `CompostingChanceRegistry`, `FuelRegistry`, `StrippableBlockRegistry`, `TillableBlockRegistry` and `FlattenableBlockRegistry` removed | none of them was used: the mod places blocks and states, it does not register items |
+| Input | GLFW replaced by SDL | the client screen uses `InputConstants` and vanilla widgets, so the SDL backend needs nothing from it |
+
+The adapter already read the game through `Registries.CONFIGURED_FEATURE`, `Registries.PLACED_FEATURE`
+and the biome `RegistryAccess`, which is the path 26.3 keeps, so the port is a version bump plus the
+`//regen` message that names the version it cannot take a seed from.
+
+### Build and CI
+
+- **The workflow costs what a build costs and no more.** It used to run on every branch, keep an
+  artifact of every build against the ninety-day storage quota, and save the whole Gradle home under a
+  key derived from the commit — twenty-five caches, **6.5 GB** against a ten-gigabyte limit, written
+  again on every run.
+- It now runs on a **push to `main`, a pull request into `main` and a tag `v*`**, skips a push that only
+  touches prose, and cancels the previous run of the same ref. A feature branch costs nothing until it
+  is proposed.
+- **One job instead of three**: the release used to be a second job that checked out and built the same
+  jar again, and a third existed only to delete artifacts. On a tag the jar of the first job is
+  published as a **release asset** — no storage quota, no second compile.
+- **One cache entry**, keyed by the build files with a `restore-keys` prefix: a version bump restores
+  the previous entry and downloads only what is new.
+- **One weekly sweep** (a `schedule` run) deletes every artifact and any cache last read more than
+  three weeks ago, instead of a job on every push. The entries the old keys left behind were deleted
+  by hand.
 
 ---
 
@@ -49,7 +93,7 @@ Hot-path work in this release: palette lookups 487 → 3.7 ns, mask tests 13 →
 
 ### 72 defects found and fixed
 
-Eight lots, in [`BUGS.md`](BUGS.md). The ones a builder would have felt:
+Eight lots. The ones a builder would have felt:
 
 - **`LongObjectMap` lost keys behind a removal.** A linear-probe table emptied the slot of a removed
   key, which hid every key inserted after it: an edit session dropping one chunk buffer made the
