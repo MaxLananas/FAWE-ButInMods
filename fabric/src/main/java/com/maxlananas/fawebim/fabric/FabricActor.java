@@ -264,7 +264,9 @@ public final class FabricActor implements Actor {
         }
         ItemStack stack = new ItemStack(mcItem);
         if (!player.getInventory().add(stack)) {
-            player.drop(stack, false);
+            // 26.3 asks where the drop happened: `PREDICTED` is the value the
+            // server uses for its own drops, and the client drops nothing here.
+            player.drop(stack, false, net.minecraft.util.Prediction.PREDICTED);
         }
         return true;
     }

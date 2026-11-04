@@ -36,11 +36,12 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
-import net.minecraft.world.level.levelgen.placement.BiomeFilter;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
+import net.minecraft.world.level.levelgen.feature.Feature;
+import net.minecraft.world.level.levelgen.placement.FeaturePlacer;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
-import net.minecraft.world.level.levelgen.placement.PlacementContext;
 import net.minecraft.world.level.levelgen.placement.PlacementModifier;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
@@ -1000,13 +1001,15 @@ public final class FabricWorld implements World {
         if (id == null) {
             return false;
         }
-        ConfiguredFeature<?, ?> configured = level.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE)
-                .getValue(id);
-        if (configured == null) {
+        // 26.3 became the registry of the feature itself: there is no
+        // configured feature to unwrap any more, and `place` is the method the
+        // interface keeps.
+        Feature feature = level.registryAccess().lookupOrThrow(Registries.FEATURE).getValue(id);
+        if (feature == null) {
             return placeFeature(session, pos, placedFeature(id.toString()), random);
         }
         try (EditLevel edit = EditLevel.open(level, session)) {
-            return configured.place(edit.level(), level.getChunkSource().getGenerator(),
+            return feature.place(edit.level(), level.getChunkSource().getGenerator(),
                     RandomSource.create(random.nextLong()), new BlockPos(pos.x(), pos.y(), pos.z()));
         }
     }
@@ -1023,11 +1026,13 @@ public final class FabricWorld implements World {
      * the edit sees it and its blocks become the edit's, so they are masked,
      * counted against the limit and undone with it. Server thread only.
      *
-     * <p>It is placed as the game's {@code PlacedFeature#place} places it - its
-     * placement modifiers in turn, then the configured feature at every
-     * position they leave - but for the biome filter, which asks the biome
-     * whether it generates the feature and throws when no biome's generation
-     * is placing it, as no command's is.</p>
+     * <p>26.3 moved the walk over the placement modifiers out of
+     * {@code PlacedFeature} and into {@link FeaturePlacer}, which is also what
+     * the biome filter reads: a modifier list is processed position by
+     * position, and the filter asks the context for the feature being placed,
+     * throwing when nothing is - as no command's is. {@code #place}, and not
+     * {@code #placeWithBiomeCheck}, is therefore the call that places a
+     * feature for a command: the same choice the mod has always made.</p>
      *
      * @return false when there is no such feature or it did not fit
      */
@@ -1038,20 +1043,8 @@ public final class FabricWorld implements World {
         RandomSource source = RandomSource.create(random.nextLong());
         ChunkGenerator generator = level.getChunkSource().getGenerator();
         try (EditLevel edit = EditLevel.open(level, session)) {
-            WorldGenLevel target = edit.level();
-            PlacementContext context = new PlacementContext(target, generator, java.util.Optional.empty());
-            java.util.stream.Stream<BlockPos> positions = java.util.stream.Stream.of(
-                    new BlockPos(pos.x(), pos.y(), pos.z()));
-            for (PlacementModifier modifier : feature.placement()) {
-                if (!(modifier instanceof BiomeFilter)) {
-                    positions = positions.flatMap(at -> modifier.getPositions(context, source, at));
-                }
-            }
-            ConfiguredFeature<?, ?> configured = feature.feature().value();
-            // Every position is placed, in the order the game places them: a
-            // reduction does not stop at the first success as a match would.
-            return positions.map(at -> configured.place(target, generator, source, at))
-                    .reduce(false, Boolean::logicalOr);
+            return new FeaturePlacer(edit.level(), generator)
+                    .place(feature, source, new BlockPos(pos.x(), pos.y(), pos.z()));
         }
     }
 
@@ -1076,9 +1069,15 @@ public final class FabricWorld implements World {
         ServerChunkCache chunks = level.getChunkSource();
         ChunkGenerator generator = chunks.getGenerator();
         try (EditLevel edit = EditLevel.open(level, session)) {
+            // 26.3 asks for the chunk's climate sampler beside its random state:
+            // the game builds it from the level's density samplers, and so does
+            // this, with no cache - the structure is generated once, here.
+            Climate.Sampler climate = chunks.randomState().createClimateSampler(
+                    SamplerContext.builder().build());
             StructureStart start = structure.generate(structures.wrapAsHolder(structure), level.dimension(),
-                    level.registryAccess(), generator, generator.getBiomeSource(), chunks.randomState(),
-                    level.getStructureManager(), level.getSeed(), ChunkPos.containing(new BlockPos(pos.x(), pos.y(), pos.z())),
+                    level.registryAccess(), generator, generator.getBiomeSource(), climate,
+                    chunks.randomState(), level.structureManager(), level.getSeed(),
+                    ChunkPos.containing(new BlockPos(pos.x(), pos.y(), pos.z())),
                     0, edit.level(), biome -> true);
             if (!start.isValid()) {
                 return false;

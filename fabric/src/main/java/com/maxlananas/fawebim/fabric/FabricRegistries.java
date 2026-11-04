@@ -65,7 +65,10 @@ final class FabricRegistries {
         biomeNames = names;
         biomeIds = ids;
         java.util.TreeSet<String> features = new java.util.TreeSet<>();
-        registryAccess.lookupOrThrow(Registries.CONFIGURED_FEATURE).keySet()
+        // 26.3 folded ConfiguredFeature into Feature: what was the configured
+        // feature registry is `worldgen/feature` now, and it is the registry a
+        // feature is looked up in as well as listed from.
+        registryAccess.lookupOrThrow(Registries.FEATURE).keySet()
                 .forEach(key -> features.add(key.toString()));
         registryAccess.lookupOrThrow(Registries.PLACED_FEATURE).keySet()
                 .forEach(key -> features.add(key.toString()));

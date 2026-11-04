@@ -4,7 +4,7 @@ import com.maxlananas.fawebim.fabric.FabricInteractions;
 import net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
-import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.network.protocol.game.ServerboundPunchPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,6 +16,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Turns an arm swing into a WorldEdit "left click air" event.
+ *
+ * <p>26.3 renamed the swing: {@code ServerboundSwingPacket} and its handler
+ * {@code handleAnimate} are {@code ServerboundPunchPacket} and
+ * {@code handlePunch} now, and the packet carries nothing - the server reads
+ * the hand, the animation and the slot from the player. The injection follows
+ * the handler, which is all this class names.</p>
  *
  * <p>Fabric API has no callback for swinging at nothing, and FAWE needs it: the
  * shatter, erode and blob brushes act on the left click, and {@code /tool}
@@ -45,8 +51,8 @@ public abstract class MixinServerGamePacketListenerImpl {
         return this.player.level().getServer().isSameThread();
     }
 
-    @Inject(method = "handleAnimate", at = @At("HEAD"))
-    private void bim$onAnimate(ServerboundSwingPacket packet, CallbackInfo callback) {
+    @Inject(method = "handlePunch", at = @At("HEAD"))
+    private void bim$onPunch(ServerboundPunchPacket packet, CallbackInfo callback) {
         if (!bim$onServerThread()) {
             return;
         }
