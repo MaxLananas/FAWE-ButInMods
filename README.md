@@ -498,6 +498,9 @@ fabric/    the adapter — mod entry point, Brigadier registration, world access
            lighting, entities, block entities), the block-state and biome bridge, click and
            interaction callbacks, one mixin and one access widener.
 tools/     the static auditor and the checks run over the tree.
+horizon/   experimental: the engine as a Horizon code mod (server-side wasm). The
+           build works (static-std member module, ABI-checked with wasmtime); the
+           port itself has not started. See docs/wasm-build.md.
 ```
 
 Where to start reading: `core/.../extent/EditSession.java` (the pipeline), `core/.../world/ChunkSet.java`

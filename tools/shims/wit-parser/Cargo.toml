@@ -1,0 +1,9 @@
+[package]
+name = "wit-parser"
+version = "0.261.0"
+edition = "2021"
+license = "Apache-2.0 WITH LLVM-exception"
+description = "Vendored placeholder for `wit-parser`; the Horizon API generator in this build never calls it"
+
+[lib]
+path = "src/lib.rs"
