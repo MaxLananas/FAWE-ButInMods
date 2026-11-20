@@ -1,0 +1,17 @@
+[package]
+name = "fawebim"
+version = "1.3.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "FAWE-ButInMods for Horizon: the FAWE engine, ported to a Horizon mod"
+
+[lib]
+name = "fawebim"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+horizon-mod-api = { path = "../.horizon/sdk/api/crates/horizon-mod-api" }
+
+# A mod is its own project, not a member of the game's workspace.
+[workspace]
