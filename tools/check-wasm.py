@@ -217,6 +217,6 @@ assert off + 1 == len(reply), f'trailing bytes in the command reply ({len(reply)
 assert len(feedback_calls) == 1, f'expected exactly one feedback call, got {len(feedback_calls)}'
 assert b'fawebim calc: 1+2*3 = 7' in feedback_calls[0], \
     f'the feedback line did not carry the computed value: {feedback_calls[0]!r}'
-print('run_mod_command: /fawebim calc 1+2*3 -> Flow::Cancel, feedback carries "fawebim calc: 7"')
+print('run_mod_command: /fawebim calc 1+2*3 -> Flow::Cancel, feedback carries "fawebim calc: 1+2*3 = 7"')
 
 print('hook smoke check OK')
