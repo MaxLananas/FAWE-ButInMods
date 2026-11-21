@@ -1,6 +1,7 @@
 //! Selection, bulk `//set`, and `//undo` / `//redo` commands backed by
 //! `SessionManager`, `HorizonBlockRegistry`, `HorizonWorld`, and `EditSession`.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use mod_api::{
@@ -10,6 +11,7 @@ use mod_api::{
 use crate::brush::{self, BrushManager};
 use crate::clipboard::{Clipboard, ClipboardManager};
 use crate::mask::Mask;
+use crate::morphology;
 use crate::operations;
 use crate::pattern::Pattern;
 use crate::region::{BlockVector3, CuboidRegion, RegionShape};
@@ -50,6 +52,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim hollow [thickness:integer] <pattern:text>", 2),
         Command::op("fawebim move <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim stack <count:integer> <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim smooth [iterations:integer]", 2),
+        Command::op("fawebim erode [faces:integer] [iterations:integer]", 2),
+        Command::op("fawebim dilate [faces:integer] [iterations:integer]", 2),
         Command::op("fawebim brush <kind:text>", 2),
         Command::op("fawebim brushset <radius:number> <pattern:text>", 2),
         Command::op("fawebim brushuse <x:integer> <y:integer> <z:integer>", 2),
@@ -100,6 +105,7 @@ pub(crate) fn run(
         Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line") => generate(host, event, sessions, registry_cache),
         Some("walls" | "faces" | "overlay" | "hollow") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack") => translate_operation(host, event, sessions, registry_cache),
+        Some("smooth" | "erode" | "dilate") => morphology_operation(host, event, sessions, registry_cache),
         Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
         Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
         Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog") => session_config(host, event, sessions),
@@ -366,6 +372,12 @@ fn region_operation(
     let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());
     let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{name} {pattern_text}"),true);for(x,y,z)in points{edit.set_block(x,y,z,pattern.apply(x,y,z));}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};
     match result{Ok(n)=>feedback(host,&format!("fawebim {name}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {name}: {e}"))};Flow::Cancel
+}
+
+fn morphology_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let name=event.command.literals.get(1).map(String::as_str).unwrap_or("smooth");let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {name}: no selection"));return Flow::Cancel;};
+    let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut before=HashMap::new();region.for_each_position(|x,y,z|{before.insert((x,y,z),world.get_block(x,y,z));});let iterations=integer(event,"iterations").unwrap_or(1).clamp(1,64)as usize;let faces=integer(event,"faces").unwrap_or(3).clamp(1,6)as usize;let mut registry=CachedBlockRegistry::new(registry_cache.clone());let after=match name{"erode"=>morphology::erode(&before,|s|registry.is_air_like(s),faces,iterations),"dilate"=>morphology::dilate(&before,|s|registry.is_air_like(s),faces,iterations),_=>morphology::smooth(&before,|s|registry.is_air_like(s),iterations)};let changes=morphology::changed(&before,&after);
+    let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{name}"),true);for((x,y,z),state)in changes{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {name}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {name}: {e}"))};Flow::Cancel
 }
 
 fn translate_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{

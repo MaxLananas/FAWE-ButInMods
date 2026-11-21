@@ -9,6 +9,7 @@ pub mod expression;
 pub mod history;
 pub mod math;
 pub mod mask;
+pub mod morphology;
 pub mod noise;
 pub mod operations;
 pub mod pattern;

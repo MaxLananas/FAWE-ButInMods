@@ -268,6 +268,9 @@ assert ('fawebim overlay <pattern:text>', 2) in usages
 assert ('fawebim hollow [thickness:integer] <pattern:text>', 2) in usages
 assert ('fawebim move <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim stack <count:integer> <dx:integer> <dy:integer> <dz:integer>', 2) in usages
+assert ('fawebim smooth [iterations:integer]', 2) in usages
+assert ('fawebim erode [faces:integer] [iterations:integer]', 2) in usages
+assert ('fawebim dilate [faces:integer] [iterations:integer]', 2) in usages
 assert ('fawebim brush <kind:text>', 2) in usages
 assert ('fawebim brushset <radius:number> <pattern:text>', 2) in usages
 assert ('fawebim brushuse <x:integer> <y:integer> <z:integer>', 2) in usages

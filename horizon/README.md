@@ -46,7 +46,10 @@ Horizon instead of Fabric.
 >    execution through the same buffered history pipeline;
 > 9. **persistent schematics** (`src/schematic.rs`): portable palette-based
 >    binary encoding, strict size/corruption validation, restart-safe block
->    names and atomic Horizon data-file save/load/list commands.
+>    names and atomic Horizon data-file save/load/list commands;
+> 10. **terrain morphology** (`src/morphology.rs`): bounded iterative erosion,
+>     dilation and majority smoothing with configurable face thresholds,
+>     selection commands and undoable bulk output.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
@@ -69,6 +72,7 @@ Layout:
 | `src/brush.rs` | all 46 FAWE brush names/aliases and per-player brush settings |
 | `src/clipboard.rs` | dense selection clipboards with rotate/flip transforms and per-player storage |
 | `src/operations.rs` | lines, spheres, cylinders and pyramids with solid/hollow generation |
+| `src/morphology.rs` | iterative terrain erosion, dilation and smoothing |
 | `src/registry.rs` | lazy Horizon block/biome/item registry bridge and in-memory test registry |
 | `src/world.rs` | packed block arrays, chunk buffers, extents, and Horizon bulk world writes |
 | `src/history.rs` | compact block/biome/entity change sets and undo/redo history |
