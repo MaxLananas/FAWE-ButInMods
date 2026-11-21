@@ -28,6 +28,7 @@ pub enum Mask {
     Adjacent { inner: Box<Mask>, min: usize, max: usize },
     Nearby { inner: Box<Mask>, radius: i32, min: usize, max: usize },
     Exposed { min: usize, max: usize },
+    DirectionalExposure { x: i32, y: i32, z: i32 },
     Not(Box<Mask>),
     All(Vec<Mask>),
     AnyOf(Vec<Mask>),
@@ -69,6 +70,7 @@ impl Mask {
             }
             Self::Nearby { inner, radius, min, max } => {let mut count=0usize;'scan:for dz in -*radius..=*radius{for dy in -*radius..=*radius{for dx in -*radius..=*radius{if dx==0&&dy==0&&dz==0{continue;}if inner.test(extent,registry,x+dx,y+dy,z+dz){count+=1;if count>*max{break 'scan;}}}}}count>=*min&&count<=*max}
             Self::Exposed { min, max } => {let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz))).count();count>=*min&&count<=*max}
+            Self::DirectionalExposure { x: dx, y: dy, z: dz } => !registry.is_air_like(extent.get_block(x,y,z))&&registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz)),
             Self::Not(inner) => !inner.test(extent, registry, x, y, z),
             Self::All(parts) => parts.iter().all(|m| m.test(extent, registry, x, y, z)),
             Self::AnyOf(parts) => parts.iter().any(|m| m.test(extent, registry, x, y, z)),
@@ -93,6 +95,12 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
         "#solid" => return Ok(Mask::Solid),
         "#liquid" => return Ok(Mask::Liquid),
         "#surface" | "#wall" => return Ok(Mask::Surface),
+        "#top" => return Ok(Mask::DirectionalExposure{x:0,y:1,z:0}),
+        "#bottom" => return Ok(Mask::DirectionalExposure{x:0,y:-1,z:0}),
+        "#north" => return Ok(Mask::DirectionalExposure{x:0,y:0,z:-1}),
+        "#south" => return Ok(Mask::DirectionalExposure{x:0,y:0,z:1}),
+        "#east" => return Ok(Mask::DirectionalExposure{x:1,y:0,z:0}),
+        "#west" => return Ok(Mask::DirectionalExposure{x:-1,y:0,z:0}),
         _ => {}
     }
     if let Some(body) = text.strip_prefix("#y[").and_then(|s| s.strip_suffix(']')) {
@@ -183,6 +191,7 @@ mod tests {
         assert!(Mask::parse(&reg,"#nearby[stone][1][1][26]").unwrap().test(&world,&reg,1,64,0));
         assert!(Mask::parse(&reg,"#exposed[1][6]").unwrap().test(&world,&reg,0,64,0));
         let noise=Mask::parse(&reg,"#noise[perlin][0.1][0.5]").unwrap();assert_eq!(noise.test(&world,&reg,4,5,6),noise.test(&world,&reg,4,5,6));
+        assert!(Mask::parse(&reg,"#top").unwrap().test(&world,&reg,0,64,0));assert!(Mask::parse(&reg,"#west").unwrap().test(&world,&reg,0,64,0));
     }
     #[test] fn malformed_masks_are_rejected() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();

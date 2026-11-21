@@ -121,7 +121,10 @@ Horizon instead of Fabric.
 >     exposed-surface counts without requiring users to write masks manually;
 > 37. **geometry and terrain batch**: solid/hollow domes, cuboids and regular
 >     polygonal prisms, plus column-aware terrain levelling, raising and lowering
->     constrained to arbitrary selections and integrated with edit history.
+>     constrained to arbitrary selections and integrated with edit history;
+> 38. **material remapping batch**: atomic block swaps, multi-state cycles,
+>     mask deletion/retention and exposed-face coating, directional exposure
+>     masks, plus direct selection corner and chunk-range inspection.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

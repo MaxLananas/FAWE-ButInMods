@@ -334,6 +334,13 @@ assert ('fawebim hprism <x:integer> <y:integer> <z:integer> <sides:integer> <rad
 assert ('fawebim levelterrain <y:integer> <pattern:text>', 2) in usages
 assert ('fawebim raiseterrain <amount:integer> <pattern:text>', 2) in usages
 assert ('fawebim lowerterrain <amount:integer>', 2) in usages
+assert ('fawebim swapblocks <first:text> <second:text>', 2) in usages
+assert ('fawebim cycleblocks <blocks:text>', 2) in usages
+assert ('fawebim delete <mask:text>', 2) in usages
+assert ('fawebim keep <mask:text>', 2) in usages
+assert ('fawebim coat <mask:text> <pattern:text>', 2) in usages
+assert ('fawebim selectioncorners', 0) in usages
+assert ('fawebim selectionchunks', 0) in usages
 assert ('fawebim ellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
 assert ('fawebim hellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
 assert ('fawebim disk <x:integer> <y:integer> <z:integer> <rx:number> <rz:number> <pattern:text>', 2) in usages
