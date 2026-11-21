@@ -7,8 +7,7 @@ name: Build
 #     1) `v*` tags (builds, smoke-tests, and publishes the GitHub Release jar),
 #     2) pushes / PRs to `26.3` that actually touch Java/Fabric/Gradle sources,
 #     3) manual `workflow_dispatch`.
-# - Uploads zero workflow artifacts and keeps at most one small dependency-only
-#   Gradle cache (evicting any older cache keys inline, without a second job).
+# - Uploads zero workflow artifacts and creates zero Actions caches.
 on:
   push:
     branches: ['26.3']
@@ -35,7 +34,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 concurrency:
   group: build-${{ github.ref }}
@@ -54,17 +52,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-
-      - name: Restore Gradle dependencies
-        id: gradle-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/.gradle/caches/modules-2
-            ~/.gradle/wrapper
-          key: gradle-deps-v5-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
-          restore-keys: |
-            gradle-deps-v5-
 
       - name: Compile, run engine self-tests and build jar
         run: |-
@@ -191,25 +178,3 @@ jobs:
           else
             gh release create "$TAG" "$jar" --title "$title" --notes-file CHANGELOG.md --verify-tag
           fi
-
-      - name: Save Gradle dependencies and prune any older caches/artifacts
-        if: github.ref == 'refs/heads/26.3' && steps.gradle-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            ~/.gradle/caches/modules-2
-            ~/.gradle/wrapper
-          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
-
-      - name: Prune stale caches and any stray artifacts
-        if: github.ref == 'refs/heads/26.3' && steps.gradle-cache.outputs.cache-hit != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          KEEP_KEY: ${{ steps.gradle-cache.outputs.cache-primary-key }}
-        run: |-
-          for id in $(gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" -q '.artifacts[].id' 2>/dev/null || true); do
-            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" >/dev/null 2>&1 || true
-          done
-          for id in $(gh api --paginate "repos/${{ github.repository }}/actions/caches?per_page=100" | jq -r --arg keep "$KEEP_KEY" '.actions_caches[] | select(.key != $keep) | .id' 2>/dev/null || true); do
-            gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" >/dev/null 2>&1 || true
-          done

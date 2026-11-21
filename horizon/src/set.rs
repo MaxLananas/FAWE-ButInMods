@@ -1,58 +1,54 @@
-//! The selection commands — a port of FAWE's `//pos1`, `//pos2`, `//sel` and
-//! `//set` slice — for the Horizon mod.
-//!
-//! Supports all 9 FAWE selector modes (`cuboid`, `extend`, `poly`,
-//! `ellipsoid`, `sphere`, `cyl`, `convex`, `polyhedral`, `fuzzy`) and fills
-//! any `RegionShape` through bulk vertical `BlockRun` column runs.
+//! Selection, bulk `//set`, and `//undo` / `//redo` commands backed by
+//! `SessionManager`, `HorizonBlockRegistry`, `HorizonWorld`, and `EditSession`.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use mod_api::prelude::BlockStatesHost;
 use mod_api::{
-    BlockEdit, BlockRun, Command, CommandArgumentValue, Flow, RunModCommandEvent, ServerHost, Text,
+    BlockRun, Command, CommandArgumentValue, Flow, RunModCommandEvent, ServerHost, Text,
 };
 
 use crate::region::{BlockVector3, CuboidRegion, RegionShape};
-use crate::selection::{SelectionKey, SelectionStore, SelectorKind};
+use crate::registry::{
+    BlockStateRegistry, CachedBlockRegistry, HorizonBlockRegistry, HorizonRegistryCache,
+};
+use crate::selection::{SelectionKey, SelectorKind};
+use crate::session::{replay_history_record, EditSession, SessionManager};
+use crate::world::{Extent, HorizonWorld};
 
-/// How often `edit_blocks` is called; one call per this many column runs.
-const EDIT_BATCH: usize = 16_384;
-
-/// The commands this module owns: words, so they merge with every other
-/// `fawebim` usage the server already has.
 pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
     event.commands.extend([
         Command::op("fawebim pos1 <x:integer> <y:integer> <z:integer>", 2),
         Command::op("fawebim pos2 <x:integer> <y:integer> <z:integer>", 2),
         Command::op("fawebim sel [mode:text]", 2),
         Command::op("fawebim set <block:text>", 2),
+        Command::op("fawebim undo [steps:integer]", 2),
+        Command::op("fawebim redo [steps:integer]", 2),
     ]);
 }
 
-/// One dispatch of anything this module owns. `Flow::Continue` when the words
-/// are not ours; the caller then falls through to the next module.
 pub(crate) fn run(
     host: &mut dyn ServerHost,
     event: &RunModCommandEvent<'_>,
-    store: &Mutex<SelectionStore>,
+    sessions: &Mutex<SessionManager>,
+    registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
 ) -> Flow {
     let words = &event.command.literals;
     if words.first().map(String::as_str) != Some("fawebim") {
         return Flow::Continue;
     }
     match words.get(1).map(String::as_str) {
-        Some("pos1") => pos(host, event, store, Corner::One),
-        Some("pos2") => pos(host, event, store, Corner::Two),
-        Some("sel") => sel(host, store, event),
-        Some("set") => set(host, event, store),
+        Some("pos1") => pos(host, event, sessions, Corner::One),
+        Some("pos2") => pos(host, event, sessions, Corner::Two),
+        Some("sel") => sel(host, sessions, event),
+        Some("set") => set(host, event, sessions, registry_cache),
+        Some("undo") => history_step(host, event, sessions, registry_cache, true),
+        Some("redo") => history_step(host, event, sessions, registry_cache, false),
         _ => Flow::Continue,
     }
 }
 
-/// Poison-resilient access to the selections; a panicking hook must not take
-/// every later command down with it.
-fn lock_store(store: &Mutex<SelectionStore>) -> std::sync::MutexGuard<'_, SelectionStore> {
-    store.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+fn lock_sessions(sessions: &Mutex<SessionManager>) -> std::sync::MutexGuard<'_, SessionManager> {
+    sessions.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -75,10 +71,18 @@ fn integer(event: &RunModCommandEvent<'_>, name: &str) -> Option<i32> {
     }
 }
 
+fn resolve_dimension(host: &dyn ServerHost, event: &RunModCommandEvent<'_>) -> String {
+    event
+        .command
+        .dimension
+        .id(host)
+        .unwrap_or_else(|| host.dimension().to_string())
+}
+
 fn pos(
     host: &mut dyn ServerHost,
     event: &RunModCommandEvent<'_>,
-    store: &Mutex<SelectionStore>,
+    sessions: &Mutex<SessionManager>,
     corner: Corner,
 ) -> Flow {
     let usage = if corner == Corner::One { "pos1" } else { "pos2" };
@@ -91,8 +95,8 @@ fn pos(
     };
     let key = source_key(event.source);
     let position = BlockVector3::at(x, y, z);
-    let mut store = lock_store(store);
-    let selection = store.get(key);
+    let mut mgr = lock_sessions(sessions);
+    let selection = &mut mgr.get(key).selection;
     match corner {
         Corner::One => selection.set_pos1(position),
         Corner::Two => selection.set_pos2(position),
@@ -103,7 +107,7 @@ fn pos(
 
 fn sel(
     host: &mut dyn ServerHost,
-    store: &Mutex<SelectionStore>,
+    sessions: &Mutex<SessionManager>,
     event: &RunModCommandEvent<'_>,
 ) -> Flow {
     let key = source_key(event.source);
@@ -114,15 +118,17 @@ fn sel(
     if let Some(raw) = mode_arg {
         let lower = raw.to_ascii_lowercase();
         if matches!(lower.as_str(), "clear" | "desel" | "deselect" | "-d") {
-            lock_store(store).get(key).clear();
+            lock_sessions(sessions).get(key).selection.clear();
             feedback(host, "fawebim sel: selection cleared");
             return Flow::Cancel;
         }
         if let Some(kind) = SelectorKind::parse(&lower) {
-            let mut guard = lock_store(store);
-            let selection = guard.get(key);
-            selection.switch_kind(kind, -64, 319);
-            feedback(host, &format!("fawebim sel: {} — {}", kind.as_str(), kind.usage()));
+            let mut mgr = lock_sessions(sessions);
+            mgr.get(key).selection.switch_kind(kind, -64, 319);
+            feedback(
+                host,
+                &format!("fawebim sel: {} — {}", kind.as_str(), kind.usage()),
+            );
             return Flow::Cancel;
         }
         feedback(
@@ -133,9 +139,9 @@ fn sel(
         );
         return Flow::Cancel;
     }
-    let text = lock_store(store)
+    let text = lock_sessions(sessions)
         .peek(key)
-        .map(|selection| selection.describe())
+        .map(|s| s.selection.describe())
         .unwrap_or_else(|| "no selection (pos1 and pos2 unset)".to_string());
     feedback(host, &format!("fawebim sel: {text}"));
     Flow::Cancel
@@ -144,7 +150,8 @@ fn sel(
 fn set(
     host: &mut dyn ServerHost,
     event: &RunModCommandEvent<'_>,
-    store: &Mutex<SelectionStore>,
+    sessions: &Mutex<SessionManager>,
+    registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
 ) -> Flow {
     let block_name = match event.command.argument("block") {
         Some(CommandArgumentValue::String(text)) => text.trim().to_string(),
@@ -158,10 +165,11 @@ fn set(
         return Flow::Cancel;
     }
     let key = source_key(event.source);
-    let region = lock_store(store)
-        .peek(key)
-        .and_then(|selection| selection.region());
-    let Some(region) = region else {
+    let mut region = {
+        let mgr = lock_sessions(sessions);
+        mgr.peek(key).and_then(|s| s.selection.region())
+    };
+    let Some(ref mut region) = region else {
         feedback(host, "fawebim set: no selection — mark pos1 and pos2 first");
         return Flow::Cancel;
     };
@@ -176,53 +184,124 @@ fn set(
         );
         return Flow::Cancel;
     }
-    let Some(state) = BlockStatesHost::block_state_id(host, &block_name) else {
-        feedback(host, &format!("fawebim set: '{block_name}' is not a block"));
-        return Flow::Cancel;
+
+    let state_id = {
+        let reg = HorizonBlockRegistry::new(host, registry_cache.clone());
+        // Pre-warm air so undo can resolve slot 0 without extra lookups.
+        let _ = reg.air();
+        let parsed = reg.parse(&block_name);
+        if parsed < 0 {
+            feedback(host, &format!("fawebim set: '{block_name}' is not a block"));
+            return Flow::Cancel;
+        }
+        parsed
     };
-    let dimension = event
-        .command
-        .dimension
-        .id(host)
-        .unwrap_or_else(|| host.dimension().to_string());
-    let changed = edit_region(host, &dimension, &region, state);
-    match changed {
-        Ok(count) => feedback(host, &format!("fawebim set: {count} block(s) set to {block_name}")),
+
+    let dimension = resolve_dimension(host, event);
+    let mut world = HorizonWorld::new(host, dimension, registry_cache.clone());
+    let cached_reg = CachedBlockRegistry::new(registry_cache.clone());
+
+    let res = {
+        let mut mgr = lock_sessions(sessions);
+        let mut session = mgr.get(key).clone();
+        let mut edit = EditSession::open(
+            &mut world,
+            &cached_reg,
+            &mut session,
+            format!("//set {block_name}"),
+            true,
+        );
+        region.for_each_position(|x, y, z| {
+            edit.set_block(x, y, z, state_id);
+        });
+        let finish_res = edit.finish(&mut session, Some(&mut mgr.edit_log));
+        *mgr.get(key) = session;
+        finish_res
+    };
+
+    match res {
+        Ok(count) => feedback(
+            host,
+            &format!("fawebim set: {count} block(s) set to {block_name}"),
+        ),
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
 }
 
-/// Send `edit` as column runs to `edit_blocks`, one call per batch of columns.
-fn edit_region(
+fn history_step(
     host: &mut dyn ServerHost,
-    dimension: &str,
-    region: &RegionShape,
-    state: mod_api::BlockState,
-) -> Result<u64, String> {
-    let mut changed = 0u64;
-    let mut batch = Vec::with_capacity(EDIT_BATCH);
-    let mut result = Ok(());
-    for_each_column_run(region, |run| {
-        if result.is_err() {
-            return;
-        }
-        batch.push(run);
-        if batch.len() == EDIT_BATCH {
-            match edit_batch(host, dimension, std::mem::take(&mut batch), state) {
-                Ok(count) => changed += count,
-                Err(error) => result = Err(error),
-            }
-        }
-    });
-    result?;
-    if !batch.is_empty() {
-        match edit_batch(host, dimension, batch, state) {
-            Ok(count) => changed += count,
-            Err(error) => return Err(error),
+    event: &RunModCommandEvent<'_>,
+    sessions: &Mutex<SessionManager>,
+    registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
+    undo: bool,
+) -> Flow {
+    let verb = if undo { "undo" } else { "redo" };
+    let past = if undo { "undone" } else { "redone" };
+    let steps = integer(event, "steps").unwrap_or(1);
+    if steps <= 0 {
+        feedback(host, &format!("fawebim {verb}: steps must be >= 1"));
+        return Flow::Cancel;
+    }
+    let steps = (steps as usize).min(100);
+    let key = source_key(event.source);
+
+    // Pre-warm air slot in case undo restores `0` (`minecraft:air`).
+    {
+        let reg = HorizonBlockRegistry::new(host, registry_cache.clone());
+        let _ = reg.air();
+    }
+
+    let fallback_dim = resolve_dimension(host, event);
+    let mut records_to_apply = Vec::new();
+    {
+        let mut mgr = lock_sessions(sessions);
+        let session = mgr.get(key);
+        for _ in 0..steps {
+            let rec_opt = if undo {
+                session.history.undo().cloned()
+            } else {
+                session.history.redo().cloned()
+            };
+            let Some(rec) = rec_opt else {
+                break;
+            };
+            records_to_apply.push(rec);
         }
     }
-    Ok(changed)
+
+    if records_to_apply.is_empty() {
+        feedback(host, &format!("fawebim {verb}: nothing to {verb}"));
+        return Flow::Cancel;
+    }
+
+    let mut total_blocks = 0u64;
+    for rec in &records_to_apply {
+        let dim = rec
+            .world
+            .clone()
+            .unwrap_or_else(|| fallback_dim.clone());
+        let mut world = HorizonWorld::new(host, dim, registry_cache.clone());
+        match replay_history_record(&mut world, rec, undo) {
+            Ok(changed) => total_blocks += changed,
+            Err(err) => {
+                feedback(
+                    host,
+                    &format!("fawebim {verb}: failed to replay '{}': {err}", rec.description),
+                );
+                return Flow::Cancel;
+            }
+        }
+    }
+
+    feedback(
+        host,
+        &format!(
+            "fawebim {verb}: {} edit(s) {past} ({total_blocks} block(s))",
+            records_to_apply.len()
+        ),
+    );
+    Flow::Cancel
 }
 
 /// Walk a `RegionShape` as vertical `(x, z)` column runs for `edit_blocks`.
@@ -284,20 +363,6 @@ pub(crate) fn for_each_column_run(region: &RegionShape, mut visit: impl FnMut(Bl
             }
         }
     }
-}
-
-fn edit_batch(
-    host: &mut dyn ServerHost,
-    dimension: &str,
-    runs: Vec<BlockRun>,
-    state: mod_api::BlockState,
-) -> Result<u64, String> {
-    let edit = BlockEdit {
-        palette: vec![state],
-        filters: Vec::new(),
-        runs,
-    };
-    host.edit_blocks(dimension, &edit)
 }
 
 fn feedback(host: &mut dyn ServerHost, line: &str) {

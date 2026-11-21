@@ -1,30 +1,39 @@
 //! FAWE-ButInMods: the FAWE engine as a Horizon code mod.
 //!
 //! See `horizon-mod.toml`; the Java original lives in `../core` and `../fabric`.
-//!
-//! So far ported: the expression engine behind `//calc` (a port of
-//! `Expression.java` + the noise functions behind it), the region math for a
-//! cuboid selection (`//pos1` / `//pos2`), and the fill — the smallest slice
-//! of FAWE's `//set`. MIT-style `//` aliases and the wand are not there yet.
 
 pub mod calc;
 pub mod expression;
+pub mod history;
 pub mod math;
 pub mod noise;
 pub mod region;
+pub mod registry;
 pub mod selection;
+pub mod session;
 pub mod set;
 pub mod transform;
+pub mod world;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use mod_api::{Hooks, RegisterCommandsEvent, RunModCommandEvent, ServerHost, ServerStartedEvent};
 
-use selection::SelectionStore;
+use registry::HorizonRegistryCache;
+use session::SessionManager;
 
-#[derive(Default)]
 pub struct Mod {
-    selections: Mutex<SelectionStore>,
+    sessions: Mutex<SessionManager>,
+    registry_cache: Arc<Mutex<HorizonRegistryCache>>,
+}
+
+impl Default for Mod {
+    fn default() -> Self {
+        Self {
+            sessions: Mutex::new(SessionManager::new()),
+            registry_cache: HorizonRegistryCache::new_shared(),
+        }
+    }
 }
 
 #[mod_api::horizon_mod]
@@ -47,7 +56,7 @@ impl Hooks for Mod {
         if matches!(flow, mod_api::Flow::Cancel) {
             return mod_api::Flow::Cancel;
         }
-        set::run(host, event, &self.selections)
+        set::run(host, event, &self.sessions, &self.registry_cache)
     }
 
     fn server_started(&self, _host: &mut dyn ServerHost, _event: &mut ServerStartedEvent) {}
