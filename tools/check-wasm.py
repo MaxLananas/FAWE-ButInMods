@@ -262,6 +262,12 @@ assert ('fawebim hcylinder <x:integer> <y:integer> <z:integer> <radius:number> <
 assert ('fawebim pyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>', 2) in usages
 assert ('fawebim hpyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>', 2) in usages
 assert ('fawebim line <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>', 2) in usages
+assert ('fawebim cone <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim hcone <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim torus <x:integer> <y:integer> <z:integer> <major:number> <minor:number> <pattern:text>', 2) in usages
+assert ('fawebim htorus <x:integer> <y:integer> <z:integer> <major:number> <minor:number> <pattern:text>', 2) in usages
+assert ('fawebim layers <layers:text>', 2) in usages
+assert ('fawebim scatter <x:integer> <y:integer> <z:integer> <radius:integer> <points:integer> <pattern:text>', 2) in usages
 assert ('fawebim walls <pattern:text>', 2) in usages
 assert ('fawebim faces <pattern:text>', 2) in usages
 assert ('fawebim overlay <pattern:text>', 2) in usages

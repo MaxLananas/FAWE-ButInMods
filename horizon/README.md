@@ -69,7 +69,9 @@ Horizon instead of Fabric.
 > 18. **37 implemented compatibility commands**: short shape names, region and
 >     morphology synonyms, terrain aliases, clipboard/history aliases and
 >     familiar paint/replace/move/biome/nearby names all route to the same
->     validated implementations rather than no-op stubs.
+>     validated implementations rather than no-op stubs;
+> 19. **advanced generation**: solid/hollow cones and tori, repeating layered
+>     patterns over arbitrary selections and deterministic bounded 3D scatter.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
