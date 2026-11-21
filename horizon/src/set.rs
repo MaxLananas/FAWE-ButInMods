@@ -75,6 +75,12 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim center", 2),
         Command::op("fawebim setbiome <biome:text>", 2),
         Command::op("fawebim biomedistr", 2),
+        Command::op("fawebim gravity", 2),
+        Command::op("fawebim naturalize", 2),
+        Command::op("fawebim drain", 2),
+        Command::op("fawebim green", 2),
+        Command::op("fawebim snow", 2),
+        Command::op("fawebim thaw", 2),
         Command::op("fawebim expand <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim contract <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim shift <dx:integer> <dy:integer> <dz:integer>", 2),
@@ -124,6 +130,7 @@ pub(crate) fn run(
         Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog" | "gmask" | "gpattern") => session_config(host, event, sessions),
         Some("count" | "distr" | "size" | "center") => selection_info(host, event, sessions, registry_cache),
         Some("setbiome" | "biomedistr") => biome_operation(host, event, sessions, registry_cache),
+        Some("gravity" | "naturalize" | "drain" | "green" | "snow" | "thaw") => terrain_operation(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
@@ -336,6 +343,20 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn terrain_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("gravity");let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};
+    let (air,grass,dirt,stone,snow,water)={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());(reg.air(),reg.default_state("grass_block"),reg.default_state("dirt"),reg.default_state("stone"),reg.default_state("snow"),reg.default_state("water"))};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let registry=CachedBlockRegistry::new(registry_cache.clone());let mut before=HashMap::new();region.for_each_position(|x,y,z|{before.insert((x,y,z),world.get_block(x,y,z));});let mut changes=HashMap::<(i32,i32,i32),i32>::new();let min=region.min();let max=region.max();
+    match action{
+        "gravity"=>{for z in min.z..=max.z{for x in min.x..=max.x{let mut solid=Vec::new();for y in min.y..=max.y{if region.contains(x,y,z){let s=*before.get(&(x,y,z)).unwrap_or(&air);if !registry.is_air_like(s){solid.push(s);}changes.insert((x,y,z),air);}}let mut y=min.y;for s in solid{while y<=max.y&&!region.contains(x,y,z){y+=1;}if y<=max.y{changes.insert((x,y,z),s);y+=1;}}}}},
+        "naturalize"=>{for z in min.z..=max.z{for x in min.x..=max.x{let top=(min.y..=max.y).rev().find(|&y|region.contains(x,y,z)&&!registry.is_air_like(*before.get(&(x,y,z)).unwrap_or(&air)));if let Some(y)=top{changes.insert((x,y,z),grass);for d in 1..=3{if region.contains(x,y-d,z){changes.insert((x,y-d,z),dirt);}}for yy in min.y..y-3{if region.contains(x,yy,z)&&registry.is_air_like(*before.get(&(x,yy,z)).unwrap_or(&air)){changes.insert((x,yy,z),stone);}}}}}},
+        "drain"=>{for(&p,&s)in &before{if registry.is_liquid(s){changes.insert(p,air);}}},
+        "green"=>{for(&p,&s)in &before{if registry.name(s).ends_with(":dirt")&&before.get(&(p.0,p.1+1,p.2)).copied().map_or(true,|above|registry.is_air_like(above)){changes.insert(p,grass);}}},
+        "snow"=>{for(&p,&s)in &before{if !registry.is_air_like(s)&&before.get(&(p.0,p.1+1,p.2)).copied().map_or(true,|above|registry.is_air_like(above)){changes.insert((p.0,p.1+1,p.2),snow);}}},
+        "thaw"=>{for(&p,&s)in &before{let name=registry.name(s);if name.contains("snow"){changes.insert(p,air);}else if name.contains("ice"){changes.insert(p,water);}}},_=>{}
+    }
+    let mut registry=registry;let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);for((x,y,z),state)in changes{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel
 }
 
 fn biome_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{

@@ -58,7 +58,9 @@ Horizon instead of Fabric.
 >     patterns, validated against the live registry and composed into `set` and
 >     `replace` without bypassing history or change limits;
 > 14. **biome editing and inspection**: registry-validated selection biome
->     painting, compact biome history, undo/redo and sorted biome distributions.
+>     painting, compact biome history, undo/redo and sorted biome distributions;
+> 15. **terrain utilities**: column gravity, natural terrain layering, liquid
+>     draining, exposed-dirt greening, snow cover and snow/ice thawing.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
