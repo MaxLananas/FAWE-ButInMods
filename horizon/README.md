@@ -82,7 +82,9 @@ Horizon instead of Fabric.
 >     checker, noise, offset and no-axis patterns;
 > 23. **advanced masks**: deterministic probability, compiled expressions with
 >     block/coordinate variables, surface/wall exposure, coordinate offsets and
->     configurable six-neighbour adjacency, all composable with boolean masks.
+>     configurable six-neighbour adjacency, all composable with boolean masks;
+> 24. **population operations**: deterministic-density forests with trunks and
+>     canopies, flora, pumpkins and pattern-based ore replacement over selections.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

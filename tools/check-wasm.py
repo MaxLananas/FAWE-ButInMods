@@ -268,6 +268,10 @@ assert ('fawebim torus <x:integer> <y:integer> <z:integer> <major:number> <minor
 assert ('fawebim htorus <x:integer> <y:integer> <z:integer> <major:number> <minor:number> <pattern:text>', 2) in usages
 assert ('fawebim layers <layers:text>', 2) in usages
 assert ('fawebim scatter <x:integer> <y:integer> <z:integer> <radius:integer> <points:integer> <pattern:text>', 2) in usages
+assert ('fawebim forest [density:integer]', 2) in usages
+assert ('fawebim flora [density:integer]', 2) in usages
+assert ('fawebim pumpkins [density:integer]', 2) in usages
+assert ('fawebim ores [density:integer] <pattern:text>', 2) in usages
 assert ('fawebim walls <pattern:text>', 2) in usages
 assert ('fawebim faces <pattern:text>', 2) in usages
 assert ('fawebim overlay <pattern:text>', 2) in usages
