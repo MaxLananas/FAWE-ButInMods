@@ -24,6 +24,8 @@ pub enum Mask {
     Expression(Arc<Expression>),
     Offset { inner: Box<Mask>, x: i32, y: i32, z: i32 },
     Adjacent { inner: Box<Mask>, min: usize, max: usize },
+    Nearby { inner: Box<Mask>, radius: i32, min: usize, max: usize },
+    Exposed { min: usize, max: usize },
     Not(Box<Mask>),
     All(Vec<Mask>),
     AnyOf(Vec<Mask>),
@@ -62,6 +64,8 @@ impl Mask {
                 let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|inner.test(extent,registry,x+dx,y+dy,z+dz)).count();
                 count>=*min&&count<=*max
             }
+            Self::Nearby { inner, radius, min, max } => {let mut count=0usize;'scan:for dz in -*radius..=*radius{for dy in -*radius..=*radius{for dx in -*radius..=*radius{if dx==0&&dy==0&&dz==0{continue;}if inner.test(extent,registry,x+dx,y+dy,z+dz){count+=1;if count>*max{break 'scan;}}}}}count>=*min&&count<=*max}
+            Self::Exposed { min, max } => {let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz))).count();count>=*min&&count<=*max}
             Self::Not(inner) => !inner.test(extent, registry, x, y, z),
             Self::All(parts) => parts.iter().all(|m| m.test(extent, registry, x, y, z)),
             Self::AnyOf(parts) => parts.iter().any(|m| m.test(extent, registry, x, y, z)),
@@ -108,8 +112,10 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
         let args=brackets(rest)?;if args.len()!=4{return Err("#offset requires [mask][x][y][z]".into());}let parse=|s:&str|s.trim().parse::<i32>().map_err(|_|"invalid mask offset".to_string());return Ok(Mask::Offset{inner:Box::new(parse_mask(reg,args[0],depth+1)?),x:parse(args[1])?,y:parse(args[2])?,z:parse(args[3])?});
     }
     if let Some(rest) = text.strip_prefix("#adjacent") {
-        let args=brackets(rest)?;if args.is_empty()||args.len()>3{return Err("#adjacent requires [mask][min][max]".into());}let min=args.get(1).map_or(Ok(1),|s|s.trim().parse::<usize>().map_err(|_|"invalid adjacent minimum".to_string()))?;let max=args.get(2).map_or(Ok(6),|s|s.trim().parse::<usize>().map_err(|_|"invalid adjacent maximum".to_string()))?;return Ok(Mask::Adjacent{inner:Box::new(parse_mask(reg,args[0],depth+1)?),min:min.min(6),max:max.min(6)});
+        let args=brackets(rest)?;if args.is_empty()||args.len()>3{return Err("#adjacent requires [mask][min][max]".into());}let min=args.get(1).map_or(Ok(1),|s|s.trim().parse::<usize>().map_err(|_|"invalid adjacent minimum".to_string()))?;let max=args.get(2).map_or(Ok(6),|s|s.trim().parse::<usize>().map_err(|_|"invalid adjacent maximum".to_string()))?;if min>max{return Err("adjacent minimum exceeds maximum".into());}return Ok(Mask::Adjacent{inner:Box::new(parse_mask(reg,args[0],depth+1)?),min:min.min(6),max:max.min(6)});
     }
+    if let Some(rest)=text.strip_prefix("#nearby"){let args=brackets(rest)?;if args.len()<2||args.len()>4{return Err("#nearby requires [mask][radius][min][max]".into());}let radius=args[1].parse::<i32>().map_err(|_|"invalid nearby radius".to_string())?;if !(1..=8).contains(&radius){return Err("nearby radius must be 1..8".into());}let capacity=((radius*2+1).pow(3)-1)as usize;let min=args.get(2).map_or(Ok(1),|s|s.parse::<usize>().map_err(|_|"invalid nearby minimum".to_string()))?;let max=args.get(3).map_or(Ok(capacity),|s|s.parse::<usize>().map_err(|_|"invalid nearby maximum".to_string()))?;if min>max||max>capacity{return Err(format!("nearby count range must fit 0..{capacity}"));}return Ok(Mask::Nearby{inner:Box::new(parse_mask(reg,args[0],depth+1)?),radius,min,max});}
+    if let Some(rest)=text.strip_prefix("#exposed"){let args=brackets(rest)?;if args.len()>2{return Err("#exposed accepts [min][max]".into());}let min=args.first().map_or(Ok(1),|s|s.parse::<usize>().map_err(|_|"invalid exposed minimum".to_string()))?;let max=args.get(1).map_or(Ok(6),|s|s.parse::<usize>().map_err(|_|"invalid exposed maximum".to_string()))?;if min>max||max>6{return Err("exposed count range must fit 0..6".into());}return Ok(Mask::Exposed{min,max});}
     if let Some(category) = text.strip_prefix("##") {
         return Ok(Mask::Category(category.to_ascii_lowercase()));
     }
@@ -170,6 +176,8 @@ mod tests {
         let sphere=Mask::parse(&reg,"#sphere[0][64][0][2]").unwrap();assert!(sphere.test(&world,&reg,2,64,0));assert!(!sphere.test(&world,&reg,3,64,0));
         let cylinder=Mask::parse(&reg,"#cylinder[0][0][2]").unwrap();assert!(cylinder.test(&world,&reg,0,999,2));assert!(!cylinder.test(&world,&reg,0,0,3));
         let grid=Mask::parse(&reg,"#grid[2][4][2]").unwrap();assert!(grid.test(&world,&reg,-2,64,2));assert!(!grid.test(&world,&reg,1,64,2));
+        assert!(Mask::parse(&reg,"#nearby[stone][1][1][26]").unwrap().test(&world,&reg,1,64,0));
+        assert!(Mask::parse(&reg,"#exposed[1][6]").unwrap().test(&world,&reg,0,64,0));
     }
     #[test] fn malformed_masks_are_rejected() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();

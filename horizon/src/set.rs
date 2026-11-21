@@ -64,6 +64,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim faces <pattern:text>", 2),
         Command::op("fawebim overlay <pattern:text>", 2),
         Command::op("fawebim hollow [thickness:integer] <pattern:text>", 2),
+        Command::op("fawebim frame <pattern:text>", 2),
+        Command::op("fawebim corners <pattern:text>", 2),
+        Command::op("fawebim pillars <pattern:text>", 2),
         Command::op("fawebim move <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim stack <count:integer> <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim smooth [iterations:integer]", 2),
@@ -214,7 +217,7 @@ pub(crate) fn run(
         }
         Some("schemsave" | "schemload" | "schemlist") => schematic_command(host, event, clipboards, registry_cache),
         Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment") => generate(host, event, sessions, registry_cache),
-        Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell") => region_operation(host, event, sessions, registry_cache),
+        Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
         Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
@@ -604,6 +607,9 @@ fn region_operation(
         "walls"=>x==min.x||x==max.x||z==min.z||z==max.z,
         "faces"=>x==min.x||x==max.x||y==min.y||y==max.y||z==min.z||z==max.z,
         "overlay"=>!snapshot.contains(x,y+1,z),
+        "frame"=>[x==min.x||x==max.x,y==min.y||y==max.y,z==min.z||z==max.z].into_iter().filter(|v|*v).count()>=2,
+        "corners"=>(x==min.x||x==max.x)&&(y==min.y||y==max.y)&&(z==min.z||z==max.z),
+        "pillars"=>(x==min.x||x==max.x)&&(z==min.z||z==max.z),
         "hollow"=>{let mut edge=false;'outer:for d in 1..=thickness{for (dx,dy,dz) in [(d,0,0),(-d,0,0),(0,d,0),(0,-d,0),(0,0,d),(0,0,-d)]{if !snapshot.contains(x+dx,y+dy,z+dz){edge=true;break 'outer;}}}edge},
         _=>false};if selected{points.push((x,y,z));}});
     let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());

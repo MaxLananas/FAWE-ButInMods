@@ -285,6 +285,9 @@ assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usag
 assert ('fawebim clipboardinfo', 2) in usages
 assert ('fawebim history', 0) in usages
 assert ('fawebim historylimit <records:integer>', 2) in usages
+assert ('fawebim frame <pattern:text>', 2) in usages
+assert ('fawebim corners <pattern:text>', 2) in usages
+assert ('fawebim pillars <pattern:text>', 2) in usages
 assert ('fawebim ellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
 assert ('fawebim hellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
 assert ('fawebim disk <x:integer> <y:integer> <z:integer> <rx:number> <rz:number> <pattern:text>', 2) in usages

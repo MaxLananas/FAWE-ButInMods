@@ -95,7 +95,10 @@ Horizon instead of Fabric.
 >     masks plus solid/hollow ellipsoids and horizontal elliptical disks;
 > 28. **pattern transforms and world inspection**: nested pattern scaling,
 >     Y-axis rotation and mirroring, plus block/biome inspection, compressed
->     vertical column runs and bounded surface discovery.
+>     vertical column runs and bounded surface discovery;
+> 29. **neighbourhood masks and structural fills**: bounded cubic-neighbour
+>     counts, configurable exposed-face counts, and selection frames, corners
+>     and vertical corner pillars with arbitrary nested patterns.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
