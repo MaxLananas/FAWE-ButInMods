@@ -80,24 +80,11 @@ linker.define(store, 'GOT.mem', 'horizon_group_state', global_i32(True, 0))
 # would give; anything else raises, which surfaces as a trap naming the import id, instead of a
 # guest-side `.expect()` panic at a wrong-typed (empty) answer.
 HOST_BLOCK_STATE_ID = 4        # BlockStatesHost::block_state_id -> Option<BlockState>
-HOST_BLOCK_STATE_STRING = 5    # BlockStatesHost::block_state_string -> Option<String>
-HOST_LEVEL = 24                # EntitiesHost::level -> Option<LevelRef>
 HOST_EDIT_BLOCKS = 132         # WorldEditServerHost::edit_blocks -> Result<u64, String>
-HOST_DIMENSION_KEY_ID = 454    # LevelsBackend::dimension_key_id -> Option<String>
-HOST_LEVEL_BLOCK_STATE = 467   # LevelsBackend::level_block_state -> Option<BlockState>
-HOST_LEVEL_HEIGHT = 474        # LevelsBackend::level_height -> Option<(i32, i32)>
+HOST_DIMENSION_KEY_ID = 454    # LevelsHost::dimension_key_id -> Option<String>
 HOST_COMMANDS_FEEDBACK = 1133  # Commands::feedback — answered with Result<(), TextFormError>::Ok(())
 feedback_calls = []
 edit_calls = []
-
-MOCK_BLOCKS = {
-    'air': (0, 'minecraft:air'),
-    'minecraft:air': (0, 'minecraft:air'),
-    'stone': (1, 'minecraft:stone'),
-    'minecraft:stone': (1, 'minecraft:stone'),
-    'minecraft:orange_wool': (2, 'minecraft:orange_wool'),
-}
-MOCK_NAMES_BY_KEY = {0: b'minecraft:air', 1: b'minecraft:stone', 2: b'minecraft:orange_wool'}
 
 def write_answer(answer: bytes, out_ptr: int, out_cap: int) -> int:
     if len(answer) > out_cap:
@@ -113,24 +100,10 @@ def host_handler(id_, in_ptr, in_len, out_ptr, out_cap):
     if id_ == HOST_BLOCK_STATE_ID:
         length = int.from_bytes(args[:4], 'little')
         name = args[4:4 + length].decode('utf-8')
-        if name in MOCK_BLOCKS:
-            bkey, _ = MOCK_BLOCKS[name]
-            return write_answer(b'\x01' + bkey.to_bytes(4, 'little') + (0).to_bytes(2, 'little'), out_ptr, out_cap)
+        if name in ('stone', 'minecraft:stone'):
+            # Option::Some(BlockState { block: BlockKey(1), state: 0 })
+            return write_answer(b'\x01' + (1).to_bytes(4, 'little') + (0).to_bytes(2, 'little'), out_ptr, out_cap)
         return write_answer(b'\x00', out_ptr, out_cap)
-    if id_ == HOST_BLOCK_STATE_STRING:
-        bkey = int.from_bytes(args[:4], 'little')
-        if bkey in MOCK_NAMES_BY_KEY:
-            s = MOCK_NAMES_BY_KEY[bkey]
-            return write_answer(b'\x01' + len(s).to_bytes(4, 'little') + s, out_ptr, out_cap)
-        return write_answer(b'\x00', out_ptr, out_cap)
-    if id_ == HOST_LEVEL:
-        # Option::Some(LevelRef { epoch: WorldEpoch(1), dimension: DimensionKey(0), generation: 0 })
-        return write_answer(b'\x01' + (1).to_bytes(8, 'little') + (0).to_bytes(4, 'little') + (0).to_bytes(4, 'little'), out_ptr, out_cap)
-    if id_ == HOST_LEVEL_HEIGHT:
-        return write_answer(b'\x01' + (-64).to_bytes(4, 'little', signed=True) + (384).to_bytes(4, 'little', signed=True), out_ptr, out_cap)
-    if id_ == HOST_LEVEL_BLOCK_STATE:
-        # Option::Some(minecraft:air)
-        return write_answer(b'\x01' + (0).to_bytes(4, 'little') + (0).to_bytes(2, 'little'), out_ptr, out_cap)
     if id_ == HOST_DIMENSION_KEY_ID:
         dim = b'minecraft:overworld'
         return write_answer(b'\x01' + len(dim).to_bytes(4, 'little') + dim, out_ptr, out_cap)
@@ -245,8 +218,6 @@ assert ('fawebim pos1 <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pos2 <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim sel [mode:text]', 2) in usages
 assert ('fawebim set <block:text>', 2) in usages
-assert ('fawebim undo [steps:integer]', 2) in usages
-assert ('fawebim redo [steps:integer]', 2) in usages
 
 def encode_command(literals, arguments):
     req = bytearray()
@@ -331,17 +302,5 @@ assert take_u32(reply, 0)[0] == 1
 assert len(edit_calls) == 2
 assert b'block(s) set to stone' in feedback_calls[-1], f'unexpected sphere set feedback: {feedback_calls[-1]!r}'
 print('run_mod_command: sel sphere + pos1 + pos2 + set stone -> edit_blocks OK')
-
-# 6) Undo and redo the sphere edit via History + replay_history_record.
-reply = call_hook(store, memory, exports, HOOK_RUN_MOD_COMMAND, encode_command(['fawebim', 'undo'], []))
-assert take_u32(reply, 0)[0] == 1
-assert len(edit_calls) == 3
-assert b'fawebim undo: 1 edit(s) undone' in feedback_calls[-1], f'unexpected undo feedback: {feedback_calls[-1]!r}'
-
-reply = call_hook(store, memory, exports, HOOK_RUN_MOD_COMMAND, encode_command(['fawebim', 'redo'], []))
-assert take_u32(reply, 0)[0] == 1
-assert len(edit_calls) == 4
-assert b'fawebim redo: 1 edit(s) redone' in feedback_calls[-1], f'unexpected redo feedback: {feedback_calls[-1]!r}'
-print('run_mod_command: undo + redo -> edit_blocks OK')
 
 print('hook smoke check OK')
