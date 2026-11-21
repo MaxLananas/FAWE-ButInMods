@@ -13,13 +13,14 @@ on:
   push:
     branches: ['26.3']
     tags: ['v*']
-    paths-ignore:
-      - 'horizon/**'
-      - 'docs/**'
-      - 'tools/**'
-      - '**.md'
-      - 'LICENSE.txt'
-      - 'NOTICE'
+    paths:
+      - 'core/**'
+      - 'fabric/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/build.yml'
   pull_request:
     branches: ['26.3']
     paths:
@@ -56,7 +57,7 @@ jobs:
 
       - name: Restore Gradle dependencies
         id: gradle-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.gradle/caches/modules-2
