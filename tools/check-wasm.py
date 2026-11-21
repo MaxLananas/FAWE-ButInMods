@@ -287,6 +287,9 @@ assert ('fawebim clipboardorigin <x:integer> <y:integer> <z:integer>', 2) in usa
 assert ('fawebim clipboardshift <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim clipboardscale <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim clipboardtrim', 2) in usages
+assert ('fawebim pastecenter <x:integer> <y:integer> <z:integer>', 2) in usages
+assert ('fawebim pastearray <nx:integer> <ny:integer> <nz:integer> <dx:integer> <dy:integer> <dz:integer>', 2) in usages
+assert ('fawebim clipboardreplace <from:text> <to:text>', 2) in usages
 assert ('fawebim pasteat <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim clipboardinfo', 2) in usages

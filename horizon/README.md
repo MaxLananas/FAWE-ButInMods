@@ -106,7 +106,10 @@ Horizon instead of Fabric.
 >     clipboard origin before normal or transformed pastes;
 > 32. **clipboard geometry controls**: relative origin shifts, bounded integer
 >     nearest-neighbour scaling and automatic air-border trimming while keeping
->     the clipboard's world anchor consistent.
+>     the clipboard's world anchor consistent;
+> 33. **clipboard arrays and content editing**: center-anchored pastes, bounded
+>     three-axis paste arrays and in-memory block replacement with any nested
+>     coordinate-driven pattern before committing edits to the world.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
