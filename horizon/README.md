@@ -92,7 +92,10 @@ Horizon instead of Fabric.
 >     chunk-aligned expansion/listing, selection surface metrics, repeating
 >     linear stripes and concentric three-dimensional radial bands;
 > 27. **spatial masks and generators**: spherical, cylindrical and modular-grid
->     masks plus solid/hollow ellipsoids and horizontal elliptical disks.
+>     masks plus solid/hollow ellipsoids and horizontal elliptical disks;
+> 28. **pattern transforms and world inspection**: nested pattern scaling,
+>     Y-axis rotation and mirroring, plus block/biome inspection, compressed
+>     vertical column runs and bounded surface discovery.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

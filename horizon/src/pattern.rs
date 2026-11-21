@@ -19,6 +19,9 @@ pub enum Pattern {
     Expression { expression: Arc<Expression>, choices: Vec<(f64, Pattern)> },
     Linear { axis: u8, size: i32, choices: Vec<Pattern> },
     Radial { cx: f64, cy: f64, cz: f64, scale: f64, choices: Vec<Pattern> },
+    Scale { inner: Box<Pattern>, x: f64, y: f64, z: f64 },
+    RotateY { inner: Box<Pattern>, sin: f64, cos: f64 },
+    Mirror { inner: Box<Pattern>, axis: u8 },
     Offset { inner: Box<Pattern>, x: i32, y: i32, z: i32 },
     NoAxis { inner: Box<Pattern>, axis: u8 },
 }
@@ -63,6 +66,9 @@ impl Pattern {
             }
             Self::Linear { axis, size, choices } => { let coordinate=match axis{0=>x,1=>y,_=>z};let index=coordinate.div_euclid((*size).max(1)).rem_euclid(choices.len() as i32)as usize;choices[index].apply(x,y,z) }
             Self::Radial { cx, cy, cz, scale, choices } => { let distance=(((x as f64-cx).powi(2)+(y as f64-cy).powi(2)+(z as f64-cz).powi(2)).sqrt()*scale).floor()as i64;let index=distance.rem_euclid(choices.len()as i64)as usize;choices[index].apply(x,y,z) }
+            Self::Scale { inner, x: sx, y: sy, z: sz } => inner.apply((x as f64/sx).floor()as i32,(y as f64/sy).floor()as i32,(z as f64/sz).floor()as i32),
+            Self::RotateY { inner, sin, cos } => inner.apply((x as f64*cos-z as f64*sin).round()as i32,y,(x as f64*sin+z as f64*cos).round()as i32),
+            Self::Mirror { inner, axis } => match axis{0=>inner.apply(x.abs(),y,z),1=>inner.apply(x,y.abs(),z),_=>inner.apply(x,y,z.abs())},
             Self::Offset { inner, x: ox, y: oy, z: oz } => inner.apply(x + ox, y + oy, z + oz),
             Self::NoAxis { inner, axis } => match axis {
                 0 => inner.apply(0, y, z), 1 => inner.apply(x, 0, z), _ => inner.apply(x, y, 0),
@@ -129,6 +135,9 @@ fn parse_pattern(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Resu
     if let Some(rest) = text.strip_prefix("#radial") {
         let args=brackets(rest)?;if args.len()!=5{return Err("#radial requires [cx,cy,cz][scale][patterns] or [cx][cy][cz][scale][patterns]".into());}let cx=args[0].parse::<f64>().map_err(|_|"invalid radial center x".to_string())?;let cy=args[1].parse::<f64>().map_err(|_|"invalid radial center y".to_string())?;let cz=args[2].parse::<f64>().map_err(|_|"invalid radial center z".to_string())?;let scale=args[3].parse::<f64>().map_err(|_|"invalid radial scale".to_string())?;if !scale.is_finite()||scale<=0.0{return Err("radial scale must be positive".into());}let choices=split_top(args[4],',').into_iter().map(|p|parse_pattern(reg,p,depth+1)).collect::<Result<Vec<_>,_>>()?;if choices.is_empty(){return Err("radial pattern needs choices".into());}return Ok(Pattern::Radial{cx,cy,cz,scale,choices});
     }
+    if let Some(rest)=text.strip_prefix("#scale") {let args=brackets(rest)?;if args.len()!=4{return Err("#scale requires [pattern][x][y][z]".into());}let scale=|s:&str|s.parse::<f64>().map_err(|_|"invalid pattern scale".to_string()).and_then(|v|if v.is_finite()&&v!=0.0{Ok(v)}else{Err("pattern scale must be finite and non-zero".into())});return Ok(Pattern::Scale{inner:Box::new(parse_pattern(reg,args[0],depth+1)?),x:scale(args[1])?,y:scale(args[2])?,z:scale(args[3])?});}
+    if let Some(rest)=text.strip_prefix("#rotate") {let args=brackets(rest)?;if args.len()!=2{return Err("#rotate requires [pattern][degrees]".into());}let degrees=args[1].parse::<f64>().map_err(|_|"invalid pattern rotation".to_string())?;if !degrees.is_finite(){return Err("pattern rotation must be finite".into());}let radians=degrees.to_radians();return Ok(Pattern::RotateY{inner:Box::new(parse_pattern(reg,args[0],depth+1)?),sin:radians.sin(),cos:radians.cos()});}
+    if let Some(rest)=text.strip_prefix("#mirror") {let args=brackets(rest)?;if args.len()!=2{return Err("#mirror requires [pattern][axis]".into());}let axis=match args[1].trim().to_ascii_lowercase().as_str(){"x"=>0,"y"=>1,"z"=>2,_=>return Err("mirror axis must be x, y, or z".into())};return Ok(Pattern::Mirror{inner:Box::new(parse_pattern(reg,args[0],depth+1)?),axis});}
     if let Some(rest) = text.strip_prefix("#expression") {
         let args = brackets(rest)?;
         if args.len() != 2 { return Err("#expression requires [expression][patterns]".into()); }
@@ -223,6 +232,9 @@ mod tests {
         assert_eq!(linear.apply(0,0,0),stone);assert_eq!(linear.apply(2,0,0),dirt);assert_eq!(linear.apply(-2,0,0),dirt);
         let radial=Pattern::parse(&reg,"#radial[0][0][0][1][stone,dirt]").unwrap();
         assert_eq!(radial.apply(0,0,0),stone);assert_eq!(radial.apply(1,0,0),dirt);
+        let scaled=Pattern::parse(&reg,"#scale[#linear[x][1][stone,dirt]][2][1][1]").unwrap();assert_eq!(scaled.apply(0,0,0),stone);assert_eq!(scaled.apply(2,0,0),dirt);
+        let rotated=Pattern::parse(&reg,"#rotate[#linear[x][1][stone,dirt]][90]").unwrap();assert_eq!(rotated.apply(0,0,1),dirt);
+        let mirrored=Pattern::parse(&reg,"#mirror[#linear[x][1][stone,dirt]][x]").unwrap();assert_eq!(mirrored.apply(-1,0,0),dirt);
     }
     #[test] fn rejects_invalid_patterns() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();

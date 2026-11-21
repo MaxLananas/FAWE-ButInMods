@@ -293,6 +293,9 @@ assert ('fawebim chunkselect <x:integer> <z:integer> [miny:integer] [maxy:intege
 assert ('fawebim chunkexpand [radius:integer]', 2) in usages
 assert ('fawebim chunklist', 0) in usages
 assert ('fawebim selectionarea', 0) in usages
+assert ('fawebim inspect <x:integer> <y:integer> <z:integer>', 0) in usages
+assert ('fawebim columninfo <x:integer> <z:integer> [miny:integer] [maxy:integer]', 0) in usages
+assert ('fawebim surfaceinfo <x:integer> <z:integer> [miny:integer] [maxy:integer]', 0) in usages
 assert ('fawebim walls <pattern:text>', 2) in usages
 assert ('fawebim faces <pattern:text>', 2) in usages
 assert ('fawebim overlay <pattern:text>', 2) in usages

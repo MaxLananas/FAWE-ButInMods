@@ -133,6 +133,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim chunkexpand [radius:integer]", 2),
         Command::op("fawebim chunklist", 0),
         Command::op("fawebim selectionarea", 0),
+        Command::op("fawebim inspect <x:integer> <y:integer> <z:integer>", 0),
+        Command::op("fawebim columninfo <x:integer> <z:integer> [miny:integer] [maxy:integer]", 0),
+        Command::op("fawebim surfaceinfo <x:integer> <z:integer> [miny:integer] [maxy:integer]", 0),
         Command::op("fawebim help [page:integer]", 0),
         Command::op("fawebim commands [query:text]", 0),
         Command::op("fawebim version", 0),
@@ -231,6 +234,7 @@ pub(crate) fn run(
         Some("help" | "commands" | "version" | "patterninfo" | "maskinfo") => help_command(host, event, registry_cache),
         Some("history" | "historylimit") => history_config(host,event,sessions),
         Some("chunkselect" | "chunkexpand" | "chunklist" | "selectionarea") => chunk_command(host,event,sessions),
+        Some("inspect" | "columninfo" | "surfaceinfo") => inspect_command(host,event,registry_cache),
         Some("undo" | "rollback") => history_step(host, event, sessions, registry_cache, true),
         Some("redo" | "reapply") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory" | "purgehistory") => {
@@ -792,6 +796,14 @@ fn replace(
         Err(error) => feedback(host, &format!("fawebim replace: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn inspect_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("inspect");let x=integer(event,"x").unwrap_or(0);let z=integer(event,"z").unwrap_or(0);let dimension=resolve_dimension(host,event);
+    let message={let world=HorizonWorld::new(host,dimension,registry_cache.clone());let registry=CachedBlockRegistry::new(registry_cache.clone());
+        if action=="inspect"{let y=integer(event,"y").unwrap_or(0);let state=world.get_block(x,y,z);format!("fawebim inspect: ({x}, {y}, {z}) state={state}, block={}, biome={}",registry.name(state),registry.biome_name(world.get_biome(x,y,z)))}
+        else{let miny=integer(event,"miny").unwrap_or(-64);let maxy=integer(event,"maxy").unwrap_or(319);let(lo,hi)=(miny.min(maxy),miny.max(maxy));if action=="surfaceinfo"{if let Some(y)=(lo..=hi).rev().find(|&y|!registry.is_air_like(world.get_block(x,y,z))){let state=world.get_block(x,y,z);format!("fawebim surfaceinfo: ({x}, {y}, {z}) {}, biome={}",registry.name(state),registry.biome_name(world.get_biome(x,y,z)))}else{format!("fawebim surfaceinfo: no surface at ({x}, {z}) in y={lo}..{hi}")}}else{let mut runs=Vec::<(i32,i32,i32)>::new();let mut start=lo;let mut previous=world.get_block(x,lo,z);for y in lo+1..=hi{let state=world.get_block(x,y,z);if state!=previous{runs.push((start,y-1,previous));start=y;previous=state;}}runs.push((start,hi,previous));let shown=runs.iter().rev().take(16).map(|(a,b,s)|format!("{a}..{b}:{}",registry.name(*s))).collect::<Vec<_>>().join(", ");format!("fawebim columninfo: {} run(s), top-down {shown}",runs.len())}}
+    };feedback(host,&message);Flow::Cancel
 }
 
 fn chunk_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{
