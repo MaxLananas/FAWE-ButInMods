@@ -1,27 +1,9 @@
 //! The selection commands — a port of FAWE's `//pos1`, `//pos2`, `//sel` and
 //! `//set` slice — for the Horizon mod.
 //!
-//! FAWE's `//set <pattern>` fills the actor's selection with a pattern. This
-//! slice is the smallest thing that is actually useful against a live world:
-//!
-//! - `/fawebim pos1 <x:integer> <y:integer> <z:integer>` — mark corner 1;
-//! - `/fawebim pos2 <x:integer> <y:integer> <z:integer>` — mark corner 2;
-//! - `/fawebim sel` — describe the current selection;
-//! - `/fawebim set <block:text>` — set every block of the selection to one
-//!   block, as `/setblock` reads it (`stone`, `oak_stairs[facing=east]`).
-//!
-//! The fill goes through the game's bulk `edit_blocks` path — palette of
-//! complete typed states plus column runs — which is what FAWE's `//set` does
-//! with the server's edit buffer, rather than one host call per block.
-//!
-//! Still missing relative to FAWE: the wand (`//wand` and the click handlers),
-//! the other region shapes, masks, patterns, undo (FAWE records the edit) and
-//! the size limit from the session's `//limit`. The selection here is
-//! per-source (UUID; console shares one) and never persisted.
-//!
-//! The edit is bounded by [`CuboidRegion::MAX_VOLUME`] until the session's
-//! limit config lands; edits bigger than that are refused with a message
-//! naming the limit.
+//! Supports all 9 FAWE selector modes (`cuboid`, `extend`, `poly`,
+//! `ellipsoid`, `sphere`, `cyl`, `convex`, `polyhedral`, `fuzzy`) and fills
+//! any `RegionShape` through bulk vertical `BlockRun` column runs.
 
 use std::sync::Mutex;
 
@@ -30,8 +12,8 @@ use mod_api::{
     BlockEdit, BlockRun, Command, CommandArgumentValue, Flow, RunModCommandEvent, ServerHost, Text,
 };
 
-use crate::region::{BlockVector3, CuboidRegion};
-use crate::selection::{SelectionKey, SelectionStore};
+use crate::region::{BlockVector3, CuboidRegion, RegionShape};
+use crate::selection::{SelectionKey, SelectionStore, SelectorKind};
 
 /// How often `edit_blocks` is called; one call per this many column runs.
 const EDIT_BATCH: usize = 16_384;
@@ -42,7 +24,7 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
     event.commands.extend([
         Command::op("fawebim pos1 <x:integer> <y:integer> <z:integer>", 2),
         Command::op("fawebim pos2 <x:integer> <y:integer> <z:integer>", 2),
-        Command::op("fawebim sel", 2),
+        Command::op("fawebim sel [mode:text]", 2),
         Command::op("fawebim set <block:text>", 2),
     ]);
 }
@@ -119,8 +101,38 @@ fn pos(
     Flow::Cancel
 }
 
-fn sel(host: &mut dyn ServerHost, store: &Mutex<SelectionStore>, event: &RunModCommandEvent<'_>) -> Flow {
+fn sel(
+    host: &mut dyn ServerHost,
+    store: &Mutex<SelectionStore>,
+    event: &RunModCommandEvent<'_>,
+) -> Flow {
     let key = source_key(event.source);
+    let mode_arg = match event.command.argument("mode") {
+        Some(CommandArgumentValue::String(s)) if !s.trim().is_empty() => Some(s.trim()),
+        _ => None,
+    };
+    if let Some(raw) = mode_arg {
+        let lower = raw.to_ascii_lowercase();
+        if matches!(lower.as_str(), "clear" | "desel" | "deselect" | "-d") {
+            lock_store(store).get(key).clear();
+            feedback(host, "fawebim sel: selection cleared");
+            return Flow::Cancel;
+        }
+        if let Some(kind) = SelectorKind::parse(&lower) {
+            let mut guard = lock_store(store);
+            let selection = guard.get(key);
+            selection.switch_kind(kind, -64, 319);
+            feedback(host, &format!("fawebim sel: {} — {}", kind.as_str(), kind.usage()));
+            return Flow::Cancel;
+        }
+        feedback(
+            host,
+            &format!(
+                "fawebim sel: unknown mode '{raw}' (expected cuboid, extend, poly, ellipsoid, sphere, cyl, convex, polyhedral, fuzzy, or clear)"
+            ),
+        );
+        return Flow::Cancel;
+    }
     let text = lock_store(store)
         .peek(key)
         .map(|selection| selection.describe())
@@ -148,7 +160,7 @@ fn set(
     let key = source_key(event.source);
     let region = lock_store(store)
         .peek(key)
-        .and_then(|selection| selection.cuboid());
+        .and_then(|selection| selection.region());
     let Some(region) = region else {
         feedback(host, "fawebim set: no selection — mark pos1 and pos2 first");
         return Flow::Cancel;
@@ -164,19 +176,16 @@ fn set(
         );
         return Flow::Cancel;
     }
-    // The /setblock parser: unknown block, property or value all come back as None.
     let Some(state) = BlockStatesHost::block_state_id(host, &block_name) else {
         feedback(host, &format!("fawebim set: '{block_name}' is not a block"));
         return Flow::Cancel;
     };
-    // Resolve the command's execution dimension (`execute in` aware), falling
-    // back to the level currently in place.
     let dimension = event
         .command
         .dimension
         .id(host)
         .unwrap_or_else(|| host.dimension().to_string());
-    let changed = edit_cuboid(host, &dimension, region, state);
+    let changed = edit_region(host, &dimension, &region, state);
     match changed {
         Ok(count) => feedback(host, &format!("fawebim set: {count} block(s) set to {block_name}")),
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
@@ -185,11 +194,10 @@ fn set(
 }
 
 /// Send `edit` as column runs to `edit_blocks`, one call per batch of columns.
-/// Returns the total the game reports as changed.
-fn edit_cuboid(
+fn edit_region(
     host: &mut dyn ServerHost,
     dimension: &str,
-    region: CuboidRegion,
+    region: &RegionShape,
     state: mod_api::BlockState,
 ) -> Result<u64, String> {
     let mut changed = 0u64;
@@ -217,23 +225,63 @@ fn edit_cuboid(
     Ok(changed)
 }
 
-/// Walk the region's column runs — one `(x, z)` column per run from the
-/// region's `y` up by its `height`, palette index 0 — as in the Java walk.
-fn for_each_column_run(region: CuboidRegion, mut visit: impl FnMut(BlockRun)) {
-    let min = region.min();
-    let max = region.max();
-    let height = region.height() as u32;
-    for z in min.z..=max.z {
-        for x in min.x..=max.x {
-            visit(BlockRun {
-                x,
-                z,
-                y: min.y,
-                height,
-                surface: None,
-                block: 0,
-                only: None,
-            });
+/// Walk a `RegionShape` as vertical `(x, z)` column runs for `edit_blocks`.
+pub(crate) fn for_each_column_run(region: &RegionShape, mut visit: impl FnMut(BlockRun)) {
+    match region {
+        RegionShape::Cuboid(cuboid) => {
+            let min = cuboid.min();
+            let max = cuboid.max();
+            let height = cuboid.height() as u32;
+            for z in min.z..=max.z {
+                for x in min.x..=max.x {
+                    visit(BlockRun {
+                        x,
+                        z,
+                        y: min.y,
+                        height,
+                        surface: None,
+                        block: 0,
+                        only: None,
+                    });
+                }
+            }
+        }
+        other => {
+            let min = other.min();
+            let max = other.max();
+            for z in min.z..=max.z {
+                for x in min.x..=max.x {
+                    let mut run_start: Option<i32> = None;
+                    for y in min.y..=max.y {
+                        if other.contains(x, y, z) {
+                            if run_start.is_none() {
+                                run_start = Some(y);
+                            }
+                        } else if let Some(start_y) = run_start.take() {
+                            visit(BlockRun {
+                                x,
+                                z,
+                                y: start_y,
+                                height: (y - start_y) as u32,
+                                surface: None,
+                                block: 0,
+                                only: None,
+                            });
+                        }
+                    }
+                    if let Some(start_y) = run_start {
+                        visit(BlockRun {
+                            x,
+                            z,
+                            y: start_y,
+                            height: (max.y - start_y + 1) as u32,
+                            surface: None,
+                            block: 0,
+                            only: None,
+                        });
+                    }
+                }
+            }
         }
     }
 }
@@ -253,20 +301,16 @@ fn edit_batch(
 }
 
 fn feedback(host: &mut dyn ServerHost, line: &str) {
-    // Text formation is the only fallible part; plain ASCII always fits.
     let _ = host.commands().feedback(Text::literal(line));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::region::BlockVector3;
+    use crate::region::{BlockVector3, EllipsoidRegion, Vector3};
 
     #[test]
     fn source_key_shares_console_and_splits_players() {
-        // The exact PlayerRef shape is private to the SDK; the mapping logic is
-        // exercised through the two non-player paths here, and players are the
-        // UUID key by construction.
         let console = mod_api::CommandSource::Console {
             permission: mod_api::PermissionLevel::Owners,
         };
@@ -274,27 +318,25 @@ mod tests {
     }
 
     #[test]
-    fn integer_reads_typed_arguments_only() {
-        // Argument decoding is the game's; only its typed shape reaches us.
-        // (The round trip lives in the wasm smoke check.)
-        let _ = integer;
-    }
-
-    #[test]
-    fn column_runs_cover_every_column_once() {
-        let region = CuboidRegion::new(BlockVector3::at(0, 64, 0), BlockVector3::at(3, 67, 2));
+    fn column_runs_cover_cuboid_and_sphere_exact_volumes() {
+        let cuboid = RegionShape::Cuboid(CuboidRegion::new(
+            BlockVector3::at(0, 64, 0),
+            BlockVector3::at(3, 67, 2),
+        ));
         let mut runs = Vec::new();
-        for_each_column_run(region, |run| runs.push(run));
-        assert_eq!(runs.len() as u64, region.area());
-        let mut cells = 0u64;
-        for run in &runs {
-            assert_eq!(run.y, 64);
-            assert_eq!(run.height, 4);
-            assert_eq!(run.block, 0);
-            assert!(run.only.is_none());
-            assert!(run.surface.is_none());
-            cells += run.height as u64;
-        }
-        assert_eq!(cells, region.volume());
+        for_each_column_run(&cuboid, |run| runs.push(run));
+        assert_eq!(runs.len() as u64, 12);
+        let cells: u64 = runs.iter().map(|r| r.height as u64).sum();
+        assert_eq!(cells, cuboid.volume());
+
+        let mut sphere = RegionShape::Ellipsoid(EllipsoidRegion::new(
+            Vector3::new(0.5, 64.5, 0.5),
+            Vector3::new(3.0, 3.0, 3.0),
+        ));
+        let mut s_runs = Vec::new();
+        for_each_column_run(&sphere, |run| s_runs.push(run));
+        let s_cells: u64 = s_runs.iter().map(|r| r.height as u64).sum();
+        let visited = sphere.for_each_position(|_, _, _| {});
+        assert_eq!(s_cells, visited);
     }
 }

@@ -9,10 +9,12 @@
 
 pub mod calc;
 pub mod expression;
+pub mod math;
 pub mod noise;
 pub mod region;
 pub mod selection;
 pub mod set;
+pub mod transform;
 
 use std::sync::Mutex;
 

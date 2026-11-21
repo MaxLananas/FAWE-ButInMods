@@ -216,7 +216,7 @@ assert ('fawebim calc <formula:text>', 2) in usages
 assert ('fawebim calc at <x:number> <y:number> <z:number> <formula:text>', 2) in usages
 assert ('fawebim pos1 <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pos2 <x:integer> <y:integer> <z:integer>', 2) in usages
-assert ('fawebim sel', 2) in usages
+assert ('fawebim sel [mode:text]', 2) in usages
 assert ('fawebim set <block:text>', 2) in usages
 
 def encode_command(literals, arguments):
@@ -280,5 +280,27 @@ assert len(edit_calls) == 1, f'expected 1 edit_blocks call, got {len(edit_calls)
 assert b'fawebim set: 80 block(s) set to stone' in feedback_calls[-1], \
     f'unexpected set feedback: {feedback_calls[-1]!r}'
 print('run_mod_command: pos1 + pos2 + sel + set stone -> edit_blocks(16 runs), 80 blocks set')
+
+# 5) Switch selector to sphere, mark center + radius, and fill via set stone.
+reply = call_hook(
+    store, memory, exports, HOOK_RUN_MOD_COMMAND,
+    encode_command(['fawebim', 'sel'], [('mode', 'string', 'sphere')])
+)
+assert take_u32(reply, 0)[0] == 1
+assert b'fawebim sel: sphere' in feedback_calls[-1], f'unexpected sphere sel feedback: {feedback_calls[-1]!r}'
+for sub, coords in [('pos1', (0, 64, 0)), ('pos2', (2, 64, 0))]:
+    reply = call_hook(
+        store, memory, exports, HOOK_RUN_MOD_COMMAND,
+        encode_command(['fawebim', sub], [('x', 'integer', coords[0]), ('y', 'integer', coords[1]), ('z', 'integer', coords[2])])
+    )
+    assert take_u32(reply, 0)[0] == 1
+reply = call_hook(
+    store, memory, exports, HOOK_RUN_MOD_COMMAND,
+    encode_command(['fawebim', 'set'], [('block', 'string', 'stone')])
+)
+assert take_u32(reply, 0)[0] == 1
+assert len(edit_calls) == 2
+assert b'block(s) set to stone' in feedback_calls[-1], f'unexpected sphere set feedback: {feedback_calls[-1]!r}'
+print('run_mod_command: sel sphere + pos1 + pos2 + set stone -> edit_blocks OK')
 
 print('hook smoke check OK')
