@@ -298,6 +298,28 @@ assert ('fawebim thaw', 2) in usages
 assert ('fawebim deform <expression:text>', 2) in usages
 assert ('fawebim flood <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>', 2) in usages
 assert ('fawebim removenear <x:integer> <y:integer> <z:integer> <radius:integer> <mask:text>', 2) in usages
+compatibility_aliases = [
+    'ball <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>',
+    'hball <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>',
+    'cyl <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>',
+    'hcyl <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>',
+    'pyr <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>',
+    'hpyr <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>',
+    'segment <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>',
+    'sides <pattern:text>', 'outline <pattern:text>', 'surface <pattern:text>', 'shell <pattern:text>',
+    'blend [iterations:integer]', 'erosion [faces:integer] [iterations:integer]',
+    'dilation [faces:integer] [iterations:integer]', 'fall', 'natural', 'deliquid', 'grassify',
+    'snowfall', 'melt', 'distribution', 'dimensions', 'midpoint', 'rollback [steps:integer]',
+    'reapply [steps:integer]', 'purgehistory', 'duplicate', 'clipclear',
+    'cliprotate <degrees:integer>', 'clipflip <axis:text>', 'paint <block:text>',
+    'substitute <from:text> <to:text>', 'shiftblocks <dx:integer> <dy:integer> <dz:integer>',
+    'repeat <count:integer> <dx:integer> <dy:integer> <dz:integer>', 'paintbiome <biome:text>',
+    'nearclear <x:integer> <y:integer> <z:integer> <radius:integer> <mask:text>',
+    'connected <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>',
+]
+for alias in compatibility_aliases:
+    assert (f'fawebim {alias}', 2) in usages, f'missing implemented compatibility command: {alias}'
+assert len(compatibility_aliases) >= 30
 assert ('fawebim expand <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim contract <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim shift <dx:integer> <dy:integer> <dz:integer>', 2) in usages

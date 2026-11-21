@@ -65,7 +65,11 @@ Horizon instead of Fabric.
 >     remap every selected destination to a source coordinate, with buffered,
 >     undoable output and bounded expression evaluation;
 > 17. **connected and local edits**: bounded six-neighbour flood fill with
->     patterns and spherical mask-based removal around explicit coordinates.
+>     patterns and spherical mask-based removal around explicit coordinates;
+> 18. **37 implemented compatibility commands**: short shape names, region and
+>     morphology synonyms, terrain aliases, clipboard/history aliases and
+>     familiar paint/replace/move/biome/nearby names all route to the same
+>     validated implementations rather than no-op stubs.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
