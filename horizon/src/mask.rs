@@ -16,6 +16,9 @@ pub enum Mask {
     Solid,
     Liquid,
     Height { min: i32, max: i32 },
+    Sphere { x: f64, y: f64, z: f64, radius2: f64 },
+    Cylinder { x: f64, z: f64, radius2: f64 },
+    Grid { x: i32, y: i32, z: i32 },
     Surface,
     Chance(f64),
     Expression(Arc<Expression>),
@@ -42,6 +45,9 @@ impl Mask {
             Self::Solid => registry.is_solid(extent.get_block(x, y, z)),
             Self::Liquid => registry.is_liquid(extent.get_block(x, y, z)),
             Self::Height { min, max } => y >= *min && y <= *max,
+            Self::Sphere { x: cx, y: cy, z: cz, radius2 } => (x as f64-cx).powi(2)+(y as f64-cy).powi(2)+(z as f64-cz).powi(2)<=*radius2,
+            Self::Cylinder { x: cx, z: cz, radius2 } => (x as f64-cx).powi(2)+(z as f64-cz).powi(2)<=*radius2,
+            Self::Grid { x: sx, y: sy, z: sz } => x.rem_euclid(*sx)==0&&y.rem_euclid(*sy)==0&&z.rem_euclid(*sz)==0,
             Self::Surface => {
                 let state = extent.get_block(x,y,z);
                 !registry.is_air_like(state) && [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().any(|&(dx,dy,dz)| registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz)))
@@ -89,6 +95,9 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
         let max: i32 = b.trim().parse().map_err(|_| "invalid maximum Y".to_string())?;
         return Ok(Mask::Height { min: min.min(max), max: min.max(max) });
     }
+    if let Some(rest)=text.strip_prefix("#sphere") {let args=brackets(rest)?;if args.len()!=4{return Err("#sphere requires [x][y][z][radius]".into());}let number=|s:&str|s.trim().parse::<f64>().map_err(|_|"invalid sphere coordinate or radius".to_string());let(x,y,z,r)=(number(args[0])?,number(args[1])?,number(args[2])?,number(args[3])?);if !r.is_finite()||r<0.0{return Err("sphere radius must be non-negative".into());}return Ok(Mask::Sphere{x,y,z,radius2:r*r});}
+    if let Some(rest)=text.strip_prefix("#cylinder") {let args=brackets(rest)?;if args.len()!=3{return Err("#cylinder requires [x][z][radius]".into());}let number=|s:&str|s.trim().parse::<f64>().map_err(|_|"invalid cylinder coordinate or radius".to_string());let(x,z,r)=(number(args[0])?,number(args[1])?,number(args[2])?);if !r.is_finite()||r<0.0{return Err("cylinder radius must be non-negative".into());}return Ok(Mask::Cylinder{x,z,radius2:r*r});}
+    if let Some(rest)=text.strip_prefix("#grid") {let args=brackets(rest)?;if args.len()!=3{return Err("#grid requires [x][y][z]".into());}let size=|s:&str|s.trim().parse::<i32>().map_err(|_|"invalid grid spacing".to_string()).and_then(|n|if n>0{Ok(n)}else{Err("grid spacing must be positive".into())});return Ok(Mask::Grid{x:size(args[0])?,y:size(args[1])?,z:size(args[2])?});}
     if let Some(rest) = text.strip_prefix("#chance") {
         let args=brackets(rest)?;if args.len()!=1{return Err("#chance requires [probability]".into());}let mut chance=args[0].trim().trim_end_matches('%').parse::<f64>().map_err(|_|"invalid chance".to_string())?;if args[0].trim().ends_with('%')||chance>1.0{chance/=100.0;}return Ok(Mask::Chance(chance.clamp(0.0,1.0)));
     }
@@ -158,6 +167,9 @@ mod tests {
         assert!(Mask::parse(&reg, "#offset[stone][-1][0][0]").unwrap().test(&world,&reg,1,64,0));
         assert!(Mask::parse(&reg, "#adjacent[stone][1][6]").unwrap().test(&world,&reg,1,64,0));
         let chance=Mask::parse(&reg,"#chance[50%]").unwrap();assert_eq!(chance.test(&world,&reg,5,5,5),chance.test(&world,&reg,5,5,5));
+        let sphere=Mask::parse(&reg,"#sphere[0][64][0][2]").unwrap();assert!(sphere.test(&world,&reg,2,64,0));assert!(!sphere.test(&world,&reg,3,64,0));
+        let cylinder=Mask::parse(&reg,"#cylinder[0][0][2]").unwrap();assert!(cylinder.test(&world,&reg,0,999,2));assert!(!cylinder.test(&world,&reg,0,0,3));
+        let grid=Mask::parse(&reg,"#grid[2][4][2]").unwrap();assert!(grid.test(&world,&reg,-2,64,2));assert!(!grid.test(&world,&reg,1,64,2));
     }
     #[test] fn malformed_masks_are_rejected() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();

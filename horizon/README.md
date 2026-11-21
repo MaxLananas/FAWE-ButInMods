@@ -90,7 +90,9 @@ Horizon instead of Fabric.
 >     pastes, clipboard inspection and configurable history capacity;
 > 26. **chunk selection tools and spatial patterns**: direct chunk selection,
 >     chunk-aligned expansion/listing, selection surface metrics, repeating
->     linear stripes and concentric three-dimensional radial bands.
+>     linear stripes and concentric three-dimensional radial bands;
+> 27. **spatial masks and generators**: spherical, cylindrical and modular-grid
+>     masks plus solid/hollow ellipsoids and horizontal elliptical disks.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
