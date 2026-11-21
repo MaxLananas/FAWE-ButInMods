@@ -272,6 +272,12 @@ assert ('fawebim brush <kind:text>', 2) in usages
 assert ('fawebim brushset <radius:number> <pattern:text>', 2) in usages
 assert ('fawebim brushuse <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim brushlist', 2) in usages
+assert ('fawebim session', 2) in usages
+assert ('fawebim limit <blocks:integer>', 2) in usages
+assert ('fawebim timeout <seconds:integer>', 2) in usages
+assert ('fawebim fast <enabled:text>', 2) in usages
+assert ('fawebim tips <enabled:text>', 2) in usages
+assert ('fawebim watchdog <enabled:text>', 2) in usages
 assert ('fawebim undo [steps:integer]', 2) in usages
 assert ('fawebim redo [steps:integer]', 2) in usages
 assert ('fawebim clearhistory', 2) in usages

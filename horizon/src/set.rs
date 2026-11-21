@@ -56,6 +56,12 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim brushinfo", 2),
         Command::op("fawebim brushlist", 2),
         Command::op("fawebim brushclear", 2),
+        Command::op("fawebim session", 2),
+        Command::op("fawebim limit <blocks:integer>", 2),
+        Command::op("fawebim timeout <seconds:integer>", 2),
+        Command::op("fawebim fast <enabled:text>", 2),
+        Command::op("fawebim tips <enabled:text>", 2),
+        Command::op("fawebim watchdog <enabled:text>", 2),
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
@@ -96,6 +102,7 @@ pub(crate) fn run(
         Some("move" | "stack") => translate_operation(host, event, sessions, registry_cache),
         Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
         Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
+        Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog") => session_config(host, event, sessions),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory") => {
@@ -296,6 +303,19 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn session_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("session");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);
+    let parse_bool=|name:&str,current:bool|match event.command.argument(name){Some(CommandArgumentValue::String(s))=>match s.to_ascii_lowercase().as_str(){"on"|"true"|"yes"|"1"=>Some(true),"off"|"false"|"no"|"0"=>Some(false),"toggle"=>Some(!current),_=>None},_=>None};
+    match action{
+        "limit"=>{let value=integer(event,"blocks").unwrap_or(-1);session.max_blocks_changed=if value<0{-1}else{value};feedback(host,&format!("fawebim limit: {}",if value<0{"unlimited".into()}else{value.to_string()}));},
+        "timeout"=>{let value=integer(event,"seconds").unwrap_or(-1);session.timeout_secs=if value<0{-1}else{value};feedback(host,&format!("fawebim timeout: {}",if value<0{"disabled".into()}else{format!("{value}s")}));},
+        "fast"=>match parse_bool("enabled",session.fast_mode){Some(v)=>{session.fast_mode=v;feedback(host,&format!("fawebim fast: {v}"));},None=>feedback(host,"fawebim fast: use on, off, or toggle")},
+        "tips"=>match parse_bool("enabled",session.tips){Some(v)=>{session.tips=v;feedback(host,&format!("fawebim tips: {v}"));},None=>feedback(host,"fawebim tips: use on, off, or toggle")},
+        "watchdog"=>match parse_bool("enabled",session.watchdog){Some(v)=>{session.watchdog=v;feedback(host,&format!("fawebim watchdog: {v}"));},None=>feedback(host,"fawebim watchdog: use on, off, or toggle")},
+        _=>feedback(host,&format!("fawebim session: selector={}, selection={}, history={}/{}, limit={}, timeout={}, fast={}, tips={}, watchdog={}",session.selection.selector().kind().as_str(),session.selection.describe(),session.history.len(),session.history.len(),session.max_blocks_changed,session.timeout_secs,session.fast_mode,session.tips,session.watchdog)),
+    }Flow::Cancel
 }
 
 fn schematic_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,clipboards:&Mutex<ClipboardManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
