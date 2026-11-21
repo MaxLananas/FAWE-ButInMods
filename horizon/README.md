@@ -84,7 +84,10 @@ Horizon instead of Fabric.
 >     block/coordinate variables, surface/wall exposure, coordinate offsets and
 >     configurable six-neighbour adjacency, all composable with boolean masks;
 > 24. **population operations**: deterministic-density forests with trunks and
->     canopies, flora, pumpkins and pattern-based ore replacement over selections.
+>     canopies, flora, pumpkins and pattern-based ore replacement over selections;
+> 25. **bulk utility batch**: floor/ceiling/center pattern fills, top/bottom
+>     removal, water/lava repair, fire removal, positioned/offset clipboard
+>     pastes, clipboard inspection and configurable history capacity.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

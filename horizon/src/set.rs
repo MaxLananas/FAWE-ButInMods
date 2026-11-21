@@ -36,6 +36,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim copy", 2),
         Command::op("fawebim cut [pattern:text]", 2),
         Command::op("fawebim paste", 2),
+        Command::op("fawebim pasteat <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim clipboardinfo", 2),
         Command::op("fawebim rotate <degrees:integer>", 2),
         Command::op("fawebim flip <axis:text>", 2),
         Command::op("fawebim clearclipboard", 2),
@@ -101,6 +104,14 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim flora [density:integer]", 2),
         Command::op("fawebim pumpkins [density:integer]", 2),
         Command::op("fawebim ores [density:integer] <pattern:text>", 2),
+        Command::op("fawebim floor <pattern:text>", 2),
+        Command::op("fawebim ceiling <pattern:text>", 2),
+        Command::op("fawebim centerpattern <pattern:text>", 2),
+        Command::op("fawebim removeabove [layers:integer]", 2),
+        Command::op("fawebim removebelow [layers:integer]", 2),
+        Command::op("fawebim fixwater", 2),
+        Command::op("fawebim fixlava", 2),
+        Command::op("fawebim extinguish", 2),
         Command::op("fawebim deform <expression:text>", 2),
         Command::op("fawebim flood <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>", 2),
         Command::op("fawebim removenear <x:integer> <y:integer> <z:integer> <radius:integer> <mask:text>", 2),
@@ -112,6 +123,8 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
+        Command::op("fawebim history", 0),
+        Command::op("fawebim historylimit <records:integer>", 2),
         Command::op("fawebim help [page:integer]", 0),
         Command::op("fawebim commands [query:text]", 0),
         Command::op("fawebim version", 0),
@@ -179,7 +192,8 @@ pub(crate) fn run(
         Some("replace" | "substitute") => replace(host, event, sessions, registry_cache),
         Some("copy" | "duplicate") => copy_or_cut(host, event, sessions, clipboards, registry_cache, false),
         Some("cut") => copy_or_cut(host, event, sessions, clipboards, registry_cache, true),
-        Some("paste") => paste(host, event, sessions, clipboards, registry_cache),
+        Some("paste" | "pasteat" | "pasteoffset") => paste(host, event, sessions, clipboards, registry_cache),
+        Some("clipboardinfo") => { let key=source_key(event.source);let clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());if let Some(c)=clips.get(key){let s=c.size();let o=c.origin();feedback(host,&format!("fawebim clipboard: {} block(s), {}x{}x{}, origin=({}, {}, {})",c.volume(),s.x,s.y,s.z,o.x,o.y,o.z));}else{feedback(host,"fawebim clipboard: empty");}Flow::Cancel },
         Some("rotate" | "cliprotate") => transform_clipboard(host, event, clipboards, true),
         Some("flip" | "clipflip") => transform_clipboard(host, event, clipboards, false),
         Some("clearclipboard" | "clipclear") => {
@@ -203,9 +217,11 @@ pub(crate) fn run(
         Some("layers") => layer_operation(host, event, sessions, registry_cache),
         Some("scatter") => scatter_operation(host, event, sessions, registry_cache),
         Some("forest" | "flora" | "pumpkins" | "ores") => populate_operation(host, event, sessions, registry_cache),
+        Some("floor" | "ceiling" | "centerpattern" | "removeabove" | "removebelow" | "fixwater" | "fixlava" | "extinguish") => slice_operation(host, event, sessions, registry_cache),
         Some("flood" | "removenear" | "connected" | "nearclear") => near_operation(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("help" | "commands" | "version" | "patterninfo" | "maskinfo") => help_command(host, event, registry_cache),
+        Some("history" | "historylimit") => history_config(host,event,sessions),
         Some("undo" | "rollback") => history_step(host, event, sessions, registry_cache, true),
         Some("redo" | "reapply") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory" | "purgehistory") => {
@@ -427,6 +443,13 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn slice_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("floor");let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let pattern=if matches!(action,"floor"|"ceiling"|"centerpattern"){let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"air"};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,text){Ok(p)=>Some(p),Err(e)=>{feedback(host,&format!("fawebim {action}: {e}"));return Flow::Cancel;}}}else{None};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let min=region.min();let max=region.max();let layers=integer(event,"layers").unwrap_or(1).clamp(1,max.y-min.y+1);let mut positions=Vec::new();
+    if action=="centerpattern"{let xs=if(min.x+max.x)%2==0{vec![(min.x+max.x)/2]}else{vec![(min.x+max.x)/2,(min.x+max.x)/2+1]};let ys=if(min.y+max.y)%2==0{vec![(min.y+max.y)/2]}else{vec![(min.y+max.y)/2,(min.y+max.y)/2+1]};let zs=if(min.z+max.z)%2==0{vec![(min.z+max.z)/2]}else{vec![(min.z+max.z)/2,(min.z+max.z)/2+1]};for x in xs{for&y in &ys{for&z in &zs{if region.contains(x,y,z){positions.push((x,y,z,pattern.as_ref().unwrap().apply(x,y,z)));}}}}}
+    else{region.for_each_position(|x,y,z|{let state=world.get_block(x,y,z);let replacement=match action{"floor" if y==min.y=>pattern.as_ref().map(|p|p.apply(x,y,z)),"ceiling" if y==max.y=>pattern.as_ref().map(|p|p.apply(x,y,z)),"removeabove" if y>max.y-layers=>Some(0),"removebelow" if y<min.y+layers=>Some(0),"extinguish"=>{let name=registry.name(state);(name.ends_with(":fire")||name.ends_with(":soul_fire")).then_some(0)},"fixwater"|"fixlava" if registry.is_air_like(state)=>{let needle=if action=="fixwater"{"water"}else{"lava"};[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().find_map(|&(dx,dy,dz)|{let n=world.get_block(x+dx,y+dy,z+dz);registry.name(n).ends_with(needle).then_some(n)})},_=>None};if let Some(to)=replacement{positions.push((x,y,z,to));}});}
+    let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);for(x,y,z,state)in positions{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel
 }
 
 fn population_hash(x:i32,y:i32,z:i32)->u32{let mut n=(x as u32).wrapping_mul(0x9E3779B1)^(y as u32).wrapping_mul(0x85EBCA77)^(z as u32).wrapping_mul(0xC2B2AE3D);n^=n>>16;n=n.wrapping_mul(0x7FEB352D);n^=n>>15;n}
@@ -662,7 +685,12 @@ fn paste(
     let key=source_key(event.source);
     let clip={let clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());clips.get(key).cloned()};
     let Some(clip)=clip else {feedback(host,"fawebim paste: clipboard is empty");return Flow::Cancel;};
-    let origin=clip.origin(); let dimension=resolve_dimension(host,event);
+    let base=clip.origin();
+    let origin=match event.command.literals.get(1).map(String::as_str){
+        Some("pasteat")=>BlockVector3::at(integer(event,"x").unwrap_or(base.x),integer(event,"y").unwrap_or(base.y),integer(event,"z").unwrap_or(base.z)),
+        Some("pasteoffset")=>BlockVector3::at(base.x+integer(event,"dx").unwrap_or(0),base.y+integer(event,"dy").unwrap_or(0),base.z+integer(event,"dz").unwrap_or(0)),
+        _=>base,
+    }; let dimension=resolve_dimension(host,event);
     let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());
     let mut registry=CachedBlockRegistry::new(registry_cache.clone());
     let result={
@@ -754,6 +782,8 @@ fn replace(
     }
     Flow::Cancel
 }
+
+fn history_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("history");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let history=&mut manager.get(key).history;if action=="historylimit"{let limit=integer(event,"records").unwrap_or(history.max_records()as i32).clamp(1,10_000)as usize;history.set_max_records(limit);feedback(host,&format!("fawebim historylimit: {limit}"));}else{feedback(host,&format!("fawebim history: {} record(s), position={}, max={}, canUndo={}, canRedo={}",history.len(),history.current_index()+1,history.max_records(),history.can_undo(),history.can_redo()));}Flow::Cancel}
 
 fn help_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
     let action=event.command.literals.get(1).map(String::as_str).unwrap_or("help");match action{

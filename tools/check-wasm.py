@@ -272,6 +272,19 @@ assert ('fawebim forest [density:integer]', 2) in usages
 assert ('fawebim flora [density:integer]', 2) in usages
 assert ('fawebim pumpkins [density:integer]', 2) in usages
 assert ('fawebim ores [density:integer] <pattern:text>', 2) in usages
+assert ('fawebim floor <pattern:text>', 2) in usages
+assert ('fawebim ceiling <pattern:text>', 2) in usages
+assert ('fawebim centerpattern <pattern:text>', 2) in usages
+assert ('fawebim removeabove [layers:integer]', 2) in usages
+assert ('fawebim removebelow [layers:integer]', 2) in usages
+assert ('fawebim fixwater', 2) in usages
+assert ('fawebim fixlava', 2) in usages
+assert ('fawebim extinguish', 2) in usages
+assert ('fawebim pasteat <x:integer> <y:integer> <z:integer>', 2) in usages
+assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usages
+assert ('fawebim clipboardinfo', 2) in usages
+assert ('fawebim history', 0) in usages
+assert ('fawebim historylimit <records:integer>', 2) in usages
 assert ('fawebim walls <pattern:text>', 2) in usages
 assert ('fawebim faces <pattern:text>', 2) in usages
 assert ('fawebim overlay <pattern:text>', 2) in usages
