@@ -325,6 +325,15 @@ assert ('fawebim selectionalign <grid:integer>', 2) in usages
 assert ('fawebim frame <pattern:text>', 2) in usages
 assert ('fawebim corners <pattern:text>', 2) in usages
 assert ('fawebim pillars <pattern:text>', 2) in usages
+assert ('fawebim dome <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
+assert ('fawebim hdome <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
+assert ('fawebim cuboid <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>', 2) in usages
+assert ('fawebim hcuboid <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>', 2) in usages
+assert ('fawebim prism <x:integer> <y:integer> <z:integer> <sides:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim hprism <x:integer> <y:integer> <z:integer> <sides:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim levelterrain <y:integer> <pattern:text>', 2) in usages
+assert ('fawebim raiseterrain <amount:integer> <pattern:text>', 2) in usages
+assert ('fawebim lowerterrain <amount:integer>', 2) in usages
 assert ('fawebim ellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
 assert ('fawebim hellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>', 2) in usages
 assert ('fawebim disk <x:integer> <y:integer> <z:integer> <rx:number> <rz:number> <pattern:text>', 2) in usages

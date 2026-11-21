@@ -72,6 +72,12 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim hellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>", 2),
         Command::op("fawebim disk <x:integer> <y:integer> <z:integer> <rx:number> <rz:number> <pattern:text>", 2),
         Command::op("fawebim hdisk <x:integer> <y:integer> <z:integer> <rx:number> <rz:number> <pattern:text>", 2),
+        Command::op("fawebim dome <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>", 2),
+        Command::op("fawebim hdome <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number> <pattern:text>", 2),
+        Command::op("fawebim cuboid <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>", 2),
+        Command::op("fawebim hcuboid <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>", 2),
+        Command::op("fawebim prism <x:integer> <y:integer> <z:integer> <sides:integer> <radius:number> <height:integer> <pattern:text>", 2),
+        Command::op("fawebim hprism <x:integer> <y:integer> <z:integer> <sides:integer> <radius:number> <height:integer> <pattern:text>", 2),
         Command::op("fawebim walls <pattern:text>", 2),
         Command::op("fawebim faces <pattern:text>", 2),
         Command::op("fawebim overlay <pattern:text>", 2),
@@ -96,6 +102,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim compacteast", 2),
         Command::op("fawebim compactnorth", 2),
         Command::op("fawebim compactsouth", 2),
+        Command::op("fawebim levelterrain <y:integer> <pattern:text>", 2),
+        Command::op("fawebim raiseterrain <amount:integer> <pattern:text>", 2),
+        Command::op("fawebim lowerterrain <amount:integer>", 2),
         Command::op("fawebim move <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim stack <count:integer> <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim smooth [iterations:integer]", 2),
@@ -243,6 +252,7 @@ pub(crate) fn run(
         Some("checkerfill") => checker_fill(host,event,sessions,registry_cache),
         Some("maskedset" | "randomset" | "surfaceset" | "underlay" | "maskchoose") => selective_fill(host,event,sessions,registry_cache),
         Some("compactdown" | "compactup" | "compactwest" | "compacteast" | "compactnorth" | "compactsouth") => compact_operation(host,event,sessions,registry_cache),
+        Some("levelterrain" | "raiseterrain" | "lowerterrain") => height_operation(host,event,sessions,registry_cache),
         Some("replace" | "substitute") => replace(host, event, sessions, registry_cache),
         Some("copy" | "duplicate") => copy_or_cut(host, event, sessions, clipboards, registry_cache, false),
         Some("cut") => copy_or_cut(host, event, sessions, clipboards, registry_cache, true),
@@ -257,7 +267,7 @@ pub(crate) fn run(
             Flow::Cancel
         }
         Some("schemsave" | "schemload" | "schemlist") => schematic_command(host, event, clipboards, registry_cache),
-        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
+        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "dome" | "hdome" | "cuboid" | "hcuboid" | "prism" | "hprism" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
         Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars" | "cross" | "cross2d" | "lattice" | "stripes" | "border") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
@@ -408,6 +418,8 @@ fn sel(
     feedback(host, &format!("fawebim sel: {text}"));
     Flow::Cancel
 }
+
+fn height_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("levelterrain");let key=source_key(event.source);let mut region={let manager=lock_sessions(sessions);manager.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let pattern=if action!="lowerterrain"{let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"stone"};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,text){Ok(p)=>Some(p),Err(e)=>{feedback(host,&format!("fawebim {action}: {e}"));return Flow::Cancel;}}}else{None};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let min=region.min();let max=region.max();let amount=integer(event,"amount").unwrap_or(1).clamp(1,256);let target=integer(event,"y").unwrap_or(min.y).clamp(min.y,max.y);let mut placements=Vec::new();for z in min.z..=max.z{for x in min.x..=max.x{let top=(min.y..=max.y).rev().find(|&y|region.contains(x,y,z)&&!registry.is_air_like(world.get_block(x,y,z)));if let Some(top)=top{let desired=match action{"raiseterrain"=>top.saturating_add(amount).min(max.y),"lowerterrain"=>top.saturating_sub(amount).max(min.y.saturating_sub(1)),_=>target};if desired>top{for y in top+1..=desired{if region.contains(x,y,z){placements.push((x,y,z,pattern.as_ref().unwrap().apply(x,y,z)));}}}else if desired<top{for y in desired+1..=top{if region.contains(x,y,z){placements.push((x,y,z,0));}}}}}}let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);for(x,y,z,state)in placements{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel}
 
 fn compact_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("compactdown");let key=source_key(event.source);let mut region={let manager=lock_sessions(sessions);manager.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let min=region.min();let max=region.max();let axis=if action.ends_with("down")||action.ends_with("up"){1}else if action.ends_with("west")||action.ends_with("east"){0}else{2};let high=action.ends_with("up")||action.ends_with("east")||action.ends_with("south");let mut placements=Vec::new();let mut process=|coords:Vec<(i32,i32,i32)>|{let states=coords.iter().filter_map(|&(x,y,z)|{let state=world.get_block(x,y,z);(!registry.is_air_like(state)).then_some(state)}).collect::<Vec<_>>();let offset=if high{coords.len()-states.len()}else{0};for(i,(x,y,z))in coords.into_iter().enumerate(){let state=if i>=offset&&i<offset+states.len(){states[i-offset]}else{0};placements.push((x,y,z,state));}};match axis{1=>for z in min.z..=max.z{for x in min.x..=max.x{process((min.y..=max.y).filter(|&y|region.contains(x,y,z)).map(|y|(x,y,z)).collect());}},0=>for z in min.z..=max.z{for y in min.y..=max.y{process((min.x..=max.x).filter(|&x|region.contains(x,y,z)).map(|x|(x,y,z)).collect());}},_=>for y in min.y..=max.y{for x in min.x..=max.x{process((min.z..=max.z).filter(|&z|region.contains(x,y,z)).map(|z|(x,y,z)).collect());}}}drop(process);let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);for(x,y,z,state)in placements{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel}
 
@@ -713,6 +725,9 @@ fn generate(
             "torus"|"htorus"=>{let major=number(event,"major").unwrap_or(0.0);let minor=number(event,"minor").unwrap_or(0.0);if major>0.0&&minor>0.0{operations::torus(center,major,minor,name=="htorus",&mut place);}},
             "ellipsoid"|"hellipsoid"=>{let(rx,ry,rz)=(number(event,"rx").unwrap_or(0.0),number(event,"ry").unwrap_or(0.0),number(event,"rz").unwrap_or(0.0));if rx>0.0&&ry>0.0&&rz>0.0{operations::sphere(center,rx,ry,rz,name=="hellipsoid",&mut place);}},
             "disk"|"hdisk"=>{let(rx,rz)=(number(event,"rx").unwrap_or(0.0),number(event,"rz").unwrap_or(0.0));if rx>0.0&&rz>0.0{operations::cylinder(center,rx,rz,1,name=="hdisk",&mut place);}},
+            "dome"|"hdome"=>{let(rx,ry,rz)=(number(event,"rx").unwrap_or(0.0),number(event,"ry").unwrap_or(0.0),number(event,"rz").unwrap_or(0.0));if rx>0.0&&ry>0.0&&rz>0.0{operations::sphere(center,rx,ry,rz,name=="hdome",|px,py,pz|if py>=center.y{place(px,py,pz);});}},
+            "cuboid"|"hcuboid"=>{if let(Some(x2),Some(y2),Some(z2))=(coord("x2"),coord("y2"),coord("z2")){operations::cuboid(center,BlockVector3::at(x2,y2,z2),name=="hcuboid",&mut place);}},
+            "prism"|"hprism"=>{let(sides,radius,height)=(integer(event,"sides").unwrap_or(3),number(event,"radius").unwrap_or(0.0),integer(event,"height").unwrap_or(0));if radius>0.0&&height!=0{operations::regular_prism(center,sides,radius,height,name=="hprism",&mut place);}},
             "line"=>{if let (Some(x2),Some(y2),Some(z2))=(coord("x2"),coord("y2"),coord("z2")){operations::line(center,BlockVector3::at(x2,y2,z2),1.0,&mut place);}},
             "bezier"=>{if let(Some(x2),Some(y2),Some(z2),Some(x3),Some(y3),Some(z3))=(coord("x2"),coord("y2"),coord("z2"),coord("x3"),coord("y3"),coord("z3")){operations::quadratic_bezier(center,BlockVector3::at(x2,y2,z2),BlockVector3::at(x3,y3,z3),number(event,"thickness").unwrap_or(1.0).clamp(1.0,32.0),&mut place);}},
             "helix"=>{let(radius,height,turns,thickness)=(number(event,"radius").unwrap_or(0.0),integer(event,"height").unwrap_or(0),number(event,"turns").unwrap_or(1.0),number(event,"thickness").unwrap_or(1.0).clamp(1.0,32.0));if radius>0.0&&height!=0&&turns!=0.0{operations::helix(center,radius,height,turns,thickness,&mut place);}},

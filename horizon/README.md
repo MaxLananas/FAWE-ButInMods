@@ -118,7 +118,10 @@ Horizon instead of Fabric.
 >     and automatic selection trimming around arbitrary matching content;
 > 36. **six-direction compaction and material statistics**: stable line-wise
 >     packing toward every cardinal boundary, plus direct air, solid, liquid and
->     exposed-surface counts without requiring users to write masks manually.
+>     exposed-surface counts without requiring users to write masks manually;
+> 37. **geometry and terrain batch**: solid/hollow domes, cuboids and regular
+>     polygonal prisms, plus column-aware terrain levelling, raising and lowering
+>     constrained to arbitrary selections and integrated with edit history.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
