@@ -67,6 +67,10 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim fast <enabled:text>", 2),
         Command::op("fawebim tips <enabled:text>", 2),
         Command::op("fawebim watchdog <enabled:text>", 2),
+        Command::op("fawebim count <mask:text>", 2),
+        Command::op("fawebim distr", 2),
+        Command::op("fawebim size", 2),
+        Command::op("fawebim center", 2),
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
@@ -109,6 +113,7 @@ pub(crate) fn run(
         Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
         Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
         Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog") => session_config(host, event, sessions),
+        Some("count" | "distr" | "size" | "center") => selection_info(host, event, sessions, registry_cache),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory") => {
@@ -309,6 +314,14 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn selection_info(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("size");let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let min=region.min();let max=region.max();
+    if action=="size"{feedback(host,&format!("fawebim size: {} block(s), {}x{}x{}, min=({}, {}, {}), max=({}, {}, {})",region.volume(),max.x-min.x+1,max.y-min.y+1,max.z-min.z+1,min.x,min.y,min.z,max.x,max.y,max.z));return Flow::Cancel;}
+    if action=="center"{feedback(host,&format!("fawebim center: ({:.1}, {:.1}, {:.1})",(min.x as f64+max.x as f64)/2.0,(min.y as f64+max.y as f64)/2.0,(min.z as f64+max.z as f64)/2.0));return Flow::Cancel;}
+    let mask=if action=="count"{let text=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"*"};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Mask::parse(&reg,text){Ok(m)=>Some(m),Err(e)=>{feedback(host,&format!("fawebim count: {e}"));return Flow::Cancel;}}}else{None};let dimension=resolve_dimension(host,event);let world=HorizonWorld::new(host,dimension,registry_cache.clone());let registry=CachedBlockRegistry::new(registry_cache.clone());let mut counts=HashMap::<i32,u64>::new();let mut matched=0u64;region.for_each_position(|x,y,z|{let state=world.get_block(x,y,z);if mask.as_ref().map_or(true,|m|m.test(&world,&registry,x,y,z)){matched+=1;*counts.entry(state).or_insert(0)+=1;}});
+    if action=="count"{feedback(host,&format!("fawebim count: {matched} matching block(s) out of {}",region.volume()));}else{let mut rows=counts.into_iter().collect::<Vec<_>>();rows.sort_by(|a,b|b.1.cmp(&a.1).then(a.0.cmp(&b.0)));let shown=rows.iter().take(12).map(|(state,n)|format!("{}={n}",registry.name(*state))).collect::<Vec<_>>().join(", ");feedback(host,&format!("fawebim distr: {matched} block(s), {shown}"));}Flow::Cancel
 }
 
 fn session_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{

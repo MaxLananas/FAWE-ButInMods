@@ -49,7 +49,9 @@ Horizon instead of Fabric.
 >    names and atomic Horizon data-file save/load/list commands;
 > 10. **terrain morphology** (`src/morphology.rs`): bounded iterative erosion,
 >     dilation and majority smoothing with configurable face thresholds,
->     selection commands and undoable bulk output.
+>     selection commands and undoable bulk output;
+> 11. **selection inspection**: mask-aware block counting, sorted block
+>     distributions, exact region dimensions/bounds and geometric centers.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
