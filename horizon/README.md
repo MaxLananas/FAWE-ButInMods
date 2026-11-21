@@ -76,7 +76,10 @@ Horizon instead of Fabric.
 >     non-zero scaling, offsets, flips and deterministic random offsets. These
 >     compose in order and transform both coordinates and directional states;
 > 21. **in-game discovery** (`src/help.rs`): paginated categorized help,
->     searchable commands, version reporting and live pattern/mask validation.
+>     searchable commands, version reporting and live pattern/mask validation;
+> 22. **coordinate-driven patterns**: axis gradients with explicit ranges and
+>     compiled expression selectors over `x`, `y`, `z`, nestable with weighted,
+>     checker, noise, offset and no-axis patterns.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

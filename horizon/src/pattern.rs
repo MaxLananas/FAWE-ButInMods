@@ -4,6 +4,8 @@
 //! names are resolved once through `BlockStateRegistry`, then millions of calls
 //! to `apply` are allocation-free.
 
+use std::sync::Arc;
+use crate::expression::{Expression, Variables};
 use crate::noise::{NoiseFn, Perlin, RidgedMultiFractal, Simplex, Voronoi};
 use crate::registry::BlockStateRegistry;
 
@@ -13,6 +15,8 @@ pub enum Pattern {
     Weighted(Vec<(f64, Pattern)>),
     Checker { size: i32, choices: Vec<Pattern> },
     Noise { scale: f64, kind: NoiseKind, choices: Vec<(f64, Pattern)> },
+    Gradient { axis: u8, min: f64, max: f64, choices: Vec<(f64, Pattern)> },
+    Expression { expression: Arc<Expression>, choices: Vec<(f64, Pattern)> },
     Offset { inner: Box<Pattern>, x: i32, y: i32, z: i32 },
     NoAxis { inner: Box<Pattern>, axis: u8 },
 }
@@ -43,6 +47,16 @@ impl Pattern {
                     NoiseKind::Voronoi => Voronoi::new(0).unit(fx, fy, fz),
                     NoiseKind::Ridged => RidgedMultiFractal::new(0, 6, 2.0, 2.0).unit(fx, fy, fz),
                 }.clamp(0.0, 1.0 - f64::EPSILON);
+                choose(choices, value, x, y, z)
+            }
+            Self::Gradient { axis, min, max, choices } => {
+                let coordinate = match axis { 0 => x as f64, 1 => y as f64, _ => z as f64 };
+                let value = if (max - min).abs() < f64::EPSILON { 0.0 } else { ((coordinate - min) / (max - min)).clamp(0.0, 1.0 - f64::EPSILON) };
+                choose(choices, value, x, y, z)
+            }
+            Self::Expression { expression, choices } => {
+                let mut vars = Variables::new().set("x", x as f64).set("y", y as f64).set("z", z as f64);
+                let value = expression.evaluate(&mut vars).unwrap_or(0.0).clamp(0.0, 1.0 - f64::EPSILON);
                 choose(choices, value, x, y, z)
             }
             Self::Offset { inner, x: ox, y: oy, z: oz } => inner.apply(x + ox, y + oy, z + oz),
@@ -93,6 +107,26 @@ fn parse_pattern(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Resu
         let choices = split_top(args[0], ',').into_iter().map(|p| parse_pattern(reg, p, depth + 1)).collect::<Result<Vec<_>, _>>()?;
         let size = match args.get(1) { Some(v) => v.parse::<i32>().map_err(|_| "invalid checker size".to_string())?, None => 1 };
         return Ok(Pattern::Checker { size: size.max(1), choices });
+    }
+    if let Some(rest) = text.strip_prefix("#gradient") {
+        let args = brackets(rest)?;
+        if args.len() != 4 { return Err("#gradient requires [axis][min][max][patterns]".into()); }
+        let axis = match args[0].trim().to_ascii_lowercase().as_str() { "x" => 0, "y" => 1, "z" => 2, _ => return Err("gradient axis must be x, y, or z".into()) };
+        let min = args[1].trim().parse::<f64>().map_err(|_| "invalid gradient minimum".to_string())?;
+        let max = args[2].trim().parse::<f64>().map_err(|_| "invalid gradient maximum".to_string())?;
+        let mut choices = Vec::new();
+        for item in split_top(args[3], ',') { let (weight, body) = parse_weight(item)?; choices.push((weight, parse_pattern(reg, body, depth + 1)?)); }
+        if choices.is_empty() { return Err("gradient needs at least one pattern".into()); }
+        return Ok(Pattern::Gradient { axis, min, max, choices });
+    }
+    if let Some(rest) = text.strip_prefix("#expression") {
+        let args = brackets(rest)?;
+        if args.len() != 2 { return Err("#expression requires [expression][patterns]".into()); }
+        let expression = Arc::new(Expression::compile(args[0]).map_err(|e| e.0)?);
+        let mut choices = Vec::new();
+        for item in split_top(args[1], ',') { let (weight, body) = parse_weight(item)?; choices.push((weight, parse_pattern(reg, body, depth + 1)?)); }
+        if choices.is_empty() { return Err("expression pattern needs choices".into()); }
+        return Ok(Pattern::Expression { expression, choices });
     }
     for (prefix, kind) in [("#perlin", NoiseKind::Perlin), ("#simplex", NoiseKind::Simplex), ("#voronoi", NoiseKind::Voronoi), ("#ridged", NoiseKind::Ridged)] {
         if let Some(rest) = text.strip_prefix(prefix) {
@@ -171,6 +205,10 @@ mod tests {
         assert_eq!(checker.apply(0,0,0), stone); assert_eq!(checker.apply(2,0,0), dirt);
         assert!(Pattern::parse(&reg, "#perlin[0.1][stone,dirt]").is_ok());
         assert!(Pattern::parse(&reg, "#nx[#checker[stone,dirt]]").is_ok());
+        let gradient = Pattern::parse(&reg, "#gradient[x][0][10][stone,dirt]").unwrap();
+        assert_eq!(gradient.apply(0,0,0), stone); assert_eq!(gradient.apply(10,0,0), dirt);
+        let expression = Pattern::parse(&reg, "#expression[x/10][stone,dirt]").unwrap();
+        assert_eq!(expression.apply(0,0,0), stone); assert_eq!(expression.apply(10,0,0), dirt);
     }
     #[test] fn rejects_invalid_patterns() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();
