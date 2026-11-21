@@ -4,7 +4,7 @@ A Horizon **code mod**: a server-side wasm module the game's Horizon runtime
 loads, reimplementing FAWE's surface (300 commands, 46 brushes, history) for
 Horizon instead of Fabric.
 
-> **Status: four engine milestones in.** The ABI bridge and the build system
+> **Status: six engine milestones in.** The ABI bridge and the build system
 > work — a member module (`fawebim.wasm`) builds with a statically-linked
 > std and passes native tests plus an ABI/behavioural smoke test — and four
 > engine slices are ported:
@@ -33,7 +33,10 @@ Horizon instead of Fabric.
 > 5. **patterns and masks** (`src/pattern.rs`, `src/mask.rs`): weighted,
 >    checker, Perlin/Simplex/Voronoi/ridged, offset and axis patterns, boolean
 >    block/material/height masks, pattern-enabled `set`, and mask/pattern
->    `/fawebim replace`.
+>    `/fawebim replace`;
+> 6. **in-memory clipboards** (`src/clipboard.rs`): selection capture, cut with
+>    replacement patterns, paste with history, quarter-turn rotation, axis
+>    flips, and per-player clipboard lifecycle commands.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
@@ -52,6 +55,8 @@ Layout:
 | `src/transform.rs` | `Axis`, `Transform` (`Rotate`, `Flip`, `Scale`, `Offset`, `RandomOffset`, `Chain`), `BlockStateTransform` |
 | `src/region.rs` | `block_keys` + all 7 region shapes (`Cuboid`, `Cylinder`, `Ellipsoid`, `Polygonal2D`, `ConvexPolyhedral`, `Polyhedral`, `Fuzzy`) |
 | `src/selection.rs` | all 9 `RegionSelector` modes, per-source `Selection` and `SelectionStore` |
+| `src/pattern.rs`, `src/mask.rs` | composable pattern/mask parsers used by set, replace, operations and brushes |
+| `src/clipboard.rs` | dense selection clipboards with rotate/flip transforms and per-player storage |
 | `src/registry.rs` | lazy Horizon block/biome/item registry bridge and in-memory test registry |
 | `src/world.rs` | packed block arrays, chunk buffers, extents, and Horizon bulk world writes |
 | `src/history.rs` | compact block/biome/entity change sets and undo/redo history |

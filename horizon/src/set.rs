@@ -7,6 +7,7 @@ use mod_api::{
     BlockRun, Command, CommandArgumentValue, Flow, RunModCommandEvent, ServerHost, Text,
 };
 
+use crate::clipboard::{Clipboard, ClipboardManager};
 use crate::mask::Mask;
 use crate::pattern::Pattern;
 use crate::region::{BlockVector3, CuboidRegion, RegionShape};
@@ -24,6 +25,12 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim sel [mode:text]", 2),
         Command::op("fawebim set <block:text>", 2),
         Command::op("fawebim replace <from:text> <to:text>", 2),
+        Command::op("fawebim copy", 2),
+        Command::op("fawebim cut [pattern:text]", 2),
+        Command::op("fawebim paste", 2),
+        Command::op("fawebim rotate <degrees:integer>", 2),
+        Command::op("fawebim flip <axis:text>", 2),
+        Command::op("fawebim clearclipboard", 2),
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
@@ -34,6 +41,7 @@ pub(crate) fn run(
     host: &mut dyn ServerHost,
     event: &RunModCommandEvent<'_>,
     sessions: &Mutex<SessionManager>,
+    clipboards: &Mutex<ClipboardManager>,
     registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
 ) -> Flow {
     let words = &event.command.literals;
@@ -46,6 +54,16 @@ pub(crate) fn run(
         Some("sel") => sel(host, sessions, event),
         Some("set") => set(host, event, sessions, registry_cache),
         Some("replace") => replace(host, event, sessions, registry_cache),
+        Some("copy") => copy_or_cut(host, event, sessions, clipboards, registry_cache, false),
+        Some("cut") => copy_or_cut(host, event, sessions, clipboards, registry_cache, true),
+        Some("paste") => paste(host, event, sessions, clipboards, registry_cache),
+        Some("rotate") => transform_clipboard(host, event, clipboards, true),
+        Some("flip") => transform_clipboard(host, event, clipboards, false),
+        Some("clearclipboard") => {
+            let removed = clipboards.lock().unwrap_or_else(|p| p.into_inner()).clear(source_key(event.source));
+            feedback(host, if removed { "fawebim clearclipboard: clipboard cleared" } else { "fawebim clearclipboard: clipboard already empty" });
+            Flow::Cancel
+        }
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory") => {
@@ -238,6 +256,73 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn copy_or_cut(
+    host: &mut dyn ServerHost,
+    event: &RunModCommandEvent<'_>,
+    sessions: &Mutex<SessionManager>,
+    clipboards: &Mutex<ClipboardManager>,
+    registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
+    cut: bool,
+) -> Flow {
+    let key = source_key(event.source);
+    let mut region = { let mgr=lock_sessions(sessions); mgr.peek(key).and_then(|s|s.selection.region()) };
+    let Some(ref mut region)=region else { feedback(host,"fawebim copy: no selection"); return Flow::Cancel; };
+    if region.volume()>CuboidRegion::MAX_VOLUME { feedback(host,"fawebim copy: selection exceeds the block limit"); return Flow::Cancel; }
+    let fill = if cut {
+        let text=match event.command.argument("pattern") { Some(CommandArgumentValue::String(s)) if !s.trim().is_empty()=>s.trim(), _=>"air" };
+        let reg=HorizonBlockRegistry::new(host,registry_cache.clone());
+        match Pattern::parse(&reg,text) { Ok(p)=>Some(p),Err(e)=>{feedback(host,&format!("fawebim cut: {e}"));return Flow::Cancel;} }
+    } else { None };
+    let dimension=resolve_dimension(host,event);
+    let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());
+    let clip=Clipboard::capture(&world,region);
+    let volume=clip.volume(); let origin=clip.origin();
+    clipboards.lock().unwrap_or_else(|p|p.into_inner()).set(key,clip);
+    if let Some(pattern)=fill {
+        let mut registry=CachedBlockRegistry::new(registry_cache.clone());
+        let result={
+            let mut manager=lock_sessions(sessions); let mut local=manager.get(key).clone();
+            let mut edit=EditSession::open(&mut world,&mut registry,&mut local,"//cut",true);
+            region.for_each_position(|x,y,z|{edit.set_block(x,y,z,pattern.apply(x,y,z));});
+            let result=edit.finish(&mut local,Some(&mut manager.edit_log)); *manager.get(key)=local; result
+        };
+        if let Err(e)=result { feedback(host,&format!("fawebim cut: {e}")); return Flow::Cancel; }
+    }
+    feedback(host,&format!("fawebim {}: {volume} block(s), origin ({}, {}, {})",if cut{"cut"}else{"copy"},origin.x,origin.y,origin.z));
+    Flow::Cancel
+}
+
+fn paste(
+    host: &mut dyn ServerHost,
+    event: &RunModCommandEvent<'_>,
+    sessions: &Mutex<SessionManager>,
+    clipboards: &Mutex<ClipboardManager>,
+    registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
+) -> Flow {
+    let key=source_key(event.source);
+    let clip={let clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());clips.get(key).cloned()};
+    let Some(clip)=clip else {feedback(host,"fawebim paste: clipboard is empty");return Flow::Cancel;};
+    let origin=clip.origin(); let dimension=resolve_dimension(host,event);
+    let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());
+    let mut registry=CachedBlockRegistry::new(registry_cache.clone());
+    let result={
+        let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();
+        let mut edit=EditSession::open(&mut world,&mut registry,&mut local,"//paste",true);
+        clip.for_each(|x,y,z,state|{edit.set_block(origin.x+x,origin.y+y,origin.z+z,state);});
+        let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result
+    };
+    match result {Ok(n)=>feedback(host,&format!("fawebim paste: {n} block(s) pasted")),Err(e)=>feedback(host,&format!("fawebim paste: {e}"))};
+    Flow::Cancel
+}
+
+fn transform_clipboard(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,clipboards:&Mutex<ClipboardManager>,rotate:bool)->Flow{
+    let key=source_key(event.source);let mut clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());
+    let Some(clip)=clips.get_mut(key) else {drop(clips);feedback(host,"fawebim clipboard: clipboard is empty");return Flow::Cancel;};
+    if rotate { let degrees=integer(event,"degrees").unwrap_or(0);if degrees%90!=0{drop(clips);feedback(host,"fawebim rotate: degrees must be a multiple of 90");return Flow::Cancel;}clip.rotate_y(degrees/90); }
+    else { let axis=match event.command.argument("axis"){Some(CommandArgumentValue::String(s))=>s.chars().next().unwrap_or('y'),_=>'y'};if !matches!(axis,'x'|'y'|'z'){drop(clips);feedback(host,"fawebim flip: axis must be x, y, or z");return Flow::Cancel;}clip.flip(axis); }
+    let size=clip.size();drop(clips);feedback(host,&format!("fawebim clipboard: transformed to {}x{}x{}",size.x,size.y,size.z));Flow::Cancel
 }
 
 fn replace(

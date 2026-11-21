@@ -245,6 +245,13 @@ assert ('fawebim pos1 <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pos2 <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim sel [mode:text]', 2) in usages
 assert ('fawebim set <block:text>', 2) in usages
+assert ('fawebim replace <from:text> <to:text>', 2) in usages
+assert ('fawebim copy', 2) in usages
+assert ('fawebim cut [pattern:text]', 2) in usages
+assert ('fawebim paste', 2) in usages
+assert ('fawebim rotate <degrees:integer>', 2) in usages
+assert ('fawebim flip <axis:text>', 2) in usages
+assert ('fawebim clearclipboard', 2) in usages
 assert ('fawebim undo [steps:integer]', 2) in usages
 assert ('fawebim redo [steps:integer]', 2) in usages
 assert ('fawebim clearhistory', 2) in usages
