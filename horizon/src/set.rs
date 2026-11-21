@@ -71,6 +71,11 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim distr", 2),
         Command::op("fawebim size", 2),
         Command::op("fawebim center", 2),
+        Command::op("fawebim expand <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim contract <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim shift <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim outset <amount:integer>", 2),
+        Command::op("fawebim inset <amount:integer>", 2),
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
@@ -114,6 +119,7 @@ pub(crate) fn run(
         Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
         Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog") => session_config(host, event, sessions),
         Some("count" | "distr" | "size" | "center") => selection_info(host, event, sessions, registry_cache),
+        Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory") => {
@@ -314,6 +320,18 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn selection_mutate(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("shift");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);let Some(mut region)=session.selection.region()else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};
+    let result=match action{
+        "shift"=>region.shift(integer(event,"dx").unwrap_or(0),integer(event,"dy").unwrap_or(0),integer(event,"dz").unwrap_or(0)),
+        "expand"=>region.expand(&[BlockVector3::at(integer(event,"dx").unwrap_or(0),integer(event,"dy").unwrap_or(0),integer(event,"dz").unwrap_or(0))]),
+        "contract"=>region.contract(&[BlockVector3::at(integer(event,"dx").unwrap_or(0),integer(event,"dy").unwrap_or(0),integer(event,"dz").unwrap_or(0))]),
+        "outset"|"inset"=>{let amount=integer(event,"amount").unwrap_or(0).abs();let dirs=[BlockVector3::at(amount,amount,amount),BlockVector3::at(-amount,-amount,-amount)];if action=="outset"{region.expand(&dirs)}else{region.contract(&dirs)}},
+        _=>Ok(false),
+    };
+    match result{Ok(changed)=>{if changed{session.selection.selector_mut().learn_region(region);feedback(host,&format!("fawebim {action}: selection updated — {}",session.selection.describe()));}else{feedback(host,&format!("fawebim {action}: selection unchanged"));}},Err(error)=>feedback(host,&format!("fawebim {action}: {error}"))}Flow::Cancel
 }
 
 fn selection_info(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{

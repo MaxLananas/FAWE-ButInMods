@@ -285,6 +285,11 @@ assert ('fawebim count <mask:text>', 2) in usages
 assert ('fawebim distr', 2) in usages
 assert ('fawebim size', 2) in usages
 assert ('fawebim center', 2) in usages
+assert ('fawebim expand <dx:integer> <dy:integer> <dz:integer>', 2) in usages
+assert ('fawebim contract <dx:integer> <dy:integer> <dz:integer>', 2) in usages
+assert ('fawebim shift <dx:integer> <dy:integer> <dz:integer>', 2) in usages
+assert ('fawebim outset <amount:integer>', 2) in usages
+assert ('fawebim inset <amount:integer>', 2) in usages
 assert ('fawebim undo [steps:integer]', 2) in usages
 assert ('fawebim redo [steps:integer]', 2) in usages
 assert ('fawebim clearhistory', 2) in usages

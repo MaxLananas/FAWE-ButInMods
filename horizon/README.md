@@ -51,7 +51,9 @@ Horizon instead of Fabric.
 >     dilation and majority smoothing with configurable face thresholds,
 >     selection commands and undoable bulk output;
 > 11. **selection inspection**: mask-aware block counting, sorted block
->     distributions, exact region dimensions/bounds and geometric centers.
+>     distributions, exact region dimensions/bounds and geometric centers;
+> 12. **selection mutation**: shape-aware expand, contract, shift, inset and
+>     outset operations that teach the active selector its updated geometry.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
