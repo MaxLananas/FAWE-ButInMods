@@ -1,163 +1,94 @@
 name: Build
 
-# ---------------------------------------------------------------------------
-# What runs, and why so little of it
-# ---------------------------------------------------------------------------
-# Every run costs the account something: minutes on a runner, a cache entry, an
-# artifact kept for ninety days. A workflow that ran on every branch, kept an
-# artifact of every build and cached the Gradle home under a key that never
-# matched is how a repository ends up with thousands of runs and six gigabytes
-# of caches. This one runs on three occasions and no more:
-#
-#   * a push to `main` - the branch that ships, verified end to end;
-#   * a pull request into `main` - compiled and tested before it is merged;
-#   * a tag `v*` - the same build, plus the GitHub release it publishes.
-#
-# A push to a feature branch deliberately does not run anything: the pull
-# request that opens it does, once, and every later push to that branch updates
-# the same run instead of adding one (see `concurrency`). `workflow_dispatch`
-# stays for a run on demand, on any branch. A push that only touches prose -
-# the README, the changelog, the licence - is skipped entirely.
+# Quota-minimal CI for FAWE-BIM:
+# - Never runs on schedule (zero idle runner minutes).
+# - Never runs on feature/arena branch pushes or on Horizon/docs/tooling-only changes.
+# - Runs only on:
+#     1) `v*` tags (builds, smoke-tests, and publishes the GitHub Release jar),
+#     2) pushes / PRs to `26.3` that actually touch Java/Fabric/Gradle sources,
+#     3) manual `workflow_dispatch`.
+# - Uploads zero workflow artifacts and keeps at most one small dependency-only
+#   Gradle cache (evicting any older cache keys inline, without a second job).
 on:
   push:
-    branches: ['main']
+    branches: ['26.3']
     tags: ['v*']
-    # Prose only. A change to this file is not prose, so it is not ignored.
     paths-ignore:
+      - 'horizon/**'
+      - 'docs/**'
+      - 'tools/**'
       - '**.md'
       - 'LICENSE.txt'
       - 'NOTICE'
   pull_request:
-    branches: ['main']
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE.txt'
-      - 'NOTICE'
+    branches: ['26.3']
+    paths:
+      - 'core/**'
+      - 'fabric/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
-  # The weekly sweep of stored artifacts and stale caches below.
-  schedule:
-    - cron: '17 4 * * 1'
 
-# Nothing is uploaded as a workflow artifact: an artifact is kept for ninety
-# days against the account's storage quota, and no job ever downloaded this
-# one. The jar travels as a release asset on a tag instead, which costs no
-# storage quota. What is left to write is the release, hence `contents: write`.
 permissions:
   contents: write
+  actions: write
 
-# One run per ref: a new push cancels the older, still-queued or still-running
-# run of the same branch, so the newest commit is always the one being
-# verified and a branch under work never queues a build per push.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # One job, not three. Each job a workflow starts pays for a fresh runner, a
-  # fresh checkout and a fresh warm-up of the JVM; the release used to be a
-  # second job that built the same jar a second time, and a third job existed
-  # only to delete artifacts that are no longer uploaded. The build, the jar
-  # check, the smoke test and - on a tag - the release are steps of this one.
   build:
     name: Build, test, boot the mod and release
     runs-on: ubuntu-latest
-    # A green run is about four minutes; anything near this is a hang.
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
-      # Minecraft 26.x runs on Java 25 and its class files are major version 69:
-      # the toolchain here is the one the game itself needs.
       - name: Set up JDK 25
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
 
-      # One cache entry, and it is only written when the files that decide the
-      # toolchain change - a version bump, not a code change. `restore-keys`
-      # lets a bump start from the previous entry, so a port downloads only
-      # what is new. The whole Gradle home is cached: the downloads, the
-      # compiled Kotlin build scripts, the build cache and Loom's extracted
-      # game, which is what makes a warm run short.
-      #
-      # The key moved from v1/v2 to v3 when the workflow was cleaned up: the
-      # entries the old keys left behind - six gigabytes of them, most of them
-      # never read again - were deleted, and this one starts empty.
-      # Restore here, save at the end of the job, and only on `main`: a cache
-      # belongs to the ref that wrote it, so a single save step saved one entry
-      # per ref - main, the tag, every pull request, every branch - at half a
-      # gigabyte each, against a ten-gigabyte limit. A branch reads what `main`
-      # wrote, which is what `restore-keys` is for; only `main` writes.
-      - name: Restore the Gradle home
+      - name: Restore Gradle dependencies
         id: gradle-cache
         uses: actions/cache/restore@v6
         with:
           path: |
-            ~/.gradle/caches
+            ~/.gradle/caches/modules-2
             ~/.gradle/wrapper
-            .gradle
-            fabric/.gradle
-          key: gradle-home-v4-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
+          key: gradle-deps-v5-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'settings.gradle.kts', 'build.gradle.kts', 'core/build.gradle.kts', 'fabric/build.gradle.kts') }}
           restore-keys: |
-            gradle-home-v4-
-            gradle-home-v3-
+            gradle-deps-v5-
 
-      # One invocation, not two: `build` and `verify` in the same JVM means one
-      # Gradle start, one configuration phase and one dependency resolution.
-      - name: Compile, run the engine tests and build the jar
+      - name: Compile, run engine self-tests and build jar
         run: |-
           start=$(date +%s)
-          ./gradlew --no-daemon --parallel --build-cache build :core:verify 2>&1 | tee /tmp/build.log
+          ./gradlew --no-daemon --parallel build :core:verify 2>&1 | tee /tmp/build.log
           status=${PIPESTATUS[0]}
           echo "::notice title=build time::compiled, tested and jarred in $(( $(date +%s) - start ))s"
-          # How many assertions the engine suite ran, where the checks are listed:
-          # the number the README quotes is the one the last green run printed.
           summary=$(grep -a 'Self-tests:' /tmp/build.log | tail -1 || true)
           if [ -n "$summary" ]; then
             echo "::notice title=engine self-tests::$summary"
           fi
           if [ "$status" -ne 0 ]; then
-            # The log lives behind a signed URL the run page can reach, and an
-            # annotation is capped at 4 KiB: the tail of a Gradle log is the
-            # task list, which says nothing. What is quoted here is the lines
-            # that name the failure, whichever task it came from.
-            reason=$(grep -aE '(error: |error:|FAIL: |FAILED|Caused by:|Exception|[0-9]+ tests? failed)' /tmp/build.log \
-                    | grep -av 'warning' | head -40 | cut -c1-300 || true)
-            if [ -z "$reason" ]; then
-              reason=$(tail -n 40 /tmp/build.log)
-            fi
-            printf '%s' "$reason" | python3 -c "import sys; print('::error title=build::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
-            tail -n 20 /tmp/build.log | python3 -c "import sys; print('::error title=build tail::' + sys.stdin.read().replace('%', '%25').replace(chr(10), '%0A').replace(chr(13), '%0D'))"
+            tail -n 40 /tmp/build.log
           fi
           exit "$status"
 
-      # The mod jar has to carry the engine: the core is included as a nested
-      # jar (jar-in-jar) rather than merged, which is what the loader reads.
-      - name: Check the jar carries the engine
+      - name: Check the jar carries the nested core engine
         run: |
           jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | head -1)
           echo "built $jar"
-          unzip -l "$jar" | tail -3
-          if ! unzip -l "$jar" | grep -q 'META-INF/jars/'; then
-            echo "::error title=the jar has no nested engine::the core jar is missing from $jar"
-            exit 1
-          fi
+          unzip -l "$jar" | grep -q 'META-INF/jars/'
 
-      # A jar that compiles is not a mod that runs: the mixin has to apply, the
-      # access widener has to name members that still exist, the commands have to
-      # reach the dispatcher and the registries have to be read. This boots the
-      # game with the mod in it, drives it over rcon and fails on the first
-      # exception in the log. It runs in the same job as the build, on the same
-      # runner, so there is no second checkout, no second JDK and no artifact
-      # between the two - and nothing to delete afterwards.
-      #
-      # A pull request skips it: a branch under review is compiled and tested
-      # there, and the boot - the slowest step, which downloads and starts a
-      # server - is the one `main` pays for after the merge.
-      - name: Prepare the server directory
-        if: github.event_name != 'pull_request'
-        run: |
+      - name: Dedicated server RCON smoke test
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        run: |-
           mkdir -p fabric/run
           printf '%s\n' 'eula=true' > fabric/run/eula.txt
           printf '%s\n' \
@@ -175,30 +106,21 @@ jobs:
             'pause-when-empty-seconds=0' \
             'motd=FAWE-BIM smoke test' > fabric/run/server.properties
 
-      - name: Start the dedicated server
-        if: github.event_name != 'pull_request'
-        run: |-
-          start=$(date +%s)
           nohup ./gradlew --no-daemon :fabric:runServer > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
+          trap 'kill "$(cat /tmp/server.pid)" 2>/dev/null || true; pkill -f net.fabricmc.devlaunchinjector 2>/dev/null || true' EXIT
+
           for i in $(seq 1 180); do
             if grep -q 'Done (' /tmp/server.log; then
-              echo "::notice title=server boot::the server was up in $(( $(date +%s) - start ))s"
-              exit 0
+              break
             fi
             if ! kill -0 "$(cat /tmp/server.pid)" 2>/dev/null; then
-              echo "the server stopped before it was ready"
-              break
+              tail -c 6000 /tmp/server.log
+              exit 1
             fi
             sleep 1
           done
-          echo "the server did not come up"
-          tail -c 6000 /tmp/server.log
-          exit 1
 
-      - name: Ask the running server what it is, over rcon
-        if: github.event_name != 'pull_request'
-        run: |
           python3 - <<'PY'
           import socket, struct, sys, time
 
@@ -231,59 +153,29 @@ jobs:
               sys.exit('rcon never answered')
 
           sock.sendall(packet(1, 3, 'fawebim'))
-          ident, body = read(sock)
+          ident, _ = read(sock)
           if ident == -1:
               sys.exit('rcon refused the password')
 
           def command(text):
               sock.sendall(packet(2, 2, text))
-              answer = read(sock)[1]
-              # ::notice lines are readable from the run page, which is how the
-              # answers of the console commands are inspected.
-              print('::notice title=rcon ' + text + '::' + answer.replace('%', '%25').replace(chr(10), '%0A'))
-              return answer
+              return read(sock)[1]
 
           version = command('we version')
-          print('we version ->', version)
           if '26.3' not in version:
-              sys.exit('the version command did not name 26.3: ' + version)
-
-          # The engine itself, through the console: a selection and a fill on the
-          # flat world, then a read back of what was written.
-          print(command('//pos1 0,0,0'))
-          print(command('//pos2 15,15,15'))
-          print(command('//set stone'))
-          print(command('//count stone'))
+              sys.exit('unexpected version: ' + version)
+          command('//pos1 0,0,0')
+          command('//pos2 15,15,15')
+          command('//set stone')
+          command('//count stone')
           command('stop')
-          print('the server was asked to stop')
           PY
 
-      - name: Check the mod's own start line and fail on an exception
-        if: github.event_name != 'pull_request'
-        run: |-
           grep 'FAWE-BIM ready' /tmp/server.log
           if grep -E 'FAWE-BIM failed to start|Mixin apply failed|MixinApplyError|NoSuchFieldError|NoSuchMethodError' /tmp/server.log; then
-            echo "::error title=the mod did not start cleanly::see the log above"
             exit 1
           fi
 
-      - name: Stop the server
-        if: always() && github.event_name != 'pull_request'
-        run: |
-          kill "$(cat /tmp/server.pid)" 2>/dev/null || true
-          sleep 2
-          pkill -f net.fabricmc.devlaunchinjector 2>/dev/null || true
-
-      - name: Report the server log
-        if: failure() && github.event_name != 'pull_request'
-        run: |
-          python3 -c "import pathlib;t=pathlib.Path('/tmp/server.log').read_text(errors='replace')[-7000:];print('::error title=server log::'+t.replace('%','%25').replace(chr(10),'%0A'))"
-
-      # A tag is what makes a release, and the release carries the jar this job
-      # just built: there is no second checkout and no second compile. The jar
-      # travels as a release asset, not as a workflow artifact, so the
-      # repository keeps zero artifacts and the account keeps its storage.
-      # The notes are CHANGELOG.md, which is part of the tagged tree.
       - name: Publish the release and attach the jar
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -292,81 +184,31 @@ jobs:
         run: |-
           set -eu
           jar=$(ls fabric/build/libs/*.jar | grep -v -- -sources | head -1)
-          echo "attaching $jar to $TAG"
           title="FAWE-BIM ${TAG#v} — Minecraft 26.3"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$jar" --clobber
           else
             gh release create "$TAG" "$jar" --title "$title" --notes-file CHANGELOG.md --verify-tag
           fi
-          gh release view "$TAG" --json name,assets --jq '"::notice title=release::\(.name) carries \(.assets | length) asset(s)"'
 
-      # The other half of the cache: one entry, on the default branch, keyed by
-      # the files that decide the toolchain. `if` looks at the branch and not at
-      # what was restored - a hit from main still does not save anything here.
-      - name: Save the Gradle home
-        if: github.ref == 'refs/heads/main' && steps.gradle-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+      - name: Save Gradle dependencies and prune any older caches/artifacts
+        if: github.ref == 'refs/heads/26.3' && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
         with:
           path: |
-            ~/.gradle/caches
+            ~/.gradle/caches/modules-2
             ~/.gradle/wrapper
-            .gradle
-            fabric/.gradle
           key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
 
-  # Storage is the part of the account's quota a run spends and never gives
-  # back: caches are counted against ten gigabytes and artifacts for ninety
-  # days. Nothing here needs to survive a run - the jar is built again in four
-  # minutes - so the repository is swept once a week rather than after every
-  # build, which is one short run a week instead of a job on every push.
-  housekeeping:
-    name: Sweep the stored artifacts and stale caches
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: write
-    steps:
-      - name: Delete every artifact and every stale cache
+      - name: Prune stale caches and any stray artifacts
+        if: github.ref == 'refs/heads/26.3' && steps.gradle-cache.outputs.cache-hit != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          KEEP_KEY: ${{ steps.gradle-cache.outputs.cache-primary-key }}
         run: |-
-          total=0
-          while true; do
-            ids=$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
-                    -q '.artifacts[].id' 2>/dev/null || true)
-            if [ -z "$ids" ]; then
-              break
-            fi
-            for id in $ids; do
-              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" >/dev/null 2>&1 \
-                && total=$((total + 1)) || break 2
-            done
+          for id in $(gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" -q '.artifacts[].id' 2>/dev/null || true); do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" >/dev/null 2>&1 || true
           done
-          echo "::notice title=artifacts::deleted $total artifact(s); the repository keeps none"
-
-          # A cache is only useful while it is read. A key the workflow no
-          # longer computes is dead weight at any age; anything last read more
-          # than three weeks ago is dead weight too, and leaving it costs the
-          # account its ten-gigabyte budget while evicting a live entry.
-          # `gradle-home-v1-` and `gradle-home-v2-` are what the old save step
-          # wrote, once per commit; nothing reads them again.
-          legacy=$(gh api --paginate "repos/${{ github.repository }}/actions/caches?per_page=100" 2>/dev/null \
-                   | jq -r '.actions_caches[] | select(.key | test("^gradle-home-v[12]-")) | .id' 2>/dev/null || true)
-          legacy_count=0
-          for id in $legacy; do
-            gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" >/dev/null 2>&1 \
-              && legacy_count=$((legacy_count + 1)) || true
+          for id in $(gh api --paginate "repos/${{ github.repository }}/actions/caches?per_page=100" | jq -r --arg keep "$KEEP_KEY" '.actions_caches[] | select(.key != $keep) | .id' 2>/dev/null || true); do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" >/dev/null 2>&1 || true
           done
-          echo "::notice title=caches::deleted $legacy_count cache(s) written under a key the workflow no longer uses"
-
-          cut=$(date -u -d '-21 days' +%Y-%m-%dT%H:%M:%SZ)
-          stale=$(gh api --paginate "repos/${{ github.repository }}/actions/caches?per_page=100" 2>/dev/null \
-                  | jq -r --arg cut "$cut" '.actions_caches[] | select(.last_accessed_at < $cut) | .id' 2>/dev/null || true)
-          removed=0
-          for id in $stale; do
-            gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" >/dev/null 2>&1 \
-              && removed=$((removed + 1)) || true
-          done
-          echo "::notice title=caches::deleted $removed cache(s) last read before $cut"
