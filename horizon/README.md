@@ -74,7 +74,9 @@ Horizon instead of Fabric.
 >     patterns over arbitrary selections and deterministic bounded 3D scatter;
 > 20. **composable session transforms**: inspect/reset plus axis rotation,
 >     non-zero scaling, offsets, flips and deterministic random offsets. These
->     compose in order and transform both coordinates and directional states.
+>     compose in order and transform both coordinates and directional states;
+> 21. **in-game discovery** (`src/help.rs`): paginated categorized help,
+>     searchable commands, version reporting and live pattern/mask validation.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
@@ -100,6 +102,7 @@ Layout:
 | `src/morphology.rs` | iterative terrain erosion, dilation and smoothing |
 | `src/registry.rs` | lazy Horizon block/biome/item registry bridge and in-memory test registry |
 | `src/world.rs` | packed block arrays, chunk buffers, extents, and Horizon bulk world writes |
+| `src/help.rs` | categorized, searchable in-game command reference |
 | `src/history.rs` | compact block/biome/entity change sets and undo/redo history |
 | `src/schematic.rs` | portable palette-based clipboard codec for persistent Horizon data files |
 | `src/session.rs` | local sessions, limits, transforms, side effects, edit buffering and history replay |

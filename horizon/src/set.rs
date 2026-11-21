@@ -11,6 +11,7 @@ use mod_api::{
 use crate::brush::{self, BrushManager};
 use crate::clipboard::{Clipboard, ClipboardManager};
 use crate::expression::{Expression, Variables};
+use crate::help;
 use crate::mask::Mask;
 use crate::morphology;
 use crate::operations;
@@ -107,6 +108,11 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
+        Command::op("fawebim help [page:integer]", 0),
+        Command::op("fawebim commands [query:text]", 0),
+        Command::op("fawebim version", 0),
+        Command::op("fawebim patterninfo <pattern:text>", 0),
+        Command::op("fawebim maskinfo <mask:text>", 0),
         // Compatibility aliases: each routes to the same validated engine path
         // as its canonical command rather than being a placeholder.
         Command::op("fawebim ball <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>", 2),
@@ -194,6 +200,7 @@ pub(crate) fn run(
         Some("scatter") => scatter_operation(host, event, sessions, registry_cache),
         Some("flood" | "removenear" | "connected" | "nearclear") => near_operation(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
+        Some("help" | "commands" | "version" | "patterninfo" | "maskinfo") => help_command(host, event, registry_cache),
         Some("undo" | "rollback") => history_step(host, event, sessions, registry_cache, true),
         Some("redo" | "reapply") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory" | "purgehistory") => {
@@ -732,6 +739,16 @@ fn replace(
         Err(error) => feedback(host, &format!("fawebim replace: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn help_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("help");match action{
+        "version"=>feedback(host,&format!("FAWE-ButInMods Horizon v{} — server-side wasm",env!("CARGO_PKG_VERSION"))),
+        "commands"=>{let query=match event.command.argument("query"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let found=help::search(query);let text=found.iter().map(|e|format!("{} [{}] — {}",e.command,e.category,e.summary)).collect::<Vec<_>>().join("; ");feedback(host,&format!("fawebim commands: {}",if text.is_empty(){"no matches".into()}else{text}));},
+        "patterninfo"=>{let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,text){Ok(pattern)=>feedback(host,&format!("fawebim patterninfo: valid, deterministic={}, {pattern:?}",pattern.is_deterministic())),Err(e)=>feedback(host,&format!("fawebim patterninfo: invalid — {e}"))}},
+        "maskinfo"=>{let text=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Mask::parse(&reg,text){Ok(mask)=>feedback(host,&format!("fawebim maskinfo: valid, {mask:?}")),Err(e)=>feedback(host,&format!("fawebim maskinfo: invalid — {e}"))}},
+        _=>{let page=integer(event,"page").unwrap_or(1).max(1)as usize;let(pages,entries)=help::page(page,5);let text=entries.iter().map(|e|format!("{} — {}",e.command,e.summary)).collect::<Vec<_>>().join("; ");feedback(host,&format!("fawebim help {page}/{pages}: {text}"));}
+    }Flow::Cancel
 }
 
 fn history_step(

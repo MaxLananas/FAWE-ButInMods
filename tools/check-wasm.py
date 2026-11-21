@@ -341,6 +341,11 @@ assert ('fawebim inset <amount:integer>', 2) in usages
 assert ('fawebim undo [steps:integer]', 2) in usages
 assert ('fawebim redo [steps:integer]', 2) in usages
 assert ('fawebim clearhistory', 2) in usages
+assert ('fawebim help [page:integer]', 0) in usages
+assert ('fawebim commands [query:text]', 0) in usages
+assert ('fawebim version', 0) in usages
+assert ('fawebim patterninfo <pattern:text>', 0) in usages
+assert ('fawebim maskinfo <mask:text>', 0) in usages
 
 def encode_command(literals, arguments):
     req = bytearray()

@@ -7,6 +7,7 @@ pub mod calc;
 pub mod clipboard;
 pub mod expression;
 pub mod history;
+pub mod help;
 pub mod math;
 pub mod mask;
 pub mod morphology;
