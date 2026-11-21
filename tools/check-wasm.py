@@ -307,7 +307,7 @@ reply = call_hook(
 )
 assert take_u32(reply, 0)[0] == 1
 assert len(edit_calls) == 1, f'expected 1 edit_blocks call, got {len(edit_calls)}'
-assert b'fawebim set: 80 block(s) set to stone' in feedback_calls[-1], \
+assert b'fawebim set: 80 block(s) set with stone' in feedback_calls[-1], \
     f'unexpected set feedback: {feedback_calls[-1]!r}'
 print('run_mod_command: pos1 + pos2 + sel + set stone -> edit_blocks(16 runs), 80 blocks set')
 
@@ -330,7 +330,7 @@ reply = call_hook(
 )
 assert take_u32(reply, 0)[0] == 1
 assert len(edit_calls) == 2
-assert b'block(s) set to stone' in feedback_calls[-1], f'unexpected sphere set feedback: {feedback_calls[-1]!r}'
+assert b'block(s) set with stone' in feedback_calls[-1], f'unexpected sphere set feedback: {feedback_calls[-1]!r}'
 print('run_mod_command: sel sphere + pos1 + pos2 + set stone -> edit_blocks OK')
 
 # 6) Undo and redo the sphere edit via History + replay_history_record.

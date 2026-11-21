@@ -7,6 +7,8 @@ use mod_api::{
     BlockRun, Command, CommandArgumentValue, Flow, RunModCommandEvent, ServerHost, Text,
 };
 
+use crate::mask::Mask;
+use crate::pattern::Pattern;
 use crate::region::{BlockVector3, CuboidRegion, RegionShape};
 use crate::registry::{
     BlockStateRegistry, CachedBlockRegistry, HorizonBlockRegistry, HorizonRegistryCache,
@@ -21,6 +23,7 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim pos2 <x:integer> <y:integer> <z:integer>", 2),
         Command::op("fawebim sel [mode:text]", 2),
         Command::op("fawebim set <block:text>", 2),
+        Command::op("fawebim replace <from:text> <to:text>", 2),
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
@@ -42,6 +45,7 @@ pub(crate) fn run(
         Some("pos2") => pos(host, event, sessions, Corner::Two),
         Some("sel") => sel(host, sessions, event),
         Some("set") => set(host, event, sessions, registry_cache),
+        Some("replace") => replace(host, event, sessions, registry_cache),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory") => {
@@ -191,16 +195,17 @@ fn set(
         return Flow::Cancel;
     }
 
-    let state_id = {
+    let pattern = {
         let reg = HorizonBlockRegistry::new(host, registry_cache.clone());
         // Pre-warm air so undo can resolve slot 0 without extra lookups.
         let _ = reg.air();
-        let parsed = reg.parse(&block_name);
-        if parsed < 0 {
-            feedback(host, &format!("fawebim set: '{block_name}' is not a block"));
-            return Flow::Cancel;
+        match Pattern::parse(&reg, &block_name) {
+            Ok(pattern) => pattern,
+            Err(error) => {
+                feedback(host, &format!("fawebim set: {error}"));
+                return Flow::Cancel;
+            }
         }
-        parsed
     };
 
     let dimension = resolve_dimension(host, event);
@@ -218,7 +223,7 @@ fn set(
             true,
         );
         region.for_each_position(|x, y, z| {
-            edit.set_block(x, y, z, state_id);
+            edit.set_block(x, y, z, pattern.apply(x, y, z));
         });
         let finish_res = edit.finish(&mut session, Some(&mut mgr.edit_log));
         *mgr.get(key) = session;
@@ -228,9 +233,72 @@ fn set(
     match res {
         Ok(count) => feedback(
             host,
-            &format!("fawebim set: {count} block(s) set to {block_name}"),
+            &format!("fawebim set: {count} block(s) set with {block_name}"),
         ),
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
+    }
+    Flow::Cancel
+}
+
+fn replace(
+    host: &mut dyn ServerHost,
+    event: &RunModCommandEvent<'_>,
+    sessions: &Mutex<SessionManager>,
+    registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
+) -> Flow {
+    let argument = |name| match event.command.argument(name) {
+        Some(CommandArgumentValue::String(text)) if !text.trim().is_empty() => Some(text.trim()),
+        _ => None,
+    };
+    let (Some(from), Some(to)) = (argument("from"), argument("to")) else {
+        feedback(host, "fawebim replace: expected <from:mask> <to:pattern>");
+        return Flow::Cancel;
+    };
+    let key = source_key(event.source);
+    let mut region = {
+        let mgr = lock_sessions(sessions);
+        mgr.peek(key).and_then(|session| session.selection.region())
+    };
+    let Some(ref mut region) = region else {
+        feedback(host, "fawebim replace: no selection — mark pos1 and pos2 first");
+        return Flow::Cancel;
+    };
+    if region.volume() > CuboidRegion::MAX_VOLUME {
+        feedback(host, "fawebim replace: selection exceeds the block limit");
+        return Flow::Cancel;
+    }
+    let (mask, pattern) = {
+        let registry = HorizonBlockRegistry::new(host, registry_cache.clone());
+        let _ = registry.air();
+        let mask = match Mask::parse(&registry, from) {
+            Ok(mask) => mask,
+            Err(error) => { feedback(host, &format!("fawebim replace: {error}")); return Flow::Cancel; }
+        };
+        let pattern = match Pattern::parse(&registry, to) {
+            Ok(pattern) => pattern,
+            Err(error) => { feedback(host, &format!("fawebim replace: {error}")); return Flow::Cancel; }
+        };
+        (mask, pattern)
+    };
+    let dimension = resolve_dimension(host, event);
+    let mut world = HorizonWorld::new(host, dimension, registry_cache.clone());
+    let mut registry = CachedBlockRegistry::new(registry_cache.clone());
+    let mut positions = Vec::new();
+    region.for_each_position(|x, y, z| {
+        if mask.test(&world, &registry, x, y, z) { positions.push((x, y, z)); }
+    });
+    let result = {
+        let mut manager = lock_sessions(sessions);
+        let mut local = manager.get(key).clone();
+        let mut edit = EditSession::open(&mut world, &mut registry, &mut local, format!("//replace {from} {to}"), true);
+        for (x, y, z) in positions { edit.set_block(x, y, z, pattern.apply(x, y, z)); }
+        let result = edit.finish(&mut local, Some(&mut manager.edit_log));
+        *manager.get(key) = local;
+        result
+    };
+    match result {
+        Ok(changed) => feedback(host, &format!("fawebim replace: {changed} block(s) changed")),
+        Err(error) => feedback(host, &format!("fawebim replace: the edit was refused: {error}")),
     }
     Flow::Cancel
 }
@@ -378,7 +446,7 @@ fn feedback(host: &mut dyn ServerHost, line: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::region::{BlockVector3, EllipsoidRegion, Vector3};
+use crate::region::{BlockVector3, EllipsoidRegion, Vector3};
 
     #[test]
     fn source_key_shares_console_and_splits_players() {

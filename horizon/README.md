@@ -29,7 +29,11 @@ Horizon instead of Fabric.
 > 4. **registries, worlds, edit sessions and history** (`src/registry.rs`,
 >    `src/world.rs`, `src/session.rs`, `src/history.rs`): lazy Horizon state
 >    interning, packed chunk buffers, change limits, side effects, transforms,
->    bulk flushes and `/fawebim undo`, `redo`, and `clearhistory`.
+>    bulk flushes and `/fawebim undo`, `redo`, and `clearhistory`;
+> 5. **patterns and masks** (`src/pattern.rs`, `src/mask.rs`): weighted,
+>    checker, Perlin/Simplex/Voronoi/ridged, offset and axis patterns, boolean
+>    block/material/height masks, pattern-enabled `set`, and mask/pattern
+>    `/fawebim replace`.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
