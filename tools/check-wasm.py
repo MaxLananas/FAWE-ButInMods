@@ -309,6 +309,16 @@ assert ('fawebim surfaceset [depth:integer] <pattern:text>', 2) in usages
 assert ('fawebim underlay [depth:integer] <pattern:text>', 2) in usages
 assert ('fawebim maskchoose <mask:text> <matching:text> <other:text>', 2) in usages
 assert ('fawebim selectiontrim [mask:text]', 2) in usages
+assert ('fawebim compactdown', 2) in usages
+assert ('fawebim compactup', 2) in usages
+assert ('fawebim compactwest', 2) in usages
+assert ('fawebim compacteast', 2) in usages
+assert ('fawebim compactnorth', 2) in usages
+assert ('fawebim compactsouth', 2) in usages
+assert ('fawebim aircount', 0) in usages
+assert ('fawebim solidcount', 0) in usages
+assert ('fawebim liquidcount', 0) in usages
+assert ('fawebim surfacecount', 0) in usages
 assert ('fawebim selectionbounds <miny:integer> <maxy:integer>', 2) in usages
 assert ('fawebim selectionpad <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim selectionalign <grid:integer>', 2) in usages

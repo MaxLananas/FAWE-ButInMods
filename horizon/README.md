@@ -115,7 +115,10 @@ Horizon instead of Fabric.
 >     alignment controls; sinusoidal and radial-gradient nested patterns;
 > 35. **selective editing batch**: mask-driven and deterministic random fills,
 >     surface/underlay depth painting, two-way mask choices, noise-field masks
->     and automatic selection trimming around arbitrary matching content.
+>     and automatic selection trimming around arbitrary matching content;
+> 36. **six-direction compaction and material statistics**: stable line-wise
+>     packing toward every cardinal boundary, plus direct air, solid, liquid and
+>     exposed-surface counts without requiring users to write masks manually.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
