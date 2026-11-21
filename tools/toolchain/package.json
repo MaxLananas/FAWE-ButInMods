@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@toolchain-bin/cargo-1.99.0-x86_64-unknown-linux-gnu": "^0.100.0",
+    "@toolchain-bin/rust-std-1.99.0-wasm32-unknown-unknown": "^1.99.0",
+    "@toolchain-bin/rust-std-1.99.0-x86_64-unknown-linux-gnu": "^1.99.0-1",
+    "@toolchain-bin/rustc-1.99.0-x86_64-unknown-linux-gnu": "^1.99.0"
+  }
+}
