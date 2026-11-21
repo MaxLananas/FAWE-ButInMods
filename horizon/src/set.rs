@@ -7,6 +7,7 @@ use mod_api::{
     BlockRun, Command, CommandArgumentValue, Flow, RunModCommandEvent, ServerHost, Text,
 };
 
+use crate::brush::{self, BrushManager};
 use crate::clipboard::{Clipboard, ClipboardManager};
 use crate::mask::Mask;
 use crate::operations;
@@ -39,6 +40,18 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim pyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>", 2),
         Command::op("fawebim hpyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>", 2),
         Command::op("fawebim line <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>", 2),
+        Command::op("fawebim walls <pattern:text>", 2),
+        Command::op("fawebim faces <pattern:text>", 2),
+        Command::op("fawebim overlay <pattern:text>", 2),
+        Command::op("fawebim hollow [thickness:integer] <pattern:text>", 2),
+        Command::op("fawebim move <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim stack <count:integer> <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim brush <kind:text>", 2),
+        Command::op("fawebim brushset <radius:number> <pattern:text>", 2),
+        Command::op("fawebim brushuse <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim brushinfo", 2),
+        Command::op("fawebim brushlist", 2),
+        Command::op("fawebim brushclear", 2),
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
@@ -49,6 +62,7 @@ pub(crate) fn run(
     host: &mut dyn ServerHost,
     event: &RunModCommandEvent<'_>,
     sessions: &Mutex<SessionManager>,
+    brushes: &Mutex<BrushManager>,
     clipboards: &Mutex<ClipboardManager>,
     registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
 ) -> Flow {
@@ -73,6 +87,10 @@ pub(crate) fn run(
             Flow::Cancel
         }
         Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line") => generate(host, event, sessions, registry_cache),
+        Some("walls" | "faces" | "overlay" | "hollow") => region_operation(host, event, sessions, registry_cache),
+        Some("move" | "stack") => translate_operation(host, event, sessions, registry_cache),
+        Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
+        Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory") => {
@@ -273,6 +291,55 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn brush_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,brushes:&Mutex<BrushManager>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("brushinfo");let key=source_key(event.source);let mut manager=brushes.lock().unwrap_or_else(|p|p.into_inner());
+    match action{
+        "brushlist"=>feedback(host,&format!("fawebim brushes ({}): {}",brush::BRUSH_NAMES.len(),brush::BRUSH_NAMES.join(", "))),
+        "brushclear"=>{manager.clear(key);feedback(host,"fawebim brush: unbound");},
+        "brushinfo"=>{if let Some(b)=manager.get(key){feedback(host,&format!("fawebim brush: {} radius={} pattern={} mask={}",b.kind,b.radius,b.pattern,b.mask.as_deref().unwrap_or("none")));}else{feedback(host,"fawebim brush: no brush bound");}},
+        "brush"=>{let raw=match event.command.argument("kind"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};if let Some(kind)=brush::canonical(raw){let mut settings=manager.get(key).cloned().unwrap_or_default();settings.kind=kind;manager.set(key,settings);feedback(host,&format!("fawebim brush: bound {kind}"));}else{feedback(host,&format!("fawebim brush: unknown brush '{raw}'"));}},
+        "brushset"=>{let radius=number(event,"radius").unwrap_or(2.0);let pattern=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"stone"};let mut settings=manager.get(key).cloned().unwrap_or_default();settings.radius=radius.clamp(0.5,128.0);settings.pattern=pattern.to_string();manager.set(key,settings);feedback(host,&format!("fawebim brush: radius={} pattern={pattern}",radius.clamp(0.5,128.0)));},
+        _=>{}
+    }Flow::Cancel
+}
+
+fn brush_use(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,brushes:&Mutex<BrushManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let key=source_key(event.source);let settings={brushes.lock().unwrap_or_else(|p|p.into_inner()).get(key).cloned()};let Some(settings)=settings else{feedback(host,"fawebim brushuse: no brush bound");return Flow::Cancel;};let (Some(x),Some(y),Some(z))=(integer(event,"x"),integer(event,"y"),integer(event,"z"))else{feedback(host,"fawebim brushuse: expected coordinates");return Flow::Cancel;};
+    let pattern={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,&settings.pattern){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim brushuse: {e}"));return Flow::Cancel;}}};let center=BlockVector3::at(x,y,z);let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());
+    let result={let mut sessions=lock_sessions(sessions);let mut local=sessions.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("/brush {}",settings.kind),true);let mut place=|px,py,pz|{edit.set_block(px,py,pz,pattern.apply(px,py,pz));};match settings.kind{
+        "cylinder"|"circle"|"layer"=>{operations::cylinder(center,settings.radius,settings.radius,if settings.kind=="circle"{1}else{settings.radius.ceil()as i32},false,&mut place);},
+        "surface"|"stencil"|"snow"|"snowsmooth"=>{operations::sphere(center,settings.radius,settings.radius,settings.radius,true,&mut place);},
+        _=>{operations::sphere(center,settings.radius,settings.radius,settings.radius,false,&mut place);}
+    }let result=edit.finish(&mut local,Some(&mut sessions.edit_log));*sessions.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim brushuse {}: {n} block(s) changed",settings.kind)),Err(e)=>feedback(host,&format!("fawebim brushuse: {e}"))};Flow::Cancel
+}
+
+fn region_operation(
+    host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>,
+)->Flow{
+    let name=event.command.literals.get(1).map(String::as_str).unwrap_or("operation");let key=source_key(event.source);
+    let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {name}: no selection"));return Flow::Cancel;};
+    let pattern_text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>{feedback(host,&format!("fawebim {name}: expected a pattern"));return Flow::Cancel;}};
+    let pattern={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,pattern_text){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim {name}: {e}"));return Flow::Cancel;}}};
+    let snapshot=region.clone();let min=snapshot.min();let max=snapshot.max();let thickness=integer(event,"thickness").unwrap_or(1).clamp(1,64);let mut points=Vec::new();
+    region.for_each_position(|x,y,z|{let selected=match name{
+        "walls"=>x==min.x||x==max.x||z==min.z||z==max.z,
+        "faces"=>x==min.x||x==max.x||y==min.y||y==max.y||z==min.z||z==max.z,
+        "overlay"=>!snapshot.contains(x,y+1,z),
+        "hollow"=>{let mut edge=false;'outer:for d in 1..=thickness{for (dx,dy,dz) in [(d,0,0),(-d,0,0),(0,d,0),(0,-d,0),(0,0,d),(0,0,-d)]{if !snapshot.contains(x+dx,y+dy,z+dz){edge=true;break 'outer;}}}edge},
+        _=>false};if selected{points.push((x,y,z));}});
+    let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());
+    let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{name} {pattern_text}"),true);for(x,y,z)in points{edit.set_block(x,y,z,pattern.apply(x,y,z));}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};
+    match result{Ok(n)=>feedback(host,&format!("fawebim {name}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {name}: {e}"))};Flow::Cancel
+}
+
+fn translate_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let name=event.command.literals.get(1).map(String::as_str).unwrap_or("move");let key=source_key(event.source);let(mut region,dx,dy,dz)=({let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())},integer(event,"dx").unwrap_or(0),integer(event,"dy").unwrap_or(0),integer(event,"dz").unwrap_or(0));
+    let Some(ref mut region)=region else{feedback(host,&format!("fawebim {name}: no selection"));return Flow::Cancel;};if dx==0&&dy==0&&dz==0{feedback(host,&format!("fawebim {name}: offset is zero"));return Flow::Cancel;}
+    let count=if name=="stack"{integer(event,"count").unwrap_or(1).clamp(1,256)}else{1};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut source=Vec::new();region.for_each_position(|x,y,z|source.push((x,y,z,world.get_block(x,y,z))));
+    let mut registry=CachedBlockRegistry::new(registry_cache.clone());let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{name}"),true);if name=="move"{for&(x,y,z,_)in &source{edit.set_block(x,y,z,0);}}for i in 1..=count{for&(x,y,z,state)in &source{edit.set_block(x+dx*i,y+dy*i,z+dz*i,state);}}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};
+    match result{Ok(n)=>feedback(host,&format!("fawebim {name}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {name}: {e}"))};Flow::Cancel
 }
 
 fn generate(

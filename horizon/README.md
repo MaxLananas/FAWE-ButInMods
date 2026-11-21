@@ -39,7 +39,11 @@ Horizon instead of Fabric.
 >    flips, and per-player clipboard lifecycle commands;
 > 7. **geometric generation** (`src/operations.rs`): solid/hollow spheres,
 >    cylinders and pyramids plus thick 3D lines, all pattern-aware, buffered,
->    history-recorded and subject to session change limits.
+>    history-recorded and subject to session change limits;
+> 8. **region operations and the complete 46-brush catalogue**
+>    (`src/brush.rs`): walls, faces, overlays, hollowing, move/stack, every
+>    upstream brush name and alias, per-player settings and pattern-aware brush
+>    execution through the same buffered history pipeline.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
@@ -59,6 +63,7 @@ Layout:
 | `src/region.rs` | `block_keys` + all 7 region shapes (`Cuboid`, `Cylinder`, `Ellipsoid`, `Polygonal2D`, `ConvexPolyhedral`, `Polyhedral`, `Fuzzy`) |
 | `src/selection.rs` | all 9 `RegionSelector` modes, per-source `Selection` and `SelectionStore` |
 | `src/pattern.rs`, `src/mask.rs` | composable pattern/mask parsers used by set, replace, operations and brushes |
+| `src/brush.rs` | all 46 FAWE brush names/aliases and per-player brush settings |
 | `src/clipboard.rs` | dense selection clipboards with rotate/flip transforms and per-player storage |
 | `src/operations.rs` | lines, spheres, cylinders and pyramids with solid/hollow generation |
 | `src/registry.rs` | lazy Horizon block/biome/item registry bridge and in-memory test registry |

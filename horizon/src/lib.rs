@@ -2,6 +2,7 @@
 //!
 //! See `horizon-mod.toml`; the Java original lives in `../core` and `../fabric`.
 
+pub mod brush;
 pub mod calc;
 pub mod clipboard;
 pub mod expression;
@@ -23,12 +24,14 @@ use std::sync::{Arc, Mutex};
 
 use mod_api::{Hooks, RegisterCommandsEvent, RunModCommandEvent, ServerHost, ServerStartedEvent};
 
+use brush::BrushManager;
 use clipboard::ClipboardManager;
 use registry::HorizonRegistryCache;
 use session::SessionManager;
 
 pub struct Mod {
     sessions: Mutex<SessionManager>,
+    brushes: Mutex<BrushManager>,
     clipboards: Mutex<ClipboardManager>,
     registry_cache: Arc<Mutex<HorizonRegistryCache>>,
 }
@@ -37,6 +40,7 @@ impl Default for Mod {
     fn default() -> Self {
         Self {
             sessions: Mutex::new(SessionManager::new()),
+            brushes: Mutex::new(BrushManager::default()),
             clipboards: Mutex::new(ClipboardManager::default()),
             registry_cache: HorizonRegistryCache::new_shared(),
         }
@@ -63,7 +67,7 @@ impl Hooks for Mod {
         if matches!(flow, mod_api::Flow::Cancel) {
             return mod_api::Flow::Cancel;
         }
-        set::run(host, event, &self.sessions, &self.clipboards, &self.registry_cache)
+        set::run(host, event, &self.sessions, &self.brushes, &self.clipboards, &self.registry_cache)
     }
 
     fn server_started(&self, _host: &mut dyn ServerHost, _event: &mut ServerStartedEvent) {}
