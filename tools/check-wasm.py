@@ -289,6 +289,13 @@ assert ('fawebim tips <enabled:text>', 2) in usages
 assert ('fawebim watchdog <enabled:text>', 2) in usages
 assert ('fawebim gmask <mask:text>', 2) in usages
 assert ('fawebim gpattern <pattern:text>', 2) in usages
+assert ('fawebim transform', 2) in usages
+assert ('fawebim transformreset', 2) in usages
+assert ('fawebim transformrotate <degrees:number> <axis:text>', 2) in usages
+assert ('fawebim transformscale <x:number> <y:number> <z:number>', 2) in usages
+assert ('fawebim transformoffset <x:number> <y:number> <z:number>', 2) in usages
+assert ('fawebim transformflip <axis:text>', 2) in usages
+assert ('fawebim transformrandom <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim count <mask:text>', 2) in usages
 assert ('fawebim distr', 2) in usages
 assert ('fawebim size', 2) in usages

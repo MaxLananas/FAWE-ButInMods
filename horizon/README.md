@@ -71,7 +71,10 @@ Horizon instead of Fabric.
 >     familiar paint/replace/move/biome/nearby names all route to the same
 >     validated implementations rather than no-op stubs;
 > 19. **advanced generation**: solid/hollow cones and tori, repeating layered
->     patterns over arbitrary selections and deterministic bounded 3D scatter.
+>     patterns over arbitrary selections and deterministic bounded 3D scatter;
+> 20. **composable session transforms**: inspect/reset plus axis rotation,
+>     non-zero scaling, offsets, flips and deterministic random offsets. These
+>     compose in order and transform both coordinates and directional states.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
