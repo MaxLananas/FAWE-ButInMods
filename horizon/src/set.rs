@@ -67,6 +67,8 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim fast <enabled:text>", 2),
         Command::op("fawebim tips <enabled:text>", 2),
         Command::op("fawebim watchdog <enabled:text>", 2),
+        Command::op("fawebim gmask <mask:text>", 2),
+        Command::op("fawebim gpattern <pattern:text>", 2),
         Command::op("fawebim count <mask:text>", 2),
         Command::op("fawebim distr", 2),
         Command::op("fawebim size", 2),
@@ -117,7 +119,7 @@ pub(crate) fn run(
         Some("smooth" | "erode" | "dilate") => morphology_operation(host, event, sessions, registry_cache),
         Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
         Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
-        Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog") => session_config(host, event, sessions),
+        Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog" | "gmask" | "gpattern") => session_config(host, event, sessions),
         Some("count" | "distr" | "size" | "center") => selection_info(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
@@ -257,9 +259,12 @@ fn set(
         return Flow::Cancel;
     }
     let key = source_key(event.source);
-    let mut region = {
+    let (mut region, global_mask, global_pattern) = {
         let mgr = lock_sessions(sessions);
-        mgr.peek(key).and_then(|s| s.selection.region())
+        match mgr.peek(key) {
+            Some(s) => (s.selection.region(), s.global_mask_expr.clone(), s.global_pattern_expr.clone()),
+            None => (None, None, None),
+        }
     };
     let Some(ref mut region) = region else {
         feedback(host, "fawebim set: no selection — mark pos1 and pos2 first");
@@ -277,22 +282,30 @@ fn set(
         return Flow::Cancel;
     }
 
-    let pattern = {
+    let (pattern, mask) = {
         let reg = HorizonBlockRegistry::new(host, registry_cache.clone());
-        // Pre-warm air so undo can resolve slot 0 without extra lookups.
         let _ = reg.air();
-        match Pattern::parse(&reg, &block_name) {
+        let effective_pattern = global_pattern.as_deref().unwrap_or(&block_name);
+        let pattern = match Pattern::parse(&reg, effective_pattern) {
             Ok(pattern) => pattern,
-            Err(error) => {
-                feedback(host, &format!("fawebim set: {error}"));
-                return Flow::Cancel;
-            }
-        }
+            Err(error) => { feedback(host, &format!("fawebim set: {error}")); return Flow::Cancel; }
+        };
+        let mask = match global_mask.as_deref().map(|text| Mask::parse(&reg, text)).transpose() {
+            Ok(mask) => mask,
+            Err(error) => { feedback(host, &format!("fawebim set global mask: {error}")); return Flow::Cancel; }
+        };
+        (pattern, mask)
     };
 
     let dimension = resolve_dimension(host, event);
     let mut world = HorizonWorld::new(host, dimension, registry_cache.clone());
     let mut cached_reg = CachedBlockRegistry::new(registry_cache.clone());
+    let mut positions = Vec::new();
+    region.for_each_position(|x, y, z| {
+        if mask.as_ref().map_or(true, |m| m.test(&world, &cached_reg, x, y, z)) {
+            positions.push((x, y, z));
+        }
+    });
 
     let res = {
         let mut mgr = lock_sessions(sessions);
@@ -304,9 +317,9 @@ fn set(
             format!("//set {block_name}"),
             true,
         );
-        region.for_each_position(|x, y, z| {
+        for (x, y, z) in positions {
             edit.set_block(x, y, z, pattern.apply(x, y, z));
-        });
+        }
         let finish_res = edit.finish(&mut session, Some(&mut mgr.edit_log));
         *mgr.get(key) = session;
         finish_res
@@ -351,6 +364,8 @@ fn session_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,session
         "fast"=>match parse_bool("enabled",session.fast_mode){Some(v)=>{session.fast_mode=v;feedback(host,&format!("fawebim fast: {v}"));},None=>feedback(host,"fawebim fast: use on, off, or toggle")},
         "tips"=>match parse_bool("enabled",session.tips){Some(v)=>{session.tips=v;feedback(host,&format!("fawebim tips: {v}"));},None=>feedback(host,"fawebim tips: use on, off, or toggle")},
         "watchdog"=>match parse_bool("enabled",session.watchdog){Some(v)=>{session.watchdog=v;feedback(host,&format!("fawebim watchdog: {v}"));},None=>feedback(host,"fawebim watchdog: use on, off, or toggle")},
+        "gmask"=>{let value=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"none"};session.global_mask_expr=(!matches!(value.to_ascii_lowercase().as_str(),"none"|"off"|"-")).then(||value.to_string());feedback(host,&format!("fawebim gmask: {}",session.global_mask_expr.as_deref().unwrap_or("disabled")));},
+        "gpattern"=>{let value=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"none"};session.global_pattern_expr=(!matches!(value.to_ascii_lowercase().as_str(),"none"|"off"|"-")).then(||value.to_string());feedback(host,&format!("fawebim gpattern: {}",session.global_pattern_expr.as_deref().unwrap_or("disabled")));},
         _=>feedback(host,&format!("fawebim session: selector={}, selection={}, history={}/{}, limit={}, timeout={}, fast={}, tips={}, watchdog={}",session.selection.selector().kind().as_str(),session.selection.describe(),session.history.len(),session.history.len(),session.max_blocks_changed,session.timeout_secs,session.fast_mode,session.tips,session.watchdog)),
     }Flow::Cancel
 }
@@ -526,9 +541,12 @@ fn replace(
         return Flow::Cancel;
     };
     let key = source_key(event.source);
-    let mut region = {
+    let (mut region, global_mask, global_pattern) = {
         let mgr = lock_sessions(sessions);
-        mgr.peek(key).and_then(|session| session.selection.region())
+        match mgr.peek(key) {
+            Some(session) => (session.selection.region(), session.global_mask_expr.clone(), session.global_pattern_expr.clone()),
+            None => (None, None, None),
+        }
     };
     let Some(ref mut region) = region else {
         feedback(host, "fawebim replace: no selection — mark pos1 and pos2 first");
@@ -541,11 +559,17 @@ fn replace(
     let (mask, pattern) = {
         let registry = HorizonBlockRegistry::new(host, registry_cache.clone());
         let _ = registry.air();
-        let mask = match Mask::parse(&registry, from) {
+        let mut mask = match Mask::parse(&registry, from) {
             Ok(mask) => mask,
             Err(error) => { feedback(host, &format!("fawebim replace: {error}")); return Flow::Cancel; }
         };
-        let pattern = match Pattern::parse(&registry, to) {
+        if let Some(text) = global_mask.as_deref() {
+            match Mask::parse(&registry, text) {
+                Ok(global) => mask = Mask::All(vec![mask, global]),
+                Err(error) => { feedback(host, &format!("fawebim replace global mask: {error}")); return Flow::Cancel; }
+            }
+        }
+        let pattern = match Pattern::parse(&registry, global_pattern.as_deref().unwrap_or(to)) {
             Ok(pattern) => pattern,
             Err(error) => { feedback(host, &format!("fawebim replace: {error}")); return Flow::Cancel; }
         };

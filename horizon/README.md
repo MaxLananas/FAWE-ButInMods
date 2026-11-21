@@ -53,7 +53,10 @@ Horizon instead of Fabric.
 > 11. **selection inspection**: mask-aware block counting, sorted block
 >     distributions, exact region dimensions/bounds and geometric centers;
 > 12. **selection mutation**: shape-aware expand, contract, shift, inset and
->     outset operations that teach the active selector its updated geometry.
+>     outset operations that teach the active selector its updated geometry;
+> 13. **session-wide filters**: persistent per-player global masks and global
+>     patterns, validated against the live registry and composed into `set` and
+>     `replace` without bypassing history or change limits.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

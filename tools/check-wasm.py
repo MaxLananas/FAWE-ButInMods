@@ -281,6 +281,8 @@ assert ('fawebim timeout <seconds:integer>', 2) in usages
 assert ('fawebim fast <enabled:text>', 2) in usages
 assert ('fawebim tips <enabled:text>', 2) in usages
 assert ('fawebim watchdog <enabled:text>', 2) in usages
+assert ('fawebim gmask <mask:text>', 2) in usages
+assert ('fawebim gpattern <pattern:text>', 2) in usages
 assert ('fawebim count <mask:text>', 2) in usages
 assert ('fawebim distr', 2) in usages
 assert ('fawebim size', 2) in usages
