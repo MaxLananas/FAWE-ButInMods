@@ -79,7 +79,10 @@ Horizon instead of Fabric.
 >     searchable commands, version reporting and live pattern/mask validation;
 > 22. **coordinate-driven patterns**: axis gradients with explicit ranges and
 >     compiled expression selectors over `x`, `y`, `z`, nestable with weighted,
->     checker, noise, offset and no-axis patterns.
+>     checker, noise, offset and no-axis patterns;
+> 23. **advanced masks**: deterministic probability, compiled expressions with
+>     block/coordinate variables, surface/wall exposure, coordinate offsets and
+>     configurable six-neighbour adjacency, all composable with boolean masks.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

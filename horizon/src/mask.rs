@@ -1,5 +1,7 @@
 //! Composable FAWE masks used by replace operations and brushes.
 
+use std::sync::Arc;
+use crate::expression::{Expression, Variables};
 use crate::registry::BlockStateRegistry;
 use crate::world::Extent;
 
@@ -14,6 +16,11 @@ pub enum Mask {
     Solid,
     Liquid,
     Height { min: i32, max: i32 },
+    Surface,
+    Chance(f64),
+    Expression(Arc<Expression>),
+    Offset { inner: Box<Mask>, x: i32, y: i32, z: i32 },
+    Adjacent { inner: Box<Mask>, min: usize, max: usize },
     Not(Box<Mask>),
     All(Vec<Mask>),
     AnyOf(Vec<Mask>),
@@ -35,6 +42,20 @@ impl Mask {
             Self::Solid => registry.is_solid(extent.get_block(x, y, z)),
             Self::Liquid => registry.is_liquid(extent.get_block(x, y, z)),
             Self::Height { min, max } => y >= *min && y <= *max,
+            Self::Surface => {
+                let state = extent.get_block(x,y,z);
+                !registry.is_air_like(state) && [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().any(|&(dx,dy,dz)| registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz)))
+            }
+            Self::Chance(chance) => coordinate_chance(x,y,z) < *chance,
+            Self::Expression(expression) => {
+                let mut vars=Variables::new().set("x",x as f64).set("y",y as f64).set("z",z as f64).set("b",extent.get_block(x,y,z) as f64);
+                expression.evaluate(&mut vars).unwrap_or(0.0) > 0.0
+            }
+            Self::Offset { inner, x: ox, y: oy, z: oz } => inner.test(extent,registry,x+ox,y+oy,z+oz),
+            Self::Adjacent { inner, min, max } => {
+                let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|inner.test(extent,registry,x+dx,y+dy,z+dz)).count();
+                count>=*min&&count<=*max
+            }
             Self::Not(inner) => !inner.test(extent, registry, x, y, z),
             Self::All(parts) => parts.iter().all(|m| m.test(extent, registry, x, y, z)),
             Self::AnyOf(parts) => parts.iter().any(|m| m.test(extent, registry, x, y, z)),
@@ -58,6 +79,7 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
         "#existing" | "#notair" => return Ok(Mask::Existing),
         "#solid" => return Ok(Mask::Solid),
         "#liquid" => return Ok(Mask::Liquid),
+        "#surface" | "#wall" => return Ok(Mask::Surface),
         _ => {}
     }
     if let Some(body) = text.strip_prefix("#y[").and_then(|s| s.strip_suffix(']')) {
@@ -66,6 +88,18 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
         let min: i32 = a.trim().parse().map_err(|_| "invalid minimum Y".to_string())?;
         let max: i32 = b.trim().parse().map_err(|_| "invalid maximum Y".to_string())?;
         return Ok(Mask::Height { min: min.min(max), max: min.max(max) });
+    }
+    if let Some(rest) = text.strip_prefix("#chance") {
+        let args=brackets(rest)?;if args.len()!=1{return Err("#chance requires [probability]".into());}let mut chance=args[0].trim().trim_end_matches('%').parse::<f64>().map_err(|_|"invalid chance".to_string())?;if args[0].trim().ends_with('%')||chance>1.0{chance/=100.0;}return Ok(Mask::Chance(chance.clamp(0.0,1.0)));
+    }
+    if let Some(rest) = text.strip_prefix("#expression") {
+        let args=brackets(rest)?;if args.len()!=1{return Err("#expression requires [expression]".into());}return Ok(Mask::Expression(Arc::new(Expression::compile(args[0]).map_err(|e|e.0)?)));
+    }
+    if let Some(rest) = text.strip_prefix("#offset") {
+        let args=brackets(rest)?;if args.len()!=4{return Err("#offset requires [mask][x][y][z]".into());}let parse=|s:&str|s.trim().parse::<i32>().map_err(|_|"invalid mask offset".to_string());return Ok(Mask::Offset{inner:Box::new(parse_mask(reg,args[0],depth+1)?),x:parse(args[1])?,y:parse(args[2])?,z:parse(args[3])?});
+    }
+    if let Some(rest) = text.strip_prefix("#adjacent") {
+        let args=brackets(rest)?;if args.is_empty()||args.len()>3{return Err("#adjacent requires [mask][min][max]".into());}let min=args.get(1).map_or(Ok(1),|s|s.trim().parse::<usize>().map_err(|_|"invalid adjacent minimum".to_string()))?;let max=args.get(2).map_or(Ok(6),|s|s.trim().parse::<usize>().map_err(|_|"invalid adjacent maximum".to_string()))?;return Ok(Mask::Adjacent{inner:Box::new(parse_mask(reg,args[0],depth+1)?),min:min.min(6),max:max.min(6)});
     }
     if let Some(category) = text.strip_prefix("##") {
         return Ok(Mask::Category(category.to_ascii_lowercase()));
@@ -78,6 +112,9 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
     }
     Ok(Mask::Blocks(states))
 }
+
+fn coordinate_chance(x:i32,y:i32,z:i32)->f64{let mut n=(x as u32 as u64).wrapping_mul(0x9E3779B185EBCA87)^(y as u32 as u64).wrapping_mul(0xC2B2AE3D27D4EB4F)^(z as u32 as u64).wrapping_mul(0x165667B19E3779F9);n^=n>>30;n=n.wrapping_mul(0xBF58476D1CE4E5B9);n^=n>>27;n=n.wrapping_mul(0x94D049BB133111EB);n^=n>>31;(n>>11)as f64/(1u64<<53)as f64}
+fn brackets(mut text:&str)->Result<Vec<&str>,String>{let mut out=Vec::new();while !text.trim().is_empty(){text=text.trim();if !text.starts_with('['){return Err(format!("expected '[', found '{text}'"));}let mut depth=0;let mut end=None;for(i,c)in text.char_indices(){if c=='['{depth+=1;}else if c==']'{depth-=1;if depth==0{end=Some(i);break;}}}let end=end.ok_or_else(||"unclosed mask bracket".to_string())?;out.push(&text[1..end]);text=&text[end+1..];}Ok(out)}
 
 fn strip_outer(mut text: &str) -> &str {
     loop {
@@ -116,6 +153,11 @@ mod tests {
         assert!(mask.test(&world, &reg, 0,64,0)); assert!(!mask.test(&world, &reg, 0,80,0));
         assert!(Mask::parse(&reg, "#existing").unwrap().test(&world, &reg, 1,64,0));
         assert!(Mask::parse(&reg, "!#existing").unwrap().test(&world, &reg, 2,64,0));
+        assert!(Mask::parse(&reg, "#surface").unwrap().test(&world,&reg,0,64,0));
+        assert!(Mask::parse(&reg, "#expression[y==64]").unwrap().test(&world,&reg,0,64,0));
+        assert!(Mask::parse(&reg, "#offset[stone][-1][0][0]").unwrap().test(&world,&reg,1,64,0));
+        assert!(Mask::parse(&reg, "#adjacent[stone][1][6]").unwrap().test(&world,&reg,1,64,0));
+        let chance=Mask::parse(&reg,"#chance[50%]").unwrap();assert_eq!(chance.test(&world,&reg,5,5,5),chance.test(&world,&reg,5,5,5));
     }
     #[test] fn malformed_masks_are_rejected() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();
