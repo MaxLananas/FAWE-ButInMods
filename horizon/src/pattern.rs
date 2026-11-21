@@ -17,6 +17,8 @@ pub enum Pattern {
     Noise { scale: f64, kind: NoiseKind, choices: Vec<(f64, Pattern)> },
     Gradient { axis: u8, min: f64, max: f64, choices: Vec<(f64, Pattern)> },
     Expression { expression: Arc<Expression>, choices: Vec<(f64, Pattern)> },
+    Linear { axis: u8, size: i32, choices: Vec<Pattern> },
+    Radial { cx: f64, cy: f64, cz: f64, scale: f64, choices: Vec<Pattern> },
     Offset { inner: Box<Pattern>, x: i32, y: i32, z: i32 },
     NoAxis { inner: Box<Pattern>, axis: u8 },
 }
@@ -59,6 +61,8 @@ impl Pattern {
                 let value = expression.evaluate(&mut vars).unwrap_or(0.0).clamp(0.0, 1.0 - f64::EPSILON);
                 choose(choices, value, x, y, z)
             }
+            Self::Linear { axis, size, choices } => { let coordinate=match axis{0=>x,1=>y,_=>z};let index=coordinate.div_euclid((*size).max(1)).rem_euclid(choices.len() as i32)as usize;choices[index].apply(x,y,z) }
+            Self::Radial { cx, cy, cz, scale, choices } => { let distance=(((x as f64-cx).powi(2)+(y as f64-cy).powi(2)+(z as f64-cz).powi(2)).sqrt()*scale).floor()as i64;let index=distance.rem_euclid(choices.len()as i64)as usize;choices[index].apply(x,y,z) }
             Self::Offset { inner, x: ox, y: oy, z: oz } => inner.apply(x + ox, y + oy, z + oz),
             Self::NoAxis { inner, axis } => match axis {
                 0 => inner.apply(0, y, z), 1 => inner.apply(x, 0, z), _ => inner.apply(x, y, 0),
@@ -118,6 +122,12 @@ fn parse_pattern(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Resu
         for item in split_top(args[3], ',') { let (weight, body) = parse_weight(item)?; choices.push((weight, parse_pattern(reg, body, depth + 1)?)); }
         if choices.is_empty() { return Err("gradient needs at least one pattern".into()); }
         return Ok(Pattern::Gradient { axis, min, max, choices });
+    }
+    if let Some(rest) = text.strip_prefix("#linear") {
+        let args=brackets(rest)?;if args.len()!=3{return Err("#linear requires [axis][size][patterns]".into());}let axis=match args[0].trim().to_ascii_lowercase().as_str(){"x"=>0,"y"=>1,"z"=>2,_=>return Err("linear axis must be x, y, or z".into())};let size=args[1].parse::<i32>().map_err(|_|"invalid linear size".to_string())?;if size<=0{return Err("linear size must be positive".into());}let choices=split_top(args[2],',').into_iter().map(|p|parse_pattern(reg,p,depth+1)).collect::<Result<Vec<_>,_>>()?;if choices.is_empty(){return Err("linear pattern needs choices".into());}return Ok(Pattern::Linear{axis,size,choices});
+    }
+    if let Some(rest) = text.strip_prefix("#radial") {
+        let args=brackets(rest)?;if args.len()!=5{return Err("#radial requires [cx,cy,cz][scale][patterns] or [cx][cy][cz][scale][patterns]".into());}let cx=args[0].parse::<f64>().map_err(|_|"invalid radial center x".to_string())?;let cy=args[1].parse::<f64>().map_err(|_|"invalid radial center y".to_string())?;let cz=args[2].parse::<f64>().map_err(|_|"invalid radial center z".to_string())?;let scale=args[3].parse::<f64>().map_err(|_|"invalid radial scale".to_string())?;if !scale.is_finite()||scale<=0.0{return Err("radial scale must be positive".into());}let choices=split_top(args[4],',').into_iter().map(|p|parse_pattern(reg,p,depth+1)).collect::<Result<Vec<_>,_>>()?;if choices.is_empty(){return Err("radial pattern needs choices".into());}return Ok(Pattern::Radial{cx,cy,cz,scale,choices});
     }
     if let Some(rest) = text.strip_prefix("#expression") {
         let args = brackets(rest)?;
@@ -209,6 +219,10 @@ mod tests {
         assert_eq!(gradient.apply(0,0,0), stone); assert_eq!(gradient.apply(10,0,0), dirt);
         let expression = Pattern::parse(&reg, "#expression[x/10][stone,dirt]").unwrap();
         assert_eq!(expression.apply(0,0,0), stone); assert_eq!(expression.apply(10,0,0), dirt);
+        let linear=Pattern::parse(&reg,"#linear[x][2][stone,dirt]").unwrap();
+        assert_eq!(linear.apply(0,0,0),stone);assert_eq!(linear.apply(2,0,0),dirt);assert_eq!(linear.apply(-2,0,0),dirt);
+        let radial=Pattern::parse(&reg,"#radial[0][0][0][1][stone,dirt]").unwrap();
+        assert_eq!(radial.apply(0,0,0),stone);assert_eq!(radial.apply(1,0,0),dirt);
     }
     #[test] fn rejects_invalid_patterns() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();

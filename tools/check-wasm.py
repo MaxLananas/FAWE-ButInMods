@@ -285,6 +285,10 @@ assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usag
 assert ('fawebim clipboardinfo', 2) in usages
 assert ('fawebim history', 0) in usages
 assert ('fawebim historylimit <records:integer>', 2) in usages
+assert ('fawebim chunkselect <x:integer> <z:integer> [miny:integer] [maxy:integer]', 2) in usages
+assert ('fawebim chunkexpand [radius:integer]', 2) in usages
+assert ('fawebim chunklist', 0) in usages
+assert ('fawebim selectionarea', 0) in usages
 assert ('fawebim walls <pattern:text>', 2) in usages
 assert ('fawebim faces <pattern:text>', 2) in usages
 assert ('fawebim overlay <pattern:text>', 2) in usages

@@ -125,6 +125,10 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim clearhistory", 2),
         Command::op("fawebim history", 0),
         Command::op("fawebim historylimit <records:integer>", 2),
+        Command::op("fawebim chunkselect <x:integer> <z:integer> [miny:integer] [maxy:integer]", 2),
+        Command::op("fawebim chunkexpand [radius:integer]", 2),
+        Command::op("fawebim chunklist", 0),
+        Command::op("fawebim selectionarea", 0),
         Command::op("fawebim help [page:integer]", 0),
         Command::op("fawebim commands [query:text]", 0),
         Command::op("fawebim version", 0),
@@ -222,6 +226,7 @@ pub(crate) fn run(
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("help" | "commands" | "version" | "patterninfo" | "maskinfo") => help_command(host, event, registry_cache),
         Some("history" | "historylimit") => history_config(host,event,sessions),
+        Some("chunkselect" | "chunkexpand" | "chunklist" | "selectionarea") => chunk_command(host,event,sessions),
         Some("undo" | "rollback") => history_step(host, event, sessions, registry_cache, true),
         Some("redo" | "reapply") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory" | "purgehistory") => {
@@ -781,6 +786,15 @@ fn replace(
         Err(error) => feedback(host, &format!("fawebim replace: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn chunk_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("chunklist");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);
+    if action=="chunkselect"{let cx=integer(event,"x").unwrap_or(0);let cz=integer(event,"z").unwrap_or(0);let miny=integer(event,"miny").unwrap_or(-64);let maxy=integer(event,"maxy").unwrap_or(319);let region=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(cx.saturating_mul(16),miny,cz.saturating_mul(16)),BlockVector3::at(cx.saturating_mul(16).saturating_add(15),maxy,cz.saturating_mul(16).saturating_add(15))));session.selection.selector_mut().learn_region(region);feedback(host,&format!("fawebim chunkselect: chunk ({cx}, {cz}), y={miny}..{maxy}"));return Flow::Cancel;}
+    let Some(region)=session.selection.region()else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let min=region.min();let max=region.max();let(mincx,maxcx,mincz,maxcz)=(min.x>>4,max.x>>4,min.z>>4,max.z>>4);
+    if action=="chunkexpand"{let radius=integer(event,"radius").unwrap_or(0).clamp(0,1024);let region=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at((mincx-radius).saturating_mul(16),min.y,(mincz-radius).saturating_mul(16)),BlockVector3::at((maxcx+radius).saturating_mul(16).saturating_add(15),max.y,(maxcz+radius).saturating_mul(16).saturating_add(15))));session.selection.selector_mut().learn_region(region);feedback(host,&format!("fawebim chunkexpand: aligned with {radius} chunk margin — {}",session.selection.describe()));}
+    else if action=="selectionarea"{let dx=(max.x-min.x+1)as u64;let dy=(max.y-min.y+1)as u64;let dz=(max.z-min.z+1)as u64;let surface=2u64.saturating_mul(dx.saturating_mul(dy).saturating_add(dx.saturating_mul(dz)).saturating_add(dy.saturating_mul(dz)));feedback(host,&format!("fawebim selectionarea: bounding surface={surface}, footprint={}, chunks={}",dx.saturating_mul(dz),((maxcx-mincx+1)as u64).saturating_mul((maxcz-mincz+1)as u64)));}
+    else{let total=((maxcx-mincx+1)as u64).saturating_mul((maxcz-mincz+1)as u64);let mut shown=Vec::new();'outer:for cz in mincz..=maxcz{for cx in mincx..=maxcx{shown.push(format!("{cx},{cz}"));if shown.len()==32{break 'outer;}}}let suffix=if total>32{format!(" … +{}",total-32)}else{String::new()};feedback(host,&format!("fawebim chunklist: {total} chunk(s): {}{suffix}",shown.join(" ")));}Flow::Cancel
 }
 
 fn history_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("history");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let history=&mut manager.get(key).history;if action=="historylimit"{let limit=integer(event,"records").unwrap_or(history.max_records()as i32).clamp(1,10_000)as usize;history.set_max_records(limit);feedback(host,&format!("fawebim historylimit: {limit}"));}else{feedback(host,&format!("fawebim history: {} record(s), position={}, max={}, canUndo={}, canRedo={}",history.len(),history.current_index()+1,history.max_records(),history.can_undo(),history.can_redo()));}Flow::Cancel}

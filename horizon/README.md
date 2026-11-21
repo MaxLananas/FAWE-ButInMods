@@ -87,7 +87,10 @@ Horizon instead of Fabric.
 >     canopies, flora, pumpkins and pattern-based ore replacement over selections;
 > 25. **bulk utility batch**: floor/ceiling/center pattern fills, top/bottom
 >     removal, water/lava repair, fire removal, positioned/offset clipboard
->     pastes, clipboard inspection and configurable history capacity.
+>     pastes, clipboard inspection and configurable history capacity;
+> 26. **chunk selection tools and spatial patterns**: direct chunk selection,
+>     chunk-aligned expansion/listing, selection surface metrics, repeating
+>     linear stripes and concentric three-dimensional radial bands.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
