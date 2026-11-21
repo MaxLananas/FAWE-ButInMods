@@ -60,7 +60,10 @@ Horizon instead of Fabric.
 > 14. **biome editing and inspection**: registry-validated selection biome
 >     painting, compact biome history, undo/redo and sorted biome distributions;
 > 15. **terrain utilities**: column gravity, natural terrain layering, liquid
->     draining, exposed-dirt greening, snow cover and snow/ice thawing.
+>     draining, exposed-dirt greening, snow cover and snow/ice thawing;
+> 16. **expression deformation**: `x`, `y` and `z` assignment expressions
+>     remap every selected destination to a source coordinate, with buffered,
+>     undoable output and bounded expression evaluation.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

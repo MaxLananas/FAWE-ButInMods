@@ -10,6 +10,7 @@ use mod_api::{
 
 use crate::brush::{self, BrushManager};
 use crate::clipboard::{Clipboard, ClipboardManager};
+use crate::expression::{Expression, Variables};
 use crate::mask::Mask;
 use crate::morphology;
 use crate::operations;
@@ -81,6 +82,7 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim green", 2),
         Command::op("fawebim snow", 2),
         Command::op("fawebim thaw", 2),
+        Command::op("fawebim deform <expression:text>", 2),
         Command::op("fawebim expand <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim contract <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim shift <dx:integer> <dy:integer> <dz:integer>", 2),
@@ -131,6 +133,7 @@ pub(crate) fn run(
         Some("count" | "distr" | "size" | "center") => selection_info(host, event, sessions, registry_cache),
         Some("setbiome" | "biomedistr") => biome_operation(host, event, sessions, registry_cache),
         Some("gravity" | "naturalize" | "drain" | "green" | "snow" | "thaw") => terrain_operation(host, event, sessions, registry_cache),
+        Some("deform") => deform_operation(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
@@ -343,6 +346,10 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn deform_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let formula=match event.command.argument("expression"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let expression=match Expression::compile(formula){Ok(e)=>e,Err(e)=>{feedback(host,&format!("fawebim deform: {}",e.0));return Flow::Cancel;}};let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,"fawebim deform: no selection");return Flow::Cancel;};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut changes=Vec::new();let mut error=None;region.for_each_position(|x,y,z|{if error.is_some(){return;}let mut vars=Variables::new().set("x",x as f64).set("y",y as f64).set("z",z as f64);match expression.evaluate(&mut vars){Ok(_)=>{let sx=vars.get("x").round()as i32;let sy=vars.get("y").round()as i32;let sz=vars.get("z").round()as i32;changes.push((x,y,z,world.get_block(sx,sy,sz)));},Err(e)=>error=Some(e.0)}});if let Some(e)=error{feedback(host,&format!("fawebim deform: {e}"));return Flow::Cancel;}let mut registry=CachedBlockRegistry::new(registry_cache.clone());let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//deform {formula}"),true);for(x,y,z,state)in changes{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim deform: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim deform: {e}"))};Flow::Cancel
 }
 
 fn terrain_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{

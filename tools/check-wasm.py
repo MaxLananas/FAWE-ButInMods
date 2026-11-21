@@ -295,6 +295,7 @@ assert ('fawebim drain', 2) in usages
 assert ('fawebim green', 2) in usages
 assert ('fawebim snow', 2) in usages
 assert ('fawebim thaw', 2) in usages
+assert ('fawebim deform <expression:text>', 2) in usages
 assert ('fawebim expand <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim contract <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim shift <dx:integer> <dy:integer> <dz:integer>', 2) in usages
