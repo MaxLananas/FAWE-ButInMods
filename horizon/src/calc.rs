@@ -90,25 +90,69 @@ fn format_value(value: f64) -> String {
     if value.is_infinite() {
         return if value.is_sign_negative() { "-∞" } else { "∞" }.to_string();
     }
-    let negative = value.is_sign_negative();
-    let fixed = format!("{:.5}", value.abs());
-    let (integer, fraction) = fixed.split_once('.').expect("{:.5} always has one");
-    let fraction = fraction.trim_end_matches('0');
-    let mut grouped = String::with_capacity(integer.len() + integer.len() / 3);
-    for (index, digit) in integer.chars().enumerate() {
-        if index > 0 && (integer.len() - index) % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(digit);
+    let negative = value < 0.0;
+    let absolute = value.abs();
+
+    let mut integer = absolute.trunc();
+    let mut fraction = ((absolute - integer) * 100_000.0).round_ties_even() as u64;
+    // 0.999999 rounded up to 1.00000 carries into the integer part.
+    if fraction == 100_000 {
+        fraction = 0;
+        integer += 1.0;
     }
-    let mut out = String::with_capacity(grouped.len() + 8);
+    let negative = negative && (integer != 0.0 || fraction != 0);
+
+    // Integer part: exact for everything below 2^53; beyond that, scale down
+    // to whole thousands so the digits stay exact (and the fraction, which
+    // cannot be represented at that magnitude anyway, is zero).
+    let mut chunks: Vec<u64> = Vec::new();
+    if integer >= 9_007_199_254_740_992.0 {
+        // 2^53; no exact fractional part possible, print via repeated division.
+        let mut remaining = integer;
+        while remaining >= 1000.0 {
+            let chunk = remaining % 1000.0;
+            chunks.push(chunk as u64);
+            remaining = (remaining / 1000.0).trunc();
+        }
+        chunks.push(remaining as u64);
+    } else {
+        let mut remaining = integer as u64;
+        loop {
+            chunks.push(remaining % 1000);
+            remaining /= 1000;
+            if remaining == 0 {
+                break;
+            }
+        }
+    }
+    let mut out = String::with_capacity(chunks.len() * 4 + 8);
     if negative {
         out.push('-');
     }
-    out.push_str(&grouped);
-    if !fraction.is_empty() {
+    for (index, chunk) in chunks.iter().rev().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        if index > 0 {
+            out.push_str(&format!("{chunk:03}"));
+        } else {
+            out.push_str(&chunk.to_string());
+        }
+    }
+
+    if fraction != 0 {
+        // Five decimals, trailing zeros trimmed, as DecimalFormat("#,##0.#####").
+        let mut digits = [0u8; 5];
+        for slot in digits.iter_mut().rev() {
+            *slot = b'0' + (fraction % 10) as u8;
+            fraction /= 10;
+        }
+        let mut len = 5;
+        while len > 0 && digits[len - 1] == b'0' {
+            len -= 1;
+        }
         out.push('.');
-        out.push_str(fraction);
+        out.push_str(std::str::from_utf8(&digits[..len]).expect("ascii digits"));
     }
     out
 }

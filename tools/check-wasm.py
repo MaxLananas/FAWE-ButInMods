@@ -53,7 +53,13 @@ store = wasmtime.Store(engine)
 linker = wasmtime.Linker(engine)
 memtype = [i.type for i in module.imports if (i.module, i.name) == ('env', 'memory')][0]
 tabletype = [i.type for i in module.imports if (i.module, i.name) == ('env', '__indirect_function_table')][0]
-memory = wasmtime.Memory(store, memtype)
+# The import only fixes a lower bound on the memory, so create a comfortable one:
+# the static image is ~190 KB and heap growth starts at the imported minimum
+# (see GOT.mem below); the stack must start ABOVE the image instead of at its
+# midpoint, or deep frames quietly stomp static .rodata (this made the
+# float→string path read corrupted digit tables).
+PAGES = 32
+memory = wasmtime.Memory(store, wasmtime.MemoryType(wasmtime.Limits(PAGES, None)))
 table = wasmtime.Table(store, tabletype, wasmtime.Val.ref_null(wasmtime.ValType.funcref()))
 linker.define(store, 'env', 'memory', memory)
 linker.define(store, 'env', '__indirect_function_table', table)
@@ -62,7 +68,7 @@ i32 = wasmtime.ValType.i32()
 def global_i32(mutable, init=0):
     return wasmtime.Global(store, wasmtime.GlobalType(i32, mutable), wasmtime.Val.i32(init))
 
-linker.define(store, 'env', '__stack_pointer', global_i32(True, memtype.limits.min * 65536 // 2))
+linker.define(store, 'env', '__stack_pointer', global_i32(True, PAGES * 65536))
 linker.define(store, 'env', '__memory_base', global_i32(False, 0))
 linker.define(store, 'env', '__table_base', global_i32(False, 0))
 linker.define(store, 'GOT.mem', '__heap_base', global_i32(True, memtype.limits.min * 65536))
@@ -73,18 +79,38 @@ linker.define(store, 'GOT.mem', 'horizon_group_state', global_i32(True, 0))
 # Every call the mod may make from its hooks so far is answered with the canned success the game
 # would give; anything else raises, which surfaces as a trap naming the import id, instead of a
 # guest-side `.expect()` panic at a wrong-typed (empty) answer.
+HOST_BLOCK_STATE_ID = 4        # BlockStatesHost::block_state_id -> Option<BlockState>
+HOST_EDIT_BLOCKS = 132         # WorldEditServerHost::edit_blocks -> Result<u64, String>
+HOST_DIMENSION_KEY_ID = 454    # LevelsHost::dimension_key_id -> Option<String>
 HOST_COMMANDS_FEEDBACK = 1133  # Commands::feedback — answered with Result<(), TextFormError>::Ok(())
 feedback_calls = []
+edit_calls = []
+
+def write_answer(answer: bytes, out_ptr: int, out_cap: int) -> int:
+    if len(answer) > out_cap:
+        return len(answer)  # guest calls host_reply to fetch the rest
+    memory.write(store, bytearray(answer), out_ptr)
+    return len(answer)
 
 def host_handler(id_, in_ptr, in_len, out_ptr, out_cap):
     args = bytes(memory.read(store, in_ptr, in_ptr + in_len))
     if id_ == HOST_COMMANDS_FEEDBACK:
         feedback_calls.append(args)
-        answer = b'\x00'  # Result::Ok — u8 tag 0, unit payload encodes to nothing
-        if len(answer) > out_cap:
-            return len(answer)  # guest calls host_reply to fetch the rest
-        memory.write(store, bytearray(answer), out_ptr)
-        return len(answer)
+        return write_answer(b'\x00', out_ptr, out_cap)
+    if id_ == HOST_BLOCK_STATE_ID:
+        length = int.from_bytes(args[:4], 'little')
+        name = args[4:4 + length].decode('utf-8')
+        if name in ('stone', 'minecraft:stone'):
+            # Option::Some(BlockState { block: BlockKey(1), state: 0 })
+            return write_answer(b'\x01' + (1).to_bytes(4, 'little') + (0).to_bytes(2, 'little'), out_ptr, out_cap)
+        return write_answer(b'\x00', out_ptr, out_cap)
+    if id_ == HOST_DIMENSION_KEY_ID:
+        dim = b'minecraft:overworld'
+        return write_answer(b'\x01' + len(dim).to_bytes(4, 'little') + dim, out_ptr, out_cap)
+    if id_ == HOST_EDIT_BLOCKS:
+        edit_calls.append(args)
+        # Result::Ok(80u64)
+        return write_answer(b'\x00' + (80).to_bytes(8, 'little'), out_ptr, out_cap)
     raise RuntimeError(f'unexpected host import id {id_} with args {args.hex()}')
 
 host_type = wasmtime.FuncType([i32] * 5, [i32])
@@ -188,28 +214,41 @@ print(f'commands: {commands}')
 usages = {(c['usage'], c['level']) for c in commands}
 assert ('fawebim calc <formula:text>', 2) in usages
 assert ('fawebim calc at <x:number> <y:number> <z:number> <formula:text>', 2) in usages
+assert ('fawebim pos1 <x:integer> <y:integer> <z:integer>', 2) in usages
+assert ('fawebim pos2 <x:integer> <y:integer> <z:integer>', 2) in usages
+assert ('fawebim sel', 2) in usages
+assert ('fawebim set <block:text>', 2) in usages
+
+def encode_command(literals, arguments):
+    req = bytearray()
+    req += (1).to_bytes(4, 'little')          # CommandSource::Console
+    req += (4).to_bytes(4, 'little')          # PermissionLevel::Owners
+    req += len(literals).to_bytes(4, 'little')
+    for word in literals:
+        encoded = word.encode()
+        req += len(encoded).to_bytes(4, 'little') + encoded
+    req += len(arguments).to_bytes(4, 'little')
+    for name, kind, value in arguments:
+        encoded_name = name.encode()
+        req += len(encoded_name).to_bytes(4, 'little') + encoded_name
+        if kind == 'string':
+            encoded_val = value.encode()
+            req += (0).to_bytes(4, 'little') + len(encoded_val).to_bytes(4, 'little') + encoded_val
+        elif kind == 'integer':
+            req += (1).to_bytes(4, 'little') + int(value).to_bytes(4, 'little', signed=True)
+        else:
+            raise ValueError(kind)
+    req += (0).to_bytes(4, 'little')          # DimensionKey(minecraft:overworld)
+    req += b'\x00' * 24                       # position [f64; 3] = (0, 0, 0)
+    req += b'\x00'                            # cancelled = false
+    return bytes(req)
 
 # 3) A real execution of /fawebim calc 1+2*3 by the console, decoded the way
 # the game would send it, expecting Flow::Cancel (1) and the uncancelled flag.
-request = bytearray()
-request += (1).to_bytes(4, 'little')      # CommandSource::Console
-request += (4).to_bytes(4, 'little')      # PermissionLevel::Owners
-literals = ['fawebim', 'calc']
-request += len(literals).to_bytes(4, 'little')
-for word in literals:
-    encoded = word.encode()
-    request += len(encoded).to_bytes(4, 'little') + encoded
-# one argument: formula = "1+2*3"
-argument_name = 'formula'.encode()
-formula = '1+2*3'.encode()
-request += (1).to_bytes(4, 'little')      # arguments count
-request += len(argument_name).to_bytes(4, 'little') + argument_name
-request += (0).to_bytes(4, 'little')      # CommandArgumentValue::String
-request += len(formula).to_bytes(4, 'little') + formula
-request += (0).to_bytes(4, 'little')      # DimensionKey(minecraft:overworld placeholder)
-request += b'\x00' * 24                # position [f64; 3] = (0, 0, 0)
-request += b'\x00'                        # cancelled = false
-reply = call_hook(store, memory, exports, HOOK_RUN_MOD_COMMAND, bytes(request))
+reply = call_hook(
+    store, memory, exports, HOOK_RUN_MOD_COMMAND,
+    encode_command(['fawebim', 'calc'], [('formula', 'string', '1+2*3')])
+)
 flow, off = take_u32(reply, 0)
 assert flow == 1, f'expected Flow::Cancel (1), got {flow}'
 assert reply[off] == 0, 'the mod must not cancel the event flag'
@@ -218,5 +257,28 @@ assert len(feedback_calls) == 1, f'expected exactly one feedback call, got {len(
 assert b'fawebim calc: 1+2*3 = 7' in feedback_calls[0], \
     f'the feedback line did not carry the computed value: {feedback_calls[0]!r}'
 print('run_mod_command: /fawebim calc 1+2*3 -> Flow::Cancel, feedback carries "fawebim calc: 1+2*3 = 7"')
+
+# 4) Mark a 4x5x4 selection via pos1/pos2, inspect via sel, fill via set stone.
+for sub, coords in [('pos1', (0, 64, 0)), ('pos2', (3, 68, 3))]:
+    reply = call_hook(
+        store, memory, exports, HOOK_RUN_MOD_COMMAND,
+        encode_command(['fawebim', sub], [('x', 'integer', coords[0]), ('y', 'integer', coords[1]), ('z', 'integer', coords[2])])
+    )
+    assert take_u32(reply, 0)[0] == 1
+
+reply = call_hook(store, memory, exports, HOOK_RUN_MOD_COMMAND, encode_command(['fawebim', 'sel'], []))
+assert take_u32(reply, 0)[0] == 1
+assert b'(0, 64, 0) -> (3, 68, 3) (cuboid: 4x5x4)' in feedback_calls[-1], \
+    f'unexpected sel feedback: {feedback_calls[-1]!r}'
+
+reply = call_hook(
+    store, memory, exports, HOOK_RUN_MOD_COMMAND,
+    encode_command(['fawebim', 'set'], [('block', 'string', 'stone')])
+)
+assert take_u32(reply, 0)[0] == 1
+assert len(edit_calls) == 1, f'expected 1 edit_blocks call, got {len(edit_calls)}'
+assert b'fawebim set: 80 block(s) set to stone' in feedback_calls[-1], \
+    f'unexpected set feedback: {feedback_calls[-1]!r}'
+print('run_mod_command: pos1 + pos2 + sel + set stone -> edit_blocks(16 runs), 80 blocks set')
 
 print('hook smoke check OK')

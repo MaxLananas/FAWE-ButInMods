@@ -4,19 +4,24 @@ A Horizon **code mod**: a server-side wasm module the game's Horizon runtime
 loads, reimplementing FAWE's surface (300 commands, 46 brushes, history) for
 Horizon instead of Fabric.
 
-> **Status: one engine milestone in.** The ABI bridge and the build system
+> **Status: two engine milestones in.** The ABI bridge and the build system
 > work — a member module (`fawebim.wasm`) builds with a statically-linked
-> std and passes an ABI check plus a behavioural smoke test — and the first
-> engine slice is ported: the **expression engine** (`src/expression.rs`, a
-> port of `Expression.java`) and the **noise functions** behind it
-> (`src/noise.rs`, the libnoise subset WorldEdit exposes: perlin, simplex,
-> voronoi, ridged multi). On top of them sits the first command:
-> `/fawebim calc <formula:text>` and
-> `/fawebim calc at <x:number> <y:number> <z:number> <formula:text>`, the
-> port of FAWE's `//calculate` (`src/calc.rs`), printing
-> `<input> = <value>` like the reference. The brushes, the history and the
-> rest of the ~300 commands are not ported yet. The Java sources in
-> `../core` and `../fabric` are the reference implementation.
+> std and passes an ABI check plus a behavioural smoke test — and two engine
+> slices are ported:
+>
+> 1. the **expression engine** (`src/expression.rs`, a port of
+>    `Expression.java`) and the **noise functions** behind it (`src/noise.rs`,
+>    the libnoise subset WorldEdit exposes: perlin, simplex, voronoi, ridged
+>    multi), backing `/fawebim calc <formula:text>` and
+>    `/fawebim calc at <x:number> <y:number> <z:number> <formula:text>`
+>    (`src/calc.rs`);
+> 2. **cuboid regions, per-source selections, and bulk `//set`**
+>    (`src/region.rs`, `src/selection.rs`, `src/set.rs`), backing
+>    `/fawebim pos1`, `/fawebim pos2`, `/fawebim sel` and `/fawebim set` via
+>    Horizon's bulk `edit_blocks` column-run path.
+>
+> The Java sources in `../core` and `../fabric` are the reference
+> implementation.
 
 Layout:
 
@@ -27,7 +32,10 @@ Layout:
 | `src/lib.rs` | module entry: `#[mod_api::horizon_mod]` impl of `Hooks` |
 | `src/expression.rs` | the expression engine (port of `Expression.java`) |
 | `src/noise.rs` | perlin / simplex / voronoi / ridged-multi + a `JavaRandom` for reference-exact shuffles |
-| `src/calc.rs` | the command itself: FAWE's `//calculate`, with `at <x> <y> <z>` as the port's own variant |
+| `src/calc.rs` | FAWE's `//calculate`, with `at <x> <y> <z>` as the port's own variant |
+| `src/region.rs` | `BlockVector3` and `CuboidRegion` (port of `math/BlockVector3.java` + `region/CuboidRegion.java`) |
+| `src/selection.rs` | per-source `Selection` and `SelectionStore` |
+| `src/set.rs` | `/fawebim pos1`, `pos2`, `sel` and `set` via bulk `edit_blocks` runs |
 | `Cargo.lock` | committed on purpose; pins the member's resolution |
 
 Build and verification: see `../docs/wasm-build.md` (two scripts to fetch the
