@@ -63,7 +63,9 @@ Horizon instead of Fabric.
 >     draining, exposed-dirt greening, snow cover and snow/ice thawing;
 > 16. **expression deformation**: `x`, `y` and `z` assignment expressions
 >     remap every selected destination to a source coordinate, with buffered,
->     undoable output and bounded expression evaluation.
+>     undoable output and bounded expression evaluation;
+> 17. **connected and local edits**: bounded six-neighbour flood fill with
+>     patterns and spherical mask-based removal around explicit coordinates.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

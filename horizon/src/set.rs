@@ -1,7 +1,7 @@
 //! Selection, bulk `//set`, and `//undo` / `//redo` commands backed by
 //! `SessionManager`, `HorizonBlockRegistry`, `HorizonWorld`, and `EditSession`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use mod_api::{
@@ -83,6 +83,8 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim snow", 2),
         Command::op("fawebim thaw", 2),
         Command::op("fawebim deform <expression:text>", 2),
+        Command::op("fawebim flood <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>", 2),
+        Command::op("fawebim removenear <x:integer> <y:integer> <z:integer> <radius:integer> <mask:text>", 2),
         Command::op("fawebim expand <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim contract <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim shift <dx:integer> <dy:integer> <dz:integer>", 2),
@@ -134,6 +136,7 @@ pub(crate) fn run(
         Some("setbiome" | "biomedistr") => biome_operation(host, event, sessions, registry_cache),
         Some("gravity" | "naturalize" | "drain" | "green" | "snow" | "thaw") => terrain_operation(host, event, sessions, registry_cache),
         Some("deform") => deform_operation(host, event, sessions, registry_cache),
+        Some("flood" | "removenear") => near_operation(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
@@ -346,6 +349,13 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn near_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
+    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("flood");let (Some(x),Some(y),Some(z))=(integer(event,"x"),integer(event,"y"),integer(event,"z"))else{feedback(host,&format!("fawebim {action}: missing coordinates"));return Flow::Cancel;};let radius=integer(event,"radius").unwrap_or(0).clamp(1,128);let key=source_key(event.source);
+    let (pattern,mask)={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());if action=="flood"{let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"air"};match Pattern::parse(&reg,text){Ok(p)=>(Some(p),None),Err(e)=>{feedback(host,&format!("fawebim flood: {e}"));return Flow::Cancel;}}}else{let text=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"#existing"};match Mask::parse(&reg,text){Ok(m)=>(None,Some(m)),Err(e)=>{feedback(host,&format!("fawebim removenear: {e}"));return Flow::Cancel;}}}};
+    let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let mut positions=Vec::new();if action=="flood"{let source=world.get_block(x,y,z);let mut queue=VecDeque::from([(x,y,z)]);let mut seen=HashSet::from([(x,y,z)]);let r2=radius*radius;while let Some((px,py,pz))=queue.pop_front(){if positions.len()>=2_000_000{break;}if (px-x).pow(2)+(py-y).pow(2)+(pz-z).pow(2)>r2||world.get_block(px,py,pz)!=source{continue;}positions.push((px,py,pz));for(dx,dy,dz)in[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)]{let next=(px+dx,py+dy,pz+dz);if seen.insert(next){queue.push_back(next);}}}}else{let r=radius as f64;operations::sphere(BlockVector3::at(x,y,z),r,r,r,false,|px,py,pz|{if mask.as_ref().is_some_and(|m|m.test(&world,&registry,px,py,pz)){positions.push((px,py,pz));}});}
+    let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);for(px,py,pz)in positions{let state=pattern.as_ref().map_or(0,|p|p.apply(px,py,pz));edit.set_block(px,py,pz,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel
 }
 
 fn deform_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
