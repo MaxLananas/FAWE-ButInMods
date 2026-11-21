@@ -284,6 +284,9 @@ assert ('fawebim pastenonair', 2) in usages
 assert ('fawebim pasteair', 2) in usages
 assert ('fawebim pastemasked <mask:text>', 2) in usages
 assert ('fawebim clipboardorigin <x:integer> <y:integer> <z:integer>', 2) in usages
+assert ('fawebim clipboardshift <dx:integer> <dy:integer> <dz:integer>', 2) in usages
+assert ('fawebim clipboardscale <x:integer> <y:integer> <z:integer>', 2) in usages
+assert ('fawebim clipboardtrim', 2) in usages
 assert ('fawebim pasteat <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim clipboardinfo', 2) in usages

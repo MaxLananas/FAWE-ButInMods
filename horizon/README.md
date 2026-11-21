@@ -103,7 +103,10 @@ Horizon instead of Fabric.
 >     with configurable thickness, turns, signed height and arbitrary patterns;
 > 31. **selective clipboard pasting**: skip source air, restrict writes to empty
 >     destinations or arbitrary destination masks, and explicitly relocate the
->     clipboard origin before normal or transformed pastes.
+>     clipboard origin before normal or transformed pastes;
+> 32. **clipboard geometry controls**: relative origin shifts, bounded integer
+>     nearest-neighbour scaling and automatic air-border trimming while keeping
+>     the clipboard's world anchor consistent.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

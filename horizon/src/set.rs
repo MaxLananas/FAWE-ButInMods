@@ -43,6 +43,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim pasteair", 2),
         Command::op("fawebim pastemasked <mask:text>", 2),
         Command::op("fawebim clipboardorigin <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim clipboardshift <dx:integer> <dy:integer> <dz:integer>", 2),
+        Command::op("fawebim clipboardscale <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim clipboardtrim", 2),
         Command::op("fawebim rotate <degrees:integer>", 2),
         Command::op("fawebim flip <axis:text>", 2),
         Command::op("fawebim clearclipboard", 2),
@@ -214,6 +217,7 @@ pub(crate) fn run(
         Some("cut") => copy_or_cut(host, event, sessions, clipboards, registry_cache, true),
         Some("paste" | "pasteat" | "pasteoffset" | "pastenonair" | "pasteair" | "pastemasked") => paste(host, event, sessions, clipboards, registry_cache),
         Some("clipboardinfo" | "clipboardorigin") => { let key=source_key(event.source);let mut clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());if let Some(c)=clips.get_mut(key){if event.command.literals.get(1).is_some_and(|s|s=="clipboardorigin"){c.set_origin(BlockVector3::at(integer(event,"x").unwrap_or(0),integer(event,"y").unwrap_or(0),integer(event,"z").unwrap_or(0)));}let s=c.size();let o=c.origin();feedback(host,&format!("fawebim clipboard: {} block(s), {}x{}x{}, origin=({}, {}, {})",c.volume(),s.x,s.y,s.z,o.x,o.y,o.z));}else{feedback(host,"fawebim clipboard: empty");}Flow::Cancel },
+        Some("clipboardshift" | "clipboardscale" | "clipboardtrim") => modify_clipboard(host,event,clipboards,registry_cache),
         Some("rotate" | "cliprotate") => transform_clipboard(host, event, clipboards, true),
         Some("flip" | "clipflip") => transform_clipboard(host, event, clipboards, false),
         Some("clearclipboard" | "clipclear") => {
@@ -731,6 +735,8 @@ fn paste(
     match result {Ok(n)=>feedback(host,&format!("fawebim paste: {n} block(s) pasted")),Err(e)=>feedback(host,&format!("fawebim paste: {e}"))};
     Flow::Cancel
 }
+
+fn modify_clipboard(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,clipboards:&Mutex<ClipboardManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("clipboardshift");let key=source_key(event.source);let message={let mut clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());if let Some(clip)=clips.get_mut(key){match action{"clipboardshift"=>clip.shift_origin(integer(event,"dx").unwrap_or(0),integer(event,"dy").unwrap_or(0),integer(event,"dz").unwrap_or(0)),"clipboardscale"=>{let(x,y,z)=(integer(event,"x").unwrap_or(1),integer(event,"y").unwrap_or(1),integer(event,"z").unwrap_or(1));if !(1..=16).contains(&x)||!(1..=16).contains(&y)||!(1..=16).contains(&z){return{feedback(host,"fawebim clipboardscale: factors must be 1..16");Flow::Cancel};}let volume=(clip.size().x as u64*x as u64)*(clip.size().y as u64*y as u64)*(clip.size().z as u64*z as u64);if volume>CuboidRegion::MAX_VOLUME{return{feedback(host,"fawebim clipboardscale: result exceeds the block limit");Flow::Cancel};}clip.scale(x,y,z)},"clipboardtrim"=>{let registry=CachedBlockRegistry::new(registry_cache.clone());clip.trim(|state|!registry.is_air_like(state));},_=>{}}let size=clip.size();let origin=clip.origin();format!("fawebim {action}: {} block(s), {}x{}x{}, origin=({}, {}, {})",clip.volume(),size.x,size.y,size.z,origin.x,origin.y,origin.z)}else{"fawebim clipboard: clipboard is empty".into()}};feedback(host,&message);Flow::Cancel}
 
 fn transform_clipboard(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,clipboards:&Mutex<ClipboardManager>,rotate:bool)->Flow{
     let key=source_key(event.source);let mut clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());

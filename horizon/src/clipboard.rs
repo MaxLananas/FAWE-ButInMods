@@ -48,6 +48,14 @@ impl Clipboard {
         let old=self.clone();
         old.for_each(|x,y,z,state| { let (nx,ny,nz)=match axis {'x'=>(old.size.x-1-x,y,z),'y'=>(x,old.size.y-1-y,z),_=>(x,y,old.size.z-1-z)}; let i=self.index(nx,ny,nz); self.blocks[i]=state; });
     }
+    pub fn scale(&mut self, sx:i32, sy:i32, sz:i32) {
+        let old=self.clone();self.size=BlockVector3::at(old.size.x*sx,old.size.y*sy,old.size.z*sz);self.blocks=vec![-1;(self.size.x*self.size.y*self.size.z)as usize];
+        old.for_each(|x,y,z,state|for dy in 0..sy{for dz in 0..sz{for dx in 0..sx{let i=self.index(x*sx+dx,y*sy+dy,z*sz+dz);self.blocks[i]=state;}}});
+    }
+    pub fn shift_origin(&mut self, dx:i32, dy:i32, dz:i32) { self.origin=BlockVector3::at(self.origin.x.saturating_add(dx),self.origin.y.saturating_add(dy),self.origin.z.saturating_add(dz)); }
+    pub fn trim(&mut self, mut keep:impl FnMut(i32)->bool)->bool {
+        let mut min=self.size;let mut max=BlockVector3::at(-1,-1,-1);self.for_each(|x,y,z,state|if keep(state){min.x=min.x.min(x);min.y=min.y.min(y);min.z=min.z.min(z);max.x=max.x.max(x);max.y=max.y.max(y);max.z=max.z.max(z);});if max.x<0{return false;}if min==BlockVector3::ZERO&&max==BlockVector3::at(self.size.x-1,self.size.y-1,self.size.z-1){return false;}let old=self.clone();self.size=BlockVector3::at(max.x-min.x+1,max.y-min.y+1,max.z-min.z+1);self.origin=BlockVector3::at(old.origin.x+min.x,old.origin.y+min.y,old.origin.z+min.z);self.blocks=vec![-1;(self.size.x*self.size.y*self.size.z)as usize];old.for_each(|x,y,z,state|if x>=min.x&&x<=max.x&&y>=min.y&&y<=max.y&&z>=min.z&&z<=max.z{let i=self.index(x-min.x,y-min.y,z-min.z);self.blocks[i]=state;});true
+    }
 }
 
 #[derive(Default)]
@@ -64,6 +72,7 @@ impl ClipboardManager {
  #[test] fn capture_rotate_flip_preserves_blocks(){
   let mut w=InMemoryWorld::default(); w.set_block(0,0,0,1);w.set_block(1,0,0,2);w.set_block(0,0,1,3);w.set_block(1,0,1,4);
   let mut r=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(0,0,0),BlockVector3::at(1,0,1)));
-  let mut c=Clipboard::capture(&w,&mut r);assert_eq!(c.volume(),4);c.rotate_y(1);assert_eq!(c.get(1,0,0),1);c.flip('x');assert_eq!(c.get(0,0,0),1);
+  let mut c=Clipboard::capture(&w,&mut r);assert_eq!(c.volume(),4);c.rotate_y(1);assert_eq!(c.get(1,0,0),1);c.flip('x');assert_eq!(c.get(0,0,0),1);c.scale(2,1,2);assert_eq!(c.size(),BlockVector3::at(4,1,4));assert_eq!(c.get(0,0,0),1);c.shift_origin(2,3,4);assert_eq!(c.origin(),BlockVector3::at(2,3,4));
  }
+ #[test]fn trim_removes_empty_borders(){let c=Clipboard::from_parts(BlockVector3::at(3,3,3),BlockVector3::at(10,20,30),{let mut b=vec![0;27];b[13]=7;b});let mut c=c;assert!(c.trim(|s|s!=0));assert_eq!(c.size(),BlockVector3::at(1,1,1));assert_eq!(c.origin(),BlockVector3::at(11,21,31));assert_eq!(c.get(0,0,0),7);}
 }
