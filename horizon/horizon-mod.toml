@@ -1,0 +1,10 @@
+id = "fawebim"
+name = "FAWE But In Mods"
+version = "1.3.0"
+description = "Fast Async WorldEdit for Horizon: the FAWE engine, its 46 brushes, 300 commands and history, as a server-side code mod"
+api = "0.2"
+side = "server"
+capabilities = ["registries"]
+
+[package.metadata.horizon]
+sdk = "dd67b76ff23e28c6d8e21859df600d31572f81a0"

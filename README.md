@@ -498,6 +498,11 @@ fabric/    the adapter — mod entry point, Brigadier registration, world access
            lighting, entities, block entities), the block-state and biome bridge, click and
            interaction callbacks, one mixin and one access widener.
 tools/     the static auditor and the checks run over the tree.
+horizon/   experimental: the engine as a Horizon code mod (server-side wasm). The
+           build works (static-std member module) and the first engine milestone
+           is in: the expression engine and noise in Rust, exposed as
+           `/fawebim calc` (a port of FAWE's //calculate), ABI-checked and
+           smoke-tested with wasmtime. See docs/wasm-build.md.
 ```
 
 Where to start reading: `core/.../extent/EditSession.java` (the pipeline), `core/.../world/ChunkSet.java`

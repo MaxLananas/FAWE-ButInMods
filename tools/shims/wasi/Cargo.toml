@@ -1,0 +1,9 @@
+[package]
+name = "wasi"
+version = "0.11.1+wasi-snapshot-preview1"
+edition = "2018"
+license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+description = "Glimpse of the WASI 0.1 API (vendored shim; never built for the wasm targets that need it here)"
+
+[lib]
+path = "src/lib.rs"
