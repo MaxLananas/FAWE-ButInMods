@@ -9,6 +9,7 @@ use mod_api::{
 
 use crate::clipboard::{Clipboard, ClipboardManager};
 use crate::mask::Mask;
+use crate::operations;
 use crate::pattern::Pattern;
 use crate::region::{BlockVector3, CuboidRegion, RegionShape};
 use crate::registry::{
@@ -31,6 +32,13 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim rotate <degrees:integer>", 2),
         Command::op("fawebim flip <axis:text>", 2),
         Command::op("fawebim clearclipboard", 2),
+        Command::op("fawebim sphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>", 2),
+        Command::op("fawebim hsphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>", 2),
+        Command::op("fawebim cylinder <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>", 2),
+        Command::op("fawebim hcylinder <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>", 2),
+        Command::op("fawebim pyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>", 2),
+        Command::op("fawebim hpyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>", 2),
+        Command::op("fawebim line <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>", 2),
         Command::op("fawebim undo [steps:integer]", 2),
         Command::op("fawebim redo [steps:integer]", 2),
         Command::op("fawebim clearhistory", 2),
@@ -64,6 +72,7 @@ pub(crate) fn run(
             feedback(host, if removed { "fawebim clearclipboard: clipboard cleared" } else { "fawebim clearclipboard: clipboard already empty" });
             Flow::Cancel
         }
+        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line") => generate(host, event, sessions, registry_cache),
         Some("undo") => history_step(host, event, sessions, registry_cache, true),
         Some("redo") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory") => {
@@ -95,6 +104,14 @@ fn source_key(source: &mod_api::CommandSource) -> SelectionKey {
 fn integer(event: &RunModCommandEvent<'_>, name: &str) -> Option<i32> {
     match event.command.argument(name) {
         Some(CommandArgumentValue::Integer(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn number(event: &RunModCommandEvent<'_>, name: &str) -> Option<f64> {
+    match event.command.argument(name) {
+        Some(CommandArgumentValue::Number(value)) => Some(*value),
+        Some(CommandArgumentValue::Integer(value)) => Some(*value as f64),
         _ => None,
     }
 }
@@ -256,6 +273,31 @@ fn set(
         Err(error) => feedback(host, &format!("fawebim set: the edit was refused: {error}")),
     }
     Flow::Cancel
+}
+
+fn generate(
+    host: &mut dyn ServerHost,
+    event: &RunModCommandEvent<'_>,
+    sessions: &Mutex<SessionManager>,
+    registry_cache: &Arc<Mutex<HorizonRegistryCache>>,
+) -> Flow {
+    let name=event.command.literals.get(1).map(String::as_str).unwrap_or("shape");
+    let pattern_text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>{feedback(host,&format!("fawebim {name}: expected a pattern"));return Flow::Cancel;}};
+    let pattern={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,pattern_text){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim {name}: {e}"));return Flow::Cancel;}}};
+    let coord=|n|integer(event,n);let Some(x)=coord("x").or_else(||coord("x1"))else{feedback(host,"fawebim shape: missing coordinates");return Flow::Cancel;};
+    let Some(y)=coord("y").or_else(||coord("y1"))else{feedback(host,"fawebim shape: missing coordinates");return Flow::Cancel;};
+    let Some(z)=coord("z").or_else(||coord("z1"))else{feedback(host,"fawebim shape: missing coordinates");return Flow::Cancel;};
+    let center=BlockVector3::at(x,y,z);let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let key=source_key(event.source);
+    let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{name} {pattern_text}"),true);let mut place=|px,py,pz|{edit.set_block(px,py,pz,pattern.apply(px,py,pz));};
+        match name {
+            "sphere"|"hsphere"=>{let r=number(event,"radius").unwrap_or(0.0);if r>0.0{operations::sphere(center,r,r,r,name=="hsphere",&mut place);}},
+            "cylinder"|"hcylinder"=>{let r=number(event,"radius").unwrap_or(0.0);let h=integer(event,"height").unwrap_or(0);if r>0.0&&h!=0{operations::cylinder(center,r,r,h,name=="hcylinder",&mut place);}},
+            "pyramid"|"hpyramid"=>{let size=integer(event,"size").unwrap_or(0);if size>0{operations::pyramid(center,size,name=="hpyramid",&mut place);}},
+            "line"=>{if let (Some(x2),Some(y2),Some(z2))=(coord("x2"),coord("y2"),coord("z2")){operations::line(center,BlockVector3::at(x2,y2,z2),1.0,&mut place);}},
+            _=>{}
+        }
+        let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};
+    match result{Ok(n)=>feedback(host,&format!("fawebim {name}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {name}: {e}"))};Flow::Cancel
 }
 
 fn copy_or_cut(

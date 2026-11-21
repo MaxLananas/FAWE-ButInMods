@@ -9,6 +9,7 @@ pub mod history;
 pub mod math;
 pub mod mask;
 pub mod noise;
+pub mod operations;
 pub mod pattern;
 pub mod region;
 pub mod registry;

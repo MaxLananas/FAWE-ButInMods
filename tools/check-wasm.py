@@ -252,6 +252,13 @@ assert ('fawebim paste', 2) in usages
 assert ('fawebim rotate <degrees:integer>', 2) in usages
 assert ('fawebim flip <axis:text>', 2) in usages
 assert ('fawebim clearclipboard', 2) in usages
+assert ('fawebim sphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>', 2) in usages
+assert ('fawebim hsphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>', 2) in usages
+assert ('fawebim cylinder <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim hcylinder <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim pyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>', 2) in usages
+assert ('fawebim hpyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>', 2) in usages
+assert ('fawebim line <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>', 2) in usages
 assert ('fawebim undo [steps:integer]', 2) in usages
 assert ('fawebim redo [steps:integer]', 2) in usages
 assert ('fawebim clearhistory', 2) in usages
