@@ -297,6 +297,15 @@ assert ('fawebim history', 0) in usages
 assert ('fawebim historylimit <records:integer>', 2) in usages
 assert ('fawebim bezier <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <x3:integer> <y3:integer> <z3:integer> [thickness:number] <pattern:text>', 2) in usages
 assert ('fawebim helix <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <turns:number> [thickness:number] <pattern:text>', 2) in usages
+assert ('fawebim cross <pattern:text>', 2) in usages
+assert ('fawebim cross2d <pattern:text>', 2) in usages
+assert ('fawebim lattice <xgap:integer> <ygap:integer> <zgap:integer> <pattern:text>', 2) in usages
+assert ('fawebim stripes <axis:text> <spacing:integer> <pattern:text>', 2) in usages
+assert ('fawebim border <thickness:integer> <pattern:text>', 2) in usages
+assert ('fawebim checkerfill <size:integer> <first:text> <second:text>', 2) in usages
+assert ('fawebim selectionbounds <miny:integer> <maxy:integer>', 2) in usages
+assert ('fawebim selectionpad <x:integer> <y:integer> <z:integer>', 2) in usages
+assert ('fawebim selectionalign <grid:integer>', 2) in usages
 assert ('fawebim frame <pattern:text>', 2) in usages
 assert ('fawebim corners <pattern:text>', 2) in usages
 assert ('fawebim pillars <pattern:text>', 2) in usages

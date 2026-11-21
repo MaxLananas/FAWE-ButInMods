@@ -109,7 +109,10 @@ Horizon instead of Fabric.
 >     the clipboard's world anchor consistent;
 > 33. **clipboard arrays and content editing**: center-anchored pastes, bounded
 >     three-axis paste arrays and in-memory block replacement with any nested
->     coordinate-driven pattern before committing edits to the world.
+>     coordinate-driven pattern before committing edits to the world;
+> 34. **large structural editing batch**: 3D/planar crosses, lattices, stripes,
+>     thick borders and checker fills; selection height, padding and grid
+>     alignment controls; sinusoidal and radial-gradient nested patterns.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

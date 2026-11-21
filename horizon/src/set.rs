@@ -79,6 +79,12 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim frame <pattern:text>", 2),
         Command::op("fawebim corners <pattern:text>", 2),
         Command::op("fawebim pillars <pattern:text>", 2),
+        Command::op("fawebim cross <pattern:text>", 2),
+        Command::op("fawebim cross2d <pattern:text>", 2),
+        Command::op("fawebim lattice <xgap:integer> <ygap:integer> <zgap:integer> <pattern:text>", 2),
+        Command::op("fawebim stripes <axis:text> <spacing:integer> <pattern:text>", 2),
+        Command::op("fawebim border <thickness:integer> <pattern:text>", 2),
+        Command::op("fawebim checkerfill <size:integer> <first:text> <second:text>", 2),
         Command::op("fawebim move <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim stack <count:integer> <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim smooth [iterations:integer]", 2),
@@ -151,6 +157,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim inspect <x:integer> <y:integer> <z:integer>", 0),
         Command::op("fawebim columninfo <x:integer> <z:integer> [miny:integer] [maxy:integer]", 0),
         Command::op("fawebim surfaceinfo <x:integer> <z:integer> [miny:integer] [maxy:integer]", 0),
+        Command::op("fawebim selectionbounds <miny:integer> <maxy:integer>", 2),
+        Command::op("fawebim selectionpad <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim selectionalign <grid:integer>", 2),
         Command::op("fawebim help [page:integer]", 0),
         Command::op("fawebim commands [query:text]", 0),
         Command::op("fawebim version", 0),
@@ -215,6 +224,7 @@ pub(crate) fn run(
         Some("pos2") => pos(host, event, sessions, Corner::Two),
         Some("sel") => sel(host, sessions, event),
         Some("set" | "paint") => set(host, event, sessions, registry_cache),
+        Some("checkerfill") => checker_fill(host,event,sessions,registry_cache),
         Some("replace" | "substitute") => replace(host, event, sessions, registry_cache),
         Some("copy" | "duplicate") => copy_or_cut(host, event, sessions, clipboards, registry_cache, false),
         Some("cut") => copy_or_cut(host, event, sessions, clipboards, registry_cache, true),
@@ -230,7 +240,7 @@ pub(crate) fn run(
         }
         Some("schemsave" | "schemload" | "schemlist") => schematic_command(host, event, clipboards, registry_cache),
         Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
-        Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars") => region_operation(host, event, sessions, registry_cache),
+        Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars" | "cross" | "cross2d" | "lattice" | "stripes" | "border") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
         Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
@@ -249,7 +259,7 @@ pub(crate) fn run(
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
         Some("help" | "commands" | "version" | "patterninfo" | "maskinfo") => help_command(host, event, registry_cache),
         Some("history" | "historylimit") => history_config(host,event,sessions),
-        Some("chunkselect" | "chunkexpand" | "chunklist" | "selectionarea") => chunk_command(host,event,sessions),
+        Some("chunkselect" | "chunkexpand" | "chunklist" | "selectionarea" | "selectionbounds" | "selectionpad" | "selectionalign") => chunk_command(host,event,sessions),
         Some("inspect" | "columninfo" | "surfaceinfo") => inspect_command(host,event,registry_cache),
         Some("undo" | "rollback") => history_step(host, event, sessions, registry_cache, true),
         Some("redo" | "reapply") => history_step(host, event, sessions, registry_cache, false),
@@ -379,6 +389,8 @@ fn sel(
     feedback(host, &format!("fawebim sel: {text}"));
     Flow::Cancel
 }
+
+fn checker_fill(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{let key=source_key(event.source);let mut region={let manager=lock_sessions(sessions);manager.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,"fawebim checkerfill: no selection");return Flow::Cancel;};let(first,second)=(match event.command.argument("first"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"air"},match event.command.argument("second"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"air"});let pattern_text=format!("#checker[{first},{second}][{}]",integer(event,"size").unwrap_or(1).max(1));let pattern={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,&pattern_text){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim checkerfill: {e}"));return Flow::Cancel;}}};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,"//checkerfill",true);region.for_each_position(|x,y,z|{edit.set_block(x,y,z,pattern.apply(x,y,z));});let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim checkerfill: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim checkerfill: {e}"))};Flow::Cancel}
 
 fn set(
     host: &mut dyn ServerHost,
@@ -615,7 +627,7 @@ fn region_operation(
     let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {name}: no selection"));return Flow::Cancel;};
     let pattern_text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>{feedback(host,&format!("fawebim {name}: expected a pattern"));return Flow::Cancel;}};
     let pattern={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,pattern_text){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim {name}: {e}"));return Flow::Cancel;}}};
-    let snapshot=region.clone();let min=snapshot.min();let max=snapshot.max();let thickness=integer(event,"thickness").unwrap_or(1).clamp(1,64);let mut points=Vec::new();
+    let snapshot=region.clone();let min=snapshot.min();let max=snapshot.max();let thickness=integer(event,"thickness").unwrap_or(1).clamp(1,64);let center=((min.x+max.x)/2,(min.y+max.y)/2,(min.z+max.z)/2);let gaps=(integer(event,"xgap").unwrap_or(1).max(1),integer(event,"ygap").unwrap_or(1).max(1),integer(event,"zgap").unwrap_or(1).max(1));let spacing=integer(event,"spacing").unwrap_or(1).max(1);let axis=match event.command.argument("axis"){Some(CommandArgumentValue::String(s))=>s.trim().to_ascii_lowercase(),_=>"y".into()};let mut points=Vec::new();
     region.for_each_position(|x,y,z|{let selected=match name{
         "walls"=>x==min.x||x==max.x||z==min.z||z==max.z,
         "faces"=>x==min.x||x==max.x||y==min.y||y==max.y||z==min.z||z==max.z,
@@ -623,6 +635,11 @@ fn region_operation(
         "frame"=>[x==min.x||x==max.x,y==min.y||y==max.y,z==min.z||z==max.z].into_iter().filter(|v|*v).count()>=2,
         "corners"=>(x==min.x||x==max.x)&&(y==min.y||y==max.y)&&(z==min.z||z==max.z),
         "pillars"=>(x==min.x||x==max.x)&&(z==min.z||z==max.z),
+        "cross"=>x==center.0||y==center.1||z==center.2,
+        "cross2d"=>y==center.1&&(x==center.0||z==center.2),
+        "lattice"=>(x-min.x).rem_euclid(gaps.0)==0&&(y-min.y).rem_euclid(gaps.1)==0&&(z-min.z).rem_euclid(gaps.2)==0,
+        "stripes"=>match axis.as_str(){"x"=>(x-min.x).rem_euclid(spacing)==0,"z"=>(z-min.z).rem_euclid(spacing)==0,_=>(y-min.y).rem_euclid(spacing)==0},
+        "border"=>{let dx=(x-min.x).min(max.x-x);let dy=(y-min.y).min(max.y-y);let dz=(z-min.z).min(max.z-z);dx.min(dy).min(dz)<thickness},
         "hollow"=>{let mut edge=false;'outer:for d in 1..=thickness{for (dx,dy,dz) in [(d,0,0),(-d,0,0),(0,d,0),(0,-d,0),(0,0,d),(0,0,-d)]{if !snapshot.contains(x+dx,y+dy,z+dz){edge=true;break 'outer;}}}edge},
         _=>false};if selected{points.push((x,y,z));}});
     let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());
@@ -834,6 +851,7 @@ fn chunk_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions
     let action=event.command.literals.get(1).map(String::as_str).unwrap_or("chunklist");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);
     if action=="chunkselect"{let cx=integer(event,"x").unwrap_or(0);let cz=integer(event,"z").unwrap_or(0);let miny=integer(event,"miny").unwrap_or(-64);let maxy=integer(event,"maxy").unwrap_or(319);let region=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(cx.saturating_mul(16),miny,cz.saturating_mul(16)),BlockVector3::at(cx.saturating_mul(16).saturating_add(15),maxy,cz.saturating_mul(16).saturating_add(15))));session.selection.selector_mut().learn_region(region);feedback(host,&format!("fawebim chunkselect: chunk ({cx}, {cz}), y={miny}..{maxy}"));return Flow::Cancel;}
     let Some(region)=session.selection.region()else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let min=region.min();let max=region.max();let(mincx,maxcx,mincz,maxcz)=(min.x>>4,max.x>>4,min.z>>4,max.z>>4);
+    if action=="selectionbounds"||action=="selectionpad"||action=="selectionalign"{let updated=if action=="selectionbounds"{let a=integer(event,"miny").unwrap_or(min.y);let b=integer(event,"maxy").unwrap_or(max.y);RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(min.x,a.min(b),min.z),BlockVector3::at(max.x,a.max(b),max.z)))}else if action=="selectionpad"{let(x,y,z)=(integer(event,"x").unwrap_or(0).abs(),integer(event,"y").unwrap_or(0).abs(),integer(event,"z").unwrap_or(0).abs());RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(min.x.saturating_sub(x),min.y.saturating_sub(y),min.z.saturating_sub(z)),BlockVector3::at(max.x.saturating_add(x),max.y.saturating_add(y),max.z.saturating_add(z))))}else{let grid=integer(event,"grid").unwrap_or(1).clamp(1,4096);let floor=|v:i32|v.div_euclid(grid)*grid;let ceil=|v:i32|v.div_euclid(grid).saturating_add(1).saturating_mul(grid).saturating_sub(1);RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(floor(min.x),floor(min.y),floor(min.z)),BlockVector3::at(ceil(max.x),ceil(max.y),ceil(max.z))))};session.selection.selector_mut().learn_region(updated);feedback(host,&format!("fawebim {action}: {}",session.selection.describe()));return Flow::Cancel;}
     if action=="chunkexpand"{let radius=integer(event,"radius").unwrap_or(0).clamp(0,1024);let region=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at((mincx-radius).saturating_mul(16),min.y,(mincz-radius).saturating_mul(16)),BlockVector3::at((maxcx+radius).saturating_mul(16).saturating_add(15),max.y,(maxcz+radius).saturating_mul(16).saturating_add(15))));session.selection.selector_mut().learn_region(region);feedback(host,&format!("fawebim chunkexpand: aligned with {radius} chunk margin — {}",session.selection.describe()));}
     else if action=="selectionarea"{let dx=(max.x-min.x+1)as u64;let dy=(max.y-min.y+1)as u64;let dz=(max.z-min.z+1)as u64;let surface=2u64.saturating_mul(dx.saturating_mul(dy).saturating_add(dx.saturating_mul(dz)).saturating_add(dy.saturating_mul(dz)));feedback(host,&format!("fawebim selectionarea: bounding surface={surface}, footprint={}, chunks={}",dx.saturating_mul(dz),((maxcx-mincx+1)as u64).saturating_mul((maxcz-mincz+1)as u64)));}
     else{let total=((maxcx-mincx+1)as u64).saturating_mul((maxcz-mincz+1)as u64);let mut shown=Vec::new();'outer:for cz in mincz..=maxcz{for cx in mincx..=maxcx{shown.push(format!("{cx},{cz}"));if shown.len()==32{break 'outer;}}}let suffix=if total>32{format!(" … +{}",total-32)}else{String::new()};feedback(host,&format!("fawebim chunklist: {total} chunk(s): {}{suffix}",shown.join(" ")));}Flow::Cancel
