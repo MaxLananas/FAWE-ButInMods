@@ -252,6 +252,9 @@ assert ('fawebim paste', 2) in usages
 assert ('fawebim rotate <degrees:integer>', 2) in usages
 assert ('fawebim flip <axis:text>', 2) in usages
 assert ('fawebim clearclipboard', 2) in usages
+assert ('fawebim schemsave <name:text>', 2) in usages
+assert ('fawebim schemload <name:text>', 2) in usages
+assert ('fawebim schemlist', 2) in usages
 assert ('fawebim sphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>', 2) in usages
 assert ('fawebim hsphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>', 2) in usages
 assert ('fawebim cylinder <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages

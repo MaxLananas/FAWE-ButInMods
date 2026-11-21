@@ -43,7 +43,10 @@ Horizon instead of Fabric.
 > 8. **region operations and the complete 46-brush catalogue**
 >    (`src/brush.rs`): walls, faces, overlays, hollowing, move/stack, every
 >    upstream brush name and alias, per-player settings and pattern-aware brush
->    execution through the same buffered history pipeline.
+>    execution through the same buffered history pipeline;
+> 9. **persistent schematics** (`src/schematic.rs`): portable palette-based
+>    binary encoding, strict size/corruption validation, restart-safe block
+>    names and atomic Horizon data-file save/load/list commands.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
@@ -69,6 +72,7 @@ Layout:
 | `src/registry.rs` | lazy Horizon block/biome/item registry bridge and in-memory test registry |
 | `src/world.rs` | packed block arrays, chunk buffers, extents, and Horizon bulk world writes |
 | `src/history.rs` | compact block/biome/entity change sets and undo/redo history |
+| `src/schematic.rs` | portable palette-based clipboard codec for persistent Horizon data files |
 | `src/session.rs` | local sessions, limits, transforms, side effects, edit buffering and history replay |
 | `src/set.rs` | selections, `set`, `undo`, `redo`, and `clearhistory` commands |
 | `Cargo.lock` | committed on purpose; pins the member's resolution |

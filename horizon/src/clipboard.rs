@@ -24,6 +24,7 @@ impl Clipboard {
         });
         Self { size, origin: min, blocks }
     }
+    pub(crate) fn from_parts(size: BlockVector3, origin: BlockVector3, blocks: Vec<i32>) -> Self { Self { size, origin, blocks } }
     pub const fn size(&self) -> BlockVector3 { self.size }
     pub const fn origin(&self) -> BlockVector3 { self.origin }
     pub fn volume(&self) -> usize { self.blocks.iter().filter(|&&s| s >= 0).count() }

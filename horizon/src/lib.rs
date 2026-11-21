@@ -15,6 +15,7 @@ pub mod pattern;
 pub mod region;
 pub mod registry;
 pub mod selection;
+pub mod schematic;
 pub mod session;
 pub mod set;
 pub mod transform;
