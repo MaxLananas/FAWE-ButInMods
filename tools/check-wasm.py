@@ -280,6 +280,10 @@ assert ('fawebim removebelow [layers:integer]', 2) in usages
 assert ('fawebim fixwater', 2) in usages
 assert ('fawebim fixlava', 2) in usages
 assert ('fawebim extinguish', 2) in usages
+assert ('fawebim pastenonair', 2) in usages
+assert ('fawebim pasteair', 2) in usages
+assert ('fawebim pastemasked <mask:text>', 2) in usages
+assert ('fawebim clipboardorigin <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pasteat <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim clipboardinfo', 2) in usages

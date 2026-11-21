@@ -27,6 +27,7 @@ impl Clipboard {
     pub(crate) fn from_parts(size: BlockVector3, origin: BlockVector3, blocks: Vec<i32>) -> Self { Self { size, origin, blocks } }
     pub const fn size(&self) -> BlockVector3 { self.size }
     pub const fn origin(&self) -> BlockVector3 { self.origin }
+    pub fn set_origin(&mut self, origin: BlockVector3) { self.origin = origin; }
     pub fn volume(&self) -> usize { self.blocks.iter().filter(|&&s| s >= 0).count() }
     fn index(&self, x:i32,y:i32,z:i32)->usize { (y*self.size.z*self.size.x + z*self.size.x + x) as usize }
     pub fn get(&self,x:i32,y:i32,z:i32)->i32 { self.blocks[self.index(x,y,z)] }

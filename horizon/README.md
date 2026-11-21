@@ -100,7 +100,10 @@ Horizon instead of Fabric.
 >     counts, configurable exposed-face counts, and selection frames, corners
 >     and vertical corner pillars with arbitrary nested patterns;
 > 30. **parametric paths**: voxel-connected quadratic Bézier curves and helices
->     with configurable thickness, turns, signed height and arbitrary patterns.
+>     with configurable thickness, turns, signed height and arbitrary patterns;
+> 31. **selective clipboard pasting**: skip source air, restrict writes to empty
+>     destinations or arbitrary destination masks, and explicitly relocate the
+>     clipboard origin before normal or transformed pastes.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

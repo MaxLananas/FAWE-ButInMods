@@ -39,6 +39,10 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim pasteat <x:integer> <y:integer> <z:integer>", 2),
         Command::op("fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim clipboardinfo", 2),
+        Command::op("fawebim pastenonair", 2),
+        Command::op("fawebim pasteair", 2),
+        Command::op("fawebim pastemasked <mask:text>", 2),
+        Command::op("fawebim clipboardorigin <x:integer> <y:integer> <z:integer>", 2),
         Command::op("fawebim rotate <degrees:integer>", 2),
         Command::op("fawebim flip <axis:text>", 2),
         Command::op("fawebim clearclipboard", 2),
@@ -208,8 +212,8 @@ pub(crate) fn run(
         Some("replace" | "substitute") => replace(host, event, sessions, registry_cache),
         Some("copy" | "duplicate") => copy_or_cut(host, event, sessions, clipboards, registry_cache, false),
         Some("cut") => copy_or_cut(host, event, sessions, clipboards, registry_cache, true),
-        Some("paste" | "pasteat" | "pasteoffset") => paste(host, event, sessions, clipboards, registry_cache),
-        Some("clipboardinfo") => { let key=source_key(event.source);let clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());if let Some(c)=clips.get(key){let s=c.size();let o=c.origin();feedback(host,&format!("fawebim clipboard: {} block(s), {}x{}x{}, origin=({}, {}, {})",c.volume(),s.x,s.y,s.z,o.x,o.y,o.z));}else{feedback(host,"fawebim clipboard: empty");}Flow::Cancel },
+        Some("paste" | "pasteat" | "pasteoffset" | "pastenonair" | "pasteair" | "pastemasked") => paste(host, event, sessions, clipboards, registry_cache),
+        Some("clipboardinfo" | "clipboardorigin") => { let key=source_key(event.source);let mut clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());if let Some(c)=clips.get_mut(key){if event.command.literals.get(1).is_some_and(|s|s=="clipboardorigin"){c.set_origin(BlockVector3::at(integer(event,"x").unwrap_or(0),integer(event,"y").unwrap_or(0),integer(event,"z").unwrap_or(0)));}let s=c.size();let o=c.origin();feedback(host,&format!("fawebim clipboard: {} block(s), {}x{}x{}, origin=({}, {}, {})",c.volume(),s.x,s.y,s.z,o.x,o.y,o.z));}else{feedback(host,"fawebim clipboard: empty");}Flow::Cancel },
         Some("rotate" | "cliprotate") => transform_clipboard(host, event, clipboards, true),
         Some("flip" | "clipflip") => transform_clipboard(host, event, clipboards, false),
         Some("clearclipboard" | "clipclear") => {
@@ -715,13 +719,13 @@ fn paste(
         Some("pasteat")=>BlockVector3::at(integer(event,"x").unwrap_or(base.x),integer(event,"y").unwrap_or(base.y),integer(event,"z").unwrap_or(base.z)),
         Some("pasteoffset")=>BlockVector3::at(base.x+integer(event,"dx").unwrap_or(0),base.y+integer(event,"dy").unwrap_or(0),base.z+integer(event,"dz").unwrap_or(0)),
         _=>base,
-    }; let dimension=resolve_dimension(host,event);
+    };let action=event.command.literals.get(1).map(String::as_str).unwrap_or("paste");let destination_mask=if action=="pastemasked"{let text=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"*"};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Mask::parse(&reg,text){Ok(mask)=>Some(mask),Err(e)=>{feedback(host,&format!("fawebim pastemasked: {e}"));return Flow::Cancel;}}}else{None};let dimension=resolve_dimension(host,event);
     let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());
-    let mut registry=CachedBlockRegistry::new(registry_cache.clone());
+    let mut registry=CachedBlockRegistry::new(registry_cache.clone());let mut placements=Vec::new();clip.for_each(|x,y,z,state|{let(px,py,pz)=(origin.x+x,origin.y+y,origin.z+z);let accepted=match action{"pastenonair"=>!registry.is_air_like(state),"pasteair"=>registry.is_air_like(world.get_block(px,py,pz)),"pastemasked"=>destination_mask.as_ref().is_some_and(|m|m.test(&world,&registry,px,py,pz)),_=>true};if accepted{placements.push((px,py,pz,state));}});
     let result={
         let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();
         let mut edit=EditSession::open(&mut world,&mut registry,&mut local,"//paste",true);
-        clip.for_each(|x,y,z,state|{edit.set_block(origin.x+x,origin.y+y,origin.z+z,state);});
+        for(x,y,z,state)in placements{edit.set_block(x,y,z,state);}
         let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result
     };
     match result {Ok(n)=>feedback(host,&format!("fawebim paste: {n} block(s) pasted")),Err(e)=>feedback(host,&format!("fawebim paste: {e}"))};
