@@ -52,6 +52,8 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim pyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>", 2),
         Command::op("fawebim hpyramid <x:integer> <y:integer> <z:integer> <size:integer> <pattern:text>", 2),
         Command::op("fawebim line <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <pattern:text>", 2),
+        Command::op("fawebim bezier <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <x3:integer> <y3:integer> <z3:integer> [thickness:number] <pattern:text>", 2),
+        Command::op("fawebim helix <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <turns:number> [thickness:number] <pattern:text>", 2),
         Command::op("fawebim cone <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>", 2),
         Command::op("fawebim hcone <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>", 2),
         Command::op("fawebim torus <x:integer> <y:integer> <z:integer> <major:number> <minor:number> <pattern:text>", 2),
@@ -216,7 +218,7 @@ pub(crate) fn run(
             Flow::Cancel
         }
         Some("schemsave" | "schemload" | "schemlist") => schematic_command(host, event, clipboards, registry_cache),
-        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment") => generate(host, event, sessions, registry_cache),
+        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
         Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
@@ -654,6 +656,8 @@ fn generate(
             "ellipsoid"|"hellipsoid"=>{let(rx,ry,rz)=(number(event,"rx").unwrap_or(0.0),number(event,"ry").unwrap_or(0.0),number(event,"rz").unwrap_or(0.0));if rx>0.0&&ry>0.0&&rz>0.0{operations::sphere(center,rx,ry,rz,name=="hellipsoid",&mut place);}},
             "disk"|"hdisk"=>{let(rx,rz)=(number(event,"rx").unwrap_or(0.0),number(event,"rz").unwrap_or(0.0));if rx>0.0&&rz>0.0{operations::cylinder(center,rx,rz,1,name=="hdisk",&mut place);}},
             "line"=>{if let (Some(x2),Some(y2),Some(z2))=(coord("x2"),coord("y2"),coord("z2")){operations::line(center,BlockVector3::at(x2,y2,z2),1.0,&mut place);}},
+            "bezier"=>{if let(Some(x2),Some(y2),Some(z2),Some(x3),Some(y3),Some(z3))=(coord("x2"),coord("y2"),coord("z2"),coord("x3"),coord("y3"),coord("z3")){operations::quadratic_bezier(center,BlockVector3::at(x2,y2,z2),BlockVector3::at(x3,y3,z3),number(event,"thickness").unwrap_or(1.0).clamp(1.0,32.0),&mut place);}},
+            "helix"=>{let(radius,height,turns,thickness)=(number(event,"radius").unwrap_or(0.0),integer(event,"height").unwrap_or(0),number(event,"turns").unwrap_or(1.0),number(event,"thickness").unwrap_or(1.0).clamp(1.0,32.0));if radius>0.0&&height!=0&&turns!=0.0{operations::helix(center,radius,height,turns,thickness,&mut place);}},
             _=>{}
         }
         let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};

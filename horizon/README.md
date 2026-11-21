@@ -98,7 +98,9 @@ Horizon instead of Fabric.
 >     vertical column runs and bounded surface discovery;
 > 29. **neighbourhood masks and structural fills**: bounded cubic-neighbour
 >     counts, configurable exposed-face counts, and selection frames, corners
->     and vertical corner pillars with arbitrary nested patterns.
+>     and vertical corner pillars with arbitrary nested patterns;
+> 30. **parametric paths**: voxel-connected quadratic Bézier curves and helices
+>     with configurable thickness, turns, signed height and arbitrary patterns.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
