@@ -112,7 +112,10 @@ Horizon instead of Fabric.
 >     coordinate-driven pattern before committing edits to the world;
 > 34. **large structural editing batch**: 3D/planar crosses, lattices, stripes,
 >     thick borders and checker fills; selection height, padding and grid
->     alignment controls; sinusoidal and radial-gradient nested patterns.
+>     alignment controls; sinusoidal and radial-gradient nested patterns;
+> 35. **selective editing batch**: mask-driven and deterministic random fills,
+>     surface/underlay depth painting, two-way mask choices, noise-field masks
+>     and automatic selection trimming around arbitrary matching content.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

@@ -303,6 +303,12 @@ assert ('fawebim lattice <xgap:integer> <ygap:integer> <zgap:integer> <pattern:t
 assert ('fawebim stripes <axis:text> <spacing:integer> <pattern:text>', 2) in usages
 assert ('fawebim border <thickness:integer> <pattern:text>', 2) in usages
 assert ('fawebim checkerfill <size:integer> <first:text> <second:text>', 2) in usages
+assert ('fawebim maskedset <mask:text> <pattern:text>', 2) in usages
+assert ('fawebim randomset <chance:number> <pattern:text>', 2) in usages
+assert ('fawebim surfaceset [depth:integer] <pattern:text>', 2) in usages
+assert ('fawebim underlay [depth:integer] <pattern:text>', 2) in usages
+assert ('fawebim maskchoose <mask:text> <matching:text> <other:text>', 2) in usages
+assert ('fawebim selectiontrim [mask:text]', 2) in usages
 assert ('fawebim selectionbounds <miny:integer> <maxy:integer>', 2) in usages
 assert ('fawebim selectionpad <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim selectionalign <grid:integer>', 2) in usages

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use crate::expression::{Expression, Variables};
 use crate::registry::BlockStateRegistry;
+use crate::noise::{NoiseFn, Perlin, Simplex, Voronoi, RidgedMultiFractal};
 use crate::world::Extent;
 
 #[derive(Clone, Debug)]
@@ -21,6 +22,7 @@ pub enum Mask {
     Grid { x: i32, y: i32, z: i32 },
     Surface,
     Chance(f64),
+    Noise { kind: u8, scale: f64, threshold: f64 },
     Expression(Arc<Expression>),
     Offset { inner: Box<Mask>, x: i32, y: i32, z: i32 },
     Adjacent { inner: Box<Mask>, min: usize, max: usize },
@@ -55,6 +57,7 @@ impl Mask {
                 !registry.is_air_like(state) && [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().any(|&(dx,dy,dz)| registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz)))
             }
             Self::Chance(chance) => coordinate_chance(x,y,z) < *chance,
+            Self::Noise { kind, scale, threshold } => {let(fx,fy,fz)=(x as f64*scale,y as f64*scale,z as f64*scale);let value=match kind{0=>Perlin::new(0).unit(fx,fy,fz),1=>Simplex::new(0).unit(fx,fy,fz),2=>Voronoi::new(0).unit(fx,fy,fz),_=>RidgedMultiFractal::new(0,6,2.0,2.0).unit(fx,fy,fz)};value>=*threshold},
             Self::Expression(expression) => {
                 let mut vars=Variables::new().set("x",x as f64).set("y",y as f64).set("z",z as f64).set("b",extent.get_block(x,y,z) as f64);
                 expression.evaluate(&mut vars).unwrap_or(0.0) > 0.0
@@ -105,6 +108,7 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
     if let Some(rest) = text.strip_prefix("#chance") {
         let args=brackets(rest)?;if args.len()!=1{return Err("#chance requires [probability]".into());}let mut chance=args[0].trim().trim_end_matches('%').parse::<f64>().map_err(|_|"invalid chance".to_string())?;if args[0].trim().ends_with('%')||chance>1.0{chance/=100.0;}return Ok(Mask::Chance(chance.clamp(0.0,1.0)));
     }
+    if let Some(rest)=text.strip_prefix("#noise"){let args=brackets(rest)?;if args.len()!=3{return Err("#noise requires [type][scale][threshold]".into());}let kind=match args[0].trim().to_ascii_lowercase().as_str(){"perlin"=>0,"simplex"=>1,"voronoi"=>2,"ridged"=>3,_=>return Err("noise type must be perlin, simplex, voronoi, or ridged".into())};let scale=args[1].parse::<f64>().map_err(|_|"invalid noise scale".to_string())?;let threshold=args[2].parse::<f64>().map_err(|_|"invalid noise threshold".to_string())?;if !scale.is_finite()||scale<=0.0||!threshold.is_finite()||!(0.0..=1.0).contains(&threshold){return Err("noise scale must be positive and threshold must be 0..1".into());}return Ok(Mask::Noise{kind,scale,threshold});}
     if let Some(rest) = text.strip_prefix("#expression") {
         let args=brackets(rest)?;if args.len()!=1{return Err("#expression requires [expression]".into());}return Ok(Mask::Expression(Arc::new(Expression::compile(args[0]).map_err(|e|e.0)?)));
     }
@@ -178,6 +182,7 @@ mod tests {
         let grid=Mask::parse(&reg,"#grid[2][4][2]").unwrap();assert!(grid.test(&world,&reg,-2,64,2));assert!(!grid.test(&world,&reg,1,64,2));
         assert!(Mask::parse(&reg,"#nearby[stone][1][1][26]").unwrap().test(&world,&reg,1,64,0));
         assert!(Mask::parse(&reg,"#exposed[1][6]").unwrap().test(&world,&reg,0,64,0));
+        let noise=Mask::parse(&reg,"#noise[perlin][0.1][0.5]").unwrap();assert_eq!(noise.test(&world,&reg,4,5,6),noise.test(&world,&reg,4,5,6));
     }
     #[test] fn malformed_masks_are_rejected() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();
