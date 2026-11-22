@@ -163,7 +163,10 @@ Horizon instead of Fabric.
 >     cylindrical bodies with clipped hemispherical end caps;
 > 51. **checksummed schematic v2**: corruption-detecting portable saves with
 >     backward-compatible v1 decoding and in-place migration, plus composable
->     inner/outer spherical-shell masks for precise volumetric bands.
+>     inner/outer spherical-shell masks for precise volumetric bands;
+> 52. **state-aware direct transforms**: region rotations and mirrors now rotate
+>     or reflect directional block properties (`facing`, `axis`, `rotation`,
+>     stairs, hinges and side connections) together with voxel coordinates.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
