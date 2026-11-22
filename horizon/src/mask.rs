@@ -19,6 +19,7 @@ pub enum Mask {
     Liquid,
     Height { min: i32, max: i32 },
     Sphere { x: f64, y: f64, z: f64, radius2: f64 },
+    SphereShell { x: f64, y: f64, z: f64, inner2: f64, outer2: f64 },
     Cylinder { x: f64, z: f64, radius2: f64 },
     Grid { x: i32, y: i32, z: i32 },
     Stripe { axis: u8, spacing: i32, offset: i32 },
@@ -58,6 +59,7 @@ impl Mask {
             Self::Liquid => registry.is_liquid(extent.get_block(x, y, z)),
             Self::Height { min, max } => y >= *min && y <= *max,
             Self::Sphere { x: cx, y: cy, z: cz, radius2 } => (x as f64-cx).powi(2)+(y as f64-cy).powi(2)+(z as f64-cz).powi(2)<=*radius2,
+            Self::SphereShell { x: cx, y: cy, z: cz, inner2, outer2 } => {let d=(x as f64-cx).powi(2)+(y as f64-cy).powi(2)+(z as f64-cz).powi(2);d>=*inner2&&d<=*outer2},
             Self::Cylinder { x: cx, z: cz, radius2 } => (x as f64-cx).powi(2)+(z as f64-cz).powi(2)<=*radius2,
             Self::Grid { x: sx, y: sy, z: sz } => x.rem_euclid(*sx)==0&&y.rem_euclid(*sy)==0&&z.rem_euclid(*sz)==0,
             Self::Stripe { axis, spacing, offset } => (match axis{0=>x,1=>y,_=>z}-offset).rem_euclid(*spacing)==0,
@@ -123,7 +125,8 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
         let max: i32 = b.trim().parse().map_err(|_| "invalid maximum Y".to_string())?;
         return Ok(Mask::Height { min: min.min(max), max: min.max(max) });
     }
-    if let Some(rest)=text.strip_prefix("#sphere") {let args=brackets(rest)?;if args.len()!=4{return Err("#sphere requires [x][y][z][radius]".into());}let number=|s:&str|s.trim().parse::<f64>().map_err(|_|"invalid sphere coordinate or radius".to_string());let(x,y,z,r)=(number(args[0])?,number(args[1])?,number(args[2])?,number(args[3])?);if !r.is_finite()||r<0.0{return Err("sphere radius must be non-negative".into());}return Ok(Mask::Sphere{x,y,z,radius2:r*r});}
+    if let Some(rest)=text.strip_prefix("#sphereshell"){let args=brackets(rest)?;if args.len()!=5{return Err("#sphereshell requires [x][y][z][inner][outer]".into());}let number=|s:&str|s.trim().parse::<f64>().map_err(|_|"invalid sphere shell number".to_string());let(x,y,z,inner,outer)=(number(args[0])?,number(args[1])?,number(args[2])?,number(args[3])?,number(args[4])?);if inner<0.0||outer<inner||!inner.is_finite()||!outer.is_finite(){return Err("sphere shell radii must satisfy 0 <= inner <= outer".into());}return Ok(Mask::SphereShell{x,y,z,inner2:inner*inner,outer2:outer*outer});}
+    if let Some(rest)=text.strip_prefix("#sphere").filter(|rest|rest.trim_start().starts_with('[')) {let args=brackets(rest)?;if args.len()!=4{return Err("#sphere requires [x][y][z][radius]".into());}let number=|s:&str|s.trim().parse::<f64>().map_err(|_|"invalid sphere coordinate or radius".to_string());let(x,y,z,r)=(number(args[0])?,number(args[1])?,number(args[2])?,number(args[3])?);if !r.is_finite()||r<0.0{return Err("sphere radius must be non-negative".into());}return Ok(Mask::Sphere{x,y,z,radius2:r*r});}
     if let Some(rest)=text.strip_prefix("#cylinder") {let args=brackets(rest)?;if args.len()!=3{return Err("#cylinder requires [x][z][radius]".into());}let number=|s:&str|s.trim().parse::<f64>().map_err(|_|"invalid cylinder coordinate or radius".to_string());let(x,z,r)=(number(args[0])?,number(args[1])?,number(args[2])?);if !r.is_finite()||r<0.0{return Err("cylinder radius must be non-negative".into());}return Ok(Mask::Cylinder{x,z,radius2:r*r});}
     if let Some(rest)=text.strip_prefix("#grid") {let args=brackets(rest)?;if args.len()!=3{return Err("#grid requires [x][y][z]".into());}let size=|s:&str|s.trim().parse::<i32>().map_err(|_|"invalid grid spacing".to_string()).and_then(|n|if n>0{Ok(n)}else{Err("grid spacing must be positive".into())});return Ok(Mask::Grid{x:size(args[0])?,y:size(args[1])?,z:size(args[2])?});}
     if let Some(rest)=text.strip_prefix("#stripe"){let args=brackets(rest)?;if args.len()<2||args.len()>3{return Err("#stripe requires [axis][spacing][offset]".into());}let axis=match args[0].trim().to_ascii_lowercase().as_str(){"x"=>0,"y"=>1,"z"=>2,_=>return Err("stripe axis must be x, y, or z".into())};let spacing=args[1].parse::<i32>().map_err(|_|"invalid stripe spacing".to_string())?;if spacing<=0{return Err("stripe spacing must be positive".into());}let offset=args.get(2).map_or(Ok(0),|s|s.parse::<i32>().map_err(|_|"invalid stripe offset".to_string()))?;return Ok(Mask::Stripe{axis,spacing,offset});}
@@ -203,7 +206,7 @@ mod tests {
         assert!(Mask::parse(&reg, "#offset[stone][-1][0][0]").unwrap().test(&world,&reg,1,64,0));
         assert!(Mask::parse(&reg, "#adjacent[stone][1][6]").unwrap().test(&world,&reg,1,64,0));
         let chance=Mask::parse(&reg,"#chance[50%]").unwrap();assert_eq!(chance.test(&world,&reg,5,5,5),chance.test(&world,&reg,5,5,5));
-        let sphere=Mask::parse(&reg,"#sphere[0][64][0][2]").unwrap();assert!(sphere.test(&world,&reg,2,64,0));assert!(!sphere.test(&world,&reg,3,64,0));
+        let sphere=Mask::parse(&reg,"#sphere[0][64][0][2]").unwrap();assert!(sphere.test(&world,&reg,2,64,0));assert!(!sphere.test(&world,&reg,3,64,0));let shell=Mask::parse(&reg,"#sphereshell[0][64][0][1][2]").unwrap();assert!(!shell.test(&world,&reg,0,64,0));assert!(shell.test(&world,&reg,2,64,0));
         let cylinder=Mask::parse(&reg,"#cylinder[0][0][2]").unwrap();assert!(cylinder.test(&world,&reg,0,999,2));assert!(!cylinder.test(&world,&reg,0,0,3));
         let grid=Mask::parse(&reg,"#grid[2][4][2]").unwrap();assert!(grid.test(&world,&reg,-2,64,2));assert!(!grid.test(&world,&reg,1,64,2));let stripe=Mask::parse(&reg,"#stripe[x][3][1]").unwrap();assert!(stripe.test(&world,&reg,-2,0,0));assert!(!stripe.test(&world,&reg,0,0,0));
         assert!(Mask::parse(&reg,"#nearby[stone][1][1][26]").unwrap().test(&world,&reg,1,64,0));

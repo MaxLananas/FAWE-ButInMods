@@ -160,7 +160,10 @@ Horizon instead of Fabric.
 >     spellings preserve reference workflows without unavailable client raycasts;
 > 50. **convex hull selections and capsules**: validated non-coplanar 3D point
 >     hull selectors and deduplicated solid/hollow vertical capsules combining
->     cylindrical bodies with clipped hemispherical end caps.
+>     cylindrical bodies with clipped hemispherical end caps;
+> 51. **checksummed schematic v2**: corruption-detecting portable saves with
+>     backward-compatible v1 decoding and in-place migration, plus composable
+>     inner/outer spherical-shell masks for precise volumetric bands.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

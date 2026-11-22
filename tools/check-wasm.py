@@ -295,6 +295,7 @@ assert ('fawebim clipboardcount <block:text>', 0) in usages
 assert ('fawebim clipboardcompare', 0) in usages
 assert ('fawebim scheminfo <name:text>', 0) in usages
 assert ('fawebim schemvalidate <name:text>', 0) in usages
+assert ('fawebim schemupgrade <name:text>', 2) in usages
 for usage, permission in [
     ('fawebim pos <x:integer> <y:integer> <z:integer>',2),
     ('fawebim hpos1 <x:integer> <y:integer> <z:integer>',2),
