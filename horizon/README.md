@@ -172,7 +172,10 @@ Horizon instead of Fabric.
 >     axis while applying the same rotation to directional block states;
 > 54. **defensive schematic decoding**: portable schematic reads now enforce the
 >     64 MiB envelope before parsing, require a non-empty bounded palette and
->     complete one-to-one voxel coverage, and reject duplicate or missing cells.
+>     complete one-to-one voxel coverage, and reject duplicate or missing cells;
+> 55. **state-aware clipboard transforms**: `rotate`/`cliprotate` and
+>     `flip`/`clipflip` now transform directional block properties as well as
+>     clipboard coordinates, preventing misoriented stairs, logs and doors.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
