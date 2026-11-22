@@ -175,7 +175,10 @@ Horizon instead of Fabric.
 >     complete one-to-one voxel coverage, and reject duplicate or missing cells;
 > 55. **state-aware clipboard transforms**: `rotate`/`cliprotate` and
 >     `flip`/`clipflip` now transform directional block properties as well as
->     clipboard coordinates, preventing misoriented stairs, logs and doors.
+>     clipboard coordinates, preventing misoriented stairs, logs and doors;
+> 56. **three-axis clipboard rotation**: `rotateaxis <x|y|z> <degrees>`
+>     rotates both clipboard dimensions/voxels and directional states on every
+>     cardinal axis, with exact negative and repeated quarter turns.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

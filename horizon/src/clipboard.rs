@@ -36,12 +36,13 @@ impl Clipboard {
             let state=self.get(x,y,z); if state>=0 { f(x,y,z,state); }
         }}}
     }
-    pub fn rotate_y(&mut self, quarter_turns: i32) {
+    pub fn rotate_y(&mut self, quarter_turns: i32) { self.rotate_axis('y',quarter_turns); }
+    pub fn rotate_axis(&mut self, axis:char, quarter_turns:i32) {
         for _ in 0..quarter_turns.rem_euclid(4) {
             let old=self.clone();
-            self.size=BlockVector3::at(old.size.z,old.size.y,old.size.x);
+            self.size=match axis {'x'=>BlockVector3::at(old.size.x,old.size.z,old.size.y),'z'=>BlockVector3::at(old.size.y,old.size.x,old.size.z),_=>BlockVector3::at(old.size.z,old.size.y,old.size.x)};
             self.blocks=vec![-1;(self.size.x*self.size.y*self.size.z) as usize];
-            old.for_each(|x,y,z,state| { let nx=old.size.z-1-z; let nz=x; let i=self.index(nx,y,nz); self.blocks[i]=state; });
+            old.for_each(|x,y,z,state| {let(nx,ny,nz)=match axis{'x'=>(x,old.size.z-1-z,y),'z'=>(old.size.y-1-y,x,z),_=>(old.size.z-1-z,y,x)};let i=self.index(nx,ny,nz);self.blocks[i]=state;});
         }
     }
     pub fn flip(&mut self, axis: char) {
@@ -76,7 +77,7 @@ impl ClipboardManager {
  #[test] fn capture_rotate_flip_preserves_blocks(){
   let mut w=InMemoryWorld::default(); w.set_block(0,0,0,1);w.set_block(1,0,0,2);w.set_block(0,0,1,3);w.set_block(1,0,1,4);
   let mut r=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(0,0,0),BlockVector3::at(1,0,1)));
-  let mut c=Clipboard::capture(&w,&mut r);assert_eq!(c.volume(),4);c.rotate_y(1);assert_eq!(c.get(1,0,0),1);c.flip('x');assert_eq!(c.get(0,0,0),1);c.scale(2,1,2);assert_eq!(c.size(),BlockVector3::at(4,1,4));assert_eq!(c.get(0,0,0),1);c.shift_origin(2,3,4);assert_eq!(c.origin(),BlockVector3::at(2,3,4));assert_eq!(c.replace_state(1,|_,_,_|9),4);assert_eq!(c.get(0,0,0),9);assert_eq!(c.count_state(9),4);assert_eq!(c.checksum(),c.checksum());
+  let mut c=Clipboard::capture(&w,&mut r);assert_eq!(c.volume(),4);c.rotate_y(1);assert_eq!(c.get(1,0,0),1);c.flip('x');assert_eq!(c.get(0,0,0),1);c.scale(2,1,2);assert_eq!(c.size(),BlockVector3::at(4,1,4));assert_eq!(c.get(0,0,0),1);c.shift_origin(2,3,4);assert_eq!(c.origin(),BlockVector3::at(2,3,4));assert_eq!(c.replace_state(1,|_,_,_|9),4);assert_eq!(c.get(0,0,0),9);assert_eq!(c.count_state(9),4);assert_eq!(c.checksum(),c.checksum());let original=c.clone();for axis in ['x','y','z']{let mut turned=original.clone();turned.rotate_axis(axis,4);assert_eq!(turned.size(),original.size());assert_eq!(turned.blocks,original.blocks);}
  }
  #[test]fn trim_removes_empty_borders(){let c=Clipboard::from_parts(BlockVector3::at(3,3,3),BlockVector3::at(10,20,30),{let mut b=vec![0;27];b[13]=7;b});let mut c=c;assert!(c.trim(|s|s!=0));assert_eq!(c.size(),BlockVector3::at(1,1,1));assert_eq!(c.origin(),BlockVector3::at(11,21,31));assert_eq!(c.get(0,0,0),7);}
 }

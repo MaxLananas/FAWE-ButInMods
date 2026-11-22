@@ -53,6 +53,7 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim clipboardcount <block:text>", 0),
         Command::op("fawebim clipboardcompare", 0),
         Command::op("fawebim rotate <degrees:integer>", 2),
+        Command::op("fawebim rotateaxis <axis:text> <degrees:integer>", 2),
         Command::op("fawebim flip <axis:text>", 2),
         Command::op("fawebim clearclipboard", 2),
         Command::op("fawebim schemsave <name:text>", 2),
@@ -342,7 +343,7 @@ pub(crate) fn run(
         Some("clipboardinfo" | "clipboardorigin") => { let key=source_key(event.source);let mut clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());if let Some(c)=clips.get_mut(key){if event.command.literals.get(1).is_some_and(|s|s=="clipboardorigin"){c.set_origin(BlockVector3::at(integer(event,"x").unwrap_or(0),integer(event,"y").unwrap_or(0),integer(event,"z").unwrap_or(0)));}let s=c.size();let o=c.origin();feedback(host,&format!("fawebim clipboard: {} block(s), {}x{}x{}, origin=({}, {}, {})",c.volume(),s.x,s.y,s.z,o.x,o.y,o.z));}else{feedback(host,"fawebim clipboard: empty");}Flow::Cancel },
         Some("clipboardshift" | "clipboardscale" | "clipboardtrim" | "clipboardreplace") => modify_clipboard(host,event,clipboards,registry_cache),
         Some("clipboardchecksum" | "clipboardcount" | "clipboardcompare") => inspect_clipboard(host,event,clipboards,registry_cache),
-        Some("rotate" | "cliprotate") => transform_clipboard(host, event, clipboards, registry_cache, true),
+        Some("rotate" | "rotateaxis" | "cliprotate") => transform_clipboard(host, event, clipboards, registry_cache, true),
         Some("flip" | "clipflip") => transform_clipboard(host, event, clipboards, registry_cache, false),
         Some("clearclipboard" | "clipclear") => {
             let removed = clipboards.lock().unwrap_or_else(|p| p.into_inner()).clear(source_key(event.source));
@@ -912,7 +913,7 @@ fn modify_clipboard(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,clipb
 fn transform_clipboard(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,clipboards:&Mutex<ClipboardManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>,rotate:bool)->Flow{
     let key=source_key(event.source);let mut clips=clipboards.lock().unwrap_or_else(|p|p.into_inner());
     let Some(clip)=clips.get_mut(key) else {drop(clips);feedback(host,"fawebim clipboard: clipboard is empty");return Flow::Cancel;};
-    let transform=if rotate { let degrees=integer(event,"degrees").unwrap_or(0);if degrees%90!=0{drop(clips);feedback(host,"fawebim rotate: degrees must be a multiple of 90");return Flow::Cancel;}clip.rotate_y(degrees/90);Transform::rotate_y(BlockVector3::ZERO,degrees as f64) }
+    let transform=if rotate { let degrees=integer(event,"degrees").unwrap_or(0);if degrees%90!=0{drop(clips);feedback(host,"fawebim rotate: degrees must be a multiple of 90");return Flow::Cancel;}let axis=match event.command.argument("axis"){Some(CommandArgumentValue::String(s))=>s.chars().next().unwrap_or('y'),_=>'y'};if !matches!(axis,'x'|'y'|'z'){drop(clips);feedback(host,"fawebim rotateaxis: axis must be x, y, or z");return Flow::Cancel;}clip.rotate_axis(axis,degrees/90);Transform::rotate(BlockVector3::ZERO,match axis{'x'=>Axis::X,'z'=>Axis::Z,_=>Axis::Y},degrees as f64) }
     else { let axis=match event.command.argument("axis"){Some(CommandArgumentValue::String(s))=>s.chars().next().unwrap_or('y'),_=>'y'};if !matches!(axis,'x'|'y'|'z'){drop(clips);feedback(host,"fawebim flip: axis must be x, y, or z");return Flow::Cancel;}clip.flip(axis);Transform::flip(BlockVector3::ZERO,match axis{'x'=>Axis::X,'z'=>Axis::Z,_=>Axis::Y}) };
     if let Some(mut state_transform)=BlockStateTransform::of(&transform){let mut registry=CachedBlockRegistry::new(registry_cache.clone());clip.map_states(|state|state_transform.apply(&mut registry,state as u32)as i32);}
     let size=clip.size();drop(clips);feedback(host,&format!("fawebim clipboard: transformed to {}x{}x{}",size.x,size.y,size.z));Flow::Cancel
