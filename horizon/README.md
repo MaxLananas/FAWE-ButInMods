@@ -136,7 +136,10 @@ Horizon instead of Fabric.
 >     quantized or periodically tiled nested pattern coordinate spaces;
 > 42. **history and audit diagnostics**: paginated record descriptions and
 >     change totals, estimated history memory, selection density and stable
->     coordinate/state checksums, plus offsettable one-axis stripe masks.
+>     coordinate/state checksums, plus offsettable one-axis stripe masks;
+> 43. **clipboard audit and architectural paths**: clipboard checksums, exact
+>     state counts and world comparisons, plus directional staircases and solid
+>     ramps with independently configurable length, width, rise and patterns.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

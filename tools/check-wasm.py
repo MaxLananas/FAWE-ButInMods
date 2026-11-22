@@ -290,6 +290,11 @@ assert ('fawebim clipboardtrim', 2) in usages
 assert ('fawebim pastecenter <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pastearray <nx:integer> <ny:integer> <nz:integer> <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim clipboardreplace <from:text> <to:text>', 2) in usages
+assert ('fawebim clipboardchecksum', 0) in usages
+assert ('fawebim clipboardcount <block:text>', 0) in usages
+assert ('fawebim clipboardcompare', 0) in usages
+assert ('fawebim staircase <x:integer> <y:integer> <z:integer> <length:integer> <width:integer> <rise:integer> <direction:text> <pattern:text>', 2) in usages
+assert ('fawebim ramp <x:integer> <y:integer> <z:integer> <length:integer> <width:integer> <rise:integer> <direction:text> <pattern:text>', 2) in usages
 assert ('fawebim pasteat <x:integer> <y:integer> <z:integer>', 2) in usages
 assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim clipboardinfo', 2) in usages
