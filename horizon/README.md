@@ -188,7 +188,10 @@ Horizon instead of Fabric.
 >     and the eight most frequent registry states in deterministic order;
 > 59. **live clipboard composition diagnostics**: `clipboardstats` reports
 >     dimensions, populated cells, holes and the top eight states, while
->     `clipboardpalette` expands the deterministic frequency view to 16 states.
+>     `clipboardpalette` expands the deterministic frequency view to 16 states;
+> 60. **coordinate-targeted schematic loading**: `schemloadat <name> <x> <y>
+>     <z>` performs full validation while loading and atomically overrides the
+>     clipboard origin, ready for an ordinary or masked paste at exact coordinates.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
