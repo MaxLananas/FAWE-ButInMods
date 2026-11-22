@@ -179,7 +179,10 @@ Horizon instead of Fabric.
 >     clipboard coordinates, preventing misoriented stairs, logs and doors;
 > 56. **three-axis clipboard rotation**: `rotateaxis <x|y|z> <degrees>`
 >     rotates both clipboard dimensions/voxels and directional states on every
->     cardinal axis, with exact negative and repeated quarter turns.
+>     cardinal axis, with exact negative and repeated quarter turns;
+> 57. **schematic structural comparison**: `schemcompare <name>` validates and
+>     decodes a saved schematic, then reports exact differing voxel counts,
+>     dimension incompatibility and origin equality against the live clipboard.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
