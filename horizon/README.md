@@ -185,7 +185,10 @@ Horizon instead of Fabric.
 >     dimension incompatibility and origin equality against the live clipboard;
 > 58. **schematic composition statistics**: `schemstats <name>` validates a
 >     schematic and reports populated blocks, intentional holes, unique states,
->     and the eight most frequent registry states in deterministic order.
+>     and the eight most frequent registry states in deterministic order;
+> 59. **live clipboard composition diagnostics**: `clipboardstats` reports
+>     dimensions, populated cells, holes and the top eight states, while
+>     `clipboardpalette` expands the deterministic frequency view to 16 states.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
