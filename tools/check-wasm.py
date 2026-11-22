@@ -312,6 +312,9 @@ assert ('fawebim historylist [page:integer]', 0) in usages
 assert ('fawebim historystats', 0) in usages
 assert ('fawebim selectiondensity', 0) in usages
 assert ('fawebim selectionchecksum', 0) in usages
+assert ('fawebim biomecount <biome:text>', 0) in usages
+assert ('fawebim replacebiome <from:text> <to:text>', 2) in usages
+assert ('fawebim biomelist [query:text]', 0) in usages
 assert ('fawebim bezier <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <x3:integer> <y3:integer> <z3:integer> [thickness:number] <pattern:text>', 2) in usages
 assert ('fawebim helix <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <turns:number> [thickness:number] <pattern:text>', 2) in usages
 assert ('fawebim cross <pattern:text>', 2) in usages

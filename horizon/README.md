@@ -145,7 +145,10 @@ Horizon instead of Fabric.
 >     ellipsoidal and vertically bounded cylindrical selection creation;
 > 45. **polygon selection and masked extrusion**: direct cuboid and semicolon-
 >     encoded polygon selectors with vertical bounds, plus six-direction boundary
->     extrusion filtered by arbitrary masks and painted with nested patterns.
+>     extrusion filtered by arbitrary masks and painted with nested patterns;
+> 46. **biome-aware filtering and management**: composable multi-biome masks,
+>     searchable biome discovery, per-selection biome counts and history-backed
+>     conditional biome replacement that preserves nonmatching cells.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

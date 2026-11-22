@@ -12,6 +12,7 @@ pub enum Mask {
     None,
     Blocks(Vec<i32>),
     Category(String),
+    Biomes(Vec<i32>),
     Air,
     Existing,
     Solid,
@@ -50,6 +51,7 @@ impl Mask {
             Self::None => false,
             Self::Blocks(states) => states.contains(&extent.get_block(x, y, z)),
             Self::Category(name) => registry.matches_category(extent.get_block(x, y, z), name),
+            Self::Biomes(ids) => ids.contains(&extent.get_biome(x,y,z)),
             Self::Air => registry.is_air_like(extent.get_block(x, y, z)),
             Self::Existing => !registry.is_air_like(extent.get_block(x, y, z)),
             Self::Solid => registry.is_solid(extent.get_block(x, y, z)),
@@ -113,6 +115,7 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
         "#west" => return Ok(Mask::DirectionalExposure{x:-1,y:0,z:0}),
         _ => {}
     }
+    if let Some(rest)=text.strip_prefix("#biome"){let args=brackets(rest)?;if args.len()!=1{return Err("#biome requires [names]".into());}let mut ids=Vec::new();for name in args[0].split(',').map(str::trim){let id=reg.biome(name);if id<0{return Err(format!("unknown biome '{name}'"));}ids.push(id);}if ids.is_empty(){return Err("biome mask needs at least one biome".into());}return Ok(Mask::Biomes(ids));}
     if let Some(body) = text.strip_prefix("#y[").and_then(|s| s.strip_suffix(']')) {
         let (a, b) = body.split_once(',').or_else(|| body.split_once(".."))
             .ok_or_else(|| "#y requires [min,max]".to_string())?;
@@ -195,7 +198,7 @@ mod tests {
         assert!(mask.test(&world, &reg, 0,64,0)); assert!(!mask.test(&world, &reg, 0,80,0));
         assert!(Mask::parse(&reg, "#existing").unwrap().test(&world, &reg, 1,64,0));
         assert!(Mask::parse(&reg, "!#existing").unwrap().test(&world, &reg, 2,64,0));
-        assert!(Mask::parse(&reg, "#surface").unwrap().test(&world,&reg,0,64,0));
+        assert!(Mask::parse(&reg, "#surface").unwrap().test(&world,&reg,0,64,0));assert!(Mask::parse(&reg,"#biome[plains]").is_ok());
         assert!(Mask::parse(&reg, "#expression[y==64]").unwrap().test(&world,&reg,0,64,0));
         assert!(Mask::parse(&reg, "#offset[stone][-1][0][0]").unwrap().test(&world,&reg,1,64,0));
         assert!(Mask::parse(&reg, "#adjacent[stone][1][6]").unwrap().test(&world,&reg,1,64,0));
