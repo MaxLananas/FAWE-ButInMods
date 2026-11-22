@@ -804,6 +804,7 @@ impl World for HorizonWorld<'_> {
     }
 
     fn ray_trace(&self, origin: Vector3, direction: Vector3, max_distance: f64) -> Option<RayTraceHit> {
+        if !max_distance.is_finite() || max_distance <= 0.0 || max_distance > 1_000_000.0 || ![origin.x,origin.y,origin.z,direction.x,direction.y,direction.z].into_iter().all(f64::is_finite) || direction.length_sq() < 1e-12 { return None; }
         let level = self.level?;
         let dir = direction.normalize();
         let end = origin.add(dir.multiply(max_distance));
@@ -952,10 +953,8 @@ impl World for InMemoryWorld {
     }
 
     fn ray_trace(&self, origin: Vector3, direction: Vector3, max_distance: f64) -> Option<RayTraceHit> {
+        if !max_distance.is_finite() || max_distance <= 0.0 || max_distance > 1_000_000.0 || ![origin.x,origin.y,origin.z,direction.x,direction.y,direction.z].into_iter().all(f64::is_finite) || direction.length_sq() < 1e-12 { return None; }
         let dir = direction.normalize();
-        if dir.length_sq() < 1e-12 {
-            return None;
-        }
         let steps = (max_distance * 4.0).ceil() as usize;
         let mut prev_block = origin.to_block_point();
         for s in 1..=steps {
@@ -998,6 +997,16 @@ mod tests {
         assert_eq!(arr.get(10), 999);
         assert_eq!(arr.get(49), 149);
         assert!(!arr.is_written(50));
+    }
+
+    #[test]
+    fn ray_trace_rejects_non_finite_zero_and_unbounded_inputs() {
+        let world=InMemoryWorld::default();let origin=Vector3::new(0.0,0.0,0.0);let direction=Vector3::new(1.0,0.0,0.0);
+        assert!(world.ray_trace(origin,Vector3::ZERO,10.0).is_none());
+        assert!(world.ray_trace(origin,direction,0.0).is_none());
+        assert!(world.ray_trace(origin,direction,f64::INFINITY).is_none());
+        assert!(world.ray_trace(Vector3::new(f64::NAN,0.0,0.0),direction,10.0).is_none());
+        assert!(world.ray_trace(origin,direction,1_000_001.0).is_none());
     }
 
     #[test]
