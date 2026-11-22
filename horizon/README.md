@@ -130,7 +130,10 @@ Horizon instead of Fabric.
 >     global-filter clears and complete per-source session reset;
 > 40. **direct region transforms and relational masks**: in-place axis flips,
 >     quarter-turn Y rotations and offset cloning with selection relocation,
->     plus same/different-state comparisons against arbitrary offsets.
+>     plus same/different-state comparisons against arbitrary offsets;
+> 41. **region resizing and coordinate sampling**: bounded integer content
+>     scaling, center-targeted relocation with automatic selection updates, and
+>     quantized or periodically tiled nested pattern coordinate spaces.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

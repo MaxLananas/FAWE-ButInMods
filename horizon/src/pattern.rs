@@ -22,6 +22,8 @@ pub enum Pattern {
     Scale { inner: Box<Pattern>, x: f64, y: f64, z: f64 },
     RotateY { inner: Box<Pattern>, sin: f64, cos: f64 },
     Mirror { inner: Box<Pattern>, axis: u8 },
+    Quantize { inner: Box<Pattern>, size: i32 },
+    Tile { inner: Box<Pattern>, x: i32, y: i32, z: i32 },
     Wave { axis: u8, wavelength: f64, choices: Vec<(f64, Pattern)> },
     RadialGradient { cx: f64, cy: f64, cz: f64, radius: f64, choices: Vec<(f64, Pattern)> },
     Offset { inner: Box<Pattern>, x: i32, y: i32, z: i32 },
@@ -71,6 +73,8 @@ impl Pattern {
             Self::Scale { inner, x: sx, y: sy, z: sz } => inner.apply((x as f64/sx).floor()as i32,(y as f64/sy).floor()as i32,(z as f64/sz).floor()as i32),
             Self::RotateY { inner, sin, cos } => inner.apply((x as f64*cos-z as f64*sin).round()as i32,y,(x as f64*sin+z as f64*cos).round()as i32),
             Self::Mirror { inner, axis } => match axis{0=>inner.apply(x.abs(),y,z),1=>inner.apply(x,y.abs(),z),_=>inner.apply(x,y,z.abs())},
+            Self::Quantize { inner, size } => inner.apply(x.div_euclid(*size)*size,y.div_euclid(*size)*size,z.div_euclid(*size)*size),
+            Self::Tile { inner, x: sx, y: sy, z: sz } => inner.apply(x.rem_euclid(*sx),y.rem_euclid(*sy),z.rem_euclid(*sz)),
             Self::Wave { axis, wavelength, choices } => {let c=match axis{0=>x,1=>y,_=>z}as f64;let value=((c/wavelength*std::f64::consts::TAU).sin()+1.0)*0.5;choose(choices,value.min(1.0-f64::EPSILON),x,y,z)},
             Self::RadialGradient { cx, cy, cz, radius, choices } => {let distance=((x as f64-cx).powi(2)+(y as f64-cy).powi(2)+(z as f64-cz).powi(2)).sqrt();choose(choices,(distance/radius).clamp(0.0,1.0-f64::EPSILON),x,y,z)},
             Self::Offset { inner, x: ox, y: oy, z: oz } => inner.apply(x + ox, y + oy, z + oz),
@@ -139,6 +143,8 @@ fn parse_pattern(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Resu
     if let Some(rest) = text.strip_prefix("#radial").filter(|rest|rest.trim_start().starts_with('[')) {
         let args=brackets(rest)?;if args.len()!=5{return Err("#radial requires [cx,cy,cz][scale][patterns] or [cx][cy][cz][scale][patterns]".into());}let cx=args[0].parse::<f64>().map_err(|_|"invalid radial center x".to_string())?;let cy=args[1].parse::<f64>().map_err(|_|"invalid radial center y".to_string())?;let cz=args[2].parse::<f64>().map_err(|_|"invalid radial center z".to_string())?;let scale=args[3].parse::<f64>().map_err(|_|"invalid radial scale".to_string())?;if !scale.is_finite()||scale<=0.0{return Err("radial scale must be positive".into());}let choices=split_top(args[4],',').into_iter().map(|p|parse_pattern(reg,p,depth+1)).collect::<Result<Vec<_>,_>>()?;if choices.is_empty(){return Err("radial pattern needs choices".into());}return Ok(Pattern::Radial{cx,cy,cz,scale,choices});
     }
+    if let Some(rest)=text.strip_prefix("#quantize"){let args=brackets(rest)?;if args.len()!=2{return Err("#quantize requires [pattern][size]".into());}let size=args[1].parse::<i32>().map_err(|_|"invalid quantize size".to_string())?;if size<=0{return Err("quantize size must be positive".into());}return Ok(Pattern::Quantize{inner:Box::new(parse_pattern(reg,args[0],depth+1)?),size});}
+    if let Some(rest)=text.strip_prefix("#tile"){let args=brackets(rest)?;if args.len()!=4{return Err("#tile requires [pattern][x][y][z]".into());}let size=|s:&str|s.parse::<i32>().map_err(|_|"invalid tile size".to_string()).and_then(|n|if n>0{Ok(n)}else{Err("tile size must be positive".into())});return Ok(Pattern::Tile{inner:Box::new(parse_pattern(reg,args[0],depth+1)?),x:size(args[1])?,y:size(args[2])?,z:size(args[3])?});}
     if let Some(rest)=text.strip_prefix("#wave"){let args=brackets(rest)?;if args.len()!=3{return Err("#wave requires [axis][wavelength][patterns]".into());}let axis=match args[0].trim().to_ascii_lowercase().as_str(){"x"=>0,"y"=>1,"z"=>2,_=>return Err("wave axis must be x, y, or z".into())};let wavelength=args[1].parse::<f64>().map_err(|_|"invalid wavelength".to_string())?;if !wavelength.is_finite()||wavelength<=0.0{return Err("wavelength must be positive".into());}let mut choices=Vec::new();for item in split_top(args[2],','){let(weight,body)=parse_weight(item)?;choices.push((weight,parse_pattern(reg,body,depth+1)?));}if choices.is_empty(){return Err("wave needs choices".into());}return Ok(Pattern::Wave{axis,wavelength,choices});}
     if let Some(rest)=text.strip_prefix("#radialgradient"){let args=brackets(rest)?;if args.len()!=5{return Err("#radialgradient requires [x][y][z][radius][patterns]".into());}let number=|s:&str|s.parse::<f64>().map_err(|_|"invalid radial gradient number".to_string());let(cx,cy,cz,radius)=(number(args[0])?,number(args[1])?,number(args[2])?,number(args[3])?);if !radius.is_finite()||radius<=0.0{return Err("radial gradient radius must be positive".into());}let mut choices=Vec::new();for item in split_top(args[4],','){let(weight,body)=parse_weight(item)?;choices.push((weight,parse_pattern(reg,body,depth+1)?));}if choices.is_empty(){return Err("radial gradient needs choices".into());}return Ok(Pattern::RadialGradient{cx,cy,cz,radius,choices});}
     if let Some(rest)=text.strip_prefix("#scale") {let args=brackets(rest)?;if args.len()!=4{return Err("#scale requires [pattern][x][y][z]".into());}let scale=|s:&str|s.parse::<f64>().map_err(|_|"invalid pattern scale".to_string()).and_then(|v|if v.is_finite()&&v!=0.0{Ok(v)}else{Err("pattern scale must be finite and non-zero".into())});return Ok(Pattern::Scale{inner:Box::new(parse_pattern(reg,args[0],depth+1)?),x:scale(args[1])?,y:scale(args[2])?,z:scale(args[3])?});}
@@ -242,7 +248,7 @@ mod tests {
         let rotated=Pattern::parse(&reg,"#rotate[#linear[x][1][stone,dirt]][90]").unwrap();assert_eq!(rotated.apply(0,0,1),dirt);
         let mirrored=Pattern::parse(&reg,"#mirror[#linear[x][1][stone,dirt]][x]").unwrap();assert_eq!(mirrored.apply(-1,0,0),dirt);
         let wave=Pattern::parse(&reg,"#wave[x][4][stone,dirt]").unwrap();assert_eq!(wave.apply(-1,0,0),stone);assert_eq!(wave.apply(1,0,0),dirt);
-        let radial_gradient=Pattern::parse(&reg,"#radialgradient[0][0][0][10][stone,dirt]").unwrap();assert_eq!(radial_gradient.apply(0,0,0),stone);assert_eq!(radial_gradient.apply(10,0,0),dirt);
+        let radial_gradient=Pattern::parse(&reg,"#radialgradient[0][0][0][10][stone,dirt]").unwrap();assert_eq!(radial_gradient.apply(0,0,0),stone);assert_eq!(radial_gradient.apply(10,0,0),dirt);let quantized=Pattern::parse(&reg,"#quantize[#linear[x][1][stone,dirt]][2]").unwrap();assert_eq!(quantized.apply(1,0,0),stone);assert_eq!(quantized.apply(2,0,0),stone);let tiled=Pattern::parse(&reg,"#tile[#linear[x][1][stone,dirt]][2][1][1]").unwrap();assert_eq!(tiled.apply(3,0,0),dirt);
     }
     #[test] fn rejects_invalid_patterns() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();
