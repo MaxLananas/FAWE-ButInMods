@@ -191,7 +191,10 @@ Horizon instead of Fabric.
 >     `clipboardpalette` expands the deterministic frequency view to 16 states;
 > 60. **coordinate-targeted schematic loading**: `schemloadat <name> <x> <y>
 >     <z>` performs full validation while loading and atomically overrides the
->     clipboard origin, ready for an ordinary or masked paste at exact coordinates.
+>     clipboard origin, ready for an ordinary or masked paste at exact coordinates;
+> 61. **compact checksummed schematic v3**: new `FAWEBIM3` files encode each
+>     sparse cell as a linear index plus palette index, halving cell-table size
+>     from 16 to 8 bytes while retaining checksums and v1/v2 read compatibility.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
