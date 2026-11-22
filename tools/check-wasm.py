@@ -293,6 +293,8 @@ assert ('fawebim clipboardreplace <from:text> <to:text>', 2) in usages
 assert ('fawebim clipboardchecksum', 0) in usages
 assert ('fawebim clipboardcount <block:text>', 0) in usages
 assert ('fawebim clipboardcompare', 0) in usages
+assert ('fawebim scheminfo <name:text>', 0) in usages
+assert ('fawebim schemvalidate <name:text>', 0) in usages
 assert ('fawebim thickline <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
 assert ('fawebim tube <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
 assert ('fawebim selsphere <x:integer> <y:integer> <z:integer> <radius:number>', 2) in usages

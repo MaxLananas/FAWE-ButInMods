@@ -148,7 +148,10 @@ Horizon instead of Fabric.
 >     extrusion filtered by arbitrary masks and painted with nested patterns;
 > 46. **biome-aware filtering and management**: composable multi-biome masks,
 >     searchable biome discovery, per-selection biome counts and history-backed
->     conditional biome replacement that preserves nonmatching cells.
+>     conditional biome replacement that preserves nonmatching cells;
+> 47. **schematic integrity inspection**: non-destructive decoding, validation,
+>     dimensions, origins, populated volumes and stable content checksums for
+>     persisted portable schematics without replacing the active clipboard.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

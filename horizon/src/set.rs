@@ -58,6 +58,8 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim schemsave <name:text>", 2),
         Command::op("fawebim schemload <name:text>", 2),
         Command::op("fawebim schemlist", 2),
+        Command::op("fawebim scheminfo <name:text>", 0),
+        Command::op("fawebim schemvalidate <name:text>", 0),
         Command::op("fawebim sphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>", 2),
         Command::op("fawebim hsphere <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>", 2),
         Command::op("fawebim cylinder <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>", 2),
@@ -311,7 +313,7 @@ pub(crate) fn run(
             feedback(host, if removed { "fawebim clearclipboard: clipboard cleared" } else { "fawebim clearclipboard: clipboard already empty" });
             Flow::Cancel
         }
-        Some("schemsave" | "schemload" | "schemlist") => schematic_command(host, event, clipboards, registry_cache),
+        Some("schemsave" | "schemload" | "schemlist" | "scheminfo" | "schemvalidate") => schematic_command(host, event, clipboards, registry_cache),
         Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "dome" | "hdome" | "cuboid" | "hcuboid" | "prism" | "hprism" | "staircase" | "ramp" | "thickline" | "tube" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
         Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars" | "cross" | "cross2d" | "lattice" | "stripes" | "border") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
@@ -697,7 +699,7 @@ fn schematic_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,clip
     if action=="schemlist"{let folder=ConfigPath::new("schematics").unwrap();match host.data_files().list(&folder,None,1024){Ok(entries)=>{let names=entries.into_iter().filter_map(|e|e.name.strip_suffix(".fawebim").map(str::to_owned)).collect::<Vec<_>>();feedback(host,&format!("fawebim schematics ({}): {}",names.len(),if names.is_empty(){"none".into()}else{names.join(", ")}));},Err(e)=>feedback(host,&format!("fawebim schemlist: {e:?}"))}return Flow::Cancel;}
     let raw=match event.command.argument("name"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};if raw.is_empty()||!raw.chars().all(|c|c.is_ascii_alphanumeric()||matches!(c,'_'|'-'|'.')){feedback(host,"fawebim schematic: name may contain only letters, numbers, _, -, and .");return Flow::Cancel;}let path=match ConfigPath::new(&format!("schematics/{raw}.fawebim")){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim schematic: {e:?}"));return Flow::Cancel;}};
     if action=="schemsave"{let clip={clipboards.lock().unwrap_or_else(|p|p.into_inner()).get(key).cloned()};let Some(clip)=clip else{feedback(host,"fawebim schemsave: clipboard is empty");return Flow::Cancel;};let reg=CachedBlockRegistry::new(registry_cache.clone());match schematic::encode(&clip,&reg).and_then(|bytes|host.data_files().write(&path,&bytes).map(|_|bytes.len()).map_err(|e|format!("{e:?}"))){Ok(bytes)=>feedback(host,&format!("fawebim schemsave: saved {raw} ({bytes} bytes)")),Err(e)=>feedback(host,&format!("fawebim schemsave: {e}"))}}
-    else{match host.data_files().read(&path).map_err(|e|format!("{e:?}")).and_then(|bytes|{let reg=HorizonBlockRegistry::new(host,registry_cache.clone());schematic::decode(&bytes,&reg)}){Ok(clip)=>{let volume=clip.volume();clipboards.lock().unwrap_or_else(|p|p.into_inner()).set(key,clip);feedback(host,&format!("fawebim schemload: loaded {raw} ({volume} blocks)"));},Err(e)=>feedback(host,&format!("fawebim schemload: {e}"))}}
+    else{match host.data_files().read(&path).map_err(|e|format!("{e:?}")).and_then(|bytes|{let reg=HorizonBlockRegistry::new(host,registry_cache.clone());schematic::decode(&bytes,&reg)}){Ok(clip)=>{let volume=clip.volume();if action=="schemload"{clipboards.lock().unwrap_or_else(|p|p.into_inner()).set(key,clip);feedback(host,&format!("fawebim schemload: loaded {raw} ({volume} blocks)"));}else{let size=clip.size();let origin=clip.origin();feedback(host,&format!("fawebim {action}: {raw}, valid=true, blocks={volume}, size={}x{}x{}, origin=({}, {}, {}), checksum={:016x}",size.x,size.y,size.z,origin.x,origin.y,origin.z,clip.checksum()));}},Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))}}
     Flow::Cancel
 }
 
