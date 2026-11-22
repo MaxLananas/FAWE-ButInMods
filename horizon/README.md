@@ -166,7 +166,10 @@ Horizon instead of Fabric.
 >     inner/outer spherical-shell masks for precise volumetric bands;
 > 52. **state-aware direct transforms**: region rotations and mirrors now rotate
 >     or reflect directional block properties (`facing`, `axis`, `rotation`,
->     stairs, hinges and side connections) together with voxel coordinates.
+>     stairs, hinges and side connections) together with voxel coordinates;
+> 53. **three-axis direct rotation**: `regionrotateaxis <x|y|z> <degrees>`
+>     rotates selected voxels around their exact geometric centre on any cardinal
+>     axis while applying the same rotation to directional block states.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
