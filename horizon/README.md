@@ -124,7 +124,10 @@ Horizon instead of Fabric.
 >     constrained to arbitrary selections and integrated with edit history;
 > 38. **material remapping batch**: atomic block swaps, multi-state cycles,
 >     mask deletion/retention and exposed-face coating, directional exposure
->     masks, plus direct selection corner and chunk-range inspection.
+>     masks, plus direct selection corner and chunk-range inspection;
+> 39. **procedural fill and mask-transform batch**: direct gradient, wave, noise
+>     and radial fills; nested mask scaling, rotation and mirroring; explicit
+>     global-filter clears and complete per-source session reset.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

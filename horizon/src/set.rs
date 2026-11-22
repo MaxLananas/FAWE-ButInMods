@@ -110,6 +110,10 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim delete <mask:text>", 2),
         Command::op("fawebim keep <mask:text>", 2),
         Command::op("fawebim coat <mask:text> <pattern:text>", 2),
+        Command::op("fawebim gradientfill <axis:text> <min:number> <max:number> <patterns:text>", 2),
+        Command::op("fawebim wavefill <axis:text> <wavelength:number> <patterns:text>", 2),
+        Command::op("fawebim noisefill <kind:text> <scale:number> <patterns:text>", 2),
+        Command::op("fawebim radialfill <x:number> <y:number> <z:number> <radius:number> <patterns:text>", 2),
         Command::op("fawebim move <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim stack <count:integer> <dx:integer> <dy:integer> <dz:integer>", 2),
         Command::op("fawebim smooth [iterations:integer]", 2),
@@ -129,6 +133,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim watchdog <enabled:text>", 2),
         Command::op("fawebim gmask <mask:text>", 2),
         Command::op("fawebim gpattern <pattern:text>", 2),
+        Command::op("fawebim gmaskclear", 2),
+        Command::op("fawebim gpatternclear", 2),
+        Command::op("fawebim sessionreset", 2),
         Command::op("fawebim transform", 2),
         Command::op("fawebim transformreset", 2),
         Command::op("fawebim transformrotate <degrees:number> <axis:text>", 2),
@@ -261,6 +268,7 @@ pub(crate) fn run(
         Some("compactdown" | "compactup" | "compactwest" | "compacteast" | "compactnorth" | "compactsouth") => compact_operation(host,event,sessions,registry_cache),
         Some("levelterrain" | "raiseterrain" | "lowerterrain") => height_operation(host,event,sessions,registry_cache),
         Some("swapblocks" | "cycleblocks" | "delete" | "keep" | "coat") => material_operation(host,event,sessions,registry_cache),
+        Some("gradientfill" | "wavefill" | "noisefill" | "radialfill") => procedural_fill(host,event,sessions,registry_cache),
         Some("replace" | "substitute") => replace(host, event, sessions, registry_cache),
         Some("copy" | "duplicate") => copy_or_cut(host, event, sessions, clipboards, registry_cache, false),
         Some("cut") => copy_or_cut(host, event, sessions, clipboards, registry_cache, true),
@@ -281,7 +289,7 @@ pub(crate) fn run(
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
         Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
         Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
-        Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog" | "gmask" | "gpattern") => session_config(host, event, sessions),
+        Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog" | "gmask" | "gpattern" | "gmaskclear" | "gpatternclear" | "sessionreset") => session_config(host, event, sessions),
         Some("transform" | "transformreset" | "transformrotate" | "transformscale" | "transformoffset" | "transformflip" | "transformrandom") => transform_config(host, event, sessions),
         Some("count" | "distr" | "aircount" | "solidcount" | "liquidcount" | "surfacecount" | "size" | "center" | "distribution" | "dimensions" | "midpoint") => selection_info(host, event, sessions, registry_cache),
         Some("setbiome" | "biomedistr" | "paintbiome") => biome_operation(host, event, sessions, registry_cache),
@@ -426,6 +434,8 @@ fn sel(
     feedback(host, &format!("fawebim sel: {text}"));
     Flow::Cancel
 }
+
+fn procedural_fill(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("gradientfill");let key=source_key(event.source);let mut region={let manager=lock_sessions(sessions);manager.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let arg=|name|match event.command.argument(name){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let patterns=arg("patterns");let pattern_text=match action{"gradientfill"=>format!("#gradient[{}][{}][{}][{patterns}]",arg("axis"),number(event,"min").unwrap_or(0.0),number(event,"max").unwrap_or(1.0)),"wavefill"=>format!("#wave[{}][{}][{patterns}]",arg("axis"),number(event,"wavelength").unwrap_or(1.0)),"noisefill"=>format!("#{}[{}][{patterns}]",arg("kind").to_ascii_lowercase(),number(event,"scale").unwrap_or(0.1)),_=>format!("#radialgradient[{}][{}][{}][{}][{patterns}]",number(event,"x").unwrap_or(0.0),number(event,"y").unwrap_or(0.0),number(event,"z").unwrap_or(0.0),number(event,"radius").unwrap_or(1.0))};let pattern={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,&pattern_text){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim {action}: {e}"));return Flow::Cancel;}}};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);region.for_each_position(|x,y,z|{edit.set_block(x,y,z,pattern.apply(x,y,z));});let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel}
 
 fn material_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("delete");let key=source_key(event.source);let mut region={let manager=lock_sessions(sessions);manager.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let(states,mask,pattern)={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());if action=="swapblocks"{let parse=|name:&str|match event.command.argument(name){Some(CommandArgumentValue::String(s))=>reg.parse(s.trim()),_=>-1};let(a,b)=(parse("first"),parse("second"));if a<0||b<0{feedback(host,"fawebim swapblocks: unknown block");return Flow::Cancel;}(vec![a,b],None,None)}else if action=="cycleblocks"{let text=match event.command.argument("blocks"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let states=text.split(',').map(|s|reg.parse(s.trim())).collect::<Vec<_>>();if states.len()<2||states.iter().any(|&s|s<0){feedback(host,"fawebim cycleblocks: expected at least two valid comma-separated blocks");return Flow::Cancel;}(states,None,None)}else{let text=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"*"};let mask=match Mask::parse(&reg,text){Ok(m)=>m,Err(e)=>{feedback(host,&format!("fawebim {action}: {e}"));return Flow::Cancel;}};let pattern=if action=="coat"{let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"air"};match Pattern::parse(&reg,text){Ok(p)=>Some(p),Err(e)=>{feedback(host,&format!("fawebim coat: {e}"));return Flow::Cancel;}}}else{None};(Vec::new(),Some(mask),pattern)}};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let mut placements=Vec::new();region.for_each_position(|x,y,z|{let state=world.get_block(x,y,z);let target=match action{"swapblocks"=>if state==states[0]{Some(states[1])}else if state==states[1]{Some(states[0])}else{None},"cycleblocks"=>states.iter().position(|&s|s==state).map(|i|states[(i+1)%states.len()]),"delete"=>mask.as_ref().unwrap().test(&world,&registry,x,y,z).then_some(0),"keep"=>(!mask.as_ref().unwrap().test(&world,&registry,x,y,z)).then_some(0),"coat"=>{let exposed=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().any(|&(dx,dy,dz)|registry.is_air_like(world.get_block(x+dx,y+dy,z+dz)));(exposed&&mask.as_ref().unwrap().test(&world,&registry,x,y,z)).then(||pattern.as_ref().unwrap().apply(x,y,z))},_=>None};if let Some(to)=target{placements.push((x,y,z,to));}});let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);for(x,y,z,state)in placements{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel}
 
@@ -637,6 +647,9 @@ fn session_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,session
         "watchdog"=>match parse_bool("enabled",session.watchdog){Some(v)=>{session.watchdog=v;feedback(host,&format!("fawebim watchdog: {v}"));},None=>feedback(host,"fawebim watchdog: use on, off, or toggle")},
         "gmask"=>{let value=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"none"};session.global_mask_expr=(!matches!(value.to_ascii_lowercase().as_str(),"none"|"off"|"-")).then(||value.to_string());feedback(host,&format!("fawebim gmask: {}",session.global_mask_expr.as_deref().unwrap_or("disabled")));},
         "gpattern"=>{let value=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"none"};session.global_pattern_expr=(!matches!(value.to_ascii_lowercase().as_str(),"none"|"off"|"-")).then(||value.to_string());feedback(host,&format!("fawebim gpattern: {}",session.global_pattern_expr.as_deref().unwrap_or("disabled")));},
+        "gmaskclear"=>{session.global_mask_expr=None;feedback(host,"fawebim gmask: disabled");},
+        "gpatternclear"=>{session.global_pattern_expr=None;feedback(host,"fawebim gpattern: disabled");},
+        "sessionreset"=>{*session=Default::default();feedback(host,"fawebim session: reset to defaults");},
         _=>feedback(host,&format!("fawebim session: selector={}, selection={}, history={}/{}, limit={}, timeout={}, fast={}, tips={}, watchdog={}",session.selection.selector().kind().as_str(),session.selection.describe(),session.history.len(),session.history.len(),session.max_blocks_changed,session.timeout_secs,session.fast_mode,session.tips,session.watchdog)),
     }Flow::Cancel
 }

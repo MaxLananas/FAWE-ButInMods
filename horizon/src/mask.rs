@@ -29,6 +29,9 @@ pub enum Mask {
     Nearby { inner: Box<Mask>, radius: i32, min: usize, max: usize },
     Exposed { min: usize, max: usize },
     DirectionalExposure { x: i32, y: i32, z: i32 },
+    Scale { inner: Box<Mask>, x: f64, y: f64, z: f64 },
+    RotateY { inner: Box<Mask>, sin: f64, cos: f64 },
+    Mirror { inner: Box<Mask>, axis: u8 },
     Not(Box<Mask>),
     All(Vec<Mask>),
     AnyOf(Vec<Mask>),
@@ -71,6 +74,9 @@ impl Mask {
             Self::Nearby { inner, radius, min, max } => {let mut count=0usize;'scan:for dz in -*radius..=*radius{for dy in -*radius..=*radius{for dx in -*radius..=*radius{if dx==0&&dy==0&&dz==0{continue;}if inner.test(extent,registry,x+dx,y+dy,z+dz){count+=1;if count>*max{break 'scan;}}}}}count>=*min&&count<=*max}
             Self::Exposed { min, max } => {let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz))).count();count>=*min&&count<=*max}
             Self::DirectionalExposure { x: dx, y: dy, z: dz } => !registry.is_air_like(extent.get_block(x,y,z))&&registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz)),
+            Self::Scale { inner, x: sx, y: sy, z: sz } => inner.test(extent,registry,(x as f64/sx).floor()as i32,(y as f64/sy).floor()as i32,(z as f64/sz).floor()as i32),
+            Self::RotateY { inner, sin, cos } => inner.test(extent,registry,(x as f64*cos-z as f64*sin).round()as i32,y,(x as f64*sin+z as f64*cos).round()as i32),
+            Self::Mirror { inner, axis } => match axis{0=>inner.test(extent,registry,x.abs(),y,z),1=>inner.test(extent,registry,x,y.abs(),z),_=>inner.test(extent,registry,x,y,z.abs())},
             Self::Not(inner) => !inner.test(extent, registry, x, y, z),
             Self::All(parts) => parts.iter().all(|m| m.test(extent, registry, x, y, z)),
             Self::AnyOf(parts) => parts.iter().any(|m| m.test(extent, registry, x, y, z)),
@@ -116,6 +122,9 @@ fn parse_mask(reg: &dyn BlockStateRegistry, text: &str, depth: usize) -> Result<
     if let Some(rest) = text.strip_prefix("#chance") {
         let args=brackets(rest)?;if args.len()!=1{return Err("#chance requires [probability]".into());}let mut chance=args[0].trim().trim_end_matches('%').parse::<f64>().map_err(|_|"invalid chance".to_string())?;if args[0].trim().ends_with('%')||chance>1.0{chance/=100.0;}return Ok(Mask::Chance(chance.clamp(0.0,1.0)));
     }
+    if let Some(rest)=text.strip_prefix("#scale"){let args=brackets(rest)?;if args.len()!=4{return Err("#scale requires [mask][x][y][z]".into());}let scale=|s:&str|s.parse::<f64>().map_err(|_|"invalid mask scale".to_string()).and_then(|v|if v.is_finite()&&v!=0.0{Ok(v)}else{Err("mask scale must be finite and non-zero".into())});return Ok(Mask::Scale{inner:Box::new(parse_mask(reg,args[0],depth+1)?),x:scale(args[1])?,y:scale(args[2])?,z:scale(args[3])?});}
+    if let Some(rest)=text.strip_prefix("#rotate"){let args=brackets(rest)?;if args.len()!=2{return Err("#rotate requires [mask][degrees]".into());}let degrees=args[1].parse::<f64>().map_err(|_|"invalid mask rotation".to_string())?;if !degrees.is_finite(){return Err("mask rotation must be finite".into());}let radians=degrees.to_radians();return Ok(Mask::RotateY{inner:Box::new(parse_mask(reg,args[0],depth+1)?),sin:radians.sin(),cos:radians.cos()});}
+    if let Some(rest)=text.strip_prefix("#mirror"){let args=brackets(rest)?;if args.len()!=2{return Err("#mirror requires [mask][axis]".into());}let axis=match args[1].trim().to_ascii_lowercase().as_str(){"x"=>0,"y"=>1,"z"=>2,_=>return Err("mirror axis must be x, y, or z".into())};return Ok(Mask::Mirror{inner:Box::new(parse_mask(reg,args[0],depth+1)?),axis});}
     if let Some(rest)=text.strip_prefix("#noise"){let args=brackets(rest)?;if args.len()!=3{return Err("#noise requires [type][scale][threshold]".into());}let kind=match args[0].trim().to_ascii_lowercase().as_str(){"perlin"=>0,"simplex"=>1,"voronoi"=>2,"ridged"=>3,_=>return Err("noise type must be perlin, simplex, voronoi, or ridged".into())};let scale=args[1].parse::<f64>().map_err(|_|"invalid noise scale".to_string())?;let threshold=args[2].parse::<f64>().map_err(|_|"invalid noise threshold".to_string())?;if !scale.is_finite()||scale<=0.0||!threshold.is_finite()||!(0.0..=1.0).contains(&threshold){return Err("noise scale must be positive and threshold must be 0..1".into());}return Ok(Mask::Noise{kind,scale,threshold});}
     if let Some(rest) = text.strip_prefix("#expression") {
         let args=brackets(rest)?;if args.len()!=1{return Err("#expression requires [expression]".into());}return Ok(Mask::Expression(Arc::new(Expression::compile(args[0]).map_err(|e|e.0)?)));
@@ -191,7 +200,7 @@ mod tests {
         assert!(Mask::parse(&reg,"#nearby[stone][1][1][26]").unwrap().test(&world,&reg,1,64,0));
         assert!(Mask::parse(&reg,"#exposed[1][6]").unwrap().test(&world,&reg,0,64,0));
         let noise=Mask::parse(&reg,"#noise[perlin][0.1][0.5]").unwrap();assert_eq!(noise.test(&world,&reg,4,5,6),noise.test(&world,&reg,4,5,6));
-        assert!(Mask::parse(&reg,"#top").unwrap().test(&world,&reg,0,64,0));assert!(Mask::parse(&reg,"#west").unwrap().test(&world,&reg,0,64,0));
+        assert!(Mask::parse(&reg,"#top").unwrap().test(&world,&reg,0,64,0));assert!(Mask::parse(&reg,"#west").unwrap().test(&world,&reg,0,64,0));let scaled=Mask::parse(&reg,"#scale[#grid[2][1][1]][2][1][1]").unwrap();assert!(scaled.test(&world,&reg,4,64,0));let rotated=Mask::parse(&reg,"#rotate[#grid[2][1][1]][90]").unwrap();assert!(rotated.test(&world,&reg,0,64,2));let mirrored=Mask::parse(&reg,"#mirror[#offset[stone][-1][0][0]][x]").unwrap();assert!(mirrored.test(&world,&reg,-1,64,0));
     }
     #[test] fn malformed_masks_are_rejected() {
         let reg = InMemoryBlockRegistry::with_vanilla_subset();

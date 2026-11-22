@@ -334,6 +334,13 @@ assert ('fawebim hprism <x:integer> <y:integer> <z:integer> <sides:integer> <rad
 assert ('fawebim levelterrain <y:integer> <pattern:text>', 2) in usages
 assert ('fawebim raiseterrain <amount:integer> <pattern:text>', 2) in usages
 assert ('fawebim lowerterrain <amount:integer>', 2) in usages
+assert ('fawebim gradientfill <axis:text> <min:number> <max:number> <patterns:text>', 2) in usages
+assert ('fawebim wavefill <axis:text> <wavelength:number> <patterns:text>', 2) in usages
+assert ('fawebim noisefill <kind:text> <scale:number> <patterns:text>', 2) in usages
+assert ('fawebim radialfill <x:number> <y:number> <z:number> <radius:number> <patterns:text>', 2) in usages
+assert ('fawebim gmaskclear', 2) in usages
+assert ('fawebim gpatternclear', 2) in usages
+assert ('fawebim sessionreset', 2) in usages
 assert ('fawebim swapblocks <first:text> <second:text>', 2) in usages
 assert ('fawebim cycleblocks <blocks:text>', 2) in usages
 assert ('fawebim delete <mask:text>', 2) in usages
