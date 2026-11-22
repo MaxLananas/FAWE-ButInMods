@@ -65,7 +65,7 @@ impl Mask {
             Self::Stripe { axis, spacing, offset } => (match axis{0=>x,1=>y,_=>z}-offset).rem_euclid(*spacing)==0,
             Self::Surface => {
                 let state = extent.get_block(x,y,z);
-                !registry.is_air_like(state) && [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().any(|&(dx,dy,dz)| registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz)))
+                !registry.is_air_like(state) && [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().any(|&(dx,dy,dz)| registry.is_air_like(extent.get_block(x.saturating_add(dx),y.saturating_add(dy),z.saturating_add(dz))))
             }
             Self::Chance(chance) => coordinate_chance(x,y,z) < *chance,
             Self::Noise { kind, scale, threshold } => {let(fx,fy,fz)=(x as f64*scale,y as f64*scale,z as f64*scale);let value=match kind{0=>Perlin::new(0).unit(fx,fy,fz),1=>Simplex::new(0).unit(fx,fy,fz),2=>Voronoi::new(0).unit(fx,fy,fz),_=>RidgedMultiFractal::new(0,6,2.0,2.0).unit(fx,fy,fz)};value>=*threshold},
@@ -73,18 +73,18 @@ impl Mask {
                 let mut vars=Variables::new().set("x",x as f64).set("y",y as f64).set("z",z as f64).set("b",extent.get_block(x,y,z) as f64);
                 expression.evaluate(&mut vars).unwrap_or(0.0) > 0.0
             }
-            Self::Offset { inner, x: ox, y: oy, z: oz } => inner.test(extent,registry,x+ox,y+oy,z+oz),
+            Self::Offset { inner, x: ox, y: oy, z: oz } => inner.test(extent,registry,x.saturating_add(*ox),y.saturating_add(*oy),z.saturating_add(*oz)),
             Self::Adjacent { inner, min, max } => {
-                let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|inner.test(extent,registry,x+dx,y+dy,z+dz)).count();
+                let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|inner.test(extent,registry,x.saturating_add(dx),y.saturating_add(dy),z.saturating_add(dz))).count();
                 count>=*min&&count<=*max
             }
-            Self::Nearby { inner, radius, min, max } => {let mut count=0usize;'scan:for dz in -*radius..=*radius{for dy in -*radius..=*radius{for dx in -*radius..=*radius{if dx==0&&dy==0&&dz==0{continue;}if inner.test(extent,registry,x+dx,y+dy,z+dz){count+=1;if count>*max{break 'scan;}}}}}count>=*min&&count<=*max}
-            Self::Exposed { min, max } => {let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz))).count();count>=*min&&count<=*max}
-            Self::DirectionalExposure { x: dx, y: dy, z: dz } => !registry.is_air_like(extent.get_block(x,y,z))&&registry.is_air_like(extent.get_block(x+dx,y+dy,z+dz)),
+            Self::Nearby { inner, radius, min, max } => {let mut count=0usize;'scan:for dz in -*radius..=*radius{for dy in -*radius..=*radius{for dx in -*radius..=*radius{if dx==0&&dy==0&&dz==0{continue;}if inner.test(extent,registry,x.saturating_add(dx),y.saturating_add(dy),z.saturating_add(dz)){count+=1;if count>*max{break 'scan;}}}}}count>=*min&&count<=*max}
+            Self::Exposed { min, max } => {let count=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().filter(|&&(dx,dy,dz)|registry.is_air_like(extent.get_block(x.saturating_add(dx),y.saturating_add(dy),z.saturating_add(dz)))).count();count>=*min&&count<=*max}
+            Self::DirectionalExposure { x: dx, y: dy, z: dz } => !registry.is_air_like(extent.get_block(x,y,z))&&registry.is_air_like(extent.get_block(x.saturating_add(*dx),y.saturating_add(*dy),z.saturating_add(*dz))),
             Self::Scale { inner, x: sx, y: sy, z: sz } => inner.test(extent,registry,(x as f64/sx).floor()as i32,(y as f64/sy).floor()as i32,(z as f64/sz).floor()as i32),
             Self::RotateY { inner, sin, cos } => inner.test(extent,registry,(x as f64*cos-z as f64*sin).round()as i32,y,(x as f64*sin+z as f64*cos).round()as i32),
             Self::Mirror { inner, axis } => match axis{0=>inner.test(extent,registry,x.abs(),y,z),1=>inner.test(extent,registry,x,y.abs(),z),_=>inner.test(extent,registry,x,y,z.abs())},
-            Self::SameOffset { x: dx, y: dy, z: dz, equal } => (extent.get_block(x,y,z)==extent.get_block(x+dx,y+dy,z+dz))==*equal,
+            Self::SameOffset { x: dx, y: dy, z: dz, equal } => (extent.get_block(x,y,z)==extent.get_block(x.saturating_add(*dx),y.saturating_add(*dy),z.saturating_add(*dz)))==*equal,
             Self::Not(inner) => !inner.test(extent, registry, x, y, z),
             Self::All(parts) => parts.iter().all(|m| m.test(extent, registry, x, y, z)),
             Self::AnyOf(parts) => parts.iter().any(|m| m.test(extent, registry, x, y, z)),
