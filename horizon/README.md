@@ -142,7 +142,10 @@ Horizon instead of Fabric.
 >     ramps with independently configurable length, width, rise and patterns;
 > 44. **volumetric paths and direct shaped selections**: thick solid lines and
 >     hollow tubes with bounded diameters, plus coordinate-driven spherical,
->     ellipsoidal and vertically bounded cylindrical selection creation.
+>     ellipsoidal and vertically bounded cylindrical selection creation;
+> 45. **polygon selection and masked extrusion**: direct cuboid and semicolon-
+>     encoded polygon selectors with vertical bounds, plus six-direction boundary
+>     extrusion filtered by arbitrary masks and painted with nested patterns.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
