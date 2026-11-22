@@ -16,7 +16,7 @@ use crate::mask::Mask;
 use crate::morphology;
 use crate::operations;
 use crate::pattern::Pattern;
-use crate::region::{BlockVector3, CuboidRegion, RegionShape};
+use crate::region::{BlockVector3, CuboidRegion, CylinderRegion, EllipsoidRegion, RegionShape, Vector2, Vector3};
 use crate::registry::{
     BlockStateRegistry, CachedBlockRegistry, HorizonBlockRegistry, HorizonRegistryCache,
 };
@@ -83,6 +83,8 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim hprism <x:integer> <y:integer> <z:integer> <sides:integer> <radius:number> <height:integer> <pattern:text>", 2),
         Command::op("fawebim staircase <x:integer> <y:integer> <z:integer> <length:integer> <width:integer> <rise:integer> <direction:text> <pattern:text>", 2),
         Command::op("fawebim ramp <x:integer> <y:integer> <z:integer> <length:integer> <width:integer> <rise:integer> <direction:text> <pattern:text>", 2),
+        Command::op("fawebim thickline <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>", 2),
+        Command::op("fawebim tube <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>", 2),
         Command::op("fawebim walls <pattern:text>", 2),
         Command::op("fawebim faces <pattern:text>", 2),
         Command::op("fawebim overlay <pattern:text>", 2),
@@ -213,6 +215,9 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim selectiontrim [mask:text]", 2),
         Command::op("fawebim selectioncorners", 0),
         Command::op("fawebim selectionchunks", 0),
+        Command::op("fawebim selsphere <x:integer> <y:integer> <z:integer> <radius:number>", 2),
+        Command::op("fawebim selellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number>", 2),
+        Command::op("fawebim selcylinder <x:integer> <z:integer> <rx:number> <rz:number> <miny:integer> <maxy:integer>", 2),
         Command::op("fawebim help [page:integer]", 0),
         Command::op("fawebim commands [query:text]", 0),
         Command::op("fawebim version", 0),
@@ -300,7 +305,7 @@ pub(crate) fn run(
             Flow::Cancel
         }
         Some("schemsave" | "schemload" | "schemlist") => schematic_command(host, event, clipboards, registry_cache),
-        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "dome" | "hdome" | "cuboid" | "hcuboid" | "prism" | "hprism" | "staircase" | "ramp" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
+        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "dome" | "hdome" | "cuboid" | "hcuboid" | "prism" | "hprism" | "staircase" | "ramp" | "thickline" | "tube" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
         Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars" | "cross" | "cross2d" | "lattice" | "stripes" | "border") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
@@ -323,6 +328,7 @@ pub(crate) fn run(
         Some("chunkselect" | "chunkexpand" | "chunklist" | "selectionarea" | "selectionbounds" | "selectionpad" | "selectionalign" | "selectioncorners" | "selectionchunks") => chunk_command(host,event,sessions),
         Some("inspect" | "columninfo" | "surfaceinfo") => inspect_command(host,event,registry_cache),
         Some("selectiontrim") => selection_trim(host,event,sessions,registry_cache),
+        Some("selsphere" | "selellipsoid" | "selcylinder") => selection_shape(host,event,sessions),
         Some("undo" | "rollback") => history_step(host, event, sessions, registry_cache, true),
         Some("redo" | "reapply") => history_step(host, event, sessions, registry_cache, false),
         Some("clearhistory" | "purgehistory") => {
@@ -774,6 +780,7 @@ fn generate(
             "prism"|"hprism"=>{let(sides,radius,height)=(integer(event,"sides").unwrap_or(3),number(event,"radius").unwrap_or(0.0),integer(event,"height").unwrap_or(0));if radius>0.0&&height!=0{operations::regular_prism(center,sides,radius,height,name=="hprism",&mut place);}},
             "staircase"|"ramp"=>{let direction=match event.command.argument("direction"){Some(CommandArgumentValue::String(s))=>match s.trim().to_ascii_lowercase().as_str(){"x"|"east"=>(1,0),"-x"|"west"=>(-1,0),"z"|"south"=>(0,1),"-z"|"north"=>(0,-1),_=>(1,0)},_=>(1,0)};operations::staircase(center,integer(event,"length").unwrap_or(1),integer(event,"width").unwrap_or(1),integer(event,"rise").unwrap_or(1),direction,name=="ramp",&mut place);},
             "line"=>{if let (Some(x2),Some(y2),Some(z2))=(coord("x2"),coord("y2"),coord("z2")){operations::line(center,BlockVector3::at(x2,y2,z2),1.0,&mut place);}},
+            "thickline"|"tube"=>{if let(Some(x2),Some(y2),Some(z2))=(coord("x2"),coord("y2"),coord("z2")){let thickness=number(event,"thickness").unwrap_or(1.0).clamp(1.0,64.0);if name=="tube"{operations::hollow_line(center,BlockVector3::at(x2,y2,z2),thickness,&mut place);}else{operations::line(center,BlockVector3::at(x2,y2,z2),thickness,&mut place);}}},
             "bezier"=>{if let(Some(x2),Some(y2),Some(z2),Some(x3),Some(y3),Some(z3))=(coord("x2"),coord("y2"),coord("z2"),coord("x3"),coord("y3"),coord("z3")){operations::quadratic_bezier(center,BlockVector3::at(x2,y2,z2),BlockVector3::at(x3,y3,z3),number(event,"thickness").unwrap_or(1.0).clamp(1.0,32.0),&mut place);}},
             "helix"=>{let(radius,height,turns,thickness)=(number(event,"radius").unwrap_or(0.0),integer(event,"height").unwrap_or(0),number(event,"turns").unwrap_or(1.0),number(event,"thickness").unwrap_or(1.0).clamp(1.0,32.0));if radius>0.0&&height!=0&&turns!=0.0{operations::helix(center,radius,height,turns,thickness,&mut place);}},
             _=>{}
@@ -930,6 +937,8 @@ fn replace(
     }
     Flow::Cancel
 }
+
+fn selection_shape(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("selsphere");let key=source_key(event.source);let x=integer(event,"x").unwrap_or(0);let z=integer(event,"z").unwrap_or(0);let shape=if action=="selcylinder"{let(rx,rz)=(number(event,"rx").unwrap_or(0.0),number(event,"rz").unwrap_or(0.0));if rx<=0.0||rz<=0.0{feedback(host,"fawebim selcylinder: radii must be positive");return Flow::Cancel;}RegionShape::Cylinder(CylinderRegion::new(Vector2::new(x as f64,z as f64),rx,rz,integer(event,"miny").unwrap_or(-64),integer(event,"maxy").unwrap_or(319)))}else{let y=integer(event,"y").unwrap_or(0);let(rx,ry,rz)=if action=="selsphere"{let r=number(event,"radius").unwrap_or(0.0);(r,r,r)}else{(number(event,"rx").unwrap_or(0.0),number(event,"ry").unwrap_or(0.0),number(event,"rz").unwrap_or(0.0))};if rx<=0.0||ry<=0.0||rz<=0.0{feedback(host,&format!("fawebim {action}: radii must be positive"));return Flow::Cancel;}RegionShape::Ellipsoid(EllipsoidRegion::new(Vector3::new(x as f64,y as f64,z as f64),Vector3::new(rx,ry,rz)))};let mut manager=lock_sessions(sessions);let session=manager.get(key);session.selection.selector_mut().learn_region(shape);feedback(host,&format!("fawebim {action}: {}",session.selection.describe()));Flow::Cancel}
 
 fn selection_trim(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{let key=source_key(event.source);let mut region={let manager=lock_sessions(sessions);manager.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,"fawebim selectiontrim: no selection");return Flow::Cancel;};let text=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"#existing"};let mask={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Mask::parse(&reg,text){Ok(m)=>m,Err(e)=>{feedback(host,&format!("fawebim selectiontrim: {e}"));return Flow::Cancel;}}};let dimension=resolve_dimension(host,event);let world=HorizonWorld::new(host,dimension,registry_cache.clone());let registry=CachedBlockRegistry::new(registry_cache.clone());let mut lo=BlockVector3::at(i32::MAX,i32::MAX,i32::MAX);let mut hi=BlockVector3::at(i32::MIN,i32::MIN,i32::MIN);region.for_each_position(|x,y,z|if mask.test(&world,&registry,x,y,z){lo.x=lo.x.min(x);lo.y=lo.y.min(y);lo.z=lo.z.min(z);hi.x=hi.x.max(x);hi.y=hi.y.max(y);hi.z=hi.z.max(z);});drop(world);if lo.x==i32::MAX{feedback(host,"fawebim selectiontrim: no matching blocks");return Flow::Cancel;}let mut manager=lock_sessions(sessions);let session=manager.get(key);session.selection.selector_mut().learn_region(RegionShape::Cuboid(CuboidRegion::new(lo,hi)));feedback(host,&format!("fawebim selectiontrim: {}",session.selection.describe()));Flow::Cancel}
 

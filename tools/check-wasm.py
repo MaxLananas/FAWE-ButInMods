@@ -293,6 +293,11 @@ assert ('fawebim clipboardreplace <from:text> <to:text>', 2) in usages
 assert ('fawebim clipboardchecksum', 0) in usages
 assert ('fawebim clipboardcount <block:text>', 0) in usages
 assert ('fawebim clipboardcompare', 0) in usages
+assert ('fawebim thickline <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
+assert ('fawebim tube <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
+assert ('fawebim selsphere <x:integer> <y:integer> <z:integer> <radius:number>', 2) in usages
+assert ('fawebim selellipsoid <x:integer> <y:integer> <z:integer> <rx:number> <ry:number> <rz:number>', 2) in usages
+assert ('fawebim selcylinder <x:integer> <z:integer> <rx:number> <rz:number> <miny:integer> <maxy:integer>', 2) in usages
 assert ('fawebim staircase <x:integer> <y:integer> <z:integer> <length:integer> <width:integer> <rise:integer> <direction:text> <pattern:text>', 2) in usages
 assert ('fawebim ramp <x:integer> <y:integer> <z:integer> <length:integer> <width:integer> <rise:integer> <direction:text> <pattern:text>', 2) in usages
 assert ('fawebim pasteat <x:integer> <y:integer> <z:integer>', 2) in usages

@@ -139,7 +139,10 @@ Horizon instead of Fabric.
 >     coordinate/state checksums, plus offsettable one-axis stripe masks;
 > 43. **clipboard audit and architectural paths**: clipboard checksums, exact
 >     state counts and world comparisons, plus directional staircases and solid
->     ramps with independently configurable length, width, rise and patterns.
+>     ramps with independently configurable length, width, rise and patterns;
+> 44. **volumetric paths and direct shaped selections**: thick solid lines and
+>     hollow tubes with bounded diameters, plus coordinate-driven spherical,
+>     ellipsoidal and vertically bounded cylindrical selection creation.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
