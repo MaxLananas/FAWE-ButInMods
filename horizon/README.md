@@ -127,7 +127,10 @@ Horizon instead of Fabric.
 >     masks, plus direct selection corner and chunk-range inspection;
 > 39. **procedural fill and mask-transform batch**: direct gradient, wave, noise
 >     and radial fills; nested mask scaling, rotation and mirroring; explicit
->     global-filter clears and complete per-source session reset.
+>     global-filter clears and complete per-source session reset;
+> 40. **direct region transforms and relational masks**: in-place axis flips,
+>     quarter-turn Y rotations and offset cloning with selection relocation,
+>     plus same/different-state comparisons against arbitrary offsets.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

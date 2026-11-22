@@ -334,6 +334,9 @@ assert ('fawebim hprism <x:integer> <y:integer> <z:integer> <sides:integer> <rad
 assert ('fawebim levelterrain <y:integer> <pattern:text>', 2) in usages
 assert ('fawebim raiseterrain <amount:integer> <pattern:text>', 2) in usages
 assert ('fawebim lowerterrain <amount:integer>', 2) in usages
+assert ('fawebim regionflip <axis:text>', 2) in usages
+assert ('fawebim regionrotate <degrees:integer>', 2) in usages
+assert ('fawebim regionclone <dx:integer> <dy:integer> <dz:integer>', 2) in usages
 assert ('fawebim gradientfill <axis:text> <min:number> <max:number> <patterns:text>', 2) in usages
 assert ('fawebim wavefill <axis:text> <wavelength:number> <patterns:text>', 2) in usages
 assert ('fawebim noisefill <kind:text> <scale:number> <patterns:text>', 2) in usages
