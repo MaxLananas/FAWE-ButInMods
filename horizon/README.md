@@ -169,7 +169,10 @@ Horizon instead of Fabric.
 >     stairs, hinges and side connections) together with voxel coordinates;
 > 53. **three-axis direct rotation**: `regionrotateaxis <x|y|z> <degrees>`
 >     rotates selected voxels around their exact geometric centre on any cardinal
->     axis while applying the same rotation to directional block states.
+>     axis while applying the same rotation to directional block states;
+> 54. **defensive schematic decoding**: portable schematic reads now enforce the
+>     64 MiB envelope before parsing, require a non-empty bounded palette and
+>     complete one-to-one voxel coverage, and reject duplicate or missing cells.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
