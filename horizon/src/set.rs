@@ -231,6 +231,27 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim version", 0),
         Command::op("fawebim patterninfo <pattern:text>", 0),
         Command::op("fawebim maskinfo <mask:text>", 0),
+        Command::op("fawebim biomeinfo", 0),
+        Command::op("fawebim brushes", 0),
+        Command::op("fawebim chunkinfo", 0),
+        Command::op("fawebim desel", 2),
+        Command::op("fawebim listchunks", 0),
+        Command::op("fawebim ore [density:integer] <pattern:text>", 2),
+        Command::op("fawebim replacenear <x:integer> <y:integer> <z:integer> <radius:integer> <mask:text>", 2),
+        Command::op("fawebim gtexture <pattern:text>", 2),
+        Command::op("fawebim gtransform", 2),
+        Command::op("fawebim smask <mask:text>", 2),
+        Command::op("fawebim transforms", 0),
+        Command::op("fawebim masks", 0),
+        Command::op("fawebim patterns", 0),
+        Command::op("fawebim perf", 0),
+        Command::op("fawebim we", 0),
+        Command::op("fawebim world", 0),
+        Command::op("fawebim tool", 0),
+        Command::op("fawebim schem", 0),
+        Command::op("fawebim drawsel <pattern:text>", 2),
+        Command::op("fawebim ceil <pattern:text>", 2),
+        Command::op("fawebim lay <pattern:text>", 2),
         // Compatibility aliases: each routes to the same validated engine path
         // as its canonical command rather than being a placeholder.
         Command::op("fawebim ball <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>", 2),
@@ -289,6 +310,7 @@ pub(crate) fn run(
         Some("pos1") => pos(host, event, sessions, Corner::One),
         Some("pos2") => pos(host, event, sessions, Corner::Two),
         Some("sel") => sel(host, sessions, event),
+        Some("desel") => {let key=source_key(event.source);lock_sessions(sessions).get(key).selection.clear();feedback(host,"fawebim desel: selection cleared");Flow::Cancel},
         Some("set" | "paint") => set(host, event, sessions, registry_cache),
         Some("checkerfill") => checker_fill(host,event,sessions,registry_cache),
         Some("maskedset" | "randomset" | "surfaceset" | "underlay" | "maskchoose") => selective_fill(host,event,sessions,registry_cache),
@@ -313,28 +335,28 @@ pub(crate) fn run(
             feedback(host, if removed { "fawebim clearclipboard: clipboard cleared" } else { "fawebim clearclipboard: clipboard already empty" });
             Flow::Cancel
         }
-        Some("schemsave" | "schemload" | "schemlist" | "scheminfo" | "schemvalidate") => schematic_command(host, event, clipboards, registry_cache),
+        Some("schemsave" | "schemload" | "schemlist" | "scheminfo" | "schemvalidate" | "schem") => schematic_command(host, event, clipboards, registry_cache),
         Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "dome" | "hdome" | "cuboid" | "hcuboid" | "prism" | "hprism" | "staircase" | "ramp" | "thickline" | "tube" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
-        Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "corners" | "pillars" | "cross" | "cross2d" | "lattice" | "stripes" | "border") => region_operation(host, event, sessions, registry_cache),
+        Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "drawsel" | "corners" | "pillars" | "cross" | "cross2d" | "lattice" | "stripes" | "border") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
-        Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear") => brush_config(host, event, brushes),
+        Some("brush" | "brushset" | "brushinfo" | "brushlist" | "brushclear" | "brushes" | "tool") => brush_config(host, event, brushes),
         Some("brushuse") => brush_use(host, event, sessions, brushes, registry_cache),
-        Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog" | "gmask" | "gpattern" | "gmaskclear" | "gpatternclear" | "sessionreset") => session_config(host, event, sessions),
-        Some("transform" | "transformreset" | "transformrotate" | "transformscale" | "transformoffset" | "transformflip" | "transformrandom") => transform_config(host, event, sessions),
+        Some("session" | "limit" | "timeout" | "fast" | "tips" | "watchdog" | "gmask" | "gpattern" | "gmaskclear" | "gpatternclear" | "sessionreset" | "gtexture" | "smask" | "perf" | "world") => session_config(host, event, sessions),
+        Some("transform" | "transformreset" | "transformrotate" | "transformscale" | "transformoffset" | "transformflip" | "transformrandom" | "gtransform" | "transforms") => transform_config(host, event, sessions),
         Some("count" | "distr" | "aircount" | "solidcount" | "liquidcount" | "surfacecount" | "selectiondensity" | "selectionchecksum" | "size" | "center" | "distribution" | "dimensions" | "midpoint") => selection_info(host, event, sessions, registry_cache),
-        Some("setbiome" | "biomedistr" | "paintbiome" | "biomecount" | "replacebiome") => biome_operation(host, event, sessions, registry_cache),
+        Some("setbiome" | "biomedistr" | "paintbiome" | "biomecount" | "replacebiome" | "biomeinfo") => biome_operation(host, event, sessions, registry_cache),
         Some("gravity" | "naturalize" | "drain" | "green" | "snow" | "thaw" | "fall" | "natural" | "deliquid" | "grassify" | "snowfall" | "melt") => terrain_operation(host, event, sessions, registry_cache),
         Some("deform") => deform_operation(host, event, sessions, registry_cache),
         Some("layers") => layer_operation(host, event, sessions, registry_cache),
         Some("scatter") => scatter_operation(host, event, sessions, registry_cache),
-        Some("forest" | "flora" | "pumpkins" | "ores") => populate_operation(host, event, sessions, registry_cache),
-        Some("floor" | "ceiling" | "centerpattern" | "removeabove" | "removebelow" | "fixwater" | "fixlava" | "extinguish") => slice_operation(host, event, sessions, registry_cache),
-        Some("flood" | "removenear" | "connected" | "nearclear") => near_operation(host, event, sessions, registry_cache),
+        Some("forest" | "flora" | "pumpkins" | "ores" | "ore") => populate_operation(host, event, sessions, registry_cache),
+        Some("floor" | "ceiling" | "ceil" | "lay" | "centerpattern" | "removeabove" | "removebelow" | "fixwater" | "fixlava" | "extinguish") => slice_operation(host, event, sessions, registry_cache),
+        Some("flood" | "removenear" | "connected" | "nearclear" | "replacenear") => near_operation(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
-        Some("help" | "commands" | "version" | "patterninfo" | "maskinfo" | "biomelist") => help_command(host, event, registry_cache),
+        Some("help" | "commands" | "version" | "patterninfo" | "maskinfo" | "biomelist" | "masks" | "patterns" | "we") => help_command(host, event, registry_cache),
         Some("history" | "historylimit" | "historylist" | "historystats") => history_config(host,event,sessions),
-        Some("chunkselect" | "chunkexpand" | "chunklist" | "selectionarea" | "selectionbounds" | "selectionpad" | "selectionalign" | "selectioncorners" | "selectionchunks") => chunk_command(host,event,sessions),
+        Some("chunkselect" | "chunkexpand" | "chunklist" | "chunkinfo" | "listchunks" | "selectionarea" | "selectionbounds" | "selectionpad" | "selectionalign" | "selectioncorners" | "selectionchunks") => chunk_command(host,event,sessions),
         Some("inspect" | "columninfo" | "surfaceinfo") => inspect_command(host,event,registry_cache),
         Some("selectiontrim") => selection_trim(host,event,sessions,registry_cache),
         Some("selsphere" | "selellipsoid" | "selcylinder" | "selbox" | "selpolygon") => selection_shape(host,event,sessions),
@@ -378,7 +400,8 @@ fn canonical_command(name: &str) -> &str {
         "ball"=>"sphere","hball"=>"hsphere","cyl"=>"cylinder","hcyl"=>"hcylinder","pyr"=>"pyramid","hpyr"=>"hpyramid","segment"=>"line",
         "sides"=>"walls","outline"=>"faces","surface"=>"overlay","shell"=>"hollow",
         "blend"=>"smooth","erosion"=>"erode","dilation"=>"dilate","fall"=>"gravity","natural"=>"naturalize","deliquid"=>"drain","grassify"=>"green","snowfall"=>"snow","melt"=>"thaw",
-        "distribution"=>"distr","dimensions"=>"size","midpoint"=>"center","shiftblocks"=>"move","repeat"=>"stack","paintbiome"=>"setbiome","nearclear"=>"removenear","connected"=>"flood",
+        "distribution"=>"distr","dimensions"=>"size","midpoint"=>"center","shiftblocks"=>"move","repeat"=>"stack","paintbiome"=>"setbiome","nearclear"|"replacenear"=>"removenear","connected"=>"flood",
+        "ore"=>"ores","gtexture"=>"gpattern","smask"=>"gmask","gtransform"|"transforms"=>"transform","biomeinfo"=>"biomedistr","chunkinfo"=>"selectionchunks","listchunks"=>"chunklist","drawsel"=>"frame","ceil"=>"ceiling","lay"=>"floor","perf"|"world"=>"session","we"=>"version","tool"=>"brushinfo","schem"=>"schemlist","brushes"=>"brushlist",
         other=>other,
     }
 }
@@ -587,7 +610,7 @@ fn set(
 }
 
 fn slice_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
-    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("floor");let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let pattern=if matches!(action,"floor"|"ceiling"|"centerpattern"){let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"air"};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,text){Ok(p)=>Some(p),Err(e)=>{feedback(host,&format!("fawebim {action}: {e}"));return Flow::Cancel;}}}else{None};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let min=region.min();let max=region.max();let layers=integer(event,"layers").unwrap_or(1).clamp(1,max.y-min.y+1);let mut positions=Vec::new();
+    let action=canonical_command(event.command.literals.get(1).map(String::as_str).unwrap_or("floor"));let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let pattern=if matches!(action,"floor"|"ceiling"|"centerpattern"){let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"air"};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,text){Ok(p)=>Some(p),Err(e)=>{feedback(host,&format!("fawebim {action}: {e}"));return Flow::Cancel;}}}else{None};let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let mut registry=CachedBlockRegistry::new(registry_cache.clone());let min=region.min();let max=region.max();let layers=integer(event,"layers").unwrap_or(1).clamp(1,max.y-min.y+1);let mut positions=Vec::new();
     if action=="centerpattern"{let xs=if(min.x+max.x)%2==0{vec![(min.x+max.x)/2]}else{vec![(min.x+max.x)/2,(min.x+max.x)/2+1]};let ys=if(min.y+max.y)%2==0{vec![(min.y+max.y)/2]}else{vec![(min.y+max.y)/2,(min.y+max.y)/2+1]};let zs=if(min.z+max.z)%2==0{vec![(min.z+max.z)/2]}else{vec![(min.z+max.z)/2,(min.z+max.z)/2+1]};for x in xs{for&y in &ys{for&z in &zs{if region.contains(x,y,z){positions.push((x,y,z,pattern.as_ref().unwrap().apply(x,y,z)));}}}}}
     else{region.for_each_position(|x,y,z|{let state=world.get_block(x,y,z);let replacement=match action{"floor" if y==min.y=>pattern.as_ref().map(|p|p.apply(x,y,z)),"ceiling" if y==max.y=>pattern.as_ref().map(|p|p.apply(x,y,z)),"removeabove" if y>max.y-layers=>Some(0),"removebelow" if y<min.y+layers=>Some(0),"extinguish"=>{let name=registry.name(state);(name.ends_with(":fire")||name.ends_with(":soul_fire")).then_some(0)},"fixwater"|"fixlava" if registry.is_air_like(state)=>{let needle=if action=="fixwater"{"water"}else{"lava"};[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)].iter().find_map(|&(dx,dy,dz)|{let n=world.get_block(x+dx,y+dy,z+dz);registry.name(n).ends_with(needle).then_some(n)})},_=>None};if let Some(to)=replacement{positions.push((x,y,z,to));}});}
     let result={let mut manager=lock_sessions(sessions);let mut local=manager.get(key).clone();let mut edit=EditSession::open(&mut world,&mut registry,&mut local,format!("//{action}"),true);for(x,y,z,state)in positions{edit.set_block(x,y,z,state);}let result=edit.finish(&mut local,Some(&mut manager.edit_log));*manager.get(key)=local;result};match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel
@@ -595,7 +618,7 @@ fn slice_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessio
 
 fn population_hash(x:i32,y:i32,z:i32)->u32{let mut n=(x as u32).wrapping_mul(0x9E3779B1)^(y as u32).wrapping_mul(0x85EBCA77)^(z as u32).wrapping_mul(0xC2B2AE3D);n^=n>>16;n=n.wrapping_mul(0x7FEB352D);n^=n>>15;n}
 fn populate_operation(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
-    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("flora");let density=integer(event,"density").unwrap_or(10).clamp(0,100)as u32;let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};
+    let action=canonical_command(event.command.literals.get(1).map(String::as_str).unwrap_or("flora"));let density=integer(event,"density").unwrap_or(10).clamp(0,100)as u32;let key=source_key(event.source);let mut region={let mgr=lock_sessions(sessions);mgr.peek(key).and_then(|s|s.selection.region())};let Some(ref mut region)=region else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};
     let (primary,secondary)={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());let names=match action{"forest"=>("oak_log","oak_leaves"),"flora"=>("short_grass","dandelion"),"pumpkins"=>("pumpkin","pumpkin"),"ores"=>{let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>"coal_ore"};let pattern=match Pattern::parse(&reg,text){Ok(p)=>p,Err(e)=>{feedback(host,&format!("fawebim ores: {e}"));return Flow::Cancel;}};return populate_ores(host,event,sessions,registry_cache,key,region,density,pattern);},_=>("short_grass","dandelion")};let a=reg.default_state(names.0);let b=reg.default_state(names.1);if a<0||b<0{feedback(host,&format!("fawebim {action}: required vanilla blocks are unavailable"));return Flow::Cancel;}(a,b)};
     let dimension=resolve_dimension(host,event);let mut world=HorizonWorld::new(host,dimension,registry_cache.clone());let registry=CachedBlockRegistry::new(registry_cache.clone());let min=region.min();let max=region.max();let mut placements=Vec::new();for z in min.z..=max.z{for x in min.x..=max.x{if population_hash(x,0,z)%100>=density{continue;}if let Some(y)=(min.y..=max.y).rev().find(|&y|region.contains(x,y,z)&&!registry.is_air_like(world.get_block(x,y,z))){match action{"forest"=>{for dy in 1..=5{placements.push((x,y+dy,z,primary));}operations::sphere(BlockVector3::at(x,y+5,z),2.5,2.0,2.5,false,|px,py,pz|placements.push((px,py,pz,secondary)));},"flora"=>placements.push((x,y+1,z,if population_hash(x,y,z)&1==0{primary}else{secondary})),_=>placements.push((x,y+1,z,primary))}}}}let mut registry=registry;let result=finish_population(sessions,key,&mut world,&mut registry,action,placements);match result{Ok(n)=>feedback(host,&format!("fawebim {action}: {n} block(s) changed")),Err(e)=>feedback(host,&format!("fawebim {action}: {e}"))};Flow::Cancel
 }
@@ -664,7 +687,7 @@ fn selection_info(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,session
 }
 
 fn transform_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{
-    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("transform");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);let axis=||match event.command.argument("axis"){Some(CommandArgumentValue::String(s))=>match s.trim().to_ascii_lowercase().as_str(){"x"=>Some(Axis::X),"y"=>Some(Axis::Y),"z"=>Some(Axis::Z),_=>None},_=>None};
+    let action=canonical_command(event.command.literals.get(1).map(String::as_str).unwrap_or("transform"));let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);let axis=||match event.command.argument("axis"){Some(CommandArgumentValue::String(s))=>match s.trim().to_ascii_lowercase().as_str(){"x"=>Some(Axis::X),"y"=>Some(Axis::Y),"z"=>Some(Axis::Z),_=>None},_=>None};
     let next=match action{
         "transformreset"=>{session.transform=Transform::Identity;feedback(host,"fawebim transform: reset");return Flow::Cancel;},
         "transformrotate"=>{let Some(axis)=axis()else{feedback(host,"fawebim transformrotate: axis must be x, y, or z");return Flow::Cancel;};Transform::rotate(BlockVector3::ZERO,axis,number(event,"degrees").unwrap_or(0.0))},
@@ -964,7 +987,7 @@ fn inspect_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,regist
 }
 
 fn chunk_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{
-    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("chunklist");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);
+    let action=canonical_command(event.command.literals.get(1).map(String::as_str).unwrap_or("chunklist"));let key=source_key(event.source);let mut manager=lock_sessions(sessions);let session=manager.get(key);
     if action=="chunkselect"{let cx=integer(event,"x").unwrap_or(0);let cz=integer(event,"z").unwrap_or(0);let miny=integer(event,"miny").unwrap_or(-64);let maxy=integer(event,"maxy").unwrap_or(319);let region=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(cx.saturating_mul(16),miny,cz.saturating_mul(16)),BlockVector3::at(cx.saturating_mul(16).saturating_add(15),maxy,cz.saturating_mul(16).saturating_add(15))));session.selection.selector_mut().learn_region(region);feedback(host,&format!("fawebim chunkselect: chunk ({cx}, {cz}), y={miny}..{maxy}"));return Flow::Cancel;}
     let Some(region)=session.selection.region()else{feedback(host,&format!("fawebim {action}: no selection"));return Flow::Cancel;};let min=region.min();let max=region.max();let(mincx,maxcx,mincz,maxcz)=(min.x>>4,max.x>>4,min.z>>4,max.z>>4);
     if action=="selectioncorners"{feedback(host,&format!("fawebim selectioncorners: min=({}, {}, {}), max=({}, {}, {}), center=({:.1}, {:.1}, {:.1})",min.x,min.y,min.z,max.x,max.y,max.z,(min.x as f64+max.x as f64)/2.0,(min.y as f64+max.y as f64)/2.0,(min.z as f64+max.z as f64)/2.0));return Flow::Cancel;}if action=="selectionchunks"{feedback(host,&format!("fawebim selectionchunks: x={}..{}, z={}..{}, total={}",mincx,maxcx,mincz,maxcz,((maxcx-mincx+1)as u64)*((maxcz-mincz+1)as u64)));return Flow::Cancel;}
@@ -977,11 +1000,13 @@ fn chunk_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions
 fn history_config(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,sessions:&Mutex<SessionManager>)->Flow{let action=event.command.literals.get(1).map(String::as_str).unwrap_or("history");let key=source_key(event.source);let mut manager=lock_sessions(sessions);let history=&mut manager.get(key).history;if action=="historylimit"{let limit=integer(event,"records").unwrap_or(history.max_records()as i32).clamp(1,10_000)as usize;history.set_max_records(limit);feedback(host,&format!("fawebim historylimit: {limit}"));}else if action=="historylist"{let page=integer(event,"page").unwrap_or(1).max(1)as usize;let start=(page-1)*8;let rows=history.records().iter().enumerate().skip(start).take(8).map(|(i,r)|format!("{}:{} ({} blocks, {} biomes)",i+1,r.description(),r.change_count(),r.biome_change_count())).collect::<Vec<_>>().join("; ");feedback(host,&format!("fawebim historylist page {page}: {}",if rows.is_empty(){"empty"}else{&rows}));}else if action=="historystats"{let bytes: u64=history.records().iter().map(|r|r.estimated_bytes()).sum();let blocks:usize=history.records().iter().map(|r|r.change_count()).sum();let biomes:usize=history.records().iter().map(|r|r.biome_change_count()).sum();feedback(host,&format!("fawebim historystats: records={}, blocks={}, biomes={}, estimatedBytes={bytes}",history.len(),blocks,biomes));}else{feedback(host,&format!("fawebim history: {} record(s), position={}, max={}, canUndo={}, canRedo={}",history.len(),history.current_index()+1,history.max_records(),history.can_undo(),history.can_redo()));}Flow::Cancel}
 
 fn help_command(host:&mut dyn ServerHost,event:&RunModCommandEvent<'_>,registry_cache:&Arc<Mutex<HorizonRegistryCache>>)->Flow{
-    let action=event.command.literals.get(1).map(String::as_str).unwrap_or("help");match action{
+    let action=canonical_command(event.command.literals.get(1).map(String::as_str).unwrap_or("help"));match action{
         "version"=>feedback(host,&format!("FAWE-ButInMods Horizon v{} — server-side wasm",env!("CARGO_PKG_VERSION"))),
         "commands"=>{let query=match event.command.argument("query"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let found=help::search(query);let text=found.iter().map(|e|format!("{} [{}] — {}",e.command,e.category,e.summary)).collect::<Vec<_>>().join("; ");feedback(host,&format!("fawebim commands: {}",if text.is_empty(){"no matches".into()}else{text}));},
         "patterninfo"=>{let text=match event.command.argument("pattern"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Pattern::parse(&reg,text){Ok(pattern)=>feedback(host,&format!("fawebim patterninfo: valid, deterministic={}, {pattern:?}",pattern.is_deterministic())),Err(e)=>feedback(host,&format!("fawebim patterninfo: invalid — {e}"))}},
         "maskinfo"=>{let text=match event.command.argument("mask"){Some(CommandArgumentValue::String(s))=>s.trim(),_=>""};let reg=HorizonBlockRegistry::new(host,registry_cache.clone());match Mask::parse(&reg,text){Ok(mask)=>feedback(host,&format!("fawebim maskinfo: valid, {mask:?}")),Err(e)=>feedback(host,&format!("fawebim maskinfo: invalid — {e}"))}},
+        "masks"=>feedback(host,"fawebim masks: blocks, ##category, #air, #existing, #solid, #liquid, #surface, #biome, #y, #chance, #noise, #expression, #offset, #adjacent, #nearby, #exposed, #sphere, #cylinder, #grid, #stripe, #scale, #rotate, #mirror, #same, #different; combine with ! & |"),
+        "patterns"=>feedback(host,"fawebim patterns: weighted lists, #checker, #gradient, #expression, #perlin, #simplex, #voronoi, #ridged, #linear, #radial, #radialgradient, #wave, #offset, #scale, #rotate, #mirror, #quantize, #tile"),
         "biomelist"=>{let query=match event.command.argument("query"){Some(CommandArgumentValue::String(s))=>s.trim().to_ascii_lowercase(),_=>String::new()};let text={let reg=HorizonBlockRegistry::new(host,registry_cache.clone());reg.biome_names().into_iter().filter(|name|query.is_empty()||name.to_ascii_lowercase().contains(&query)).take(50).collect::<Vec<_>>().join(", ")};feedback(host,&format!("fawebim biomelist: {}",if text.is_empty(){"no matches"}else{&text}));},
         _=>{let page=integer(event,"page").unwrap_or(1).max(1)as usize;let(pages,entries)=help::page(page,5);let text=entries.iter().map(|e|format!("{} — {}",e.command,e.summary)).collect::<Vec<_>>().join("; ");feedback(host,&format!("fawebim help {page}/{pages}: {text}"));}
     }Flow::Cancel

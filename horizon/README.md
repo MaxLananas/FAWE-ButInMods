@@ -151,7 +151,10 @@ Horizon instead of Fabric.
 >     conditional biome replacement that preserves nonmatching cells;
 > 47. **schematic integrity inspection**: non-destructive decoding, validation,
 >     dimensions, origins, populated volumes and stable content checksums for
->     persisted portable schematics without replacing the active clipboard.
+>     persisted portable schematics without replacing the active clipboard;
+> 48. **reference-command compatibility sweep**: 21 additional WorldEdit/FAWE
+>     spellings now route to real biome, brush, chunk, selection, population,
+>     nearby-edit, session, transform, discovery and structural operations.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

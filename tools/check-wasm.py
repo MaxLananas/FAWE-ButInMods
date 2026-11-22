@@ -295,6 +295,18 @@ assert ('fawebim clipboardcount <block:text>', 0) in usages
 assert ('fawebim clipboardcompare', 0) in usages
 assert ('fawebim scheminfo <name:text>', 0) in usages
 assert ('fawebim schemvalidate <name:text>', 0) in usages
+for usage, permission in [
+    ('fawebim biomeinfo',0),('fawebim brushes',0),('fawebim chunkinfo',0),
+    ('fawebim desel',2),('fawebim listchunks',0),
+    ('fawebim ore [density:integer] <pattern:text>',2),
+    ('fawebim replacenear <x:integer> <y:integer> <z:integer> <radius:integer> <mask:text>',2),
+    ('fawebim gtexture <pattern:text>',2),('fawebim gtransform',2),
+    ('fawebim smask <mask:text>',2),('fawebim transforms',0),
+    ('fawebim masks',0),('fawebim patterns',0),('fawebim perf',0),
+    ('fawebim we',0),('fawebim world',0),('fawebim tool',0),
+    ('fawebim schem',0),('fawebim drawsel <pattern:text>',2),
+    ('fawebim ceil <pattern:text>',2),('fawebim lay <pattern:text>',2),
+]: assert (usage,permission) in usages
 assert ('fawebim thickline <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
 assert ('fawebim tube <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
 assert ('fawebim selsphere <x:integer> <y:integer> <z:integer> <radius:number>', 2) in usages
