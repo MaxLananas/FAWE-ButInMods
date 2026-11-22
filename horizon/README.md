@@ -157,7 +157,10 @@ Horizon instead of Fabric.
 >     nearby-edit, session, transform, discovery and structural operations;
 > 49. **coordinate-safe legacy adaptations**: explicit-coordinate pos/hpos,
 >     chunk selection, connected fill/fillr, quadratic curve and mask-list
->     spellings preserve reference workflows without unavailable client raycasts.
+>     spellings preserve reference workflows without unavailable client raycasts;
+> 50. **convex hull selections and capsules**: validated non-coplanar 3D point
+>     hull selectors and deduplicated solid/hollow vertical capsules combining
+>     cylindrical bodies with clipped hemispherical end caps.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

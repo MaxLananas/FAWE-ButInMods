@@ -317,6 +317,10 @@ for usage, permission in [
 ]: assert (usage,permission) in usages
 assert ('fawebim thickline <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
 assert ('fawebim tube <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <thickness:number> <pattern:text>', 2) in usages
+assert ('fawebim capsule <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim hcapsule <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <pattern:text>', 2) in usages
+assert ('fawebim selconvex <points:text>', 2) in usages
+assert ('fawebim selpolyhedron <points:text>', 2) in usages
 assert ('fawebim selsphere <x:integer> <y:integer> <z:integer> <radius:number>', 2) in usages
 assert ('fawebim selbox <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer>', 2) in usages
 assert ('fawebim selpolygon <points:text> <miny:integer> <maxy:integer>', 2) in usages
