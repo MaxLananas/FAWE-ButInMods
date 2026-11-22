@@ -154,7 +154,10 @@ Horizon instead of Fabric.
 >     persisted portable schematics without replacing the active clipboard;
 > 48. **reference-command compatibility sweep**: 21 additional WorldEdit/FAWE
 >     spellings now route to real biome, brush, chunk, selection, population,
->     nearby-edit, session, transform, discovery and structural operations.
+>     nearby-edit, session, transform, discovery and structural operations;
+> 49. **coordinate-safe legacy adaptations**: explicit-coordinate pos/hpos,
+>     chunk selection, connected fill/fillr, quadratic curve and mask-list
+>     spellings preserve reference workflows without unavailable client raycasts.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.

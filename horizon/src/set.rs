@@ -252,6 +252,14 @@ pub(crate) fn register(event: &mut mod_api::RegisterCommandsEvent<'_>) {
         Command::op("fawebim drawsel <pattern:text>", 2),
         Command::op("fawebim ceil <pattern:text>", 2),
         Command::op("fawebim lay <pattern:text>", 2),
+        Command::op("fawebim pos <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim hpos1 <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim hpos2 <x:integer> <y:integer> <z:integer>", 2),
+        Command::op("fawebim chunk <x:integer> <z:integer> [miny:integer] [maxy:integer]", 2),
+        Command::op("fawebim fill <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>", 2),
+        Command::op("fawebim fillr <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>", 2),
+        Command::op("fawebim curve <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <x3:integer> <y3:integer> <z3:integer> [thickness:number] <pattern:text>", 2),
+        Command::op("fawebim masks-list", 0),
         // Compatibility aliases: each routes to the same validated engine path
         // as its canonical command rather than being a placeholder.
         Command::op("fawebim ball <x:integer> <y:integer> <z:integer> <radius:number> <pattern:text>", 2),
@@ -307,8 +315,8 @@ pub(crate) fn run(
         return Flow::Continue;
     }
     match words.get(1).map(String::as_str) {
-        Some("pos1") => pos(host, event, sessions, Corner::One),
-        Some("pos2") => pos(host, event, sessions, Corner::Two),
+        Some("pos1" | "pos" | "hpos1") => pos(host, event, sessions, Corner::One),
+        Some("pos2" | "hpos2") => pos(host, event, sessions, Corner::Two),
         Some("sel") => sel(host, sessions, event),
         Some("desel") => {let key=source_key(event.source);lock_sessions(sessions).get(key).selection.clear();feedback(host,"fawebim desel: selection cleared");Flow::Cancel},
         Some("set" | "paint") => set(host, event, sessions, registry_cache),
@@ -336,7 +344,7 @@ pub(crate) fn run(
             Flow::Cancel
         }
         Some("schemsave" | "schemload" | "schemlist" | "scheminfo" | "schemvalidate" | "schem") => schematic_command(host, event, clipboards, registry_cache),
-        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "dome" | "hdome" | "cuboid" | "hcuboid" | "prism" | "hprism" | "staircase" | "ramp" | "thickline" | "tube" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
+        Some("sphere" | "hsphere" | "cylinder" | "hcylinder" | "pyramid" | "hpyramid" | "line" | "cone" | "hcone" | "torus" | "htorus" | "ellipsoid" | "hellipsoid" | "disk" | "hdisk" | "dome" | "hdome" | "cuboid" | "hcuboid" | "prism" | "hprism" | "staircase" | "ramp" | "curve" | "thickline" | "tube" | "ball" | "hball" | "cyl" | "hcyl" | "pyr" | "hpyr" | "segment" | "bezier" | "helix") => generate(host, event, sessions, registry_cache),
         Some("walls" | "faces" | "overlay" | "hollow" | "sides" | "outline" | "surface" | "shell" | "frame" | "drawsel" | "corners" | "pillars" | "cross" | "cross2d" | "lattice" | "stripes" | "border") => region_operation(host, event, sessions, registry_cache),
         Some("move" | "stack" | "shiftblocks" | "repeat") => translate_operation(host, event, sessions, registry_cache),
         Some("smooth" | "erode" | "dilate" | "blend" | "erosion" | "dilation") => morphology_operation(host, event, sessions, registry_cache),
@@ -352,11 +360,11 @@ pub(crate) fn run(
         Some("scatter") => scatter_operation(host, event, sessions, registry_cache),
         Some("forest" | "flora" | "pumpkins" | "ores" | "ore") => populate_operation(host, event, sessions, registry_cache),
         Some("floor" | "ceiling" | "ceil" | "lay" | "centerpattern" | "removeabove" | "removebelow" | "fixwater" | "fixlava" | "extinguish") => slice_operation(host, event, sessions, registry_cache),
-        Some("flood" | "removenear" | "connected" | "nearclear" | "replacenear") => near_operation(host, event, sessions, registry_cache),
+        Some("flood" | "fill" | "fillr" | "removenear" | "connected" | "nearclear" | "replacenear") => near_operation(host, event, sessions, registry_cache),
         Some("expand" | "contract" | "shift" | "outset" | "inset") => selection_mutate(host, event, sessions),
-        Some("help" | "commands" | "version" | "patterninfo" | "maskinfo" | "biomelist" | "masks" | "patterns" | "we") => help_command(host, event, registry_cache),
+        Some("help" | "commands" | "version" | "patterninfo" | "maskinfo" | "biomelist" | "masks" | "masks-list" | "patterns" | "we") => help_command(host, event, registry_cache),
         Some("history" | "historylimit" | "historylist" | "historystats") => history_config(host,event,sessions),
-        Some("chunkselect" | "chunkexpand" | "chunklist" | "chunkinfo" | "listchunks" | "selectionarea" | "selectionbounds" | "selectionpad" | "selectionalign" | "selectioncorners" | "selectionchunks") => chunk_command(host,event,sessions),
+        Some("chunkselect" | "chunk" | "chunkexpand" | "chunklist" | "chunkinfo" | "listchunks" | "selectionarea" | "selectionbounds" | "selectionpad" | "selectionalign" | "selectioncorners" | "selectionchunks") => chunk_command(host,event,sessions),
         Some("inspect" | "columninfo" | "surfaceinfo") => inspect_command(host,event,registry_cache),
         Some("selectiontrim") => selection_trim(host,event,sessions,registry_cache),
         Some("selsphere" | "selellipsoid" | "selcylinder" | "selbox" | "selpolygon") => selection_shape(host,event,sessions),
@@ -401,7 +409,7 @@ fn canonical_command(name: &str) -> &str {
         "sides"=>"walls","outline"=>"faces","surface"=>"overlay","shell"=>"hollow",
         "blend"=>"smooth","erosion"=>"erode","dilation"=>"dilate","fall"=>"gravity","natural"=>"naturalize","deliquid"=>"drain","grassify"=>"green","snowfall"=>"snow","melt"=>"thaw",
         "distribution"=>"distr","dimensions"=>"size","midpoint"=>"center","shiftblocks"=>"move","repeat"=>"stack","paintbiome"=>"setbiome","nearclear"|"replacenear"=>"removenear","connected"=>"flood",
-        "ore"=>"ores","gtexture"=>"gpattern","smask"=>"gmask","gtransform"|"transforms"=>"transform","biomeinfo"=>"biomedistr","chunkinfo"=>"selectionchunks","listchunks"=>"chunklist","drawsel"=>"frame","ceil"=>"ceiling","lay"=>"floor","perf"|"world"=>"session","we"=>"version","tool"=>"brushinfo","schem"=>"schemlist","brushes"=>"brushlist",
+        "ore"=>"ores","fill"|"fillr"=>"flood","curve"=>"bezier","chunk"=>"chunkselect","masks-list"=>"masks","gtexture"=>"gpattern","smask"=>"gmask","gtransform"|"transforms"=>"transform","biomeinfo"=>"biomedistr","chunkinfo"=>"selectionchunks","listchunks"=>"chunklist","drawsel"=>"frame","ceil"=>"ceiling","lay"=>"floor","perf"|"world"=>"session","we"=>"version","tool"=>"brushinfo","schem"=>"schemlist","brushes"=>"brushlist",
         other=>other,
     }
 }

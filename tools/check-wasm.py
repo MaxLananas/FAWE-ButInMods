@@ -296,6 +296,14 @@ assert ('fawebim clipboardcompare', 0) in usages
 assert ('fawebim scheminfo <name:text>', 0) in usages
 assert ('fawebim schemvalidate <name:text>', 0) in usages
 for usage, permission in [
+    ('fawebim pos <x:integer> <y:integer> <z:integer>',2),
+    ('fawebim hpos1 <x:integer> <y:integer> <z:integer>',2),
+    ('fawebim hpos2 <x:integer> <y:integer> <z:integer>',2),
+    ('fawebim chunk <x:integer> <z:integer> [miny:integer] [maxy:integer]',2),
+    ('fawebim fill <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>',2),
+    ('fawebim fillr <x:integer> <y:integer> <z:integer> <radius:integer> <pattern:text>',2),
+    ('fawebim curve <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <x3:integer> <y3:integer> <z3:integer> [thickness:number] <pattern:text>',2),
+    ('fawebim masks-list',0),
     ('fawebim biomeinfo',0),('fawebim brushes',0),('fawebim chunkinfo',0),
     ('fawebim desel',2),('fawebim listchunks',0),
     ('fawebim ore [density:integer] <pattern:text>',2),
