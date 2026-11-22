@@ -182,7 +182,10 @@ Horizon instead of Fabric.
 >     cardinal axis, with exact negative and repeated quarter turns;
 > 57. **schematic structural comparison**: `schemcompare <name>` validates and
 >     decodes a saved schematic, then reports exact differing voxel counts,
->     dimension incompatibility and origin equality against the live clipboard.
+>     dimension incompatibility and origin equality against the live clipboard;
+> 58. **schematic composition statistics**: `schemstats <name>` validates a
+>     schematic and reports populated blocks, intentional holes, unique states,
+>     and the eight most frequent registry states in deterministic order.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
