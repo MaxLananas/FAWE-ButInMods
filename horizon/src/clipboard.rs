@@ -47,6 +47,7 @@ impl Clipboard {
     }
     pub fn flip(&mut self, axis: char) {
         let old=self.clone();
+        self.blocks=vec![-1;(self.size.x*self.size.y*self.size.z)as usize];
         old.for_each(|x,y,z,state| { let (nx,ny,nz)=match axis {'x'=>(old.size.x-1-x,y,z),'y'=>(x,old.size.y-1-y,z),_=>(x,y,old.size.z-1-z)}; let i=self.index(nx,ny,nz); self.blocks[i]=state; });
     }
     pub fn scale(&mut self, sx:i32, sy:i32, sz:i32) {
@@ -81,5 +82,6 @@ impl ClipboardManager {
   let mut r=RegionShape::Cuboid(CuboidRegion::new(BlockVector3::at(0,0,0),BlockVector3::at(1,0,1)));
   let mut c=Clipboard::capture(&w,&mut r);assert_eq!(c.volume(),4);c.rotate_y(1);assert_eq!(c.get(1,0,0),1);c.flip('x');assert_eq!(c.get(0,0,0),1);c.scale(2,1,2);assert_eq!(c.size(),BlockVector3::at(4,1,4));assert_eq!(c.get(0,0,0),1);c.shift_origin(2,3,4);assert_eq!(c.origin(),BlockVector3::at(2,3,4));assert_eq!(c.replace_state(1,|_,_,_|9),4);assert_eq!(c.get(0,0,0),9);assert_eq!(c.count_state(9),4);assert_eq!(c.checksum(),c.checksum());assert_eq!(c.difference_count(&c),Some(0));let mut different=c.clone();different.blocks[0]=-1;assert_eq!(c.difference_count(&different),Some(1));assert_eq!(c.state_counts().iter().map(|v|v.1).sum::<usize>(),c.volume());assert!(c.state_counts().windows(2).all(|w|w[0].1>=w[1].1));let original=c.clone();for axis in ['x','y','z']{let mut turned=original.clone();turned.rotate_axis(axis,4);assert_eq!(turned.size(),original.size());assert_eq!(turned.blocks,original.blocks);}
  }
+ #[test]fn sparse_flip_moves_holes_instead_of_copying_over_them(){let mut c=Clipboard::from_parts(BlockVector3::at(3,1,1),BlockVector3::ZERO,vec![7,-1,9]);c.flip('x');assert_eq!(c.blocks,vec![9,-1,7]);let mut edge=Clipboard::from_parts(BlockVector3::at(3,1,1),BlockVector3::ZERO,vec![7,-1,-1]);edge.flip('x');assert_eq!(edge.blocks,vec![-1,-1,7]);}
  #[test]fn trim_removes_empty_borders(){let c=Clipboard::from_parts(BlockVector3::at(3,3,3),BlockVector3::at(10,20,30),{let mut b=vec![0;27];b[13]=7;b});let mut c=c;assert!(c.trim(|s|s!=0));assert_eq!(c.size(),BlockVector3::at(1,1,1));assert_eq!(c.origin(),BlockVector3::at(11,21,31));assert_eq!(c.get(0,0,0),7);}
 }
