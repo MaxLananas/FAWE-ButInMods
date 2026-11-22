@@ -343,6 +343,10 @@ impl HistoryRecord {
     pub const fn is_sealed(&self) -> bool {
         self.sealed
     }
+    pub fn description(&self) -> &str { &self.description }
+    pub fn world(&self) -> Option<&str> { self.world.as_deref() }
+    pub fn owner(&self) -> &str { &self.owner }
+    pub const fn timestamp_ms(&self) -> u64 { self.timestamp_ms }
 
     pub fn add_change(&mut self, x: i32, y: i32, z: i32, previous: i32, current: i32) {
         assert!(

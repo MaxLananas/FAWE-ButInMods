@@ -295,6 +295,10 @@ assert ('fawebim pasteoffset <dx:integer> <dy:integer> <dz:integer>', 2) in usag
 assert ('fawebim clipboardinfo', 2) in usages
 assert ('fawebim history', 0) in usages
 assert ('fawebim historylimit <records:integer>', 2) in usages
+assert ('fawebim historylist [page:integer]', 0) in usages
+assert ('fawebim historystats', 0) in usages
+assert ('fawebim selectiondensity', 0) in usages
+assert ('fawebim selectionchecksum', 0) in usages
 assert ('fawebim bezier <x1:integer> <y1:integer> <z1:integer> <x2:integer> <y2:integer> <z2:integer> <x3:integer> <y3:integer> <z3:integer> [thickness:number] <pattern:text>', 2) in usages
 assert ('fawebim helix <x:integer> <y:integer> <z:integer> <radius:number> <height:integer> <turns:number> [thickness:number] <pattern:text>', 2) in usages
 assert ('fawebim cross <pattern:text>', 2) in usages

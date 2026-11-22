@@ -133,7 +133,10 @@ Horizon instead of Fabric.
 >     plus same/different-state comparisons against arbitrary offsets;
 > 41. **region resizing and coordinate sampling**: bounded integer content
 >     scaling, center-targeted relocation with automatic selection updates, and
->     quantized or periodically tiled nested pattern coordinate spaces.
+>     quantized or periodically tiled nested pattern coordinate spaces;
+> 42. **history and audit diagnostics**: paginated record descriptions and
+>     change totals, estimated history memory, selection density and stable
+>     coordinate/state checksums, plus offsettable one-axis stripe masks.
 >
 > The Java sources in `../core` and `../fabric` are the reference
 > implementation.
