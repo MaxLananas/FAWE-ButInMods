@@ -5,8 +5,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use mod_api::{
-    BlockRun, Command, CommandArgumentValue, ConfigPath, Flow, RunModCommandEvent, ServerHost, Text,
+    Command, CommandArgumentValue, ConfigPath, Flow, RunModCommandEvent, ServerHost, Text,
 };
+#[cfg(test)]
+use mod_api::BlockRun;
 
 use crate::brush::{self, BrushManager};
 use crate::clipboard::{Clipboard, ClipboardManager};
@@ -1110,6 +1112,7 @@ fn history_step(
 }
 
 /// Walk a `RegionShape` as vertical `(x, z)` column runs for `edit_blocks`.
+#[cfg(test)]
 pub(crate) fn for_each_column_run(region: &RegionShape, mut visit: impl FnMut(BlockRun)) {
     match region {
         RegionShape::Cuboid(cuboid) => {
